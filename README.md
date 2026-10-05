@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.24.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.24.1-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -133,7 +133,7 @@ $ sudo bob
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.24.0  │  Linux hardening auditor                                     ║
+║  BOB 0.24.1  │  Linux hardening auditor                                     ║
 ║  System        : Linux Mint 22.3                                             ║
 ║  Kernel        : 6.17.0-23-generic                                           ║
 ║  UFW           : 0.36.2                                                      ║
@@ -165,17 +165,17 @@ Every WARN/ALERT shows a CIS reference (when applicable), a copy-paste remediati
 
 | Domain | What it covers |
 |--------|----------------|
-| **Firewall** | UFW rules, iptables/nftables (when UFW inactive), IPv6 consistency, port exposure |
+| **Firewall** | UFW rules, firewalld zones, iptables/nftables (when UFW is not running), IPv6 consistency, port exposure |
 | **SSH** | sshd_config hardening — PermitRootLogin, key strength, timeouts, forwarding |
 | **Kernel hardening** | sysctl parameters (incl. `fs.protected_*`), kernel attack surface (unprivileged eBPF, perf events, user namespaces), kernel-reported CPU vulnerabilities and IOMMU, kernel modules, Secure Boot, firmware/microcode |
 | **Boot & storage** | GRUB password/config permissions, mount options (nodev/nosuid/noexec), LUKS disk encryption, core-dump policy, kexec/kernel lockdown, `/proc` hidepid |
 | **Services** | 38 known services with risk classification; Docker firewall bypass detection; CUPS print-service network exposure |
 | **File permissions** | SUID/SGID audit, file capabilities, sensitive files, sudoers, polkit rule permissions; world-writable and unowned files (`--exhaustive`) |
 | **User accounts** | Expired accounts, password policy and hashing algorithm, login.defs, PAM, account lockout (pam_faillock), su restriction (pam_wheel / su mode / BusyBox su), home and `.netrc` permissions, duplicate UIDs |
-| **System updates & detection** | apt updates, package authenticity (signature / repository checks), system crypto policy, package-file integrity (`--exhaustive`), auditd rules, Fail2ban, ClamAV, AppArmor/SELinux, AIDE/Tripwire integrity, rkhunter, SMART, firmware/microcode |
+| **System updates & detection** | pending updates (apt, dnf, zypper, pacman, apk), package authenticity (signature / repository checks), system crypto policy, package-file integrity (`--exhaustive`), auditd rules, Fail2ban, ClamAV, AppArmor/SELinux, AIDE/Tripwire integrity, rkhunter, SMART, firmware/microcode |
 | **Operations** | Log rotation, auth.log analysis, NTP sync, TLS cert expiry, systemd timers, Samba, cron jobs |
 | **Network** | Public IP context, network type detection (server/LAN/VPN), GeoIP optional |
-| **Docker** | Daemon hardening, privileged containers, sensitive mounts |
+| **Docker / Podman** | Daemon hardening, privileged containers, sensitive mounts |
 
 ---
 

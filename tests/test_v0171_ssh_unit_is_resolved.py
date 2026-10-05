@@ -114,11 +114,13 @@ class TestNoCommandHardcodesTheDebianSpelling:
         )
 
     def test_the_directive_templates_go_through_the_resolver(self):
+        # v0.24.1: the table carries directives, rendered by
+        # _sshd_directive_fix — the @SSH_RESTART@ placeholder is gone, and the
+        # one restart command is resolved there.
         src = (_SRC / "checks" / "ssh" / "_directives.py").read_text(encoding="utf-8")
-        assert "@SSH_RESTART@" in src, "the templates lost their placeholder"
-        assert '"@SSH_RESTART@", service_restart_cmd(ssh_unit())' in src, (
-            "the placeholder is never substituted, so the literal token would "
-            "reach the operator's terminal"
+        assert "@SSH_RESTART@" not in src
+        assert "    restart = service_restart_cmd(ssh_unit())" in src, (
+            "the restart command must name the resolved unit (ssh or sshd)"
         )
 
 
@@ -129,9 +131,8 @@ class TestTheRenderedCommands:
         from bob.checks.ssh import _directives
         with _systemd_knows(unit):
             ssh_unit.cache_clear()
-            out = [r.cmd_template.replace("@SSH_RESTART@",
-                                          f"sudo systemctl restart {ssh_unit()}")
-                   for r in _directives._BAD_DIRECTIVES if r.cmd_template]
+            out = [_directives._sshd_directive_fix(r.fix, r.fix.split()[0], {})
+                   for r in _directives._BAD_DIRECTIVES if r.fix]
         return out
 
     @pytest.mark.parametrize("unit", ["ssh", "sshd"])

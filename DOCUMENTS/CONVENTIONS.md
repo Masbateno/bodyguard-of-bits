@@ -414,6 +414,27 @@ Finally: a guard (`tests/test_vXXXX_<check>.py`), its mutation in `tests/mutatio
 SNAPSHOT). The sweep tells you the exact live values; a coincidental number beside an
 unwatched noun goes in the sweep's `_COINCIDENCES`.
 
+## 10. Glossary
+
+The words this project uses for the parts of an audit, each with the code that
+defines it. They are not interchangeable: "section" and "check" in particular
+are often said for one another, and a sentence that mixes them is usually wrong
+about one of the two.
+
+| Term | Meaning | Where it lives |
+|---|---|---|
+| **check module** | A file under `bob/checks/` that collects one subject and judges it (the counter in SNAPSHOT). A module may serve more than one section. | `bob/checks/*.py`, `bob/checks/ssh/` |
+| **snapshot** | What a module read from the host, collected by `from_system()`, which never raises. Tests build it by hand. | `XxxSnapshot` dataclasses |
+| **check** | The pure function `check_xxx(snapshot, t)` that turns a snapshot into a `CheckResult`. It reads nothing from the host. | `check_*` functions |
+| **section** | One named step of an audit run, with its own heading on screen; what `--check` and `--skip` select. The runner applies each section's `CheckResult` under that name. | `emit_section()`, `engine.apply(…, section=…)` in `bob/runner.py` |
+| **finding** | One line of a `CheckResult`: a level (OK / INFO / WARN / ALERT), a key, a message, and optionally a detail, a command and a deduction. | `Finding`, `FindingLevel` in `bob/scoring.py` |
+| **key** | A finding's dotted identifier, `<prefix>.<name>` (`ssh.password_auth`). It is what `--explain`, `ignore.yml`, the CIS map and the domain map are indexed by. | every `key=` argument |
+| **deduction** | Points a finding removes from its domain's score. INFO never carries one. | `warn_with_deduction`, `alert_with_deduction`, `add_deduction` |
+| **cap** | An upper bound a finding sets on the score (an inactive firewall caps it at 3). | `CheckResult.set_cap` |
+| **visibility key** | A key that says a section could not be read. Its presence turns the score into a ceiling (`≤ N/10`) — unknown is not clean. | `VISIBILITY_KEYS` in `bob/visibility.py` |
+| **domain** | One of the six scored areas — firewall & network, exposure & services, access control, system hardening, health & resilience, threat detection — each scored 0–10; a key belongs to one through its prefix. | `DOMAINS`, `_PREFIX_TO_DOMAIN` in `bob/domain_scores.py` |
+| **group** | The on-screen heading that gathers a domain's sections. Since v0.20.0 groups and domains are the same six. | `emit_group()` in `bob/runner.py` |
+
 ---
 
 © 2026 Cédric Clauzel

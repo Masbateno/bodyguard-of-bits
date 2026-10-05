@@ -124,6 +124,56 @@ class FirewallStatus:
 
 
 # ---------------------------------------------------------------------------
+# Firewall posture — one answer for every summary that needs one
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class FirewallPosture:
+    """Which firewall filters inbound traffic, and its default for unmatched packets.
+
+    v0.24.1. The firewall section learnt firewalld (0.20.2) and a raw
+    nftables/iptables ruleset (0.23.0), but the summaries built after it —
+    attack surface, risk-level floor, implicit-policy note, SSH context —
+    still read UFW's own state. A firewalld host was told "default policy is
+    ALLOW — no filtering" and an nftables-only host "no active firewall",
+    while the section above had credited both. Every one of them now reads
+    this object, computed once.
+
+    Args:
+        backend: "ufw", "firewalld", "netfilter" (a raw ruleset with a
+                 DROP/REJECT inbound policy and no managed front-end), or ""
+                 when nothing filters inbound traffic.
+        policy:  "deny", "reject", "allow" or "unknown" — "unknown" when the
+                 backend's default was not read, never assumed.
+    """
+    backend: str = ""
+    policy:  str = "unknown"
+
+    @property
+    def active(self) -> bool:
+        return bool(self.backend)
+
+
+def resolve_firewall_posture(
+    status: FirewallStatus,
+    firewalld=None,
+    netfilter_policy: str | None = None,
+) -> FirewallPosture:
+    """UFW when active, else firewalld when active, else a filtering raw ruleset.
+
+    *netfilter_policy* is the raw INPUT policy ("DROP"/"REJECT") of a ruleset
+    the runner judged protective, ``None`` otherwise.
+    """
+    if status.active:
+        return FirewallPosture("ufw", status.incoming_policy or "unknown")
+    if firewalld is not None and firewalld.active:
+        return FirewallPosture("firewalld", firewalld.incoming_policy)
+    if netfilter_policy in ("DROP", "REJECT"):
+        return FirewallPosture("netfilter", "deny" if netfilter_policy == "DROP" else "reject")
+    return FirewallPosture()
+
+
+# ---------------------------------------------------------------------------
 # Pure check logic
 # ---------------------------------------------------------------------------
 
@@ -165,8 +215,12 @@ def check_firewall(
     _t = t if t is not None else _identity_t
     result = CheckResult()
 
-    # --- UFW installed ---
-    if not status.installed:
+    # --- Another filter while UFW is not running ---
+    # v0.24.1: this used to sit under "UFW not installed" only. Ubuntu ships
+    # the ufw package installed and inactive, so an Ubuntu host protected by
+    # firewalld or by its own nftables ruleset fell through to "UFW inactive"
+    # — an alert and a 3/10 cap on a firewalled machine.
+    if not status.active:
         # firewalld is the firewall front-end on the RPM family and openSUSE.
         # When it is active the machine IS firewalled; alerting "UFW not
         # installed" there frames a properly-protected host as unprotected
@@ -192,6 +246,9 @@ def check_firewall(
                 key="firewall.netfilter_active",
             )
             return result
+
+    # --- UFW installed ---
+    if not status.installed:
         _cmd, _detail = _firewall_install_fix(_t)
         result.alert(
             message=_t("prerequisites.firewall_missing"),

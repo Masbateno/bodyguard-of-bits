@@ -220,6 +220,7 @@ def check_ports(
     ufw_active: bool = True,
     firewalld_active: bool = False,
     t: TranslationFunc | None = None,
+    netfilter_active: bool = False,
 ) -> CheckResult:
     """
     Evaluate listening ports and return findings.
@@ -330,6 +331,14 @@ def check_ports(
                         key="ports.uncovered_firewalld",
                     )
                     continue
+                # v0.24.1: same for a raw nftables/iptables ruleset whose
+                # inbound default is DROP/REJECT — "no active firewall" was false.
+                if netfilter_active:
+                    result.info(
+                        message=_t("ports.uncovered_netfilter", port=pp_info),
+                        key="ports.uncovered_netfilter",
+                    )
+                    continue
                 result.info(
                     message=_t("ports.uncovered_ufw_inactive", port=pp_info),
                     key="ports.uncovered_ufw_inactive",
@@ -391,12 +400,20 @@ def check_ports(
                     key = "ports.uncovered_bound_address_deny"
                 elif firewalld_active:
                     key = "ports.uncovered_bound_address_firewalld"
+                elif netfilter_active:
+                    key = "ports.uncovered_bound_address_netfilter"
                 else:
                     key = "ports.uncovered_bound_address"
                 result.info(message=_t(key, port=pp, address=bound.address), key=key)
 
     if not has_uncovered_public and ufw_active:
-        result.ok(message=_t("ports.all_covered"), key="ports.all_covered")
+        # v0.24.1: under a deny/reject default, a port with no rule is covered
+        # by the policy, not by "a UFW rule" (SSH on 0.0.0.0:22 with no rule
+        # was reported as covered by one).
+        if default_incoming_policy in ("deny", "reject"):
+            result.ok(message=_t("ports.all_covered_policy"), key="ports.all_covered")
+        else:
+            result.ok(message=_t("ports.all_covered"), key="ports.all_covered")
 
     return result
 

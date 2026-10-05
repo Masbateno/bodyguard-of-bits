@@ -437,6 +437,27 @@ Enfin : une garde (`tests/test_vXXXX_<check>.py`), sa mutation dans
 compte de fichiers tests dans SNAPSHOT). Le sweep donne les valeurs live exactes ; un
 nombre coïncident à côté d'un nom non surveillé va dans le `_COINCIDENCES` du sweep.
 
+## 10. Glossaire
+
+Les mots que ce projet emploie pour les parties d'un audit, chacun avec le code
+qui le définit. Ils ne sont pas interchangeables : « section » et « check » en
+particulier se disent souvent l'un pour l'autre, et une phrase qui les mélange
+se trompe en général sur l'un des deux.
+
+| Terme | Sens | Où il vit |
+|---|---|---|
+| **module de check** | Un fichier sous `bob/checks/` qui collecte un sujet et le juge (le compteur de SNAPSHOT). Un module peut servir plusieurs sections. | `bob/checks/*.py`, `bob/checks/ssh/` |
+| **snapshot** | Ce qu'un module a lu sur l'hôte, collecté par `from_system()`, qui ne lève jamais d'exception. Les tests le construisent à la main. | dataclasses `XxxSnapshot` |
+| **check** | La fonction pure `check_xxx(snapshot, t)` qui transforme un snapshot en `CheckResult`. Elle ne lit rien sur l'hôte. | fonctions `check_*` |
+| **section** | Une étape nommée d'un audit, avec son propre titre à l'écran ; ce que `--check` et `--skip` sélectionnent. Le runner applique le `CheckResult` de chaque section sous ce nom. | `emit_section()`, `engine.apply(…, section=…)` dans `bob/runner.py` |
+| **constat** (finding) | Une ligne d'un `CheckResult` : un niveau (OK / INFO / WARN / ALERT), une clé, un message, et au besoin un détail, une commande et une déduction. | `Finding`, `FindingLevel` dans `bob/scoring.py` |
+| **clé** | L'identifiant pointé d'un constat, `<préfixe>.<nom>` (`ssh.password_auth`). C'est ce qu'indexent `--explain`, `ignore.yml`, la table CIS et la table des domaines. | chaque argument `key=` |
+| **déduction** | Les points qu'un constat retire au score de son domaine. Une INFO n'en porte jamais. | `warn_with_deduction`, `alert_with_deduction`, `add_deduction` |
+| **plafond** (cap) | Une borne haute qu'un constat impose au score (un pare-feu inactif le plafonne à 3). | `CheckResult.set_cap` |
+| **clé de visibilité** | Une clé qui dit qu'une section n'a pas pu être lue. Sa présence fait du score un plafond (`≤ N/10`) — inconnu n'est pas propre. | `VISIBILITY_KEYS` dans `bob/visibility.py` |
+| **domaine** | L'un des six périmètres scorés — pare-feu & réseau, exposition & services, contrôle d'accès, durcissement système, santé & résilience, détection des menaces — chacun noté de 0 à 10 ; une clé y appartient par son préfixe. | `DOMAINS`, `_PREFIX_TO_DOMAIN` dans `bob/domain_scores.py` |
+| **groupe** | Le titre à l'écran qui rassemble les sections d'un domaine. Depuis v0.20.0, groupes et domaines sont les mêmes six. | `emit_group()` dans `bob/runner.py` |
+
 ---
 
 © 2026 Cédric Clauzel

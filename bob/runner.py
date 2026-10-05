@@ -32,7 +32,13 @@ from bob.checks import _ufw
 from bob.checks.ddns import DdnsSnapshot, check_ddns, ddns_effective_context
 from bob.checks.auth_log import AuthLogSnapshot, check_auth_log
 from bob.checks.docker import DockerSnapshot, check_docker
-from bob.checks.firewall import FirewallStatus, check_firewall, check_rules, check_ufw_logging
+from bob.checks.firewall import (
+    FirewallStatus,
+    check_firewall,
+    check_rules,
+    check_ufw_logging,
+    resolve_firewall_posture,
+)
 from bob.checks._firewalld import FirewalldStatus
 from bob.checks.iptables_nftables import IptablesNftSnapshot, check_iptables_nftables
 from bob.checks.umask import UmaskSnapshot, check_umask
@@ -390,6 +396,7 @@ class ChecksResult(NamedTuple):
     ipv6_snapshot:      IPv6Snapshot
     fw_active:          bool = False
     fw_policy:          str  = "unknown"
+    fw_backend:         str  = ""
     network_context:    str  = "local"
     # v0.14.1: sections whose check raised and were degraded rather than
     # aborting the whole audit (see ``_sec``). Machine-readable mirror of the
@@ -674,12 +681,17 @@ def run_checks(
     # demand UFW on a host an nftables/iptables ruleset already protects. Only
     # probed in that edge case — a one-off ``nft list ruleset`` on a host that
     # would otherwise be mis-flagged, not a cost on the common path.
+    # v0.24.1: also when UFW is installed but inactive — Ubuntu's default state.
     _netfilter_protective: bool | None = None
-    if not fw_status.installed and not fwd_status.active:
+    _netfilter_policy: str | None = None
+    if not fw_status.active and not fwd_status.active:
         _nf_snap = IptablesNftSnapshot.from_system()
         _netfilter_protective = (
             _nf_snap.backend != "none" and _nf_snap.input_policy in ("DROP", "REJECT")
         )
+        if _netfilter_protective:
+            _netfilter_policy = _nf_snap.input_policy
+    fw_posture = resolve_firewall_posture(fw_status, fwd_status, _netfilter_policy)
     fw_result  = check_firewall(
         fw_status, firewalld=fwd_status,
         netfilter_protective=_netfilter_protective, t=t,
@@ -775,7 +787,8 @@ def run_checks(
     with _core("ipv6"):
         ipv6_snapshot = IPv6Snapshot.from_system()
     _sec("ipv6", ipv6_snapshot, check_ipv6, ufw_active=fw_status.active,
-         firewalld_active=fwd_status.active)
+         firewalld_active=fwd_status.active,
+         netfilter_active=fw_posture.backend == "netfilter")
 
     # =========================================================================
     # GROUP 2 — EXPOSITION & SERVICES
@@ -797,7 +810,7 @@ def run_checks(
     # and later in CHECK 11 (ssh_exposed flag).
     _ssh_exposed = (
         network_context != "local"
-        or fw_status.incoming_policy not in ("deny", "reject")
+        or fw_posture.policy not in ("deny", "reject")
     )
 
     emit_section("services")
@@ -848,6 +861,7 @@ def run_checks(
             snap, network_context, t, report, config.verbose,
             quiet=config.quiet, ufw_active=fw_status.active,
             firewalld_active=fwd_status.active,
+            netfilter_active=fw_posture.backend == "netfilter",
         )
         engine.apply(svc_result, section="services")
         # v0.17.1 — only a service BOB judged *active* has really had its ports
@@ -885,6 +899,7 @@ def run_checks(
         default_incoming_policy=fw_status.incoming_policy,
         ufw_active=fw_status.active,
         firewalld_active=fwd_status.active,
+        netfilter_active=fw_posture.backend == "netfilter",
         t=t,
     )
     engine.apply(ports_result, section="ports")
@@ -1190,11 +1205,14 @@ def run_checks(
         net_snapshot=net_snapshot,
         hardening_snapshot=hardening_snapshot,
         ipv6_snapshot=ipv6_snapshot,
-        # A firewall is active if UFW *or* firewalld is running — without the
-        # firewalld arm, the posture floor lifted a firewalld-protected host's
-        # risk level to HIGH ("firewall inactive"), measured on Fedora 44.
-        fw_active=fw_status.active or fwd_status.active,
-        fw_policy=fw_status.incoming_policy or "unknown",
+        # A firewall is active if UFW, firewalld or a filtering raw ruleset is
+        # — without the firewalld arm, the posture floor lifted a
+        # firewalld-protected host's risk level to HIGH ("firewall inactive"),
+        # measured on Fedora 44; v0.24.1 adds the raw-ruleset arm and the
+        # backend's own default policy (it was UFW's, "unknown" elsewhere).
+        fw_active=fw_posture.active,
+        fw_policy=fw_posture.policy,
+        fw_backend=fw_posture.backend,
         network_context=network_context,
         degraded_sections=tuple(_degraded),
     )

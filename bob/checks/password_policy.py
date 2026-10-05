@@ -5,6 +5,10 @@ Checks the system password policy at two levels:
   1. /etc/login.defs  — global password aging settings (PASS_MAX_DAYS, etc.).
   2. PAM              — password quality enforcement (pam_pwquality/pam_cracklib)
                         and minimum length configuration.
+  3. Hashing (v0.24.0) — the algorithm new passwords are stored with:
+                        login.defs ENCRYPT_METHOD and every pam_unix stack (the
+                        weakest one wins); MD5/DES/bigcrypt → WARN; BusyBox
+                        passwd, which reads neither, is reported as built-in.
 
 A system without pam_pwquality or pam_cracklib in the PAM password stack has no
 complexity enforcement — users can set trivially guessable passwords.

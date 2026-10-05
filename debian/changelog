@@ -1,3 +1,25 @@
+bodyguard-of-bits (0.24.1-1) unstable; urgency=medium
+
+  * Patch: the summaries read the firewall that is actually filtering, SSH
+    remediation lands where sshd reads it, and four false findings go away.
+    No scoring-formula, JSON-schema, CSV-column-order or section change; the
+    score rises on hosts that carried one of the false deductions.
+  * Firewall posture is backend-neutral: firewalld (zone target read) and a raw
+    nftables/iptables default-deny ruleset are credited in the attack surface,
+    risk floor, implicit-policy note, SSH context, services, ports and IPv6 --
+    also when UFW is installed but inactive.
+  * SSH --fix for 11 directives writes a drop-in (or the top of sshd_config,
+    before any Match block), checks it with sshd -t before restarting, and works
+    with BusyBox sed (Alpine); Samba fix commands likewise.
+  * APT phased-rollout and kept-back updates are INFO, not an inconsistent
+    state; a unit skipped by its own systemd start condition is INFO, not
+    "enabled but not running"; FUSE mounts no longer make the --exhaustive
+    world-writable sweep partial; no UFW claims on a host without UFW (IPv6).
+  * Field-validated on real Debian 13, Linux Mint 22.3, Fedora 44 and
+    Alpine 3.24.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 05 Oct 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.24.0-1) unstable; urgency=medium
 
   * Minor, BREAKING: new checks across accounts, kernel, privileges, supply

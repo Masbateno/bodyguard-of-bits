@@ -81,6 +81,13 @@ class UpdatesSnapshot:
     unattended_enabled:     bool = False
     apt_cache_age_days:     int | None = None
     upgradable_count:       int | None = None
+    #: v0.24.1 — packages ``apt-get -s dist-upgrade`` lists but will not install
+    #: now: deferred by Ubuntu's phased rollout, or kept back. None when the
+    #: simulation did not run (fallback path). Measured on the Mint desktop:
+    #: 16 upgradable, 16 "deferred due to phasing", 0 to install — reported as
+    #: "inconsistent APT state" until this was read.
+    apt_phased:             int | None = None
+    apt_kept_back:          int | None = None
     manager:                str = ""
     # Whether this system can classify a pending update as "security". apt with a
     # -security suite, dnf and zypper can; pacman, apk and a rolling apt distro
@@ -110,7 +117,8 @@ class UpdatesSnapshot:
         if _command_exists("apt-get"):
             snap.manager = "apt"
             snap.apt_available = True
-            snap.pending_security, snap.pending_regular = _collect_pending_updates()
+            (snap.pending_security, snap.pending_regular,
+             snap.apt_phased, snap.apt_kept_back) = _scan_dist_upgrade()
             snap.unattended_installed, snap.unattended_enabled = _check_unattended()
             snap.apt_cache_age_days = _apt_cache_age_days()
             snap.upgradable_count = _count_upgradable()
@@ -156,8 +164,38 @@ def _apt_has_security_channel() -> bool:
 
 
 def _collect_pending_updates() -> tuple[list[str], list[str]]:
+    """(security, regular) pending updates — see ``_scan_dist_upgrade``."""
+    security, regular, _phased, _kept = _scan_dist_upgrade()
+    return security, regular
+
+
+#: Headers ``apt-get -s dist-upgrade`` prints (LC_ALL=C) above an indented list
+#: of packages it will not install now.
+_WITHHELD_HEADERS = {
+    "The following upgrades have been deferred due to phasing:": "phased",
+    "The following packages have been kept back:": "kept",
+}
+
+
+def _count_withheld(lines: "list[str]") -> "tuple[int, int]":
+    """(phased, kept back) package counts from a dist-upgrade simulation."""
+    counts = {"phased": 0, "kept": 0}
+    current = None
+    for line in lines:
+        if line in _WITHHELD_HEADERS:
+            current = _WITHHELD_HEADERS[line]
+        elif current and line.startswith(" "):
+            counts[current] += len(line.split())
+        else:
+            current = None
+    return counts["phased"], counts["kept"]
+
+
+def _scan_dist_upgrade() -> "tuple[list[str], list[str], int | None, int | None]":
     """
-    Return (security, regular) pending-update package names for apt.
+    Return (security, regular, phased, kept_back) for apt: pending-update
+    package names, then how many upgradable packages dist-upgrade withholds
+    (``None``, ``None`` when only the ``apt list`` fallback answered).
 
     Primary source is ``apt-get -s dist-upgrade`` — plain ``upgrade`` is
     conservative (it refuses anything that would install a new package or
@@ -185,13 +223,17 @@ def _collect_pending_updates() -> tuple[list[str], list[str]]:
     """
     res = run_result("apt-get", "-s", "dist-upgrade", timeout=90)
     if res.ok:
-        return _classify_apt_lines(res.stdout.splitlines(), _pkg_from_inst)
+        lines = res.stdout.splitlines()
+        security, regular = _classify_apt_lines(lines, _pkg_from_inst)
+        phased, kept = _count_withheld(lines)
+        return security, regular, phased, kept
 
     # dist-upgrade failed or timed out — do NOT read its empty output as zero.
     fallback = run_result("apt", "list", "--upgradable", timeout=30)
     if fallback.ok:
-        return _classify_apt_lines(fallback.stdout.splitlines(), _pkg_from_list)
-    return [], []
+        security, regular = _classify_apt_lines(fallback.stdout.splitlines(), _pkg_from_list)
+        return security, regular, None, None
+    return [], [], None, None
 
 
 def _pkg_from_inst(line: str) -> "str | None":
@@ -527,9 +569,21 @@ def check_updates(
 
         # If apt list reports upgradable packages while dist-upgrade returned
         # zero, the simulation likely failed silently (locked, broken state, etc.).
+        # v0.24.1: unless dist-upgrade said why — Ubuntu's phased rollout defers
+        # an update until this machine's phase opens, and a held package is kept
+        # back. Both are apt working as designed, not an inconsistent state.
+        withheld = (snapshot.apt_phased or 0) + (snapshot.apt_kept_back or 0)
+        if snapshot.apt_phased:
+            result.info(message=_t("updates.phased_deferred", count=snapshot.apt_phased),
+                        detail=_t("updates.phased_deferred_detail"),
+                        key="updates.phased_deferred")
+        if snapshot.apt_kept_back:
+            result.info(message=_t("updates.kept_back", count=snapshot.apt_kept_back),
+                        detail=_t("updates.kept_back_detail"),
+                        key="updates.kept_back")
         if (
             snapshot.upgradable_count is not None
-            and snapshot.upgradable_count > 0
+            and snapshot.upgradable_count > withheld
             and not security
             and not regular
         ):

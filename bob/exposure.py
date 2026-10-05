@@ -29,6 +29,7 @@ def compute_exposure(
     fw_active: bool,
     fw_policy: str,
     t,
+    fw_backend: str = "ufw",
 ) -> list[ExposureItem]:
     """
     Return a list of ExposureItems describing the machine's real attack surface.
@@ -37,9 +38,13 @@ def compute_exposure(
         engine:          Finalized ScoreEngine.
         ports_snapshot:  PortsSnapshot from the current audit run.
         network_context: "public" | "local" from detect_network_context().
-        fw_active:       Whether UFW is currently active.
-        fw_policy:       UFW incoming policy ("deny", "allow", "reject", "unknown").
+        fw_active:       Whether a firewall filters inbound traffic — UFW,
+                         firewalld or a raw nftables/iptables ruleset.
+        fw_policy:       That firewall's inbound default ("deny", "allow",
+                         "reject", "unknown").
         t:               Translation function.
+        fw_backend:      "ufw", "firewalld" or "netfilter" (see
+                         ``bob.checks.firewall.FirewallPosture``).
     """
     from bob.scoring import FindingLevel
 
@@ -72,11 +77,20 @@ def compute_exposure(
         ))
 
     # --- Firewall ---
+    _backend_label = {"netfilter": "nftables/iptables"}.get(fw_backend, fw_backend)
     if not fw_active:
         items.append(ExposureItem(
             label=t("exposure.firewall"),
             icon="✖", color="alert",
             detail=t("exposure.firewall_inactive"),
+        ))
+    elif fw_policy == "unknown":
+        # v0.24.1: an unread default was printed as "default policy is ALLOW —
+        # no filtering" — on every firewalld host, whose policy BOB never read.
+        items.append(ExposureItem(
+            label=t("exposure.firewall"),
+            icon="⚠", color="warn",
+            detail=t("exposure.firewall_policy_unread", backend=_backend_label),
         ))
     elif fw_policy not in ("deny", "reject"):
         items.append(ExposureItem(
@@ -85,7 +99,10 @@ def compute_exposure(
             detail=t("exposure.firewall_allow_all"),
         ))
     else:
-        policy_str = t("exposure.firewall_policy", policy=fw_policy)
+        policy_str = (t("exposure.firewall_policy", policy=fw_policy)
+                      if fw_backend == "ufw" else
+                      t("exposure.firewall_policy_backend", policy=fw_policy,
+                        backend=_backend_label))
         items.append(ExposureItem(
             label=t("exposure.firewall"),
             icon="✔", color="ok",

@@ -19,11 +19,12 @@ Usage:
 from __future__ import annotations
 
 import re
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from bob.checks import _ufw
-from bob.checks._run import TranslationFunc, _identity_t, _run, run_result
+from bob.checks._run import TranslationFunc, _identity_t, _run, path_exists, run_result
 from bob.scoring import CheckResult
 
 
@@ -65,6 +66,12 @@ class IPv6Snapshot:
     ipv6_listeners:      list[str]  = field(default_factory=list)
     ufw_v6_covered:      list[str]  = field(default_factory=list)
     has_global_ipv6:     bool       = False
+    #: v0.24.1 — UFW exists on this host (its binary or /etc/default/ufw). An
+    #: absent /etc/default/ufw reads as "IPv6 managed" — ufw's own default —
+    #: which is only a fact where ufw is installed. On a host without it (Debian
+    #: with nftables, Alpine, Arch) BOB said "UFW IPv6 configuration matches
+    #: kernel IPv6 state" and "Port 22/tcp … without a UFW (v6) rule".
+    ufw_present:         bool       = True
 
     @classmethod
     def from_system(cls) -> "IPv6Snapshot":
@@ -77,6 +84,8 @@ class IPv6Snapshot:
         """
         kernel_ipv6_enabled, kernel_ipv6_readable = _read_kernel_ipv6()
         ufw_ipv6_enabled    = _read_ufw_ipv6()
+        ufw_present         = (shutil.which("ufw") is not None
+                               or path_exists(Path("/etc/default/ufw")))
         has_global_ipv6     = _read_global_ipv6()
 
         ss = run_result("ss", "-tulnp")
@@ -95,6 +104,7 @@ class IPv6Snapshot:
             ipv6_listeners=ipv6_listeners,
             ufw_v6_covered=ufw_v6_covered,
             has_global_ipv6=has_global_ipv6,
+            ufw_present=ufw_present,
         )
 
 
@@ -105,7 +115,7 @@ class IPv6Snapshot:
 _MAX_PORT_DEDUCTIONS = 3   # cap per-port deductions to avoid score collapse
 
 
-def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None, firewalld_active: bool = False) -> CheckResult:
+def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None, firewalld_active: bool = False, netfilter_active: bool = False) -> CheckResult:
     """
     Check IPv6 firewall consistency.
 
@@ -127,6 +137,25 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
             detail=_t("ipv6.kernel_state_unknown_detail"),
             key="ipv6.kernel_state_unknown",
         )
+
+    # v0.24.1: no UFW at all, and firewalld not running — UFW's IPv6 setting
+    # describes nothing here, so neither "matches kernel" nor "no UFW (v6) rule"
+    # is a statement about this host. Say which filter governs the listeners and
+    # claim no more: BOB does not read which address families a raw ruleset's
+    # tables cover (inet and ip6 filter IPv6, ip does not).
+    if not snapshot.ufw_present and not firewalld_active:
+        if snapshot.ipv6_listeners:
+            key = "ipv6.netfilter_v6" if netfilter_active else "ipv6.no_firewall_v6"
+            result.info(message=_t(key, count=len(snapshot.ipv6_listeners),
+                                   ports=", ".join(snapshot.ipv6_listeners)),
+                        key=key)
+        elif not snapshot.listeners_readable:
+            result.info(message=_t("ipv6.listeners_unknown"),
+                        detail=_t("ipv6.listeners_unknown_detail"),
+                        key="ipv6.listeners_unknown")
+        else:
+            result.info(message=_t("ipv6.no_ufw_no_listeners"), key="ipv6.no_ufw_no_listeners")
+        return result
 
     # Unknown heads the chain rather than sitting beside it. Falling through
     # reached the final `else`, which states that kernel and UFW agree — one

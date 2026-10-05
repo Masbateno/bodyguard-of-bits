@@ -376,10 +376,10 @@ def test_helper_directives_carry_cmd_template():
     helper invokes ``warn_with_deduction`` / ``alert_with_deduction`` via
     ``**kwargs`` — so the AST guard above cannot see individual keys.
     Instead, this test verifies the underlying table has a non-None
-    ``cmd_template`` for every entry, which guarantees the helper passes
-    cmd= for every emitted finding.
+    ``fix`` directive for every entry (v0.24.1: it was a ``cmd_template``),
+    which guarantees the helper passes cmd= for every emitted finding.
 
-    If a future contributor adds a new entry without a cmd_template, the
+    If a future contributor adds a new entry without a fix, the
     test fails and points them at the right place to fix.
     """
     from bob.checks.ssh._directives import _BAD_DIRECTIVES
@@ -387,11 +387,11 @@ def test_helper_directives_carry_cmd_template():
     missing = [
         (rule.name, rule.key)
         for rule in _BAD_DIRECTIVES
-        if getattr(rule, "cmd_template", None) in (None, "")
+        if getattr(rule, "fix", None) in (None, "")
     ]
     assert not missing, (
-        f"\n{len(missing)} _BadDirective entry(ies) without cmd_template:\n"
+        f"\n{len(missing)} _BadDirective entry(ies) without fix:\n"
         + "\n".join(f"  - {name} (key={key})" for name, key in missing)
-        + "\n\nAdd a cmd_template field to each entry; the helper passes "
+        + "\n\nAdd a fix directive to each entry; the helper renders it "
         "it through as cmd= to the actionable call."
     )

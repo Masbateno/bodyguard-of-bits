@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import glob as _glob
+import ipaddress
 import json
 import logging
 import os
@@ -88,6 +89,13 @@ class ServiceState(Enum):
     # its port is held by systemd on its behalf. Distinct from INACTIVE_ENABLED,
     # which v0.18.0 (wrongly, for this case) called a crash or failed start.
     SOCKET_ACTIVATED  = "socket_activated"
+    # v0.24.1 — enabled, inactive, and systemd skipped it on purpose: the unit's
+    # own Condition…=/ExecCondition= did not hold (ConditionResult=no). Measured
+    # on the Mint desktop: inetutils-inetd is enabled with
+    # ExecCondition=grep -qr ^[0-9A-Za-z/] /etc/inetd.conf /etc/inetd.d/, finds
+    # nothing to serve and is skipped ("Result: exec-condition") — reported as
+    # "Telnet Server enabled at boot but not running", −1, with crash wording.
+    CONDITION_UNMET   = "condition_unmet"
     UNKNOWN           = "unknown"
 
     @property
@@ -100,7 +108,8 @@ class ServiceState(Enum):
 
     @property
     def is_inactive(self) -> bool:
-        return self in (ServiceState.INACTIVE_ENABLED, ServiceState.INACTIVE_DISABLED)
+        return self in (ServiceState.INACTIVE_ENABLED, ServiceState.INACTIVE_DISABLED,
+                        ServiceState.CONDITION_UNMET)
 
 class Exposure(Enum):
     """UFW exposure level for a single port."""
@@ -114,10 +123,13 @@ class Exposure(Enum):
 
 # Resolved after ServiceState is defined
 _STATE_PRIORITY = {
-    ServiceState.ACTIVE_ENABLED:    5,
-    ServiceState.ACTIVE_DISABLED:   4,
-    ServiceState.SOCKET_ACTIVATED:  3,
-    ServiceState.INACTIVE_ENABLED:  2,
+    ServiceState.ACTIVE_ENABLED:    6,
+    ServiceState.ACTIVE_DISABLED:   5,
+    ServiceState.SOCKET_ACTIVATED:  4,
+    ServiceState.INACTIVE_ENABLED:  3,
+    # Below a genuinely stopped sibling: one unit skipped by design must not
+    # hide another that failed.
+    ServiceState.CONDITION_UNMET:   2,
     ServiceState.INACTIVE_DISABLED: 1,
     ServiceState.UNKNOWN:           0,
 }
@@ -151,6 +163,9 @@ class ServiceSnapshot:
     # v0.18.1 — the active .socket/.path/.timer unit that starts this service
     # on demand, when state is SOCKET_ACTIVATED. "" otherwise.
     activation_trigger: str = ""
+    # v0.24.1 — for an OPEN_LOCAL port, the From column of the UFW rule that
+    # allows it ("192.168.1.0/24", "192.168.1.11"). {} when not OPEN_LOCAL.
+    local_sources: dict[str, str] = field(default_factory=dict)
 
     @property
     def label(self) -> str:
@@ -194,6 +209,10 @@ class ServiceSnapshot:
                 port: _classify_exposure(port, ufw_rules, app_profiles)
                 for port in ports
             }
+            local_sources = {
+                port: _allow_rule_source(port, ufw_rules, app_profiles)
+                for port in ports if exposures[port] == Exposure.OPEN_LOCAL
+            }
 
             # Override exposure for ports bound exclusively to loopback
             if loopback_ports:
@@ -214,6 +233,7 @@ class ServiceSnapshot:
             trigger   = ""
             ports     = list(service.ports)
             exposures = {}
+            local_sources = {}
 
         return cls(
             service=service,
@@ -223,6 +243,7 @@ class ServiceSnapshot:
             activation_trigger=trigger,
             ports=ports,
             exposures=exposures,
+            local_sources=local_sources,
         )
 
     @classmethod
@@ -308,6 +329,7 @@ def check_services(
     ufw_active: bool = True,
     t: TranslationFunc | None = None,
     firewalld_active: bool = False,
+    netfilter_active: bool = False,
 ) -> CheckResult:
     """
     Evaluate service snapshots and return findings and deductions.
@@ -326,7 +348,8 @@ def check_services(
 
     for snap in snapshots:
         _check_single_service(snap, result, network_context, ufw_active, _t,
-                              firewalld_active=firewalld_active)
+                              firewalld_active=firewalld_active,
+                              netfilter_active=netfilter_active)
 
     return result
 
@@ -337,6 +360,7 @@ def _check_single_service(
     ufw_active: bool,
     _t,
     firewalld_active: bool = False,
+    netfilter_active: bool = False,
 ) -> None:
     """Evaluate a single service snapshot and add findings to result."""
 
@@ -373,6 +397,16 @@ def _check_single_service(
                 message=_t("services.state.inactive_disabled", label=snap.label),
                 key="services.state.inactive_disabled",
             )
+        return
+
+    # v0.24.1: enabled, and skipped by systemd because its own start condition
+    # did not hold — the unit's design, not a gap between intent and reality.
+    if snap.state == ServiceState.CONDITION_UNMET:
+        result.info(
+            key="services.state.condition_unmet",
+            message=_t("services.state.condition_unmet", label=snap.label),
+            detail=_t("services.state.condition_unmet_detail"),
+        )
         return
 
     # Active but not enabled at boot
@@ -438,7 +472,8 @@ def _check_single_service(
     # Analyse each port exposure
     for port, exposure in snap.exposures.items():
         _check_port_exposure(snap, port, exposure, result, network_context, ufw_active, _t,
-                             firewalld_active=firewalld_active)
+                             firewalld_active=firewalld_active,
+                             netfilter_active=netfilter_active)
 
 def _check_port_exposure(
     snap: ServiceSnapshot,
@@ -449,6 +484,7 @@ def _check_port_exposure(
     ufw_active: bool,
     _t,
     firewalld_active: bool = False,
+    netfilter_active: bool = False,
 ) -> None:
     """Add findings for a single port exposure."""
 
@@ -459,6 +495,10 @@ def _check_port_exposure(
     # a per-port allow/block it has not measured.
     if firewalld_active and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):
         exp_key = f"services.exposure.{exposure.value}_firewalld"
+    # v0.24.1: a raw nftables/iptables ruleset with a default-deny inbound
+    # policy is the filter here; "no active firewall protection" was false.
+    elif netfilter_active and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):
+        exp_key = f"services.exposure.{exposure.value}_netfilter"
     elif not ufw_active and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):
         exp_key = f"services.exposure.{exposure.value}_ufw_inactive"
     else:
@@ -494,11 +534,23 @@ def _check_port_exposure(
         )
 
     elif exposure == Exposure.OPEN_LOCAL:
-        result.warn(
-            message=port_msg,
-            nature="structural",
-            key="services.exposure.open_local",
-        )
+        # v0.24.1: a rule whose source is one address is not "restricted to the
+        # local network", and the advice to restrict it further does not apply
+        # (measured on the Mint desktop: Samba 445/139 ALLOW IN 192.168.1.11).
+        source = (getattr(snap, "local_sources", None) or {}).get(port, "")
+        if _single_host(source):
+            result.info(
+                message=_t("services.port_exposure", port=port,
+                           exposure=_t("services.exposure.open_local_host",
+                                       source=source.replace("(v6)", "").strip())),
+                key="services.exposure.open_local_host",
+            )
+        else:
+            result.warn(
+                message=port_msg,
+                nature="structural",
+                key="services.exposure.open_local",
+            )
 
     elif exposure == Exposure.DENY:
         result.ok(message=port_msg, key="services.exposure.deny")
@@ -675,6 +727,8 @@ def _detect_single_unit_state(svc_name: str) -> ServiceState:
         # as such on the Pi Zero W (cups.service inactive, cups.socket active).
         if _active_trigger(svc_name):
             return ServiceState.SOCKET_ACTIVATED
+        if _start_condition_unmet(svc_name):
+            return ServiceState.CONDITION_UNMET
         return ServiceState.INACTIVE_ENABLED
     if active in ("inactive", "failed", "activating"):
         # A .service unit can be static or disabled while its .socket/.path/
@@ -696,6 +750,18 @@ def _detect_single_unit_state(svc_name: str) -> ServiceState:
     # service on them used to come back UNKNOWN. Asked last, so a systemd host
     # that also happens to carry OpenRC scripts keeps systemd's answer.
     return _openrc_unit_state(svc_name)
+
+
+def _start_condition_unmet(svc_name: str) -> bool:
+    """systemd skipped *svc_name* because its own start condition did not hold.
+
+    ``ConditionResult=no`` covers both ``Condition…=`` and ``ExecCondition=``
+    (the latter also sets ``Result=exec-condition``). An unreadable answer is
+    not a skip: the caller then keeps "enabled but not running".
+    """
+    out = _run("systemctl", "show", svc_name, "-p", "ConditionResult", "-p", "Result")
+    props = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+    return props.get("ConditionResult") == "no" or props.get("Result") == "exec-condition"
 
 
 def _openrc_unit_state(svc_name: str) -> ServiceState:
@@ -1082,6 +1148,45 @@ def _port_from_directive(value: str) -> "str | None":
     if not 1 <= number <= 65535:
         return None
     return str(number)
+
+
+def _allow_rule_source(
+    port: str,
+    ufw_rules: str,
+    app_profiles: "dict[str, list[str]] | None" = None,
+) -> str:
+    """The From column of the first UFW rule that covers *port*, or "".
+
+    Same first-match walk as ``_classify_exposure``; used only to say *which*
+    local source an OPEN_LOCAL port is restricted to.
+    """
+    port_num, _, proto = port.partition("/")
+    if not port_num.isdigit():
+        return ""
+    for line in ufw_rules.splitlines():
+        rule = _ufw.parse_rule(line)
+        if rule is None or not rule.to_col:
+            continue
+        ranges = _ufw.to_column_ranges(rule.to_col, app_profiles)
+        if _ufw.ranges_cover(ranges, int(port_num), proto or "tcp"):
+            # The parsed From column still carries the direction and the
+            # rule's comment: "IN    192.168.1.11    # Samba".
+            words = rule.from_col.split("#", 1)[0].split()
+            if words and words[0] in ("IN", "OUT", "FWD"):
+                words = words[1:]
+            return " ".join(words)
+    return ""
+
+
+def _single_host(source: str) -> bool:
+    """*source* (a UFW From column) names exactly one address."""
+    token = source.replace("(v6)", "").split()
+    if len(token) != 1:
+        return False
+    try:
+        return ipaddress.ip_network(token[0], strict=False).num_addresses == 1
+    except ValueError:
+        return False
 
 
 def _classify_exposure(

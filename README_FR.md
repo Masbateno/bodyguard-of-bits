@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.24.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.24.1-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -133,7 +133,7 @@ $ sudo bob -d
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.24.0  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.24.1  │  Auditeur de durcissement Linux                              ║
 ║  Système       : Linux Mint 22.3                                             ║
 ║  Noyau         : 6.17.0-23-generic                                           ║
 ║  UFW           : 0.36.2                                                      ║
@@ -165,17 +165,17 @@ Chaque WARN/ALERT affiche une référence CIS (quand applicable), une commande d
 
 | Domaine | Ce qu'il couvre |
 |---------|----------------|
-| **Pare-feu** | Règles UFW, iptables/nftables (quand UFW inactif), cohérence IPv6, exposition des ports |
+| **Pare-feu** | Règles UFW, zones firewalld, iptables/nftables (quand UFW ne tourne pas), cohérence IPv6, exposition des ports |
 | **SSH** | Durcissement sshd_config — PermitRootLogin, qualité des clés, timeouts, forwarding |
 | **Durcissement noyau** | Paramètres sysctl (dont `fs.protected_*`), surface d'attaque du noyau (eBPF non privilégié, événements perf, espaces de noms utilisateur), vulnérabilités CPU rapportées par le noyau et IOMMU, modules noyau, Secure Boot, firmware/microcode |
 | **Boot & stockage** | Mot de passe/permissions de config GRUB, options de montage (nodev/nosuid/noexec), chiffrement disque LUKS, politique de core dumps, kexec/lockdown noyau, hidepid de `/proc` |
 | **Services** | 38 services connus avec classification du risque ; détection du contournement pare-feu Docker ; exposition réseau du service d'impression CUPS |
 | **Permissions fichiers** | Audit SUID/SGID, capabilities de fichiers, fichiers sensibles, sudoers, permissions des règles polkit ; fichiers modifiables par tous et sans propriétaire (`--exhaustive`) |
 | **Comptes utilisateurs** | Comptes expirés, politique et algorithme de hachage des mots de passe, login.defs, PAM, verrouillage de compte (pam_faillock), restriction de su (pam_wheel / mode du binaire / su de BusyBox), permissions des répertoires personnels et de `.netrc`, UID dupliqués |
-| **Mises à jour & détection** | Mises à jour apt, authenticité des paquets (vérification des signatures / dépôts), politique crypto système, intégrité des fichiers de paquets (`--exhaustive`), règles auditd, Fail2ban, ClamAV, AppArmor/SELinux, intégrité AIDE/Tripwire, rkhunter, SMART, firmware/microcode |
+| **Mises à jour & détection** | Mises à jour en attente (apt, dnf, zypper, pacman, apk), authenticité des paquets (vérification des signatures / dépôts), politique crypto système, intégrité des fichiers de paquets (`--exhaustive`), règles auditd, Fail2ban, ClamAV, AppArmor/SELinux, intégrité AIDE/Tripwire, rkhunter, SMART, firmware/microcode |
 | **Opérations** | Rotation des logs, analyse auth.log, synchro NTP, expiration certificats TLS, timers systemd, Samba, tâches cron |
 | **Réseau** | Contexte IP publique, détection du type de réseau (serveur/LAN/VPN), GeoIP optionnel |
-| **Docker** | Durcissement du daemon, conteneurs privilégiés, montages sensibles |
+| **Docker / Podman** | Durcissement du daemon, conteneurs privilégiés, montages sensibles |
 
 ---
 

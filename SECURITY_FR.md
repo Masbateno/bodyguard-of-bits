@@ -217,7 +217,7 @@ Depuis la **v0.7.0**, les plugins s'exécutent dans un **sandbox in-process rest
 
 **Un sandbox Python in-process n'est pas une frontière de sécurité** — c'est une
 couche de défense en profondeur. La communauté Python converge sur cette position
-depuis 2012 (PEP 416, retirée) : un attaquant déterminé peut toujours atteindre
+depuis 2012 (PEP 416, rejetée) : un attaquant déterminé peut toujours atteindre
 les builtins non restreints via la chaîne `__globals__["__builtins__"]` de
 n'importe quel module stdlib autorisé, et aucune mitigation au niveau Python ne
 peut fermer cela sans casser l'usage légitime de ces modules. RestrictedPython

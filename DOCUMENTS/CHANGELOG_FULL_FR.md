@@ -6,6 +6,190 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.24.1] — 05-10-2026
+
+**Une version de correctifs : chaque synthèse lit le pare-feu qui filtre
+réellement, la remédiation SSH atterrit là où sshd la lit, et quatre faux
+constats disparaissent.** Aucun changement de formule de score, de schéma JSON,
+d'ordre des colonnes CSV, de section ni de clé `--explain`. **Le score monte**
+sur un hôte qui portait l'une des fausses déductions retirées ici (§1, §4, §5,
+§6), et le niveau de risque peut baisser sur un hôte filtré par nftables/iptables
+seul (§1). Les commandes `--fix` changent pour 11 directives SSH et pour les
+directives Samba (§2). Trouvé en jugeant point par point une revue externe d'un
+vrai audit 0.24.0, puis mesuré sur l'hôte ; chaque correctif a été validé en A/B
+(0.24.0 contre 0.24.1) sur de vrais Debian 13, Linux Mint 22.3, Fedora 44 et
+Alpine 3.24.
+
+### 1. Une posture de pare-feu indépendante du backend pour chaque synthèse
+
+La section pare-feu crédite firewalld depuis 0.20.2 et un jeu de règles
+nftables/iptables brut en refus par défaut depuis 0.23.0, mais les synthèses
+construites après elle lisaient encore l'état propre d'UFW. Mesuré sur de vrais
+hôtes :
+
+- **Fedora 44, firewalld actif** — la surface d'attaque affichait « ✖ politique
+  par défaut ALLOW — aucun filtrage », et la note de politique implicite parlait
+  de « la politique par défaut d'UFW ».
+- **Debian 13, nftables seul, entrée en DROP** — « Aucun pare-feu actif — tous
+  les ports non filtrés », et le niveau de risque était relevé à HIGH par la règle
+  de posture `firewall_inactive` (aussi dans le `risk` JSON/CSV), alors que la
+  section au-dessus disait `firewall.netfilter_active`.
+- **UFW installé mais inactif, firewalld ou un jeu nft en DROP assurant le
+  filtrage** (le cas Ubuntu) — `firewall.inactive` ALERT −3 et le domaine
+  pare-feu plafonné à 3, alors que l'hôte était filtré.
+
+Le runner résout désormais une seule `FirewallPosture` (`backend` ∈ ufw /
+firewalld / netfilter / aucun, `policy` ∈ deny / reject / allow / unknown) et
+chaque consommateur la lit : la surface d'attaque, le plancher du niveau de
+risque, la note de politique implicite, le contexte d'exposition SSH, et les
+sections services, ports et IPv6. La politique de firewalld est la **cible**
+(target) de sa zone, lue dans `firewall-cmd --list-all` (la valeur en vigueur :
+`default` et `%%REJECT%%` → reject, `DROP` → deny, `ACCEPT` → allow). Une
+politique que BOB n'a pas lue s'affiche désormais « actif (…) — politique
+d'entrée par défaut non lue », jamais « ✖ ALLOW ». Le check pare-feu crédite
+firewalld ou un jeu de règles brut filtrant même quand UFW est installé mais
+inactif.
+
+Mesuré en A/B : Debian nft seul en DROP → « ✔ actif (nftables/iptables) — refus
+par défaut », risque LOW, score inchangé ; UFW inactif + nft en DROP → **score
+8 → 9** (le faux −3 et le plafond du domaine retirés) ; Fedora → « ✔ actif
+(firewalld) — reject », les trois cibles de zone rendues comme ci-dessus, score
+inchangé.
+
+### 2. Une remédiation SSH qui s'applique là où sshd lit
+
+Les huit directives SSH pilotées par table (`PermitEmptyPasswords`,
+`X11Forwarding`, `IgnoreRhosts`, `HostbasedAuthentication`,
+`PermitUserEnvironment`, `StrictModes`, `AllowTcpForwarding`,
+`PubkeyAuthentication`) proposaient encore `sed 's/^#*X yes/X no/'` sur
+`/etc/ssh/sshd_config` : sans effet quand un drop-in fixe la valeur (OpenSSH
+retient la première valeur, et le `50-redhat.conf` de Fedora livre
+`X11Forwarding yes`), et quand l'espacement, le `=` ou la casse diffèrent. Elles
+utilisent désormais le correctif conscient des drop-ins dont les trois autres
+disposent depuis 0.19.0. Les **11** directives :
+
+- écrivent `00-bob-hardening.conf` dans le répertoire de drop-ins quand sshd en
+  inclut un (il est trié en premier, donc il l'emporte), après avoir supprimé
+  toute affectation antérieure à cet endroit ;
+- sinon insèrent la directive **en tête** de `sshd_config`, pas à la fin — une
+  ligne ajoutée en fin de fichier tombe dans un bloc `Match` final, où elle ne
+  s'applique qu'à ce bloc ou, pour `StrictModes`, est refusée et sshd ne démarre
+  plus (mesuré sur Debian) ;
+- lancent `sudo sshd -t` avant le redémarrage, pour qu'une configuration que sshd
+  refuserait ne soit jamais mise en service.
+
+**Le sed de BusyBox** (Alpine) refuse l'adresse `/regex/I` qu'utilisait le
+correctif par drop-in existant (`sed: unsupported command I`) : toute
+remédiation SSH par drop-in, ainsi que les correctifs de directives Samba,
+échouaient dès leur première étape sur Alpine depuis 0.19.0. La correspondance
+insensible à la casse s'écrit désormais avec une classe par lettre (`[Xx]`), que
+les sed GNU et BusyBox acceptent tous deux. Le texte « comment corriger » de
+`--explain` de 19 clés SSH décrit le drop-in.
+
+Mesuré : Debian (un drop-in fixant X11Forwarding yes ; et un fichier principal
+finissant par un bloc `Match`), Fedora sous SELinux en mode enforcing (0 refus
+AVC, contexte de fichier `etc_t` conservé) et Alpine — `sshd -T` montre les
+nouvelles valeurs, sshd redémarre, la commande est idempotente, les constats
+disparaissent au ré-audit.
+
+### 3. Mises à jour : déploiement progressif et paquets retenus ne sont pas une incohérence
+
+Sur Ubuntu et Mint, `apt-get -s dist-upgrade` diffère une mise à jour jusqu'à
+l'ouverture de la phase de la machine (« The following upgrades have been
+deferred due to phasing: ») ; `apt list --upgradable` la liste toujours. BOB
+lisait l'écart comme `updates.dist_upgrade_inconsistent` — WARN −2 et une ligne
+de mises à jour « inconnue » dans la surface d'attaque. Mesuré sur un poste Mint :
+16 paquets à mettre à jour, 16 différés, 0 à installer. Les paquets différés et
+retenus sont désormais comptés et rapportés en INFO (`updates.phased_deferred`,
+`updates.kept_back`) ; le WARN ne se déclenche que si plus de paquets sont à
+mettre à jour qu'apt n'en retient.
+
+### 4. Une unité écartée par sa propre condition de démarrage n'est pas « activée mais arrêtée »
+
+`inetutils-inetd` est activé sur Debian et Mint et écarté par son
+`ExecCondition` tant que `inetd.conf` est vide — l'état voulu. BOB rapportait
+`services.state.inactive_enabled` (« Telnet Server est activé au démarrage mais ne
+tourne pas », WARN −1). Une unité dont `ConditionResult=no` ou
+`Result=exec-condition` est désormais `CONDITION_UNMET` → INFO
+`services.state.condition_unmet`. La polarité inverse a été mesurée aussi : avec
+une ligne telnet dans `inetd.conf`, inetd tourne, le port 23 écoute et il est
+rapporté comme avant.
+
+### 5. IPv6 sur un hôte sans UFW
+
+`ipv6` lisait un `/etc/default/ufw` absent comme « IPv6 d'UFW activé » : un hôte
+sans UFW se voyait dire « La configuration IPv6 d'UFW correspond à l'état IPv6
+du noyau » et recevait `ipv6.port_no_v6_rule` (WARN −1 par port, plafonné) pour
+chaque écoute IPv6. Sans UFW ni firewalld, la section nomme désormais ce qui
+gouverne ces écoutes — `ipv6.netfilter_v6` sous un jeu de règles brut filtrant,
+`ipv6.no_firewall_v6` sans filtre, `ipv6.no_ufw_no_listeners` — toutes INFO,
+sans affirmer la couverture IPv6 du jeu de règles (ses familles d'adresses ne
+sont pas lues). Là où `ss` est absent (Alpine), `ipv6.listeners_unknown`
+remplace le faux « la configuration correspond ». Le libellé link-local ne
+s'arrête plus à « aucune exposition internet » : les écoutes sont « joignables
+depuis le réseau local sans filtrage par UFW ».
+
+### 6. Parcours world-writable de `--exhaustive` : les montages FUSE ne sont pas un angle mort
+
+Un montage FUSE appartenant à un utilisateur (le squashfuse d'une AppImage,
+mesuré sur Mint) est illisible pour root sans `allow_other` : `find` y affichait
+« Permission denied » et le parcours se déclarait partiel
+(`world_writable.partial`, une limite de visibilité). Les systèmes de fichiers
+FUSE, réseau et pseudo sont exclus du parcours par conception ; les erreurs de
+find sur ou sous un tel point de montage sont désormais reconnues et ne rendent
+plus le parcours partiel. Le parseur reconnaît la vraie ligne, qui porte le
+chemin absolu de find (`/usr/bin/find: '…': Permission denied`) — une première
+version testée contre une ligne `find:` imaginée la ratait sur l'hôte réel.
+
+### 7. Libellés
+
+- **Samba restreint à une seule adresse** : une règle UFW dont la source est un
+  hôte unique (`ALLOW IN 192.168.1.11`) était rapportée « restreint au réseau
+  local » (WARN, « restreindre davantage »). C'est désormais l'INFO
+  `services.exposure.open_local_host`, qui nomme l'hôte. Aucune déduction ne
+  change.
+- **Ports couverts par la politique par défaut** : « couverts par une règle UFW »
+  devient « filtrés par UFW — par une règle explicite ou par la politique deny
+  par défaut » sous une politique deny/reject (`ports.all_covered`) : un port
+  sans règle était couvert par la politique, pas par une règle.
+- **Le texte de risque SMTP** ne dit plus que le constat « se déclenche quand ce
+  défaut [127.0.0.1] a été changé » — affiché pour un serveur encore lié à
+  127.0.0.1, il renvoie désormais au verdict du port.
+
+### 8. Documentation
+
+- `CONVENTIONS` §10 : un glossaire (module, section, check, constat, domaine,
+  groupe…).
+- `README_TECH` : le mécanisme de remédiation SSH ; douze familles de checks
+  absentes de la liste des fonctionnalités ; une description fausse du « check
+  Hardening » remplacée.
+- `README_DEV` : neuf modules de checks manquants, et `ssh/` / `cron/` en tant
+  que paquets.
+- Les changelogs EN/FR : les sections françaises condensées sont intégralement
+  traduites, le français resté dans les entrées anglaises est traduit, et la
+  PEP 416 est décrite comme *rejetée* (son statut), non « retirée ».
+
+### Chiffres
+
+- **Tests** 11778 → **12009** ; mutations 350 → **387**, toutes tuées.
+- Clés de locale 2816 → **2833** par langue (17 nouvelles, toutes INFO ou texte
+  de synthèse).
+- Nouvelle garde : `README_DEV{,_FR}` doit lister chaque module de checks dans sa
+  table et son arbre (elle a trouvé `cron.py`, un paquet depuis v0.6.0).
+
+### Mise à jour
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+Aucun changement de configuration nécessaire. Une entrée `ignore.yml` pour
+`services.state.inactive_enabled`, `ipv6.port_no_v6_rule` ou
+`services.exposure.open_local` ne correspond plus sur un hôte où les §4, §5 ou §7
+émettent désormais une autre clé, de niveau INFO.
+
+---
+
 ## [0.24.0] — 04-10-2026
 
 **Une version mineure de couverture nouvelle — comptes, surface d'attaque du noyau,
@@ -7719,7 +7903,7 @@ La section mesurait 83 mots contre 562 en anglais (**15 %**), alors que les 15 a
 
 Le sandbox est livré depuis la **v0.7.0**. Pendant **sept versions mineures**, la politique de sécurité française a dit à ses lecteurs l'inverse de la vérité, et a figé la feuille de route sur une ligne en fin de vie depuis la v0.7.2.
 
-Tout ce que la version anglaise dit du modèle de menace était absent en français : qu'un sandbox Python in-process **n'est pas une frontière de sécurité** (PEP 416, retirée) ; que `json.dumps.__globals__["__builtins__"]["__import__"]` est atteignable par n'importe quel plugin et que c'est *attendu* et épinglé par `TestKnownInProcessLimitation` ; que le contournement non lié `dict.__setitem__` est une limitation connue ; que **AppArmor est la véritable frontière** ; et la conclusion opérationnelle — **si vous exécutez BOB non confiné sous `sudo`, relisez le code de vos plugins avant de les installer**.
+Tout ce que la version anglaise dit du modèle de menace était absent en français : qu'un sandbox Python in-process **n'est pas une frontière de sécurité** (PEP 416, rejetée) ; que `json.dumps.__globals__["__builtins__"]["__import__"]` est atteignable par n'importe quel plugin et que c'est *attendu* et épinglé par `TestKnownInProcessLimitation` ; que le contournement non lié `dict.__setitem__` est une limitation connue ; que **AppArmor est la véritable frontière** ; et la conclusion opérationnelle — **si vous exécutez BOB non confiné sous `sudo`, relisez le code de vos plugins avant de les installer**.
 
 La section est désormais intégralement traduite, y compris l'isolation par spawn, les rlimits, la liste blanche d'imports, la justification d'`_ImmutableBuiltins`, le wrapper `open()`, l'aller-retour JSON-safe qui défait un `__reduce__` malveillant, et la note sur `BOB_SANDBOX_LEGACY` retirée. **15 % → 121 %**.
 
@@ -8001,102 +8185,125 @@ Compte de sections **36 → 38**. **Tests** 6461 → **6504** (+43 : 21 dans `te
 
 ## [v0.13.0] — 20-06-2026
 
-**Première release v0.13.x — extension de scope. Deux nouveaux checks INFO-only. Additif, non-BREAKING, sans changement de score.**
+**Première release v0.13.x — élargissement du périmètre. Deux nouveaux checks de durcissement INFO seulement. Additive, non BREAKING, aucun changement de score.**
 
-Après un long cycle de durcissement interne (v0.5.x–v0.12.x), v0.13.0 est la **première vraie croissance de couverture** de BOB — exploitant deux surfaces documentées, déterministes, offline-safe que rien n'utilisait : la métrique d'exposition par service de systemd, et la posture d'isolation propre d'un conteneur. Les deux sont conçus conservativement (INFO-only, aucune déduction) pour pouvoir shipper *sans* signal terrain, laissant la calibration du scoring pour plus tard.
+Après un long cycle de hardening interne (v0.5.x–v0.12.x : audits, travail sur les contrats, correctifs de qualité perçue), v0.13.0 est la **première vraie croissance de couverture** de BOB — elle exploite deux surfaces bien documentées, déterministes et sûres hors ligne, que rien dans l'outil n'utilisait : la mesure d'exposition par service de systemd et la posture d'isolement d'un conteneur vue de l'intérieur. Les deux sont conçues de façon conservatrice (INFO seulement, sans déduction), pour pouvoir être livrées *sans* signal terrain, en laissant le calibrage du score pour plus tard.
 
 ### Durcissement des services — `systemd-analyze security`
 
-[bob/checks/systemd_hardening.py](../bob/checks/systemd_hardening.py) lance `systemd-analyze security --json=short` restreint aux services **en cours** (intersection avec `systemctl list-units --state=running`) et remonte : un résumé (compte par prédicat UNSAFE/EXPOSED/OK), les services en cours les moins durcis (top 5), et un pointeur `systemd-analyze security <unit>`. **Aucune déduction, par design** : systemd ship la grande majorité des units non-durcies — c'est l'*état normal par défaut* d'un hôte Linux, pas une mauvaise config choisie, et la doc systemd qualifie le score d'exposition de guide *relatif*, explicitement pas un verdict de vulnérabilité. Déduire dessus serait du bruit sur chaque machine et violerait le cadrage A1/A2. Une déduction étroite défendable (unit *écrite par l'admin* dans `/etc/systemd/system` à exposition UNSAFE) est différée au signal terrain. Nouvelle section `systemd_hardening` (groupe SYSTEM HARDENING, domaine hardening). Field-testé live EN+FR (44 services évalués, score inchangé).
+[bob/checks/systemd_hardening.py](../bob/checks/systemd_hardening.py) lance `systemd-analyze security --json=short` et le restreint aux unités de service **en cours d'exécution** de l'hôte (intersection avec `systemctl list-units --state=running`). Il fait apparaître :
+
+- un résumé : `{total} running service(s) scored — {n} UNSAFE, {n} EXPOSED, {n} OK/medium` ;
+- les services en cours les moins durcis (les 5 premiers, pire exposition d'abord) avec leur score + prédicat ;
+- un renvoi vers `systemd-analyze security <unit>` pour le détail réglage par réglage.
+
+**Aucune déduction, par conception.** systemd livre la grande majorité des unités non durcies (pas de `NoNewPrivileges`, pas de `ProtectSystem`, ensemble complet de capabilities) — c'est l'*état par défaut normal* d'un hôte Linux, pas une mauvaise configuration choisie par l'administrateur, et la propre documentation de systemd présente le score d'exposition comme un guide relatif, explicitement *pas* un verdict de vulnérabilité. Déduire là-dessus serait du bruit sur chaque machine et violerait le cadrage de BOB « auditer le durcissement de la configuration, sans sur-affirmer » (A1/A2). Une déduction étroite et défendable (par ex. une unité *écrite par l'administrateur* dans `/etc/systemd/system` à exposition UNSAFE — l'analogue du check existant des timers systemd) est déférée jusqu'à un signal réel. Nouvelle section `systemd_hardening` (groupe SYSTEM HARDENING, domaine hardening). Testé en conditions réelles EN+FR sur un vrai hôte (44 services en cours évalués, score inchangé).
 
 ### Posture de sécurité du conteneur
 
-[bob/checks/container_security.py](../bob/checks/container_security.py) ne s'exécute que **dans un conteneur** (section supprimée sur un hôte normal via `skip_if`). Détection : `systemd-detect-virt`, `/.dockerenv`, `/run/.containerenv`, `/proc/1/cgroup`. Lectures (interfaces noyau documentées, offline) : **capabilities** (`/proc/self/status` CapBnd → détection privilégié/CAP_SYS_ADMIN + liste des caps dangereuses, bitmask parsé en interne sans `capsh`), **seccomp**, **user namespace** (`/proc/self/uid_map` ; un map non-identité = root du conteneur ≠ root de l'hôte, donc le warning « root » est correctement supprimé), **rootfs en écriture** (`/proc/mounts`). INFO-only dans cette première version — une vraie déduction WARN pour un conteneur privilégié est le fast-follow évident une fois le signal runtime accumulé. Nouvelle section `container_security` (groupe SYSTEM HARDENING, domaine hardening).
+[bob/checks/container_security.py](../bob/checks/container_security.py) ne s'exécute **que lorsque BOB tourne dans un conteneur** — toute la section est supprimée sur un hôte normal (`skip_if=lambda s: not s.in_container`). La détection couvre `systemd-detect-virt --container`, `/.dockerenv`, `/run/.containerenv` et les marqueurs de `/proc/1/cgroup` (docker/containerd/lxc/kubepods). Dans un conteneur, il lit l'isolement du conteneur depuis des interfaces noyau documentées et hors ligne :
+
+- **Capabilities** — masque `CapBnd` de `/proc/self/status` → détection **privilégié / CAP_SYS_ADMIN** (le signal d'évasion de conteneur le plus fort ; l'ensemble par défaut de Docker la retire) plus la liste des capabilities dangereuses détenues (CAP_SYS_ADMIN, CAP_SYS_MODULE, CAP_SYS_PTRACE, CAP_SYS_RAWIO, CAP_NET_ADMIN, CAP_DAC_READ_SEARCH). Le masque est analysé dans le processus (pas de dépendance à `capsh`, cohérent avec la position de BOB : zéro dépendance d'exécution).
+- **Seccomp** — `Seccomp` de `/proc/self/status` (0 = pas de filtre).
+- **Espace de noms utilisateur** — `/proc/self/uid_map` ; un mappage non identitaire signifie que root dans le conteneur ne correspond **pas** à root sur l'hôte (l'avertissement « tourne en root » est donc correctement supprimé).
+- **rootfs inscriptible** — les options de montage de `/` dans `/proc/mounts`.
+
+INFO seulement dans cette première version — une vraie déduction WARN pour un conteneur privilégié (une régression d'isolement réelle, choisie par l'administrateur) est la suite évidente, dès qu'elle aura accumulé du signal à l'exécution. Nouvelle section `container_security` (groupe SYSTEM HARDENING, domaine hardening).
 
 ### Validation
 
-Le check systemd a tourné live sur un hôte réel, EN+FR. Le check conteneur — qui par définition ne peut pas s'exécuter sur un hôte non-conteneur — a été validé contre de **vraies données noyau `/proc` dans des user namespaces Linux** via `unshare` : contexte privilégié (CapBnd full → privilégié + toutes caps dangereuses), non-privilégié (`setpriv` drop → `caps_restricted`), seccomp désactivé, et la branche subtile **userns-actif** (root présent mais uid_map non-identité → warning root-hôte correctement *non* émis) tous confirmés sur du réel, et la section complète rendue end-to-end EN+FR dans le namespace. (Aucun runtime conteneur requis — `unshare` exerce les mêmes primitives noyau. Aparté robustesse sous le mapping userns artificiel : un check `ddns` sans rapport a levé une `PermissionError` non catchée sur un fichier `/root` illisible et a aborté le run — artefact du userns, pas une réalité conteneur ; noté comme edge pré-existant pour une future passe.)
+Le check systemd a tourné en conditions réelles sur un vrai hôte, EN+FR. Le check conteneur — qui par définition ne peut pas s'exercer sur un hôte qui n'est pas un conteneur — a été validé contre **de vraies données `/proc` du noyau dans des espaces de noms utilisateur Linux** via `unshare --user --map-root-user --mount` : un contexte privilégié (`CapBnd 000001ffffffffff` complet → privilégié + toutes les capabilities dangereuses), un non privilégié (retrait via `setpriv --bounding-set` → `caps_restricted`), seccomp désactivé, et la subtile **branche userns active** (root présent mais `uid_map` non identitaire → l'avertissement root-hôte correctement *non* émis) ont tous été confirmés sur des données réelles, et la section complète s'est rendue de bout en bout EN+FR dans l'espace de noms. (Aucun runtime de conteneur nécessaire — `unshare` exerce les mêmes primitives noyau. Une remarque de robustesse est apparue sous ce mappage userns artificiel : un check `ddns` sans rapport a levé une `PermissionError` non attrapée sur un fichier `/root` illisible et a interrompu l'exécution — un artefact du userns, pas une réalité de conteneur, puisqu'un vrai conteneur tourne en vrai root ; noté comme cas limite préexistant pour une future passe de hardening.)
 
-### Tests, EOL & compatibilité
+### Tests, fin de vie & compatibilité
 
-Compte de sections **35 → 36**. **Tests** 6442 → **6461** (+19 : 7 systemd + 12 conteneur). 0 régression.
+Nombre de sections **35 → 36**. **Tests** 6442 → **6461** (+19 : 7 dans `tests/test_systemd_hardening.py`, 12 dans `tests/test_container_security.py`). 0 régression, vert en ordre déterministe comme aléatoire.
 
-**Fin de vie** : selon la politique « patchs pour la ligne minor la plus récente uniquement », **v0.12.x est maintenant déclarée EOL** au ship de v0.13.0 ; les lignes v0.8.x–v0.11.x sont également EOL ; **v0.13.x est la seule ligne supportée**. v0.7.x reste EOL (v0.8.1), v0.6.x reste EOL (v0.7.2). SECURITY.md / SECURITY_FR.md mis à jour.
+**Fin de vie** : selon la politique « correctifs pour la dernière ligne mineure seulement », **v0.12.x est désormais déclarée en fin de vie** avec la sortie de v0.13.0 ; les lignes v0.8.x–v0.11.x sont de même en fin de vie (chacune remplacée par la mineure suivante) ; **v0.13.x est la seule ligne prise en charge**. v0.7.x reste en fin de vie (v0.8.1), v0.6.x reste en fin de vie (v0.7.2). SECURITY.md / SECURITY_FR.md mis à jour.
 
-**Upgrade** (`pipx upgrade bodyguard-of-bits`) — **entièrement rétro-compatible** : deux sections INFO-only ajoutées ; aucun champ de sortie, clé JSON, score ou code de sortie existant ne change. La section conteneur n'apparaît que dans un conteneur.
+**Mise à jour** (`pipx upgrade bodyguard-of-bits`) — **entièrement rétrocompatible** : deux sections INFO seulement sont ajoutées ; aucun champ de sortie, clé JSON, score ou code de sortie existant n'a changé. La section conteneur n'apparaît que quand BOB tourne dans un conteneur.
 
 ---
 
 ## [v0.12.2] — 12-06-2026
 
-**Cleanup hardening de clôture de branche — une passe deep-audit du tool entier + un sweep "angles inexplorés" avant de sceller la ligne v0.12.x. Aucun changement de comportement.**
+**Nettoyage de hardening de clôture de branche — une passe d'audit en profondeur sur tout l'outil plus un balayage des « angles inexplorés » avant de sceller la ligne v0.12.x. Aucun changement de comportement.**
 
-Après la campagne d'audit v0.12.1 (naive + 4 tours advanced sur les changements récents), un audit deep hardening par sub-agent a balayé le code **plus large, moins récemment touché**, et un sweep de suivi a sondé des angles que rien n'avait vérifiés (injection Markdown, génération cron, en-têtes email, parsing de profils). Verdict : **CLOSE THE BRANCH** — 0 critique, 0 important. Deux petits items corrigés pour sceller propre ; tout le reste vérifié solide.
+Après la campagne d'audit de v0.12.1 (une passe naïve + quatre rondes avancées sur les changements récents), un audit de hardening en profondeur par sous-agent a balayé la base de code **plus large et moins récemment touchée**, et un balayage complémentaire a sondé des angles que rien n'avait vérifiés (injection Markdown, génération cron, en-têtes d'e-mail, analyse des profils). Le verdict a été **CLORE LA BRANCHE** — 0 critique, 0 important. Deux petits éléments ont été corrigés pour la sceller proprement ; tout le reste s'est vérifié solide.
 
-### M-1 — `_DOMAIN_SECTIONS` contenait des préfixes de clés, pas des noms de sections réels
+### M-1 — `_DOMAIN_SECTIONS` contenait des préfixes de clé, pas de vrais noms de sections
 
-`bob/domain_scores.py` construit `_DOMAIN_SECTIONS` (domaine → sections contributrices) depuis `_PREFIX_TO_DOMAIN`, puis passe ces noms à `runner._section_enabled` dans `domain_inactive_reason` pour décider si un domaine est *skippé par le profil*. La plupart des préfixes de clés égalent le nom de section, mais deux non — `virt` (section réelle `virtualization`) et `logs` (section réelle `ufw_logging`). Comme les deux sections réelles sont **always-on** (jamais filtrables/skippables), le domaine hardening est toujours actif et l'écart était **inatteignable** — mais le gate testait des noms inexistants et le commentaire prétendait à tort que les préfixes *étaient* des noms de sections. Corrigé avec un petit remap `_PREFIX_TO_SECTION`, pinné par un nouveau garde de drift (`tests/test_v0122_branch_close.py`) qui asserte que **chaque** nom dans `_DOMAIN_SECTIONS` est une vraie entrée `runner._SECTIONS`.
+`bob/domain_scores.py` construit `_DOMAIN_SECTIONS` (domaine → sections contributrices) à partir de `_PREFIX_TO_DOMAIN`, puis passe ces noms à `runner._section_enabled` dans `domain_inactive_reason` pour décider si un domaine a été *ignoré par le profil*. La plupart des préfixes de clé de constat égalent le nom de section du runner, mais deux non — `virt` (vraie section `virtualization`) et `logs` (vraie section `ufw_logging`). Comme ces deux vraies sections sont **toujours actives** (elles ne peuvent jamais être filtrées par `--check`/`--skip` ni ignorées par un profil), le domaine hardening est toujours actif et l'écart était **inatteignable** dans le comportement — mais la garde testait des noms qui n'existent pas, et le commentaire affirmait à tort que « les préfixes de clé sont aussi les noms de sections du runner ». Corrigé par une petite table de remappage `_PREFIX_TO_SECTION`, pour que `_DOMAIN_SECTIONS` contienne de vrais noms de sections, épinglé par une nouvelle garde anti-dérive (`tests/test_v0122_branch_close.py`) qui affirme que **chaque** nom de `_DOMAIN_SECTIONS` est une vraie entrée de `runner._SECTIONS` — toute future divergence préfixe/section fait donc échouer la CI.
 
-### Nom de cron — défense-en-profondeur sur l'écriture cron root
+### Nom du cron — défense en profondeur sur l'écriture du cron root
 
-`bob/cron/_install.py` slugue le nom pour le chemin (`/etc/cron.d/bob-<slug>` — pas de traversal) mais écrit le nom **brut** dans le commentaire `# name:` du fichier cron root généré. L'audit a signalé qu'un newline dans le nom injecterait une 2e ligne. Vérification faite, **ce n'est PAS une injection exploitable** : le nom vient de `prompt_wizard` → `input(label).strip()`, et `input()` est line-based, donc un nom saisi interactivement ne peut pas contenir de newline. Rapporté honnêtement comme défense-en-profondeur, pas un bug live. Mais worth doing : un outil de hardening ne doit pas dépendre de la sémantique line de `input()` comme *seule* garde pour une écriture cron root — les caractères de contrôle sont maintenant strippés du nom avant le commentaire, rendant l'injection impossible quelle que soit la source. Cohérent avec `_validate_custom_cron` déjà strict. La ligne email était déjà sûre (`_EMAIL_RE` anchored).
+`bob/cron/_install.py` transforme le nom du cron en slug pour le chemin de fichier (`/etc/cron.d/bob-<slug>`, `/usr/local/bin/bob-<slug>` — pas de traversée de chemin), mais écrit le nom **tel quel** dans le commentaire `# name:` du fichier cron root généré. L'audit a signalé qu'un saut de ligne dans le nom injecterait une seconde ligne dans le fichier cron. À l'examen, ce n'est **pas une injection exploitable** : le nom vient de `prompt_wizard` → `input(label).strip()`, et `input()` fonctionne ligne par ligne, si bien qu'un nom saisi interactivement ne peut pas contenir de saut de ligne (une valeur multiligne passée par un tube se répartit sur des invites séparées). C'est rapporté honnêtement comme de la défense en profondeur, pas comme un bug réel. Cela vaut quand même d'être fait : un outil de hardening ne doit pas s'appuyer sur la sémantique ligne par ligne d'`input()` comme *seule* garde d'une écriture root dans `/etc/cron.d` — les caractères de contrôle sont donc désormais retirés du nom (`re.sub(r"[\x00-\x1f\x7f]+", " ", raw_name)`) avant le commentaire, rendant l'injection impossible quelle que soit la façon dont le nom a été obtenu. Cela s'aligne sur `_validate_custom_cron`, déjà strict (il rejette toute expression personnalisée qui n'a pas 5 champs). La ligne de commentaire de l'e-mail était déjà sûre (`_EMAIL_RE` ancrée, pas de sauts de ligne).
 
-### Vérifié propre (enregistré pour le prochain auditeur)
+### Vérifié propre (consigné pour que le prochain auditeur puisse passer)
 
-`_atomic.py` (mkstemp + fchmod + fsync + cleanup sur erreur) · `webhook.py` (http/https-only + redaction credentials + timeout fini, pas de SSRF) · subprocess (pas de `shell=True`, `LC_ALL=C`, garde symlink `authorized_keys → /etc/shadow`) · `fixes.py` (cmd author-controlled + rejet shell-metachar) · parsers logs/config (regex anchored, pas de ReDoS) · i18n (1975/1975 parité) · pas de drift de littéral · parser profils `.conf` (extends borné à 8 + fallback) · export Markdown (`_md_escape` échappe `|` et `\n` ; `*`/backtick non échappés = NIT cosmétique sur strings author-controlled).
+- **`bob/_atomic.py`** — tmp `mkstemp` unique, `fchmod` avant l'écriture, `fsync(fd)` + `fsync(dir_fd)`, nettoyage du tmp sur `BaseException`, contrat de mode correct.
+- **`bob/webhook.py`** — garde de schéma http/https seulement (insensible à la casse), dérogation `BOB_WEBHOOK_ALLOW_INSECURE`, caviardage des identifiants par regex ancrée (l'URL d'origine est envoyée en POST, seul l'affichage est caviardé), délai fini de 10 s. Pas de `file://`/SSRF au-delà de l'URL configurée par l'opérateur lui-même.
+- **Sous-processus** (`bob/checks/_run.py`) — pas de `shell=True` en production ; `list(args)`, `LC_ALL=C` forcé, délai fini ; `_is_safe_user_path` protège contre l'évasion par lien symbolique `~/.ssh/authorized_keys → /etc/shadow`.
+- **`bob/fixes.py`** — les chaînes de commande de `--fix` sont contrôlées par l'auteur ; `shlex.split` + rejet des métacaractères shell avant toute exécution.
+- **Analyseurs de logs/configuration** — regex ancrées, pas de quantificateurs imbriqués (pas de ReDoS), `re.escape` sur les noms de champs interpolés, longueurs de correspondance bornées.
+- **i18n** — parité EN/FR de 1975/1975 clés, 0 décalage de placeholder.
+- **Dérive** — aucun littéral de section legacy ; le littéral de posture `firewall_iptables.input_accept` de v0.10.2 correspond toujours à la clé émise ; pas d'`except:` nu.
+- **Analyseur `.conf` des profils** — chaîne extends bornée à `_MAX_EXTENDS_DEPTH = 8`, un profil malformé/manquant se replie sur `server` sans planter.
+- **Export Markdown** — `_md_escape` échappe `|` et `\n` (pas de rupture de structure de tableau) ; les nouvelles lignes de domaine d'ADV-B1 l'utilisent. (`*`/l'accent grave ne sont pas échappés — une finesse de rendu purement cosmétique sur des chaînes contrôlées par l'auteur, laissée comme NIT.)
 
 ### Tests & compatibilité
 
-**Tests** 6437 → **6442** (+5). 0 régression, vert déterministe + aléatoire. **v0.7.x reste EOL** (v0.8.1) ; **v0.6.x reste EOL** (v0.7.2). Cette release **clôt la branche v0.12.x**. Upgrade : `pipx upgrade bodyguard-of-bits` — aucun changement de comportement.
+**Tests** 6437 → **6442** (+5, dans `tests/test_v0122_branch_close.py`). 0 régression, vert en ordre déterministe comme aléatoire. **v0.7.x reste en fin de vie** (déclarée en v0.8.1) ; **v0.6.x reste en fin de vie** (v0.7.2). Cette release **clôt la branche v0.12.x**.
+
+**Mise à jour** (`pipx upgrade bodyguard-of-bits`) — aucun changement de comportement, aucune action de migration. Les deux correctifs sont du hardening interne (le remappage domaine-section est inatteignable mais correct ; le nettoyage du nom du cron est de la défense en profondeur sur un chemin qu'`input()` protège déjà).
 
 ---
 
 ## [v0.12.1] — 12-06-2026
 
-**Premier patch hardening v0.12.x — complétude de l'affichage des domaines + campagne d'audit naive/advanced. Additif et entièrement rétro-compatible.**
+**Premier patch hardening v0.12.x — complétude de l'affichage des domaines + une campagne d'audit utilisateur naïf/avancé. Additif et entièrement rétrocompatible.**
 
-Le changement principal implémente la demande différée de v0.12.0 : **toujours afficher les 7 domaines de score, même inactifs, avec la raison précise** de leur non-scoring. Les domaines inactifs ne sont jamais comptés dans la moyenne — les scores, le cap F1 "10 = sans défaut" et la garde anti-inversion v0.4.5 sont tous préservés. Le changement a ensuite déclenché une campagne d'audit profonde (un tour naive-user + quatre tours advanced-user) qui a trouvé et corrigé une série de problèmes (CLI, contrat de scoring, sorties machine, permissions de fichiers).
+Le changement principal met en œuvre la demande déférée de v0.12.0 : **toujours afficher les 7 domaines de score, même inactifs, avec la raison précise pour laquelle ils n'ont pas été notés.** Les domaines inactifs ne sont jamais comptés dans la moyenne globale — les scores, le plafond F1 « 10 = sans défaut » et la garde d'inversion de v0.4.5 sont tous préservés. Ce changement a ensuite déclenché une campagne d'audit approfondie (une passe d'utilisateur naïf + quatre passes d'utilisateur avancé) qui a trouvé et corrigé une série de problèmes dans la CLI, le contrat de scoring, les sorties machine et les permissions de fichiers.
 
 ### Afficher tous les domaines, avec la raison (texte + JSON + Markdown + HTML)
 
-`bob.domain_scores.domain_inactive_reason()` classe pourquoi un domaine n'a produit aucun finding actionnable (OK/WARN/ALERT), via une source unique partagée par tous les renderers :
+`bob.domain_scores.domain_inactive_reason()` classe la raison pour laquelle un domaine n'a produit aucun constat actionnable (OK/WARN/ALERT), en s'appuyant sur une source unique de vérité partagée par tous les rendus :
 
 | `reason` | Signification |
 |---|---|
-| `info_only` | Les checks ont tourné et rapporté, mais seulement de l'informatif. |
-| `profile_skipped` | Le profil actif saute toutes les sections du domaine (ex. `disk` en `container`). |
-| `filtered` | Exclu par un filtre `--check` / `--skip` ce run. |
-| `not_installed` | Les checks ont tourné et trouvé le composant absent. |
+| `info_only` | Les checks ont tourné et rapporté, mais seulement des notices informatives. |
+| `profile_skipped` | Le profil actif ignore toutes les sections qui alimentent le domaine (par ex. `disk` sous `container`). |
+| `filtered` | Exclu par un filtre `--check` / `--skip` lors de cette exécution. |
+| `not_installed` | Les checks ont tourné et ont trouvé le composant absent. |
 
-La précédence est INFO-only → a tourné-mais-vide (`not_installed`) → filtré → skippé-par-profil, calculée via le gate `_section_enabled` du runner pour coller exactement à ce qui a tourné. **`disk` n'est jamais "non installé" à tort** : sur un host réel il est actif (findings SMART) ; seul un profil qui le saute donne `profile_skipped`. L'affichage texte ([bob/domain_scores.py](../bob/domain_scores.py) `render_domain_scores`) montre les domaines inactifs grisés avec la raison ; la même donnée est exposée en JSON, Markdown et HTML (voir ADV-1 / ADV-B1).
+L'ordre de priorité est INFO seulement → a tourné sans rien (`not_installed`) → filtré → ignoré par le profil, calculé via la garde `_section_enabled` du runner pour concorder exactement avec ce qui a réellement tourné. Point crucial, **`disk` n'est jamais « non installé » à tort** : sur un vrai hôte, il est actif (constats SMART) ; seul un profil qui l'ignore donne `profile_skipped`. L'affichage texte ([bob/domain_scores.py](../bob/domain_scores.py) `render_domain_scores`) montre les domaines inactifs en grisé, avec la raison à la place d'un score ; les mêmes données sont exposées en JSON, Markdown et HTML (voir ADV-1 / ADV-B1).
 
-### Tour naive-user — A / B / C / E
+### Passe d'utilisateur naïf — A / B / C / E
 
-- **A — `--check`/`--skip` étiquetaient mal les domaines filtrés.** `bob --check=ssh` montrait `Samba / Files & Access / Updates : not installed` — faux (filtrés, pas absents). `domain_inactive_reason` consomme maintenant la config et le gate `_section_enabled`, renvoyant la nouvelle raison `filtered`.
-- **B — `--profile=typo` corrompait la config sauvegardée.** [bob/__main__.py](../bob/__main__.py) persistait *n'importe quelle* valeur `--profile` (via `set_profile`) **avant** de la valider, donc `--profile=banane` écrivait `audit_profile=banane` et chaque run suivant tombait en fallback, perdant silencieusement le vrai profil. Maintenant le profil est résolu d'abord et seul un nom **valide** est persisté.
-- **C — le root-gate passait avant la validation de `--profile`.** `bob --profile=typo` sans sudo affichait *"must be run as root"* au lieu de signaler le mauvais profil. Un `--profile` inconnu est maintenant signalé **avant** `require_root()` (comme l'ordre F6 pour `--check`/`--skip`). `--diff` / `--html` nécessitent légitimement root et sont inchangés.
-- **E — polish CLI.** Ajout de `--english` (symétrie avec `--french`). `--output` accepte maintenant `html` et `json-full` → alias **complet** de `--format` (les deux étaient rejetés avant). Les tokens `--check`/`--skip`, les clés `--explain` et les valeurs `--output`/`--format` sont maintenant **casse-insensibles**. Help + complétion bash mis à jour.
+- **A — `--check`/`--skip` étiquetaient mal les domaines filtrés.** `bob --check=ssh` affichait `Samba / Files & Access / Updates: not installed` — faux (ils avaient été filtrés, pas absents). `domain_inactive_reason` consomme désormais la configuration et la garde `_section_enabled`, et renvoie la nouvelle raison `filtered`. [bob/domain_scores.py](../bob/domain_scores.py).
+- **B — `--profile=faute` corrompait la configuration enregistrée.** [bob/__main__.py](../bob/__main__.py) enregistrait *n'importe quelle* valeur passée à `--profile` (via `set_profile`) **avant** de la valider, si bien que `--profile=banane` écrivait `audit_profile=banane` dans `config.conf`, et chaque exécution suivante retombait sur le défaut, perdant en silence le vrai profil `container`/`desktop` de l'utilisateur. Désormais le profil est d'abord résolu, et seul un nom **valide** est enregistré.
+- **C — la garde root passait avant la validation de `--profile`.** `bob --profile=faute` sans sudo affichait *« must be run as root »* au lieu de signaler le mauvais profil. Un `--profile` inconnu est désormais signalé **avant** `require_root()` (sur le modèle de l'ordre `--check`/`--skip` de F6), pour que l'opérateur apprenne que le nom est faux sans un aller-retour par sudo. `--diff` / `--html` ont légitimement besoin de root (ils lancent un audit) et sont inchangés.
+- **E — finitions de la CLI.** Ajout de `--english` (symétrie avec `--french` ; l'anglais est la valeur par défaut, mais le drapeau la rend explicite et l'emporte sur un `fr` enregistré/auto-détecté). `--output` accepte désormais `html` et `json-full`, ce qui en fait un **alias complet** de `--format` (il rejetait les deux auparavant). Les jetons de `--check` / `--skip`, les clés de `--explain` et les valeurs de `--output` / `--format` sont désormais **insensibles à la casse** (`--check=SSH`, `--explain LIST` fonctionnent). Texte d'aide + complétion bash mis à jour.
 
-### Tours advanced-user — ADV-1 / ADV-D2 / ADV-G2 / ADV-B1
+### Passes d'utilisateur avancé — ADV-1 / ADV-D2 / ADV-G2 / ADV-B1
 
-- **ADV-1 — le JSON ne permettait pas de reproduire le score.** `domain_scores` exposait les 7 domaines à leur score sans marqueur actif/inactif, donc un consommateur qui les moyennait obtenait 10 alors que le vrai headline était 9, et ne pouvait pas distinguer un `samba` absent (montré 10) d'un vrai 10. Chaque `domain_scores[d]` porte maintenant **`active` (bool)** et **`reason` (code stable, ou `null` si actif)**. **Additif en schema v3 — pas de bump** ([bob/json_output.py](../bob/json_output.py)).
-- **ADV-D2 — `--output` était un alias incomplet.** `--format=json-full` marchait mais `--output=json-full` erreur. Corrigé (intégré à E).
-- **ADV-G2 — `history.jsonl` pouvait rester world-readable.** I-5 (v0.6.1) mettait `0600` seulement à la *création* ; un fichier legacy créé avant restait `0644`. Le chemin append fait maintenant un `os.chmod` à `0600` à chaque write — un outil de hardening ne doit pas fuiter son propre état ([bob/history.py](../bob/history.py)).
-- **ADV-B1 — les rapports Markdown + HTML n'avaient pas le breakdown par domaine** (texte + JSON l'avaient). Les deux rendent maintenant la table par domaine (score + statut), EN+FR, via le helper format-agnostique partagé `domain_rows()`.
+- **ADV-1 — le JSON ne permettait pas de reproduire le score.** `domain_scores` exposait les 7 domaines à leur score calculé, sans marqueur actif/inactif, si bien qu'un consommateur qui en faisait la moyenne obtenait 10 alors que le vrai titre était 9, et ne pouvait pas distinguer un `samba` absent (affiché à 10) d'un vrai 10. Chaque `domain_scores[d]` porte désormais **`active` (bool)** et **`reason` (code stable, ou `null` quand actif)**. Un consommateur peut désormais reproduire le titre (`moyenne(scores là où active)` puis plafonnée à 9 dès qu'une déduction existe) et distinguer les composants absents. **Additif au sein du schéma v3 — pas de changement de version** ([bob/json_output.py](../bob/json_output.py)).
+- **ADV-D2 — `--output` était un alias incomplet.** `--format=json-full` fonctionnait mais `--output=json-full` échouait. `--output=json-full` correspond désormais à `json_mode + json_full` (intégré à E).
+- **ADV-G2 — `history.jsonl` pouvait rester lisible par tous.** I-5 (v0.6.1) ne fixait `0600` qu'à la *création* ; un fichier legacy créé avant (ou par un autre chemin) restait en `0644`. Le chemin d'ajout fait désormais un `os.chmod` du fichier en `0600` à chaque écriture, réparant les anciennes permissions trop larges — un outil de hardening ne doit pas laisser fuiter son propre état ([bob/history.py](../bob/history.py)).
+- **ADV-B1 — les rapports Markdown + HTML n'avaient pas le détail par domaine** (le texte + le JSON l'avaient). Les deux affichent désormais le tableau par domaine avec score + statut, EN+FR, via le helper partagé et indépendant du format `domain_rows()` ([bob/markdown_output.py](../bob/markdown_output.py), [bob/html_output.py](../bob/html_output.py)). Le helper renvoie `[]` pour les doublures de moteur sans prise en charge des domaines, si bien que les appelants legacy/de test omettent simplement la section.
 
-### Vérifié propre (résultats négatifs de l'audit)
+### Vérifié propre (les résultats négatifs de l'audit)
 
-Déterminisme (JSON bit-identique entre runs), maths de scoring (cap domaine firewall-inactif × F1 × escalade posture), concurrence (deux runs parallèles laissent `last_baseline.json` / `history.jsonl` non-corrompus), rendu `LC_ALL=C` (stdout UTF-8, pas d'erreur d'encodage), lignes reason en `--no-color`, interaction `--ignore` (un finding ignoré garde son domaine actif et recalcule proprement), et import standalone de `build_json_data` (pas de cycle) — tous sondés et corrects.
+Le déterminisme (JSON identique à l'octet près d'une exécution à l'autre), les mathématiques du scoring (plafond du domaine pare-feu inactif × F1 × escalade de posture), la concurrence (deux exécutions parallèles laissent `last_baseline.json` / `history.jsonl` intacts), le rendu sous `LC_ALL=C` (stdout UTF-8, pas d'erreur d'encodage), les lignes de raison avec `--no-color`, l'interaction avec `--ignore` (un constat ignoré garde son domaine actif et recalcule proprement le score) et l'import autonome de `build_json_data` (pas d'import circulaire) ont tous été sondés et trouvés corrects.
 
-### Tensions de design connues (laissées telles quelles, documentées)
+### Tensions de conception connues (laissées telles quelles, documentées)
 
-`--check=X` produit un score d'audit partiel non comparable au baseline complet — pré-existant, déféré. JSON utilise `alert_count`/`warning_count` alors que CSV/webhook gardent `alerts`/`warnings` — décision F9 (contrats séparés) assumée. Le résidu `ignore:` vide laissé par `--unignore` de la dernière clé est de la préservation délibérée des commentaires opérateur.
+`--check=X` produit un score d'audit partiel qui n'est pas comparable à la baseline d'un audit complet (la tendance « ↑ +N » peut induire en erreur) — préexistant, déféré. Le JSON utilise `alert_count`/`warning_count` tandis que le CSV/le webhook gardent `alerts`/`warnings` — la décision délibérée de contrat séparé de F9. Markdown/HTML/watch omettent encore les panneaux de surface d'attaque + de posture — hors périmètre. L'en-tête `ignore:` vide résiduel laissé par un `--unignore` de la dernière clé est une préservation délibérée des commentaires de l'opérateur.
 
 ### Tests & compatibilité
 
-**Tests** 6401 → **6437** (+36). 0 régression, vert en ordre déterministe et aléatoire. Field test bilingue complet sur host réel (texte / Markdown / HTML / `--json-full` × EN/FR + chaque fix CLI) propre. **v0.7.x reste EOL** (v0.8.1) ; **v0.6.x reste EOL** (v0.7.2).
+**Tests** 6401 → **6437** (+36, dans `tests/test_v0121_domain_display.py` + ajouts history/JSON). 0 régression, vert en ordre déterministe comme aléatoire. Un test terrain bilingue complet sur un hôte réel (texte / Markdown / HTML / `--json-full` × EN/FR, plus chaque correctif de CLI) a été propre. **v0.7.x reste en fin de vie** (déclarée en v0.8.1) ; **v0.6.x reste en fin de vie** (déclarée en v0.7.2).
 
-**Upgrade** (`pipx upgrade bodyguard-of-bits`) — **entièrement rétro-compatible** : le changement JSON est additif (nouvelles clés `active`/`reason`, schema_version toujours `"3"`), les nouveaux flags CLI sont additifs, aucun champ existant ne change de sens.
+**Mise à jour** (`pipx upgrade bodyguard-of-bits`) — **entièrement rétrocompatible** : le changement JSON est additif (nouvelles clés `active`/`reason`, schema_version toujours `"3"`), les nouveaux drapeaux CLI sont additifs, et aucun champ de sortie existant n'a changé de sens. Les opérateurs obtiennent l'affichage complet des domaines + les correctifs de l'audit sans aucune action de migration.
 
 ---
 
@@ -8155,541 +8362,878 @@ Pinné par [tests/test_json_schema_v2.py](../tests/test_json_schema_v2.py) `Test
 
 ## [v0.11.2] — 11-06-2026
 
-**Deuxième patch hardening v0.11.x — complétude i18n (F8 + F8b).**
+**Deuxième patch hardening v0.11.x — complétude de l'i18n (F8 + F8b).**
 
-Ferme les deux dernières lacunes i18n d'audit FR, toutes deux révélées par un **test bilingue approfondi en live** de v0.11.1 (audit réel sur l'host en EN et FR, comparaison ligne à ligne). Ni les audits deep code-level (locale défaut) ni la passe UX précédente (surtout EN) ne pouvaient les voir — il fallait des runs EN/FR côte à côte. Les findings UX restants (F1 modèle de score, F2 présentation sévérité, F4 exit-code explain, F6 ordre root-gate, F9 nommage JSON `alerts`/`warnings`) sont BREAKING ou des décisions de design et restent dans le bundle v0.12.0 planifié.
+Ferme les deux dernières lacunes i18n des audits en français, toutes deux mises au jour par un **test bilingue approfondi en conditions réelles** de v0.11.1 (lancer le vrai audit sur l'hôte en EN et en FR et comparer chaque ligne). Ni les audits de code en profondeur (lancés dans la locale par défaut) ni la passe d'ergonomie précédente (surtout en EN) ne pouvaient les voir — il a fallu des exécutions réelles EN/FR côte à côte. Les constats restants de l'audit d'ergonomie (F1 modèle de score, F2 présentation de la gravité, F4 code de sortie d'explain, F6 ordre de la garde root, F9 nommage JSON `alerts`/`warnings`) sont BREAKING ou relèvent de décisions de conception, et restent dans le lot prévu pour v0.12.0.
 
-### F8 — les 60 lignes de référence "Best practice" étaient EN-only
+### F8 — les 60 lignes de référence « Best practice » n'existaient qu'en anglais
 
-[bob/data/cis_refs.json](../bob/data/cis_refs.json) mappe chaque finding key vers un `ref` (ligne de référence sous un finding en verbose + dans `--explain`). Deux types :
-- **114 entrées CIS-codées** (`"code": "CIS:X.Y.Z"`) — `ref` = titre de benchmark CIS canonique.
-- **60 entrées best-practice** (`"code": null`) — conseils rédigés par BOB pour les findings sans code CIS formel.
+[bob/data/cis_refs.json](../bob/data/cis_refs.json) associe chaque clé de constat à une `ref` (la ligne de référence affichée sous un constat en mode détaillé + dans `--explain`). Les entrées se répartissent en deux :
 
-Le `ref` est lu directement du fichier data, **pas** via le système locale → les 60 lignes best-practice rendues en **anglais dans un audit FR**.
+- **114 entrées avec code CIS** (`"code": "CIS:X.Y.Z"`) — la `ref` est un titre canonique de benchmark CIS (par ex. *« CIS Ubuntu 22.04 L1 — 5.2.8 — Ensure SSH PasswordAuthentication is disabled »*).
+- **60 entrées de bonne pratique** (`"code": null`) — des recommandations écrites par BOB pour des constats sans code CIS formel (par ex. *« Best practice — Restrict LAN-exposed service ports to trusted networks or bind to 127.0.0.1 »*).
 
-Fix — chaque entrée best-practice porte un `ref_fr`, et [bob/cis_refs.py::get_cis_ref](../bob/cis_refs.py) est devenu locale-aware : `lang` défaut sur la locale active (résolu en lazy via `i18n.current_lang()`, pas de cycle d'import) ; retourne `ref_fr` si FR + présent, sinon fallback `ref`. Les 4 call sites n'ont pas besoin de changer. Les **114 entrées CIS-codées n'ont délibérément pas de `ref_fr`** — titres CIS canoniques publiés en anglais par le Center for Internet Security ; les traduire inventerait une formulation non officielle et risquerait l'imprécision. Résultat live FR : *"Bonne pratique — S'assurer que les interfaces bridge ne contournent pas les règles UFW FORWARD"*.
+La `ref` est lue directement depuis le fichier de données JSON, **pas** via le système de locale, si bien que les 60 lignes de bonne pratique s'affichaient **en anglais dans un audit en français** (l'exécution réelle en FR montrait *« Best practice — Ensure bridge interfaces do not bypass UFW FORWARD rules »* sous un constat par ailleurs entièrement en français).
 
-### F8b — deux commentaires `cmd=` en anglais hardcodé (le fix disk.py était incomplet)
+Correctif — chaque entrée de bonne pratique porte désormais une traduction française `ref_fr`, et [bob/cis_refs.py::get_cis_ref](../bob/cis_refs.py) tient désormais compte de la locale :
 
-v0.11.1 avait fixé les commentaires SMART disque qui fuitaient le **français dans EN** ; un scan propre ce cycle a trouvé l'inverse : 2 suggestions `cmd=` avec commentaires inline **anglais** hardcodés fuitant dans les audits **FR** :
-- [bob/checks/ipv6.py](../bob/checks/ipv6.py) : `# set IPV6=yes, then: sudo ufw reload`
-- [bob/checks/log_rotation.py](../bob/checks/log_rotation.py) : `# add: SystemMaxUse=500M` (confirmé fuyant dans le run FR live)
+```python
+def get_cis_ref(key, lang=None):
+    entry = _load().get(key)
+    if entry is None:
+        return None
+    if lang is None:
+        from bob.i18n import current_lang   # lazy → no import cycle
+        lang = current_lang()
+    if lang == "fr":
+        ref_fr = entry.get("ref_fr")
+        if ref_fr:
+            return ref_fr
+    return entry.get("ref")
+```
 
-Maintenant `f"… # {_t('…')}"` avec nouvelles clés `ipv6.cmd_comment_enable` + `log_rotation.cmd_comment_maxuse` (EN+FR). Scan complet confirmé : c'étaient les **2 seuls restants** — tous les `message`/`detail`/`reason` passent déjà par `_t()`.
+`lang` vaut par défaut la langue active de l'interface (résolue paresseusement — `cis_refs` est importé par `display`/`explain`, donc un `import i18n` de premier niveau irait, mais l'import paresseux garde le module sans dépendance). Les quatre sites d'appel (`display.py`, trois dans `explain.py`) n'ont besoin d'aucun changement. Les **114 entrées avec code CIS n'ont délibérément pas de `ref_fr`** — les titres canoniques des benchmarks CIS sont publiés en anglais par le Center for Internet Security, et les traduire inventerait une formulation non officielle, avec un risque de dérive par rapport au standard ; ils restent en anglais dans toutes les locales (vérifié par un test). Résultat réel en FR : *« Bonne pratique — S'assurer que les interfaces bridge ne contournent pas les règles UFW FORWARD »*.
 
-### Garde anti-drift
+### F8b — deux commentaires de `cmd=` en anglais codé en dur (le correctif de disk.py était incomplet)
 
-[tests/test_v0112_i18n_refs_and_cmd_comments.py](../tests/test_v0112_i18n_refs_and_cmd_comments.py) scanne `bob/checks/` pour un littéral `cmd=` contenant `  # <texte>` hardcodé (les commentaires localisés en `# {_t(...)}` ne matchent pas). Ferme la classe de leak disk.py/ipv6/log_rotation. + 9 tests F8.
+v0.11.1 avait corrigé les commentaires des commandes SMART de disque qui laissaient fuiter du **français dans les audits EN**, mais un vrai balayage dans ce cycle a trouvé l'inverse : deux suggestions de commande `cmd=` avec des commentaires en ligne en **anglais** codé en dur, qui fuient dans les audits **FR** :
 
-### Deux "findings" vérifiés comme NON-bugs (vérifier avant de fixer)
+- [bob/checks/ipv6.py](../bob/checks/ipv6.py) : `cmd="sudo nano /etc/default/ufw  # set IPV6=yes, then: sudo ufw reload"`
+- [bob/checks/log_rotation.py](../bob/checks/log_rotation.py) : `cmd="sudo nano /etc/systemd/journald.conf  # add: SystemMaxUse=500M"` (fuite confirmée dans l'exécution réelle en FR)
 
-- **`--unignore` laisse un header `ignore:` résiduel** : délibéré (`remove_ignore_key` I-1 v0.8.1 préserve les commentaires opérateur + structure YAML verbatim). Laissé tel quel.
-- **Alignement des bordures de box** : chaque ligne fait exactement 80 chars — pas de désalignement char-count. Tout offset visuel = effet de largeur d'affichage emoji (east-asian width), hors scope patch. Laissé tel quel.
+Les deux sont désormais de la forme `f"… # {_t('…')}"`, avec les nouvelles clés de locale `ipv6.cmd_comment_enable` + `log_rotation.cmd_comment_maxuse` (EN + FR). Un balayage complet (littéraux `message`/`detail`/`reason` + commentaires en ligne de `cmd=` dans tout `bob/checks/`) a confirmé que c'étaient les **deux seuls restants** — tous les `message`/`detail`/`reason` visibles passent déjà par `_t()`.
 
-### Numbers
+### Garde anti-dérive
+
+[tests/test_v0112_i18n_refs_and_cmd_comments.py](../tests/test_v0112_i18n_refs_and_cmd_comments.py)::`test_no_hardcoded_inline_cmd_comment_in_checks` balaie par regex `bob/checks/` à la recherche d'un **littéral de chaîne** `cmd=` contenant `  # <texte>` (un commentaire shell codé en dur). Les commentaires localisés utilisent une f-string `# {_t(...)}` et ne correspondent pas. Cela ferme la classe de fuite disk.py / ipv6 / log_rotation pour qu'elle ne puisse pas revenir. Plus 9 tests F8 (chaque entrée de bonne pratique a une `ref_fr` ; la `ref_fr` n'est pas une copie de l'EN et commence par « Bonne pratique » ; les entrées avec code CIS n'ont pas de `ref_fr` ; `get_cis_ref` résout FR/EN selon la locale et selon un `lang=` explicite).
+
+### Deux « constats » vérifiés comme NON-bugs (vérifier avant de corriger)
+
+Le test approfondi a signalé deux choses qui se sont révélées être un comportement correct — vérifiées avant d'y toucher :
+
+- **Un `--unignore` de la dernière clé laisse un en-tête `ignore:` résiduel.** C'est délibéré : `remove_ignore_key` (I-1, v0.8.1) parcourt le fichier ligne par ligne et ne retire que la ligne `- key: X`, **en préservant tels quels les commentaires de l'opérateur + la structure YAML personnalisée**. Réécrire/supprimer le fichier effacerait des annotations soignées à la main. Laissé tel quel.
+- **Alignement des bordures de cadre.** Chaque ligne de cadre (en-tête `╔`, section `┌`, contenu `│`) mesure **exactement 80 caractères** — aucun décalage en nombre de caractères. Tout décalage visuel sur des lignes portant des émojis est un effet de largeur d'affichage du terminal (largeur est-asiatique), hors périmètre d'un patch et risqué à « corriger ». Laissé tel quel.
+
+### Chiffres
 
 - **Tests 6369 → 6381** (+12 : tous dans `test_v0112_i18n_refs_and_cmd_comments.py` — 9 F8 + 3 F8b). 0 régression.
-- 4 fichiers production (`cis_refs.py`, `ipv6.py`, `log_rotation.py`) + 1 data (`cis_refs.json` +60 `ref_fr`) + 2 locales (+2 clés).
+- 4 fichiers de production : [bob/cis_refs.py](../bob/cis_refs.py) (recherche tenant compte de la locale), [bob/checks/ipv6.py](../bob/checks/ipv6.py) + [bob/checks/log_rotation.py](../bob/checks/log_rotation.py) (commentaire de cmd via `_t`).
+- 1 fichier de données : [bob/data/cis_refs.json](../bob/data/cis_refs.json) (+60 `ref_fr`).
+- 2 fichiers de locale : `ipv6.cmd_comment_enable` + `log_rotation.cmd_comment_maxuse` (EN + FR).
 
-### Upgrade
+### Mise à jour
 
 ```
 pipx upgrade bodyguard-of-bits
 ```
 
-Pas de migration. Les utilisateurs FR voient les 60 lignes "Best practice" et les 2 commentaires en français ; les audits EN inchangés. **v0.7.x reste EOL** (déclaré v0.8.1) ; **v0.6.x reste EOL** (v0.7.2).
+Aucune action de migration. Les utilisateurs francophones voient les 60 lignes de référence « Bonne pratique » et les deux commentaires de commande en français ; les audits en anglais sont inchangés. **v0.7.x reste en fin de vie** (déclarée en v0.8.1) ; **v0.6.x reste en fin de vie** (v0.7.2).
 
 ### Leçons
 
-- **Un fix est incomplet tant qu'on n'a pas scanné toute la classe.** disk.py v0.11.1 = une instance ; v0.11.2 en trouve 2 autres (sens inverse). Le garde anti-drift pin la classe entière.
-- **Le test bilingue live trouve ce que le monolingue ne voit pas.** F8 et F8b invisibles en EN-only et en audit code locale-défaut.
-- **Vérifier avant de fixer (encore).** 2 observations du deep test étaient correctes-by-design ; les toucher aurait régressé le contrat de préservation I-1 ou chassé un bug d'alignement inexistant.
+- **Un correctif est incomplet tant qu'on n'a pas balayé toute la classe.** Le correctif i18n de disk.py en v0.11.1 avait corrigé une instance de « langue codée en dur dans un commentaire de `cmd=` » ; v0.11.2 en a trouvé deux de plus dans le sens inverse. La garde anti-dérive épingle désormais toute la classe, pour que la prochaine fasse échouer la CI.
+- **Les tests bilingues en conditions réelles trouvent ce que les tests monolingues ne peuvent pas trouver.** F8 et F8b étaient tous deux invisibles aux exécutions en EN seul et aux audits de code dans la locale par défaut — seuls des audits réels EN/FR côte à côte les ont fait apparaître.
+- **Vérifier avant de corriger (encore).** Deux des observations du test approfondi étaient correctes par conception ; y toucher aurait fait régresser le contrat de préservation des commentaires d'I-1 ou poursuivi un bug d'alignement inexistant. Même discipline que celle qui avait plus tôt attrapé les fausses alertes « exit 0 » et « ↩ N× ».
 
 ---
 
 ## [v0.11.1] — 11-06-2026
 
-**Premier patch hardening v0.11.x — deux minors issus de l'audit deep whole-tool post-v0.11.0.**
+**Premier patch hardening v0.11.x — deux mineurs issus de l'audit en profondeur de tout l'outil après v0.11.0.**
 
 ### L'audit
 
-La 20e passe d'audit deep a balayé tout l'outil (pas juste le diff v0.11.0) — parsers d'input, chaque site de construction `cmd=`, le contrat atomic-write + tous les callers, l'intégrité scoring/posture/output, CLI/TUI, et i18n. Résultat : **0 critique + 0 important + 2 minor**. Après 19 passes les surfaces sensibles sont clean :
+La 20e passe d'audit en profondeur a balayé tout l'outil (pas seulement le diff de v0.11.0) — analyseurs d'entrée, chaque site de construction de remédiation `cmd=`, le contrat d'écriture atomique + tous ses appelants, l'intégrité du scoring/de la posture/des sorties, la CLI/le TUI et l'i18n. Résultat : **0 critique + 0 important + 2 mineurs**. Après 19 passes antérieures, les surfaces critiques pour la sécurité sont propres :
 
-- **injection cmd** : 68 sites `cmd=` vérifiés — toute valeur config/parsée atteignant un shell est `shlex.quote`'d, int/whitelist-bounded, ou gardée par `fixes._has_shell_ops` (`subprocess.run(shlex.split(...))` sans `shell=True`). La génération de ligne cron valide les emails contre une regex ancrée.
-- **atomic-write** : `_atomic.py` fsync(fd)+fsync(dir), `mkstemp` par appel, cleanup tmp sur tout path d'échec.
-- **HTML output** : chaque champ de finding + hostname/OS échappé via `_h()`.
-- **contrats de clés littérales** (classe de bug v0.10.2) : chaque littéral de clé dans `scoring.py`/`exposure.py`/`correlation.py` résout vers une clé live.
+- **injection de commande** : les 68 sites `cmd=` / `nature="action"` vérifiés — chaque valeur de configuration/analysée qui atteint une commande shell est passée par `shlex.quote`, bornée par entier/liste blanche, ou protégée par `fixes._has_shell_ops` (qui lance `subprocess.run(shlex.split(...))` sans `shell=True`). La génération des lignes cron valide les e-mails contre une regex ancrée avant d'écrire.
+- **écriture atomique** : `_atomic.py` fait fsync(fd)+fsync(dir), un `mkstemp` par appel, le nettoyage du tmp sur chaque chemin d'échec ; tous les appelants passent des bits de mode explicites corrects.
+- **sortie HTML** : chaque champ de constat + le nom d'hôte/l'OS échappés via `_h()` — pas de XSS.
+- **contrats de clés littérales** (la classe de bug de v0.10.2) : chaque littéral de clé de constat de `scoring.py` / `exposure.py` / `correlation.py` / `domain_scores.py` se résout en une clé réellement émise.
 
-Le filter conservateur a sélectionné **les deux** minors : petits fixes de cohérence de contrat qui bundlent proprement, alignés sur un contrat existant.
+Le filtre conservateur a retenu **les deux** mineurs : ce sont de petits correctifs de cohérence de contrat qui se regroupent proprement, et tous deux s'alignent sur un contrat déjà énoncé.
 
-### M-1 — i18n ne doit pas crasher sur un template locale malformé
+### M-1 — l'i18n ne doit pas planter sur un gabarit de locale malformé
 
-[bob/i18n.py](../bob/i18n.py)::`t()` ne catchait que `KeyError` de `str.format()`. Mais `str.format()` lève plus que ça : une **accolade non fermée** (`"{price"`) → `ValueError` ; un **champ positionnel** (`"{0}"`) appelé avec kwargs nommés → `IndexError`. L'un ou l'autre propageait non catché et **crashait l'audit** pour la locale affectée. Le linter parity ne comparait que le *set* de placeholders `{name}` bien formés.
+[bob/i18n.py](../bob/i18n.py)::`t()` n'attrapait que la `KeyError` de `str.format()` :
 
-Fix à deux couches :
+```python
+# before
+except KeyError as exc:
+    logger.warning("Missing placeholder %s in translation key %r", exc, key)
+    return value
+```
 
-1. **Filet runtime.** `t()` dégrade vers le template brut sur `(KeyError, IndexError, ValueError)`. `try_t()` gagne le guard `(IndexError, ValueError)` **en préservant sa propagation `KeyError` intentionnelle** (un kwarg oublié est une erreur du caller que les callers distinguent ; un template malformé est de la data corrompue et dégrade).
-2. **Prévention au CI (le guard le plus fort).** [tests/test_locale_coverage.py](../tests/test_locale_coverage.py)::`TestTemplateWellFormed` parse chaque string des deux locales avec `string.Formatter().parse()` et rejette les accolades non équilibrées + champs positionnels. Protège *tous* les lecteurs (`t`, `try_t`, `t_or_hardcoded`).
+Mais `str.format()` lève plus que `KeyError` :
+- une **accolade non fermée** (`"50% off {price"`) → `ValueError` ;
+- un **champ positionnel** (`"item {0}"`) appelé avec des kwargs nommés (ce que BOB utilise toujours) → `IndexError`.
 
-Les locales actuelles sont clean — classe de crash-on-future-edit latente, fermée avant qu'elle puisse mordre, cohérente avec le contrat i18n "ne crashe jamais, dégrade en bracketed-fallback".
+L'une ou l'autre se propagerait sans être attrapée et **ferait planter l'audit** pour la locale concernée. Le linter de parité des placeholders ne comparait que l'*ensemble* des placeholders `{nom}` bien formés entre `en.json` et `fr.json` — il ne pouvait voir ni une accolade non fermée ni un champ positionnel.
 
-### M-2 — `--test-webhook` honore maintenant `--offline`
+Le correctif se fait en deux couches :
 
-[bob/__main__.py](../bob/__main__.py) : `--offline` est documenté comme désactivant **tous** les appels réseau sortants (air-gapped). Le path webhook audit-time gatait déjà dessus, mais la commande explicite `--test-webhook` non — donc `bob --test-webhook --offline` faisait quand même un POST.
+1. **Filet de sécurité à l'exécution.** `t()` se rabat désormais sur le gabarit brut en cas de `(KeyError, IndexError, ValueError)`. `try_t()` (le résolveur de bas niveau utilisé par `_i18n_safe`) reçoit la garde `(IndexError, ValueError)` **tout en préservant sa propagation volontaire de `KeyError`** — un kwarg oublié est une erreur de l'appelant que les appelants distinguent, mais un gabarit malformé est une donnée corrompue et se dégrade :
 
-L'excuse "intention explicite de test réseau" est faible : `--offline` est un override global délibéré, et quand deux flags entrent en conflit autour d'un garde-fou d'egress, la résolution sûre est que **le flag le plus restrictif gagne**. Une egress inattendue fait le plus de mal précisément dans l'environnement air-gapped. Le fix skip le POST proprement, avant toute résolution d'URL ou import réseau, avec `EXIT_OK` (honorer `--offline` est correct, pas un échec) + notice claire sur stderr. Nouvelle clé locale `cli.test_webhook.offline_skipped` (EN+FR).
+   ```python
+   # try_t() — KeyError still propagates; malformed-template errors degrade
+   try:
+       return value.format(**kwargs)
+   except (IndexError, ValueError):
+       return value
+   ```
+
+2. **Prévention en CI (la garde la plus forte).** [tests/test_locale_coverage.py](../tests/test_locale_coverage.py)::`TestTemplateWellFormed` analyse chaque feuille de chaîne des deux locales avec `string.Formatter().parse()` et rejette les accolades non fermées (`ValueError` de `parse`) et les champs positionnels/auto-numérotés (`{0}` / `{}`). Cela protège *chaque* lecteur (`t`, `try_t`, `t_or_hardcoded`) en garantissant qu'une chaîne malformée n'atterrit jamais dans une locale publiée.
+
+Les `en.json` / `fr.json` actuels sont propres — c'est une classe de plantage latente, sur une future modification, fermée avant qu'elle puisse frapper, cohérente avec le contrat i18n de BOB « ne jamais planter, se dégrader en repli entre crochets ».
+
+### M-2 — `--test-webhook` respecte désormais `--offline`
+
+[bob/__main__.py](../bob/__main__.py) : `--offline` est documenté comme désactivant **tous** les appels réseau sortants (environnements isolés). Le chemin webhook du moment de l'audit en tenait déjà compte (`if _webhook_url and not config.offline:`), mais pas la commande de smoke explicite `--test-webhook` — si bien que `bob --test-webhook --offline` émettait quand même un POST.
+
+L'excuse de « l'intention explicite de tester le réseau » est faible : `--offline` est une surcharge globale délibérée, et quand deux drapeaux entrent en conflit autour d'une garde de sortie réseau, la résolution sûre est que **le drapeau le plus restrictif l'emporte**. Une sortie réseau inattendue est la plus nuisible justement dans l'environnement isolé où l'on utilise `--offline`. Le correctif saute proprement le POST, avant toute résolution d'URL ou tout import réseau :
+
+```python
+if config.offline:
+    print("ℹ  " + i18n.t("cli.test_webhook.offline_skipped"), file=sys.stderr)
+    return EXIT_OK
+```
+
+`EXIT_OK` parce que respecter `--offline` est le comportement correct, pas un échec ; l'avis clair sur stderr garantit que personne n'est induit en erreur. Nouvelle clé de locale `cli.test_webhook.offline_skipped` (EN+FR).
 
 ### Tests
 
-[tests/test_v0111_i18n_format_and_offline_webhook.py](../tests/test_v0111_i18n_format_and_offline_webhook.py) — 9 tests (degrade `t()` ×4, `try_t()` ×3 dont KeyError préservé, offline guard ×2 dont guard no-network) + 2 dans `TestTemplateWellFormed` (en+fr). 11 tests pour M-1+M-2. 0 régression.
+[tests/test_v0111_i18n_format_and_offline_webhook.py](../tests/test_v0111_i18n_format_and_offline_webhook.py) — 9 tests :
 
-### Fixes de polish issus de l'audit fonctionnel / qualité-perçue (UX) — F3, F5, F7
+- `TestI18nMalformedTemplateDegrades` (4) : `t()` se dégrade sur une accolade non fermée / un champ positionnel / un kwarg manquant, et formate toujours un gabarit nommé bien formé.
+- `TestTOptionalMalformedTemplate` (3) : `try_t()` avale les erreurs de gabarit malformé mais **propage toujours la `KeyError`** (contrat préservé).
+- `TestTestWebhookOfflineGuard` (2) : `--test-webhook --offline` renvoie `EXIT_OK`, ne fait **aucun** appel réseau (un `test_webhook` patché qui lève s'il est atteint n'est jamais atteint), et court-circuite avant l'erreur « aucune URL configurée ».
 
-Juste après M-1+M-2, un audit fonctionnel / qualité-perçue a été mené sur tout l'outil **en conditions réelles** (audit root live sur Linux Mint 22.3, tous les formats de sortie, la couche éducation `--explain`, les chemins d'erreur, EN+FR). Il a surfacé 7 findings. Quatre sont des changements de contrat/design/comportement déférés à un bundle v0.12.0 planifié : **F1** (le modèle de score domain-average arrondit une déduction `-1` réelle vers un `10/10` de tête, qui coexiste avec "Action required" et sonne contradictoire — la pièce maîtresse, demande du design), **F2** (un finding s'affiche `⚠ [WARNING]` dans le corps mais sous `✖ Action required` dans le résumé), **F4** (`--explain <mauvaise clé>` sort `0`, indistinct d'un succès, sans suggestion "did you mean"), **F6** (le root-gate fire avant la validation non-root). Les trois restants sont triviaux, sans changement de contrat, intégrés à v0.11.1 :
+Plus 2 dans `TestTemplateWellFormed` (en + fr paramétrés). 11 tests pour M-1+M-2. 0 régression.
 
-**F3 — le parsing des noms de device fwupd fuyait du junk connecteur.** [bob/checks/firmware.py](../bob/checks/firmware.py). Toutes les commandes système tournent sous `LC_ALL=C` (forcé dans [bob/checks/_run.py](../bob/checks/_run.py) pour une sortie anglaise stable). Mais `fwupdmgr get-updates` dessine son arbre de devices avec des connecteurs Unicode (├ └ ─ │), qui sous `LC_ALL=C` dégradent en `?`. La détection d'arbre échouait, le parser tombait en mode flat et récupérait l'en-tête conteneur + un `?` nu + `??UEFI dbx:` comme 3 "noms de device". Observé live : `3 pending firmware update(s): ASUSTeK ... , ?, ??UEFI dbx:` — nom **et** count faux (3 vs 1 réel). Fix : nouveau `_C_UTF8_LOCALE_ENV` (`LC_ALL=C.UTF-8` — texte anglais, charset UTF-8) passé à fwupd via un nouveau paramètre `env=` sur `_run`. Le parser tree est correct sur entrée correcte — vérifié live : `1 pending firmware update(s): UEFI dbx`. Une garde défense-en-profondeur (`_VALID_DEVICE_NAME_RE`) rejette tout junk résiduel.
+(Une leçon de fixture auto-infligée pendant le développement : le test de M-2 invoque `main()`, qui appelle `output.init(no_color=config.no_color)`. Avec la couleur activée par défaut, cela laissait fuiter un état ANSI dans un test de barre de score ultérieur de `test_watch.py`. Corrigé en passant `--no-color` dans l'invocation du test — la garde hors ligne se déclenche de toute façon avant toute sortie colorée.)
 
-**F5 — le hint explain clé-introuvable disait sudo à tort.** `explain.ui.unknown_hint` disait *"Run 'sudo bob --explain list'"*, or `--explain list` ne demande pas sudo (le sibling `invalid_key_hint` était déjà correct). Sudo retiré (EN+FR).
+### Correctifs de finition issus de l'audit fonctionnel / de qualité perçue (UX) — F3, F5, F7
 
-**F7 — les règles orphelines UFW proto-non-spécifiées affichaient un port nu.** [bob/checks/firewall.py::_check_orphan_rules](../bob/checks/firewall.py). Une règle sans protocole (UFW → tcp+udp) s'affichait `57621` à côté de `41681/tcp`. Maintenant `57621/tcp+udp` ; la remediation `ufw delete allow 57621` garde le port nu (seule forme acceptée).
+Juste après l'intégration de M-1+M-2, un audit fonctionnel / de qualité perçue a été mené sur tout l'outil **en conditions réelles** (un audit root réel sur Linux Mint 22.3, chaque format de sortie, la couche pédagogique `--explain`, les chemins d'erreur, EN+FR). Il a fait remonter 7 constats. Quatre sont des changements de contrat/conception/comportement déférés à un lot prévu pour v0.12.0 : **F1** (le modèle de score par moyenne des domaines arrondit une vraie déduction de `-1` jusqu'à un titre `10/10`, qui coexiste avec « Action required » et se lit comme contradictoire — la pièce maîtresse, qui demande de la conception), **F2** (un constat apparaît en `⚠ [WARNING]` dans le corps mais sous `✖ Action required` dans le résumé), **F4** (`--explain <clé erronée>` sort avec `0`, indistinct d'un succès, et ne propose aucune suggestion « vouliez-vous dire »), **F6** (la garde root se déclenche avant la validation non-root, si bien que `--check=faute` sans sudo signale « must be run as root » au lieu de « check inconnu »). Les trois restants sont des correctifs trivialement sûrs, sans changement de contrat, intégrés à v0.11.1 :
 
-[tests/test_v0111_ux_audit_fixes.py](../tests/test_v0111_ux_audit_fixes.py) — 9 tests (F3 ×4, F5 ×2, F7 ×3).
+**F3 — l'analyse des noms de périphériques fwupd laissait fuiter des déchets de connecteurs.** [bob/checks/firmware.py](../bob/checks/firmware.py). Toutes les commandes système tournent sous `LC_ALL=C` (imposé dans [bob/checks/_run.py](../bob/checks/_run.py) pour une sortie anglaise stable que les regex peuvent analyser). Mais `fwupdmgr get-updates` dessine son arbre de périphériques avec des connecteurs Unicode de dessin de cadre (├ └ ─ │), et sous `LC_ALL=C` ils se réduisent à `?`. `_parse_fwupd_updates` détecte l'arbre en faisant correspondre `^[├└]─` ; avec les connecteurs dégradés en `?`, la détection échouait, l'analyseur tombait dans sa branche de format plat et récoltait les lignes non indentées de déchets — l'en-tête du conteneur système, un `?` nu (était `│`) et `??UEFI dbx:` (était `└─UEFI dbx:`) — comme trois « noms de périphériques ». Observé en conditions réelles sur la machine de test : `3 pending firmware update(s): ASUSTeK COMPUTER INC. ASUS X500MA_U500MA, ?, ??UEFI dbx:` — mauvais nom **et** mauvais compte (3 contre 1 réellement).
+
+Le correctif vise la cause racine : un nouveau `_C_UTF8_LOCALE_ENV` (`LC_ALL=C.UTF-8` — toujours du texte anglais/POSIX, mais avec un jeu de caractères UTF-8 pour que les connecteurs survivent), passé à fwupd via un nouveau paramètre optionnel `env=` de `_run`. L'analyseur d'arbre existant est correct quand il reçoit une entrée correcte — vérifié en conditions réelles, le constat est désormais le propre `1 pending firmware update(s): UEFI dbx`. Une garde défensive de l'analyseur (`_VALID_DEVICE_NAME_RE` — un vrai nom de périphérique commence par un caractère alphanumérique) rejette tout déchet résiduel `?`/de connecteur sur la rare distro dépourvue de `C.UTF-8`.
+
+**F5 — l'indice « clé introuvable » d'explain mentionnait sudo à tort.** [bob/locales/en.json](../bob/locales/en.json) + [fr.json](../bob/locales/fr.json). `explain.ui.unknown_hint` disait *« Run 'sudo bob --explain list' … »*, mais `--explain list` n'a pas besoin de sudo — le `--help` marque soigneusement toute la surface explain comme « no sudo required », et l'indice voisin `explain.ui.invalid_key_hint` disait déjà *« Run 'bob --explain list' »* (sans sudo). Le `sudo` égaré a été retiré dans les deux locales.
+
+**F7 — les règles UFW orphelines sans protocole affichaient un port nu.** [bob/checks/firewall.py::_check_orphan_rules](../bob/checks/firewall.py). Une règle UFW sans protocole (UFW l'applique à tcp et à udp) est stockée comme un port nu et s'affichait `57621`, en décalage criant à côté de voisines qualifiées par protocole comme `41681/tcp`. Elle s'affiche désormais `57621/tcp+udp` — cohérent et informatif (cela dit à l'opérateur que la règle couvre les deux protocoles) — tandis que la remédiation `sudo ufw delete allow 57621` garde le port nu, seule forme qu'accepte la suppression d'UFW.
+
+[tests/test_v0111_ux_audit_fixes.py](../tests/test_v0111_ux_audit_fixes.py) — 9 tests : F3 (forme de `_C_UTF8_LOCALE_ENV`, analyse propre d'un arbre correct, une entrée dégradée en `?` n'émet aucun déchet, entrée vide), F5 (indice sans sudo EN+FR, renvoie toujours vers list), F7 (affichage nu→`/tcp+udp` + commande de suppression nue, qualifiée par protocole inchangée, port en écoute non signalé).
 
 ### Passe de justesse documentaire (DOC-A … DOC-G)
 
-Un audit complet de la doc (cross-check de chaque doc prose + man + help CLI contre le code réel) a tourné dans la même fenêtre ; ses corrections sans risque ont été intégrées. Le *squelette* de la doc était excellent (parité EN/FR, conventions footer/email/URL clean) ; le drift se concentrait sur **deux features au statut changé** + des **compteurs jamais resynchronisés** :
+Un audit complet de la documentation (vérification croisée de chaque document en prose + page de manuel + aide CLI contre le vrai code) a tourné dans la même fenêtre, et ses corrections sans risque ont été intégrées. Le *squelette* de la doc était excellent (parité EN/FR, conventions de pied de page/e-mail/URL toutes propres) ; la dérive se concentrait sur **deux fonctionnalités dont le statut avait changé** plus **des comptes jamais resynchronisés** :
 
-- **`--json-v1`** (retiré en v0.9.0) était encore documenté comme flag utilisable : ligne `sudo bob --json-v1` exécutable dans [TUTORIAL.md](../DOCUMENTS/TUTORIAL.md) + FR, table + exemple dans [README_TECH.md](../DOCUMENTS/README_TECH.md), mention dans [SECURITY.md](../SECURITY.md). Tout corrigé en "retiré en v0.9.0 ; v2 seul schéma".
-- **Le profil `workstation`** se contredisait : [README.md](../README.md) le disait "alias rétrocompatible vers `desktop`" et [man/bob-profile.5](../man/bob-profile.5) "shipped mais non consommé par le loader" (comportement pré-v0.8.1) alors que README_TECH/SECURITY le disaient first-class. Réalité ([bob/profiles.py](../bob/profiles.py)) : alias retiré en v0.8.1, `workstation` est un profil first-class business-tier. Sources réconciliées + `workstation` **ajouté à la ligne profil du `--help` + message d'erreur `--profile`** ([bob/cli.py](../bob/cli.py)) où il était omis.
-- **Compteurs périmés** : EXPLAIN_KEYS cité 116 / 168 → réel **169 clés / 45 préfixes** ; "43 vérifications" → **34 sections** (matche `--check=list`). Services (38) déjà correct.
-- **`UFW_AUDIT_SHARE`** (supprimé v0.5.4) documenté comme env var fonctionnelle dans [man/bob.1](../man/bob.1) (entrée retirée) et [README_DEV.md](../DOCUMENTS/README_DEV.md) (corrigé vers le vrai mécanisme `BOB_SHARE`).
-- Dates man bumpées à 2026-06-11.
+- **`--json-v1`** (retiré en v0.9.0) était encore documenté comme un drapeau utilisable : une ligne exécutable `sudo bob --json-v1` dans [TUTORIAL.md](../DOCUMENTS/TUTORIAL.md) + FR (une commande à copier-coller morte), tout un tableau « schéma v1 sur option » + exemple + une ligne « pourrait être retiré dans une future majeure » dans [README_TECH.md](../DOCUMENTS/README_TECH.md), et une mention dans la chaîne de mise à jour de [SECURITY.md](../SECURITY.md). Tous corrigés en « retiré en v0.9.0 ; v2 est le seul schéma ».
+- **Le profil `workstation`** se contredisait d'un document à l'autre : [README.md](../README.md) l'appelait un « alias de rétrocompatibilité vers `desktop` » et [man/bob-profile.5](../man/bob-profile.5) disait « livré mais non consommé par le chargeur » — les deux décrivent le comportement d'*avant v0.8.1* — tandis que README_TECH / SECURITY le disaient à juste titre de premier rang. La réalité ([bob/profiles.py](../bob/profiles.py)) : l'alias a été retiré en v0.8.1 et `workstation` est un profil de premier rang pour le monde professionnel. Toutes les sources ont été réconciliées, et `workstation` a été **ajouté à la ligne de profils de `--help` + au message d'erreur de `--profile`** ([bob/cli.py](../bob/cli.py)) dont il était entièrement absent.
+- **Comptes périmés** : EXPLAIN_KEYS cité à 116 / 168 (README_TECH) et 116 (man) → corrigé à la vraie valeur **169 clés / 45 préfixes** ; « 43 checks » (README ×2, README_TECH ×2) → **34 sections de check** (comme `--check=list`). Le compte des services (38) était déjà correct.
+- **`UFW_AUDIT_SHARE`** (retiré en v0.5.4) était documenté comme une variable d'environnement fonctionnelle dans [man/bob.1](../man/bob.1) (entrée retirée) et [README_DEV.md](../DOCUMENTS/README_DEV.md) (tableau d'environnement + un extrait de code périmé → corrigé vers le vrai mécanisme `BOB_SHARE` de `bob/_paths.py`).
+- dates des pages de manuel passées au 2026-06-11.
 
-[tests/test_v0111_doc_accuracy.py](../tests/test_v0111_doc_accuracy.py) — 6 gardes anti-drift (profils `.conf` ⊆ ligne `--help` + message d'erreur ; aucun doc user ne montre un `bob --json-v1` exécutable). Même pattern "post-bug → garde générique" que le literal-drift guard v0.11.0.
+[tests/test_v0111_doc_accuracy.py](../tests/test_v0111_doc_accuracy.py) — 6 gardes anti-dérive qui épinglent deux des faits corrigés pour qu'ils ne puissent pas régresser : chaque `bob/data/profiles/*.conf` livré doit apparaître dans la ligne de profils de `--help` + le message d'erreur de `--profile`, et aucun document destiné à l'utilisateur ne doit montrer un `bob --json-v1` exécutable. (Même schéma « après un bug → une garde générique » que la garde anti-dérive des littéraux de v0.11.0.)
 
-### Fuite i18n inverse — français hardcodé dans les commandes SMART disque
+### Fuite i18n inverse — du français codé en dur dans les commandes SMART du disque
 
-Révélé en comparant un audit **anglais** live au français (runs user, 2026-06-10) : les cinq suggestions de commandes `smartctl` dans [bob/checks/disk.py](../bob/checks/disk.py) portaient des **commentaires français hardcodés** (`# lancer un test automatique court`, `# surveiller la progression`, …) — corrects en audit FR mais **fuitant le français dans tout audit anglais**. C'est l'inverse (et plus net) que le F8 déféré : F8 = "non traduit" (défendable pour les titres CIS), ça = mauvaise langue — donc ship maintenant. Fix : cinq clés locale `disk.smart_cmd.{test_short,test_long,watch,abort,history}` (EN+FR) via `_t()`. Scan confirmé isolé à ces 5 strings. Piné par `TestDiskSmartCmdLocalised`.
+Apparue en comparant un audit réel en **anglais** à l'audit en français (exécutions de l'utilisateur, 2026-06-10) : les cinq suggestions de commandes d'auto-test `smartctl` de [bob/checks/disk.py](../bob/checks/disk.py) portaient des **commentaires en ligne en français codé en dur** (`# lancer un test automatique court (~2 min)`, `# surveiller la progression en temps réel`, …). Ils s'affichaient correctement dans un audit en français mais **faisaient fuiter du français dans chaque audit en anglais**. C'est l'inverse de F8 (déféré), et plus net : F8 est de l'« anglais non traduit » (défendable pour des titres CIS), ceci est une sortie tout simplement dans la mauvaise langue, donc livrée maintenant plutôt que d'attendre le lot i18n de v0.12.0. Correctif : cinq clés de locale `disk.smart_cmd.{test_short,test_long,watch,abort,history}` (EN + FR), insérées dans le commentaire de la commande via `_t()`. Un balayage a confirmé que la fuite se limitait à ces cinq chaînes (l'autre seul français trouvé dans le source, `logs.py`, est un conditionnel correct `… if lang == "fr" else …`). Épinglé par `tests/test_v0111_ux_audit_fixes.py::TestDiskSmartCmdLocalised` (pas de français codé en dur dans `disk.py` ; les deux locales présentes ; le commentaire EN est en anglais).
 
-### Numbers
+### Chiffres
 
-- **Tests 6336 → 6369** (+33 : 11 pour M-1+M-2 + 16 dans ux_audit_fixes (9 F3/F5/F7 + 7 disk i18n) + 6 gardes doc-accuracy). 0 régression.
-- 5 fichiers production (`i18n.py`, `__main__.py`, `_run.py`, `firmware.py`, `firewall.py`, `disk.py`, `cli.py`).
-- locale : `offline_skipped`, `unknown_hint`, `disk.smart_cmd.*` (5 clés) — EN+FR.
-- 3 test files (nouveaux) + 1 classe locale-linter + release surface complète.
+- **Tests 6336 → 6369** (+33 : 11 pour M-1+M-2 — 9 dans `test_v0111_i18n_format_and_offline_webhook.py` + 2 cas du linter de locale — 16 dans `test_v0111_ux_audit_fixes.py` (9 pour F3/F5/F7 + 7 pour la fuite i18n des commentaires SMART du disque) — 6 dans `test_v0111_doc_accuracy.py`, gardes anti-dérive de la doc). 0 régression.
+- 5 fichiers de production : [bob/i18n.py](../bob/i18n.py) (élargir deux clauses except), [bob/__main__.py](../bob/__main__.py) (garde hors ligne), [bob/checks/_run.py](../bob/checks/_run.py) (`_C_UTF8_LOCALE_ENV` + paramètre `env=`), [bob/checks/firmware.py](../bob/checks/firmware.py) (appel fwupd en UTF-8 + garde de l'analyseur), [bob/checks/firewall.py](../bob/checks/firewall.py) (affichage du port orphelin), [bob/checks/disk.py](../bob/checks/disk.py) (i18n des commentaires SMART) + [bob/cli.py](../bob/cli.py) (workstation dans --help, issu de la passe doc).
+- fichiers de locale : `cli.test_webhook.offline_skipped`, `explain.ui.unknown_hint` (F5), `disk.smart_cmd.*` (5 clés) — EN + FR.
+- 3 nouveaux fichiers de test + 1 classe du linter de locale + toute la surface de release.
 
-### Upgrade
+### Mise à jour
 
 ```
 pipx upgrade bodyguard-of-bits
 ```
 
-Pas d'action de migration requise. `bob --test-webhook --offline` skip maintenant proprement au lieu de POSTer.
+Aucune action de migration requise. `bob --test-webhook --offline` saute désormais proprement l'envoi au lieu de faire un POST.
 
-**v0.7.x reste EOL** (déclaré dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1). **v0.6.x reste EOL** (déclaré en v0.7.2).
+**v0.7.x reste en fin de vie** (déclarée dans [SECURITY.md](../SECURITY.md) depuis v0.8.1). **v0.6.x reste en fin de vie** (déclarée en v0.7.2).
 
 ### Leçons
 
-- **Un audit clean est un résultat valide — mais les deux minors trouvés étaient de vrais trous de contrat**, pas cosmétiques : le contrat never-crash d'i18n avait un trou pour les templates malformés ; le contrat no-egress de `--offline` avait un trou pour `--test-webhook`.
-- **Fixer à la couche la plus forte.** M-1 ship un degrade runtime ET un linter CI qui empêche la mauvaise data d'atterrir.
-- **Le filter conservateur n'est pas "ne rien shipper sur un audit clean".** 0 C / 0 I = pas d'urgence, mais deux fixes cheap qui restaurent des contrats passent "gain × risque".
+- **Un audit propre est un résultat valable — mais les deux mineurs qu'il a trouvés étaient de vraies lacunes de contrat**, pas du cosmétique : le contrat « ne jamais planter » de l'i18n avait un trou pour les gabarits malformés ; le contrat « aucune sortie réseau » de `--offline` avait un trou pour `--test-webhook`. Ils méritaient d'être livrés précisément parce qu'ils rétablissent des contrats énoncés.
+- **Corriger à la couche la plus forte.** M-1 livre à la fois une dégradation à l'exécution ET un linter en CI qui empêche la donnée fautive d'atterrir — le linter protège chaque lecteur, pas seulement la fonction signalée par l'audit.
+- **Le filtre conservateur, ce n'est pas « ne rien livrer après un audit propre ».** Avec 0 C / 0 I il n'y avait pas d'urgence, mais deux correctifs bon marché, qui rétablissent des contrats et se regroupent en un tout petit patch, passent « gain × risque » : risque faible, gain réel (même latent), alignés sur des contrats existants.
 
 ---
 
 ## [v0.11.0] — 10-06-2026
 
-**Première release v0.11.x — BREAKING bundle : hygiene + design fix.**
+**Première release v0.11.x — lot BREAKING : hygiène + correctif de conception.**
 
-Ouvre la branche v0.11.x. Un BREAKING bundle planifié et conservateur (pas un patch de réaction à un audit) : le scope a été figé à l'avance ([[project_v0110_plan]]) et approuvé avant l'implémentation. Deux items BREAKING, trois items engineering/test, un refresh documentaire, et une passe d'audit pre-ship.
+Ouvre la branche v0.11.x. Un lot BREAKING planifié et conservateur (pas un patch réactif à un audit) : le périmètre a été gelé à l'avance ([[project_v0110_plan]]) et approuvé avant l'implémentation. Deux éléments BREAKING, trois éléments d'ingénierie/de test, un rafraîchissement de la documentation et une passe d'audit d'avant-livraison.
 
-### Pourquoi ce bundle, et pourquoi F-1 N'Y est PAS
+### Pourquoi ce lot, et pourquoi F-1 n'en fait PAS partie
 
-Le filter backlog v0.11.0 a appliqué "gain × risque = STOP" ([[feedback_conservative_refactor]]) à chaque item déféré :
+Le filtre du backlog de v0.11.0 a appliqué « gain × risque = STOP » ([[feedback_conservative_refactor]]) à chaque élément déféré :
 
-| Item | Verdict | Raison |
+| Élément | Verdict | Raison |
 |---|---|---|
-| **F-1 parallel checks** | **DEFER indéfiniment** | Gain perf 30s → 5-10s MAIS zéro signal user perf sur 3+ majeures. Risque thread-safety élevé. Tranché — pas re-proposé chaque cycle. |
-| **M-3 ssh client Host scope** | **GO** | Vrai contract leak que v0.10.1 a self-introduit (son explain text recommande "restrict per-Host" mais le checker peut pas distinguer). |
-| **D-4 Rank 2-8 KILL** | **GO** | Règle kill-dormant (précédent v0.8.4) : 5+ majeures, zéro signal, entries shim inertes. |
-| **CI literal-drift guard** | **GO** | Cheap ; prévient la récurrence de la classe de bug v0.10.2 I-1. |
-| **Posture matrix tests** | **GO** | Cheap ; ferme le test debt masking-branch que le bug v0.10.2 a exposé. |
-| **SNAPSHOT refresh** | **GO** | Drift doc accumulé v0.6.0 → v0.10.x. |
-| **Audit pre-ship** | **GO** | Pattern habituel pre-major. A trouvé + fixé un vrai problème. |
+| **F-1 checks en parallèle** | **DÉFÉRÉ indéfiniment** | gain de perf 30 s → 5-10 s MAIS signal utilisateur nul sur la perf depuis 3+ majeures. Risque élevé de sûreté des threads (créneau apt, état global). Tranché — pas reproposé à chaque cycle. |
+| **M-3 portée Host du client ssh** | **GO** | Vraie fuite de contrat que v0.10.1 a elle-même introduite (son texte explain recommande « restreindre par Host », mais le contrôleur ne savait pas faire la distinction). |
+| **D-4 Rank 2-8 ABANDON** | **GO** | Règle d'abandon des fonctionnalités dormantes (précédent v0.8.4) : 5+ majeures, signal nul, entrées de shim inertes. |
+| **Garde CI de dérive des littéraux** | **GO** | Bon marché ; empêche la classe de bug I-1 de v0.10.2 de revenir. |
+| **Tests de matrice de posture** | **GO** | Bon marché ; ferme la dette de tests sur les branches masquantes que le bug de v0.10.2 avait révélée. |
+| **Rafraîchissement de SNAPSHOT** | **GO** | Dérive documentaire accumulée de v0.6.0 à v0.10.x. |
+| **Audit d'avant-livraison** | **GO** | Schéma habituel avant une majeure. A trouvé + corrigé un vrai problème. |
 
-### M-3 — sémantique de scope Host `~/.ssh/config` (BREAKING)
+### M-3 — sémantique de portée Host de `~/.ssh/config` (BREAKING)
 
-Pre-v0.11.0 [bob/checks/ssh/_subchecks.py::_check_client_config](../bob/checks/ssh/_subchecks.py) aplatissait chaque entry parsée — une directive dans un block `Host pattern` restreint était évaluée exactement comme si elle était dans le block global `Host *`. Ça contredisait directement la propre advice de remediation de BOB : l'explain text v0.10.1 pour le transfert X11 client-side recommande "restrict it per-Host block", mais un operator qui faisait exactement ça était quand même WARNé avec une déduction de `-1` point. Suivre l'advice de BOB ne silençait pas BOB.
+Avant v0.11.0, [bob/checks/ssh/_subchecks.py::_check_client_config](../bob/checks/ssh/_subchecks.py) aplatissait chaque entrée analysée — une directive dans un bloc restreint `Host motif` était évaluée exactement comme si elle se trouvait dans le bloc global `Host *`. Cela contredisait directement les propres conseils de remédiation de BOB : le texte explain de v0.10.1 sur le transfert X11 côté client recommande « le restreindre par bloc Host », mais un opérateur qui faisait exactement cela recevait quand même un WARN avec une déduction de `-1` point. Suivre le conseil de BOB ne faisait pas taire BOB.
 
-v0.11.0 rend les deux directives de **forwarding** scope-aware. Politique de sévérité par directive :
+v0.11.0 rend les deux directives de **transfert** sensibles à la portée :
 
-| Directive | Scope global (`Host *`) | Scopé à un Host spécifique |
+```python
+# A Host line can list multiple patterns (``Host bastion *``); OpenSSH
+# applies the block if ANY pattern matches, and a bare ``*`` matches every
+# host — so such a line is globally effective.
+scoped = "*" not in entry.host.split()
+
+elif k == "forwardagent" and v == "yes":
+    if scoped:
+        result.info(key="ssh.client_forward_agent_scoped",
+                    message=_t("ssh.client_forward_agent_scoped", host=entry.host))
+    else:
+        result.warn_with_deduction(key="ssh.client_forward_agent", points=1, ...)
+    found_issue = True
+
+elif k == "forwardx11" and v == "yes":
+    if scoped:
+        result.info(key="ssh.x11.forwarding.client_scoped",
+                    message=_t("ssh.x11.forwarding.client_scoped", host=entry.host))
+    else:
+        result.warn_with_deduction(key="ssh.x11.forwarding.client", points=1, ...)
+    found_issue = True
+```
+
+Politique de gravité, par directive :
+
+| Directive | Portée globale (`Host *`) | Restreinte à un Host précis |
 |---|---|---|
 | `ForwardX11 yes` | WARN + `-1` | **INFO, sans déduction** |
 | `ForwardAgent yes` | WARN + `-1` | **INFO, sans déduction** |
 | `StrictHostKeyChecking no` | ALERT + `-3` | **ALERT + `-3` (inchangé)** |
 | `UserKnownHostsFile /dev/null` | ALERT + `-3` | **ALERT + `-3` (inchangé)** |
 
-Les directives de vérification de clé d'hôte restent ALERT dans **n'importe quel** scope : désactiver la vérification de clé d'hôte est une exposition MITM même scopé à un host.
+Les directives de vérification de la clé d'hôte restent en ALERT dans **n'importe quelle** portée : désactiver la vérification de clé d'hôte ou jeter l'épinglage known_hosts est une exposition à l'homme du milieu, même restreint à un seul hôte. Les directives de transfert sont légitimement utiles quand elles sont restreintes à un hôte de confiance, si bien qu'une occurrence restreinte est signalée en INFO, sans pénalité.
 
-**Le cas multi-pattern (audit pre-ship I-1).** Le parser client-config stocke le reste entier de la ligne `Host` verbatim, donc `Host bastion *` donne `entry.host == "bastion *"`. Un test naïf `entry.host != "*"` traiterait ça comme scopé — mais OpenSSH applique le block si **n'importe quel** pattern matche, et un `*` nu matche tout host, donc `Host bastion *` est globalement effectif. L'audit sub-agent pre-ship a chopé ça comme un trou d'évasion de scoring. Le test shippé tokenise : `scoped = "*" not in entry.host.split()`. Un wildcard de sous-domaine borné (`Host *.example.com`) n'a pas de token `*` nu et reste scopé.
+**Le cas limite des motifs multiples (I-1 de l'audit d'avant-livraison).** L'analyseur de configuration client ([bob/checks/ssh/_parsers.py::_parse_client_config](../bob/checks/ssh/_parsers.py)) stocke tel quel tout le reste d'une ligne `Host`, si bien que `Host bastion *` donne `entry.host == "bastion *"`. Un test naïf `entry.host != "*"` traiterait cela comme restreint — mais OpenSSH applique le bloc quand **n'importe quel** motif listé correspond, et un `*` nu correspond à tous les hôtes, donc `Host bastion *` a un effet global. L'audit d'avant-livraison par sous-agent l'a attrapé comme un trou d'évasion du score (un outil de templating de configuration qui émettrait `Host gitlab *` esquiverait la déduction en silence). Le test livré découpe en jetons : `scoped = "*" not in entry.host.split()`. Un joker de sous-domaine borné (`Host *.example.com`) n'a pas de jeton `*` nu et reste restreint, ce qui est défendable — il correspond à un ensemble borné, pas à tous les hôtes.
 
-**BREAKING** : une directive de forwarding scopée déduisait avant 1 point (WARN) ; maintenant c'est INFO sans déduction, donc le score **monte**.
+**BREAKING** : un opérateur avec un `ForwardX11 yes` / `ForwardAgent yes` restreint perdait auparavant 1 point (WARN) ; c'est désormais un INFO sans déduction, donc le score **monte**. C'est un changement du contrat de scoring, d'où le passage de mineure à v0.11.0.
 
-Nouvelles clés locale (EN + FR, avec placeholder `{host}`) : `ssh.client_forward_agent_scoped`, `ssh.x11.forwarding.client_scoped`. Ce sont des clés INFO, donc — comme les clés INFO existantes `ssh.client_config_ok` — intentionnellement **pas** dans `EXPLAIN_KEYS`.
+Nouvelles clés de locale (EN + FR, toutes deux avec un placeholder `{host}`) :
+- `ssh.client_forward_agent_scoped`
+- `ssh.x11.forwarding.client_scoped`
 
-### D-4 Rank 2-8 KILL
+Ce sont des clés INFO, donc — comme les clés INFO existantes `ssh.client_config_ok` / `ssh.client_config_not_found` — elles ne sont volontairement **pas** dans `EXPLAIN_KEYS` (le catalogue explain est réservé aux constats WARN/ALERT actionnables).
 
-v0.10.0 a shippé `SUBCHECK_RENAMES_V100` comme **foundation** pour un split D-4 8-ranks planifié, mappant 14 clés legacy. Seul **Rank 1** (`ssh.x11_forwarding`, shippé v0.10.1) a jamais été implémenté.
+### D-4 Rank 2-8 ABANDON
 
-Les Ranks 2-8 n'ont jamais été implémentés. Les emit sites produisent encore les clés monolithiques (`ssh.host_key_dsa`, `ssh.weak_ciphers`, …), donc leurs entries shim étaient **inertes** : leurs patterns canoniques étaient émis par **rien** (vérifié par l'audit pre-ship), `matches_legacy_ignore` ne firait jamais, et un `ignore.yml` avec une clé monolithique toujours-live est géré par le path exact-match dans `ScoreEngine.apply`.
+v0.10.0 a livré [bob/_v100_subcheck_renames.py::SUBCHECK_RENAMES_V100](../bob/_v100_subcheck_renames.py) comme **fondation** d'un découpage D-4 en sous-checks prévu en 8 rangs, associant 14 clés de constat monolithiques legacy à des motifs glob de sous-clés canoniques, pour que les entrées `ignore.yml` d'avant le découpage continuent de fonctionner une fois les sites d'émission changés. Seul le **Rank 1** (`ssh.x11_forwarding` → `ssh.x11.forwarding.{server,client}`) a jamais été implémenté — livré en v0.10.1 avec la nouvelle détection côté client.
 
-Avec zéro signal user sur 5+ majeures, v0.11.0 retire les 13 entries inertes (règle kill-dormant, même call que le retrait v0.8.4 `compare-breakdown-diff`). La map est maintenant `{ssh.x11_forwarding: ssh.x11.forwarding.*}`. **Behaviour-preserving**. Piné par [tests/test_v0110_d4_rank28_kill.py](../tests/test_v0110_d4_rank28_kill.py) — Rank 1 survit + marche ; les 14 clés killées sont absentes ; et un échantillon représentatif est asserté comme toujours une **clé live émise** dans son module de check.
+Les rangs 2-8 n'ont jamais été implémentés. Les sites d'émission produisent toujours les clés monolithiques (`ssh.host_key_dsa`, `ssh.weak_ciphers`, `auditd.missing_sensitive_rules`, `samba.guest_writable`, `log_rotation.journald_volatile`, `firewall_rules.duplicate_found`, `kernel_modules.risky_fs`, …), si bien que leurs entrées de shim étaient **inertes** :
 
-### CI guard — détection de literal key-drift
+- Les motifs canoniques vers lesquels ces entrées pointaient (`ssh.dsa.host_key`, `ssh.weak.cipher.*`, `auditd.missing.*`, …) n'étaient émis par **rien** — vérifié par l'audit d'avant-livraison en cherchant par grep chaque motif retiré dans `bob/`.
+- `matches_legacy_ignore(finding_key, entry)` ne se déclenche que lorsqu'une *clé de constat réelle* correspond à un *motif* canonique. Comme rien n'émettait les motifs canoniques, les entrées des rangs 2-8 ne se déclenchaient jamais.
+- Une entrée `ignore.yml` portant une clé monolithique encore vivante (par ex. `ssh.weak_ciphers`) est gérée par le simple chemin de correspondance exacte de `ScoreEngine.apply` (`key in ignored_keys`, vérifié *avant* le shim glob), pas par le shim.
 
-[tests/test_v0110_legacy_key_drift_guard.py](../tests/test_v0110_legacy_key_drift_guard.py) généralise le guard statique v0.10.2 à **tous** les renames historiques. Sweep AST sur tout le source production `bob/` pour les string literals qui référencent une clé *renommée-away* : les 7 prefixes v0.9.0 D-1 (data-driven depuis `SECTION_RENAMES_V090`) + la clé Rank 1 v0.10.1 `ssh.x11_forwarding`. Les clés D-4 Rank 2-8 sont **délibérément hors scope** (live, pas renommées). Modules allowlisted : `_v090_renames.py`, `_v100_subcheck_renames.py`, `compare.py`, `explain.py`. Docstrings skippés via AST.
+Avec un signal utilisateur nul sur 5+ majeures indiquant qu'un de ces découpages était souhaité, porter 13 entrées inertes était un poids mort. v0.11.0 les retire (règle d'abandon des fonctionnalités dormantes, la même décision que le retrait de `compare-breakdown-diff` en v0.8.4). La table n'a désormais qu'une entrée :
 
-C'est la classe exacte de bug qui a laissé l'escalation posture I-1 v0.10.2 dead 3 majeures. Le guard fait fail CI le prochain drift de rename cross-module au lieu de shipper silencieusement.
+```python
+SUBCHECK_RENAMES_V100 = {"ssh.x11_forwarding": "ssh.x11.forwarding.*"}
+```
 
-### Posture matrix tests
+**Préserve le comportement** : rien n'émettait les motifs canoniques vers lesquels pointaient les entrées mortes, donc aucun constat réel ne change d'état de neutralisation. Si une future release découpe réellement l'une de ces clés, il suffira de rajouter une entrée d'une ligne à ce moment-là. Épinglé par [tests/test_v0110_d4_rank28_kill.py](../tests/test_v0110_d4_rank28_kill.py) — le Rank 1 survit + fonctionne ; les 14 clés legacy abandonnées sont absentes du shim ; et un échantillon représentatif est vérifié comme **clé encore émise en conditions réelles** dans son module de check (ce qui prouve que le retrait était sûr, précisément parce que le rang n'a jamais été découpé).
 
-[tests/test_v0110_posture_matrix.py](../tests/test_v0110_posture_matrix.py) énumère la matrice complète 2×2×2 = 8 cellules de `set_posture_from_engine` + résolution de priorité + isolation de branche (la leçon v0.10.2 : une branche de masking peut cacher une branche morte pendant des majeures).
+### Garde CI — détection de dérive des clés littérales
 
-### SNAPSHOT.md refresh
+[tests/test_v0110_legacy_key_drift_guard.py](../tests/test_v0110_legacy_key_drift_guard.py) généralise la garde statique `TestNoLegacyKeyInLiveCheck` de v0.10.2 (qui épinglait le seul littéral `iptables_nft.input_accept`) à **chaque** renommage historique. Il balaie par AST tout le source de production de `bob/` à la recherche de littéraux de chaîne qui référencent une clé *renommée* :
 
-`DOCUMENTS/SNAPSHOT.md` rafraîchi de v0.10.0 à v0.10.2 (+ v0.11.0 in preparation). Footer préservé.
+- Les 7 renommages de préfixe de section D-1 de v0.9.0 (pilotés par les données de `SECTION_RENAMES_V090` — un futur renommage ajouté là est automatiquement couvert) : `iptables_nft.`, `cron_audit.`, `docker_audit.`, `services_state.`, `ports_analysis.`, `rules.`, `firewall_stack.`.
+- La seule clé D-4 Rank 1 de v0.10.1, `ssh.x11_forwarding`.
 
-### Audit pre-ship
+Les clés D-4 Rank 2-8 sont **délibérément hors périmètre** — ce sont des clés de production vivantes (jamais découpées), pas des clés renommées. Modules autorisés (contrat de migration / alias volontaire) : `_v090_renames.py`, `_v100_subcheck_renames.py`, `compare.py`, `explain.py`. Les docstrings sont ignorées via l'AST (une docstring de module qui mentionne une clé legacy en prose est de la documentation, pas une comparaison réelle) ; les commentaires sont naturellement absents de l'AST. La garde est livrée avec des auto-tests (un fautif planté est signalé, un littéral canonique ne l'est pas, une mention en docstring ne l'est pas).
 
-Audit sub-agent ciblé sur le diff v0.11.0 → 3 findings : **I-1 (important)** trou d'évasion scope multi-pattern, **fixé avant tag** ; **M-1 (minor)** blocks `Match` non parsés (fail-safe, déféré) ; **M-2 (minor)** scope-awareness intentionnellement partiel, no-op.
+C'est exactement la classe de bug qui a laissé morte pendant 3 majeures l'escalade de posture I-1 de v0.10.2 — un littéral de chaîne comparé à une clé dont le préfixe avait été renommé. La garde fait échouer la CI au prochain renommage transverse qui dérive, au lieu de le laisser partir en silence.
 
-### Numbers
+### Tests de matrice de posture
 
-- **Tests 6268 → 6336** (+68 : 15 posture matrix + 4 drift guard + 37 D-4 kill pin + 12 ssh Host scope). 0 régression.
-- 2 fichiers production + 2 fichiers locale + 4 nouveaux test files + SNAPSHOT refresh.
+[tests/test_v0110_posture_matrix.py](../tests/test_v0110_posture_matrix.py) énumère toute la matrice 2×2×2 = 8 cellules des entrées de `set_posture_from_engine` — UFW actif/inactif × constat iptables `firewall_iptables.input_accept` présent/absent × score du domaine pare-feu ≤3/>3 — et épingle la sortie exacte de `posture_escalation` pour chaque combinaison, y compris la résolution des priorités (`firewall_inactive` > `iptables_input_accept` > `firewall_domain_low`). Plus une classe `TestPostureBranchIsolation` qui affirme que chaque branche d'escalade se déclenche **isolément** (la leçon de v0.10.2 : une branche masquante peut cacher une branche morte pendant des majeures — la branche `firewall_inactive`, qui remonte à HIGH sur la forme courante UFW tombé, cachait la branche iptables morte), et une classe `TestPosturePriorityResolution` pour l'ordre des déclencheurs multiples.
 
-### Upgrade
+### Rafraîchissement de SNAPSHOT.md
+
+`DOCUMENTS/SNAPSHOT.md` rafraîchi de son état v0.10.0 à v0.10.2 (avec v0.11.0 noté comme en préparation) : tailles des modules, compte d'EXPLAIN_KEYS (169), comptes de tests, les nouveaux modules `_v090_renames.py` / `_v100_subcheck_renames.py` / `_i18n_safe.py`, le retrait de `--json-v1` + `BOB_SANDBOX_LEGACY`, et des paragraphes ajoutés sur le cycle v0.10.x. Convention de pied de page préservée.
+
+### Audit d'avant-livraison
+
+Un audit ciblé par sous-agent sur le diff de v0.11.0 a renvoyé 3 constats :
+
+- **I-1 (important)** — le trou d'évasion de portée par motifs multiples `entry.host != "*"` décrit ci-dessus. **Corrigé avant le tag** (`scoped = "*" not in entry.host.split()` + 3 tests de régression pour `Host bastion *`, `Host * gitlab.example.com`, `Host *.example.com`).
+- **M-1 (mineur)** — les blocs `Match` ne sont pas analysés ; une directive de transfert dans un bloc `Match host X` hérite de la portée `Host` englobante (`*` par défaut) et est évaluée comme globale. Cela **échoue du côté sûr** (sur-signale plutôt que cache), donc c'est déféré. Candidat à un futur patch si un utilisateur signale un faux WARN sur une portée `Match`.
+- **M-2 (mineur)** — confirmé que la sensibilité à la portée est volontairement partielle et correcte ; aucune autre directive client ne doit être sensible à la portée. Sans action.
+
+L'ABANDON de D-4 a été vérifié indépendamment comme inerte, la parité des locales + le chemin de formatage `{host}` ont été vérifiés propres (la valeur d'hôte est l'argument substitué, jamais le gabarit de formatage, si bien qu'un `Host {foo}` malformé ne peut pas lever de `KeyError`), et la logique de la garde CI a été vérifiée saine.
+
+### Chiffres
+
+- **Tests 6268 → 6336** (+68) : 15 matrice de posture + 4 garde de dérive + 37 épinglage de l'abandon D-4 + 12 portée Host ssh (9 de base + 3 motifs multiples issus du correctif I-1). 0 régression.
+- 2 fichiers de production modifiés : [bob/checks/ssh/_subchecks.py](../bob/checks/ssh/_subchecks.py) (logique sensible à la portée + remontée de boucle M-2), [bob/_v100_subcheck_renames.py](../bob/_v100_subcheck_renames.py) (ABANDON + docstring).
+- 2 fichiers de locale : [en.json](../bob/locales/en.json) + [fr.json](../bob/locales/fr.json) (2 nouvelles clés INFO chacun).
+- 4 nouveaux fichiers de test + rafraîchissement de SNAPSHOT.md + toute la surface de release.
+
+### Mise à jour
 
 ```
 pipx upgrade bodyguard-of-bits
 ```
 
-Les operators qui ont scopé une directive `ForwardX11` / `ForwardAgent` per-Host voient le finding passer de WARN à INFO (le score s'améliore). Pas de migration `ignore.yml` requise.
+Les opérateurs qui ont restreint une directive `ForwardX11` / `ForwardAgent` à un bloc `Host` précis voient le constat passer de WARN à INFO (le score s'améliore). Aucune migration d'`ignore.yml` requise — l'ABANDON de D-4 préserve le comportement et le shim Rank 1 survivant n'est pas touché. Aucune autre action de migration.
 
-**v0.7.x reste EOL** (déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1). **v0.6.x reste EOL** (déclaré en v0.7.2).
+**v0.7.x reste en fin de vie** (déclaration formelle dans [SECURITY.md](../SECURITY.md) depuis v0.8.1). **v0.6.x reste en fin de vie** (déclarée en v0.7.2).
 
 ### Leçons
 
-- **Les BREAKING bundles planifiés marchent quand le scope est figé à l'avance.**
-- **Un item de test-debt d'un bug passé paye off le même cycle** (posture matrix + CI drift guard transforment le bug v0.10.2 en protection régression permanente).
-- **L'audit pre-ship gagne sa place** : a chopé un vrai trou d'évasion de scoring dans la feature même dont le point est la sémantique de scope.
+- **Les lots BREAKING planifiés fonctionnent quand le périmètre est gelé à l'avance.** v0.11.0 a été cadrée + approuvée avant l'implémentation, contrairement aux cycles audit→hotfix du jour même (v0.7.1/v0.8.1/v0.9.1/v0.9.2/v0.10.2). Les deux schémas coexistent : regrouper le travail de conception BREAKING planifié, corriger le jour même les constats d'audit.
+- **Un élément de dette de tests issu d'un bug passé rapporte dans le même cycle.** La matrice de posture (qui ferme la dette des branches masquantes de v0.10.2) et la garde CI de dérive des littéraux (qui ferme la classe de bug de dérive de renommage de v0.10.2) transforment toutes deux un bug passé unique en protection de régression permanente.
+- **L'audit d'avant-livraison mérite sa place.** Il a attrapé un vrai trou d'évasion du score (`Host gitlab *`) dans la fonctionnalité même dont toute la raison d'être est la sémantique de portée — exactement le genre de cas limite auto-infligé qu'un concepteur rate et qu'un relecteur adverse trouve.
 
 ---
 
 ## [v0.10.2] — 10-06-2026
 
-**Deuxième patch hardening v0.10.x — fix I-1 issu de l'audit deep hardening post-v0.10.1.**
+**Deuxième patch hardening v0.10.x — correctif I-1 issu de l'audit de hardening en profondeur post-v0.10.1.**
 
-### Le cycle : audit same-day → ship same-day
+### Le cycle : audit le jour même → livraison le jour même
 
-Après que v0.10.1 ait été taggé plus tôt aujourd'hui, un sub-agent a roulé la passe d'audit deep hardening standard sur le codebase post-v0.10.1. L'audit a retourné 4 findings :
+Après le tag de v0.10.1 plus tôt dans la journée, un sous-agent a lancé la passe standard d'audit de hardening en profondeur sur la base de code post-v0.10.1. L'audit a renvoyé 4 constats :
 
-| ID | Sévérité | Surface | Verdict |
+| ID | Gravité | Surface | Verdict |
 |---|---|---|---|
-| **I-1** | Important | `bob/scoring.py:739` (posture escalation, legacy key) | **GO v0.10.2** |
-| M-1 | Minor | `bob/checks/ssh/_subchecks.py:507-516` (Host blocks dupliqués) | DEFER |
-| M-2 | Minor | `bob/checks/ssh/_subchecks.py:462-466` (hoist `client_config_q`) | KILL (cosmetic) |
-| M-3 | Minor | `bob/checks/ssh/_parsers.py:334-351` (semantics scope `Host`) | DEFER → candidat v0.11.x |
+| **I-1** | Important | `bob/scoring.py:739` (escalade de posture, clé legacy) | **GO v0.10.2** |
+| M-1 | Mineur | `bob/checks/ssh/_subchecks.py:507-516` (blocs `Host` dupliqués) | DÉFÉRÉ |
+| M-2 | Mineur | `bob/checks/ssh/_subchecks.py:462-466` (remonter `client_config_q`) | ABANDONNÉ (cosmétique) |
+| M-3 | Mineur | `bob/checks/ssh/_parsers.py:334-351` (sémantique de portée de `Host`) | DÉFÉRÉ → candidat v0.11.x |
 
-Filter workflow conservateur ([[feedback_conservative_refactor]] "gain × risque = STOP") : seul I-1 passe le test coût/valeur parce que c'est un vrai bug d'escalation avec régression security-relevant, masqué par une autre branche posture mais visiblement broken sur une shape de déploiement qui existe in the wild. Les 3 minors fail parce que pré-existants (zéro signal user sur 5+ majeures) ou purement cosmétiques.
+Filtre du workflow conservateur ([[feedback_conservative_refactor]] « gain × risque = STOP ») : seul I-1 passe le test coût/valeur, parce que c'est un vrai bug d'escalade avec une régression pertinente pour la sécurité, masqué par une autre branche de posture mais visiblement cassé sur une forme de déploiement qui existe dans la nature. Les 3 mineurs échouent parce qu'ils sont soit des motifs préexistants (aucun signal utilisateur sur 5+ majeures), soit purement cosmétiques.
 
 ### Le bug
 
-`bob/scoring.py::set_posture_from_engine` cherchait des findings avec la clé legacy v0.7.x / v0.8.x pour flip le posture flag `iptables_input_accept` :
+`bob/scoring.py::set_posture_from_engine` cherchait des constats portant la clé legacy v0.7.x / v0.8.x pour basculer le drapeau de posture `iptables_input_accept` :
 
 ```python
 engine.set_posture(
     firewall_inactive=not fw_active,
     iptables_input_accept=any(
-        f.key == "iptables_nft.input_accept" for f in engine.findings  # ← clé v0.7.x / v0.8.x
+        f.key == "iptables_nft.input_accept" for f in engine.findings  # ← v0.7.x / v0.8.x key
     ),
     firewall_domain_score=_fw_score,
 )
 ```
 
-Le prefix `iptables_nft.*` a été renommé `firewall_iptables.*` en **v0.9.0 D-1** dans le cadre du bundle BREAKING qui a fermé le deferred architectural cleanup v0.7.0. Le rename est documenté dans `bob/_v090_renames.py::SECTION_RENAMES_V090` et la clé canonique est émise live par `bob/checks/iptables_nftables.py:174` depuis v0.9.0.
+Le préfixe `iptables_nft.*` a été renommé en `firewall_iptables.*` en **v0.9.0 D-1**, dans le lot BREAKING qui a clos le nettoyage d'architecture déféré de v0.7.0. Le renommage est documenté dans `bob/_v090_renames.py::SECTION_RENAMES_V090`, et la clé canonique est émise en conditions réelles par `bob/checks/iptables_nftables.py:174` depuis v0.9.0 :
 
-La comparaison string-literal en `scoring.py:739` a arrêté de matcher quoi que ce soit à la release v0.9.0. **L'escalation iptables-passthrough de posture est dead silencieusement depuis 3 majeures** (v0.9.0 → v0.9.1 → v0.9.2 → v0.10.0 → v0.10.1).
+```python
+# bob/checks/iptables_nftables.py:174 (since v0.9.0)
+result.warn_with_deduction(
+    key="firewall_iptables.input_accept",   # ← canonical v0.9.0+
+    message=_t("firewall_iptables.input_accept"),
+    ...
+)
+```
 
-### Pourquoi aucun user n'a signalé
+La comparaison par chaîne littérale de `scoring.py:739` a cessé de correspondre à quoi que ce soit dès la release v0.9.0. **L'escalade de posture pour le passthrough iptables est morte en silence depuis 3 majeures** (v0.9.0 → v0.9.1 → v0.9.2 → v0.10.0 → v0.10.1).
 
-`set_posture` a 3 triggers d'escalation, en ordre de priorité :
+### Pourquoi aucun utilisateur ne l'a signalé
+
+`set_posture` a trois déclencheurs d'escalade, par ordre de priorité :
 
 1. `firewall_inactive=True` → HIGH (`scoring.posture.firewall_inactive`)
 2. `iptables_input_accept=True` → HIGH (`scoring.posture.iptables_input_accept`)
 3. `firewall_domain_score <= 3` → MEDIUM (`scoring.posture.firewall_domain_low`)
 
-La shape de déploiement la plus commune qui surface le risk iptables-passthrough est **UFW disabled + iptables INPUT ACCEPT**. Cette shape trigger la branche (1) qui escalate déjà à HIGH. Donc le risk floor user-visible est correct *pour le cas le plus commun*.
+La forme de déploiement la plus courante qui fait apparaître le risque de passthrough iptables est **UFW désactivé + iptables INPUT ACCEPT** (l'opérateur de l'hôte n'a soit jamais activé UFW, soit l'a désactivé pour déboguer, et a laissé iptables ouvert). Cette forme déclenche la branche (1) — `firewall_inactive=True` — qui remonte déjà à HIGH. Le plancher de risque visible par l'utilisateur est donc juste *pour le cas le plus courant*.
 
-La shape qui régresse silencieusement est la combinaison plus rare **UFW active + iptables INPUT ACCEPT** — ex. un operator a activé UFW mais a laissé une règle iptables passthrough legacy d'une config précédente. Dans ce cas, branche (1) est False, branche (2) était supposée fire sur le finding iptables mais la comparaison literal n'a jamais matché, donc ni (1) ni (2) n'a escaladé. Le risk floor a régressé de HIGH (pre-v0.9.0) à LOW (post-v0.9.0).
+La forme qui régresse en silence est la combinaison plus rare **UFW actif + iptables INPUT ACCEPT** — par exemple un opérateur qui a activé UFW mais laissé une règle de passthrough iptables héritée d'une configuration précédente. Dans ce cas, la branche (1) est fausse (`fw_active=True`), la branche (2) devait se déclencher sur le constat iptables mais la comparaison littérale ne correspondait jamais, donc ni (1) ni (2) ne remontait le niveau. Le plancher de risque a régressé de HIGH (avant v0.9.0) à LOW (après v0.9.0).
 
-### Le fix
+La classe de bug : **une comparaison littérale qui dérive en silence quand le contrat qui l'entoure est renommé**. Le renommage D-1 de v0.9.0 a audité et mis à jour chaque site d'émission + locale + explain + surcharge de profil, mais la comparaison d'escalade de posture de `set_posture_from_engine` n'a jamais été cherchée par grep, parce que le champ se lit comme une simple donnée Python, pas comme une référence de clé.
 
-[bob/scoring.py:739](../bob/scoring.py#L739) — update le literal pour matcher la clé canonique v0.9.0+ avec commentaire inline qui capture le **why** et le **failure mode** pour les audits futurs.
+### Le correctif
 
-### Pourquoi ce fix unique couvre les 2 call sites
+[bob/scoring.py:739](../bob/scoring.py#L739) — mettre à jour le littéral pour correspondre à la clé canonique v0.9.0+ :
 
-`set_posture_from_engine` est la single source of truth pour la computation posture depuis v0.7.3 M-10. Appelé depuis `bob/__main__.py::audit` et `bob/watch.py:109`. Le dedup signifie que le fix v0.10.2 à `scoring.py` se propage aux 2 surfaces sans changement additionnel.
+```python
+engine.set_posture(
+    firewall_inactive=not fw_active,
+    # v0.10.2 I-1: the v0.9.0 D-1 rename ``iptables_nft.*`` →
+    # ``firewall_iptables.*`` left this string-literal comparison
+    # matching the retired prefix, so the iptables-passthrough
+    # escalation has been silently dead since v0.9.0. Masked in
+    # practice by the ``firewall_inactive`` branch (UFW down + iptables
+    # ACCEPT both escalate to HIGH), but the iptables-only escalation
+    # (UFW active + iptables ACCEPT rule) regressed to LOW.
+    iptables_input_accept=any(
+        f.key == "firewall_iptables.input_accept" for f in engine.findings
+    ),
+    firewall_domain_score=_fw_score,
+)
+```
+
+Le commentaire en ligne consigne le **pourquoi** et le **mode d'échec**, pour que les futurs audits puissent retracer le contexte historique — et pour qu'un futur renommage de clé canonique ait un précédent concret auquel se référer.
+
+### Pourquoi ce correctif unique couvre les deux sites d'appel
+
+`set_posture_from_engine` est la source unique de vérité du calcul de posture depuis v0.7.3 M-10 ([[project_v073_hardening]]). Elle est appelée depuis deux surfaces :
+
+- `bob/__main__.py::audit` — le chemin principal d'audit ponctuel (`bob audit`)
+- `bob/watch.py:109` — la boucle `bob --watch`, qui redérive la posture à chaque itération
+
+Avant v0.7.3 M-10, ces deux surfaces avaient des implémentations en ligne divergentes ; la déduplication fait que le correctif de v0.10.2 dans `scoring.py` se propage aux deux sans autre changement. La leçon de v0.7.1 I-1 (dérive de contrat en mode watch) tient : garder le calcul de posture en un seul endroit.
 
 ### Tests
 
-[tests/test_v0102_posture_iptables_key.py](../tests/test_v0102_posture_iptables_key.py), NOUVEAU, 7 tests sur 2 classes + 1 parametrize.
+[tests/test_v0102_posture_iptables_key.py](../tests/test_v0102_posture_iptables_key.py), NOUVEAU, 7 tests répartis sur 2 classes + 1 paramétrisation :
 
-**`TestPostureIptablesKey`** (4 tests) : canonical_key_triggers + legacy_key_does_not + no_finding + fw_inactive_still_escalates.
+**`TestPostureIptablesKey`** (4 tests) :
 
-**`TestNoLegacyKeyInLiveCheck`** (2 tests static guards) : scoring.py sweep + full bob/ sweep avec allowlist `_v090_renames.py` + `compare.py`.
+- `test_canonical_key_triggers_iptables_passthrough_escalation` — construit un `ScoreEngine` avec un seul `Finding(key="firewall_iptables.input_accept")`, appelle `set_posture_from_engine(engine, fw_active=True)`, affirme `posture_escalation == (RiskLevel.HIGH, "scoring.posture.iptables_input_accept")`. **C'est la reproduction du bug** : avant correctif, renvoie `(None, "")` (pas d'escalade, le plancher LOW reste).
+- `test_legacy_key_does_not_trigger_escalation` — même mise en place mais avec la clé de constat legacy `iptables_nft.input_accept`, affirme que l'escalade ne se déclenche PAS. Cela épingle l'**intention** : le shim de migration de baseline de v0.9.2 gère les clés legacy au chargement, mais les constats en direct émettent toujours le préfixe canonique, donc le contrat de comparaison en direct doit être canonique seulement.
+- `test_no_finding_no_escalation_with_fw_active` — base de contrôle.
+- `test_fw_inactive_still_escalates_independently` — confirme que la branche `firewall_inactive` n'est pas touchée par le correctif.
 
-**Parametrize** (1 test) : canonical_key_present_in_explain_catalog (pin EXPLAIN_KEYS contract).
+**`TestNoLegacyKeyInLiveCheck`** (2 tests, gardes statiques) :
+
+- `test_scoring_py_does_not_reference_legacy_key_for_match` — balayage par regex du source de `bob/scoring.py` à la recherche de `== "iptables_nft.input_accept"` (contexte de comparaison en direct, pas n'importe quelle mention). Échoue si le correctif de v0.10.2 est annulé.
+- `test_no_other_production_module_references_legacy_key_for_match` — même balayage sur tout `bob/`, avec les fichiers du shim de migration v0.9.2 (`_v090_renames.py` + `compare.py`) explicitement autorisés (ils documentent le renommage dans des docstrings de module + des commentaires + le dict `SECTION_RENAMES_V090` — ce n'est pas une comparaison en direct, c'est le contrat de migration).
+
+**Paramétrisation** (1 test) :
+
+- `test_canonical_key_present_in_explain_catalog` — épingle le contrat selon lequel toute clé comparée par le contrôle de posture doit aussi être présente dans `EXPLAIN_KEYS`, pour que `bob --explain firewall_iptables.input_accept` fonctionne sur le chemin de mise à jour. De futurs découpages de clé canonique feront échouer ce test si EXPLAIN_KEYS n'est pas mis à jour.
 
 Total : **+7 tests** (6261 → 6268). 0 régression.
 
-### Pourquoi les 3 minors sont déférés
+### Pourquoi les 3 mineurs sont déférés
 
-- **M-1** — Host blocks dupliqués triple-deduct. Pré-existant 4 directives client. Zéro signal user 5+ majeures.
-- **M-2** — Cosmetic hoist. Aucun impact mesurable. KILL.
-- **M-3** — `_check_client_config` flatten `Host` blocks. Vrai contract leak introduit par v0.10.1 (l'explain text recommande "restrict per-Host" mais le checker peut pas distinguer). Déféré v0.11.x comme refinement style D-4 ; revisite si signal user sur faux-positif per-Host scoping.
+- **M-1** — Des blocs `Host` dupliqués avec `ForwardX11 yes` déduisent trois fois sur le nouveau contrôle client de v0.10.1. Motif préexistant sur 4 directives client (`forwardx11`/`forwardagent`/`stricthostkeychecking`/`userknownhostsfile`). Aucun signal utilisateur sur 5+ majeures pour les 3 directives préexistantes. La nouvelle branche de v0.10.1 hérite de la même forme — corriger exige la même forme sur les 4 pour rester cohérent, soit un refactor de 2-3 h pour un mode d'échec rare en pratique (un seul bloc global `Host *` est la norme ; plusieurs `Host` portant la même directive sont inhabituels).
+- **M-2** — Remontée cosmétique de `client_config_q = shlex.quote(str(client_config))` hors de la boucle par entrée. Aucun impact utilisateur mesurable (`shlex.quote` sur un chemin de 30 caractères prend moins d'une microseconde ; la boucle itère sur 0-20 entrées en pratique). ABANDONNÉ.
+- **M-3** — `_check_client_config` aplatit les blocs `Host` : un `ForwardX11 yes` dans un bloc étroit `Host trusted-jumpbox.internal` se déclenche comme s'il était global. Le texte explain que v0.10.1 vient de livrer recommande « le restreindre par bloc Host » comme remédiation — ce que le contrôleur ne sait pas distinguer aujourd'hui. C'est une vraie fuite de contrat introduite par la propre documentation de v0.10.1. Préexistant pour 3 des 4 directives client, mais v0.10.1 a beaucoup augmenté la visibilité de la surface. Déféré à v0.11.x comme vrai raffinement de type D-4 : la question de conception est de savoir quelles portées `Host` doivent donner WARN plutôt qu'INFO. Pour `forwardx11`/`forwardagent`, une portée par Host est souvent légitime. Pour `stricthostkeychecking no` / `userknownhostsfile /dev/null`, c'est dangereux dans n'importe quelle portée. Le correctif exige soit un nouveau chemin d'émission INFO, soit une table de politique de portée par directive — trop de travail de conception pour un hotfix du jour. À revoir si un utilisateur signale un faux positif de portée par Host.
 
-### Numbers
+### Chiffres
 
 - **Tests 6261 → 6268** (+7). 0 régression.
-- 1 fichier production code modifié (1 ligne + commentaire de contexte).
-- 1 nouveau test file (7 tests).
+- 1 fichier de code de production modifié ([bob/scoring.py](../bob/scoring.py)) — 1 ligne changée dans le littéral de comparaison + 7 lignes de commentaire de contexte.
+- 1 nouveau fichier de test ([tests/test_v0102_posture_iptables_key.py](../tests/test_v0102_posture_iptables_key.py)) — 7 tests.
+- Toute la surface de release (pyproject + man × 3 + 2 badges README_TECH + debian + rpm + 4 CHANGELOG + TESTING + note mémoire) bumpée selon la convention.
 
-### Upgrade
+### Mise à jour
 
 ```
 pipx upgrade bodyguard-of-bits
 ```
 
-Pas d'action de migration requise depuis v0.10.1.
+Aucune action de migration requise depuis v0.10.1. Les opérateurs voient l'escalade de posture HIGH correcte sur les hôtes à UFW actif portant une règle de passthrough iptables INPUT ACCEPT (la régression jusque-là silencieuse).
 
-**v0.7.x reste EOL** (déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1).
-**v0.6.x reste EOL** (déclaré en v0.7.2).
+**v0.7.x reste en fin de vie** (déclaration formelle dans [SECURITY.md](../SECURITY.md) depuis v0.8.1).
+**v0.6.x reste en fin de vie** (déclarée en v0.7.2).
 
-### Audit pattern : same-day audit → same-day ship est le pattern
+### Périmètre du test terrain
 
-v0.7.1, v0.8.1, v0.9.1, v0.9.2, v0.10.2. Le rythme "ship un major, audit, ship le hotfix same-day ou next-day" a tenu sur les 4 cycles BREAKING / hardening les plus récents. Le filter workflow conservateur sélectionne seulement les bugs qui requirent vraiment de shipper.
+Le correctif de v0.10.2 est la correction d'un seul littéral, avec une couverture déterministe par tests unitaires (la reproduction du bug est l'un des 7 tests). Aucune campagne de test terrain sur 5 distros requise. Vérification locale :
+
+```
+python3 -c "
+from bob.scoring import Finding, ScoreEngine, RiskLevel, set_posture_from_engine
+engine = ScoreEngine()
+engine.findings.append(Finding(level='warn', message='m', key='firewall_iptables.input_accept'))
+set_posture_from_engine(engine, fw_active=True)
+floor, reason = engine.posture_escalation
+assert floor == RiskLevel.HIGH and reason == 'scoring.posture.iptables_input_accept'
+print('v0.10.2 I-1 fix verified')
+"
+```
+
+### Schéma d'audit : audit le jour même → livraison le jour même, c'est le schéma
+
+v0.7.1 (post-v0.7.0), v0.8.1 (post-v0.8.0 + multi-passes), v0.9.1 (hotfix de v0.9.0 F-3), v0.9.2 (le jour même après v0.9.1), v0.10.2 (le jour même après v0.10.1). Le rythme « livrer une majeure, auditer, livrer le hotfix le jour même ou le lendemain » a tenu sur les 4 cycles BREAKING / hardening les plus récents. Le filtre du workflow conservateur ne retient que les bugs qui exigent réellement une livraison — l'alternative (« regrouper tous les constats dans v0.10.3 ») aurait livré 4 éléments dont 3 cosmétiques. La discipline du jour même garde les patchs chirurgicaux.
 
 ### Leçons
 
-- **Les comparaisons literal dans les couches posture / scoring doivent être pinées par tests régression contre le contract canonical.**
-- **Les renames cross-module nécessitent un literal-string sweep.**
-- **Les branches de masking font les régressions silencieuses invisibles.**
+- **Les comparaisons littérales des couches posture / scoring doivent être épinglées par des tests de régression contre le contrat canonique.** Le renommage D-1 de v0.9.0 aurait dû faire échouer un test épinglant la clé canonique du contrôle de posture iptables — ce test aurait attrapé la régression à la livraison de D-1. v0.10.2 ajoute ce test (`test_canonical_key_triggers_iptables_passthrough_escalation`), si bien qu'un futur renommage de clé canonique produit un échec de test bruyant au lieu d'une régression silencieuse.
+- **Les renommages qui traversent les frontières de modules exigent un balayage des chaînes littérales.** La passe de renommage D-1 de v0.9.0 a audité les sites d'émission, les clés de locale, le contenu explain, les surcharges de profil et la complétion bash — mais n'a pas cherché par grep la clé legacy en contexte de comparaison dans `bob/scoring.py`. L'audit post-v0.10.1 a attrapé le bug. Les futurs renommages BREAKING doivent inclure un balayage `grep -rn '"$LEGACY_KEY"'` avant livraison (cela pourrait être une garde de CI).
+- **Les branches masquantes rendent les régressions silencieuses invisibles.** La branche `firewall_inactive`, qui remonte à HIGH sur la forme de déploiement la plus courante (UFW tombé), a masqué la branche morte `iptables_input_accept` pendant 3 majeures. Quand un système de posture a des déclencheurs qui se recouvrent, les audits doivent énumérer la matrice et vérifier que chaque déclencheur se déclenche isolément. (Le test de v0.10.2 `test_fw_inactive_still_escalates_independently` est un pin partiel dans cette direction.)
 
 ---
 
 ## [v0.10.1] — 10-06-2026
 
-**Premier patch hardening v0.10.x — D-4 Rank 1 split `ssh.x11_forwarding` + NOUVELLE détection client-side ForwardX11.**
+**Premier patch hardening v0.10.x — découpage D-4 Rank 1 de `ssh.x11_forwarding` + NOUVELLE détection côté client de ForwardX11.**
 
-### Pourquoi ce split unique, pourquoi maintenant
+### Pourquoi ce seul découpage, pourquoi maintenant
 
-Le workflow conservateur v0.10.x (proposé dans le ship v0.10.0 + memory note) applique "gain × risque = STOP" de [[feedback_conservative_refactor]] aux 8 candidates ranked D-4 de l'audit sub-agent. Le filtre :
+Le workflow conservateur de v0.10.x (proposé à la livraison de v0.10.0 + note mémoire) applique « gain × risque = STOP » de [[feedback_conservative_refactor]] aux 8 candidats D-4 classés par l'audit du sous-agent. Le filtre :
 
-| Item | Gain mesurable | Signal user | Risque | Verdict |
+| Élément | Gain mesurable | Signal utilisateur | Risque | Verdict |
 |---|---|---|---|---|
-| D-4 Rank 1 (ssh.x11 server + NEW client) | ✓ nouvelle capacité de détection (zéro pre-v0.10.1) | indirect | L | **GO** |
-| D-4 Rank 2 (DSA family rename) | ✗ cosmétique | zéro | L | DEFER |
-| D-4 Rank 3-8 | △ granular ignore.yml | zéro | M | DEFER |
-| F-1 parallel checks | ✓ 30s → 5-10s perf | **zéro signal perf** | H | DEFER jusqu'au signal |
+| D-4 Rank 1 (ssh.x11 serveur + NOUVEAU client) | ✓ nouvelle capacité de détection (nulle avant v0.10.1) | indirect | F | **GO** |
+| D-4 Rank 2 (renommage de la famille DSA) | ✗ cosmétique | nul | F | DÉFÉRÉ |
+| D-4 Rank 3-8 | △ ignore.yml plus granulaire | nul | M | DÉFÉRÉ |
+| F-1 checks en parallèle | ✓ perf 30 s → 5-10 s | **nul sur la perf** | É | DÉFÉRÉ jusqu'à un signal |
 
-Rank 1 ship parce qu'il apporte une **détection précédemment manquante** (client-side X11 forwarding via `~/.ssh/config ForwardX11 yes`), pas qu'un rename cosmétique de clé. Les 7 autres ranks fail le filtre "gain mesurable" sans signal user — ils restent déférés indéfiniment per la règle kill-dormant-features établie par v0.8.4 ([[project_v084_shipped]] a retiré `compare-breakdown-diff` après zéro signal sur 5 majeures).
+Rank 1 est livré parce qu'il ajoute une **détection jusque-là absente** (le transfert X11 côté client via `ForwardX11 yes` dans `~/.ssh/config`), pas seulement un renommage cosmétique de clé. Les 7 autres rangs échouent au filtre du « gain mesurable » sans signal utilisateur — ils restent déférés indéfiniment selon la règle d'abandon des fonctionnalités dormantes établie par v0.8.4 ([[project_v084_shipped]] a retiré `compare-breakdown-diff` après un signal nul sur 5 majeures).
 
-### Rename server-side
+### Renommage côté serveur
 
-[bob/checks/ssh/_directives.py](../bob/checks/ssh/_directives.py) — la row `_BadDirective` existante pour `x11forwarding` reprend la clé canonique renommée `ssh.x11.forwarding.server`. Logique parsing sshd_config inchangée.
+[bob/checks/ssh/_directives.py](../bob/checks/ssh/_directives.py) — la ligne `_BadDirective` existante pour `x11forwarding` :
 
-### Détection client-side (NOUVELLE capacité)
+```python
+_BadDirective(
+    name="x11forwarding", default="no",
+    bad_values=("yes",),
+    level="warn",
+    key="ssh.x11.forwarding.server",   # v0.10.1 D-4 Rank 1 — was "ssh.x11_forwarding"
+    points=1,
+    cmd_template="sudo sed -i 's/^#*X11Forwarding yes/X11Forwarding no/' /etc/ssh/sshd_config && sudo systemctl restart ssh",
+),
+```
 
-[bob/checks/ssh/_subchecks.py::_check_client_config](../bob/checks/ssh/_subchecks.py) — nouvelle branche `elif k == "forwardx11" and v == "yes":` à côté du `forwardagent` existant, émet `ssh.x11.forwarding.client` avec `points=1` warn + detail + cmd remediation.
+Logique d'analyse de sshd_config inchangée. Le helper `_apply_bad_directive` reprend automatiquement la nouvelle clé. Les opérateurs voient le même comportement de constat, avec le nouveau nom canonique dans les sorties JSON / CSV / Markdown.
 
-### Pourquoi le transfert X11 client-side importe
+### Détection côté client (NOUVELLE capacité)
 
-Le protocole X11 **n'a aucune frontière de sécurité entre applications locales et forwardées**. Quand un user fait `ssh -X host` ou a `ForwardX11 yes` dans `~/.ssh/config`, le serveur X local est exposé à l'hôte distant via le tunnel SSH :
+[bob/checks/ssh/_subchecks.py::_check_client_config](../bob/checks/ssh/_subchecks.py) — nouvelle branche ajoutée à côté de la détection `forwardagent` existante :
 
-- Le distant peut appeler `xwd` pour prendre des captures d'écran du bureau local
-- Le distant peut appeler `xdotool` pour injecter des frappes clavier dans n'importe quelle application X locale (terminal, password manager, browser)
+```python
+elif k == "forwardx11" and v == "yes":
+    result.warn_with_deduction(
+        key="ssh.x11.forwarding.client",
+        message=_t("ssh.x11.forwarding.client"),
+        points=1,
+        detail=_t("ssh.x11.forwarding.client_detail"),
+        cmd=f"sed -i '/^[[:space:]]*ForwardX11[[:space:]]\\+yes/d' {client_config_q}",
+        nature="action",
+    )
+    found_issue = True
+```
+
+Le motif reproduit exactement la forme existante de `client_forward_agent`. La détection couvre tout bloc de `~/.ssh/config` (global ou par Host) portant `ForwardX11 yes`. La remédiation `sed -i` supprime la directive fautive sur place.
+
+### Pourquoi le transfert X11 côté client compte
+
+Le protocole X11 n'a **aucune frontière de sécurité entre les applications locales et les applications transférées**. Quand un utilisateur lance `ssh -X hôte` ou a `ForwardX11 yes` dans `~/.ssh/config`, le serveur X local est exposé à l'hôte distant à travers un tunnel SSH :
+
+- Le distant peut appeler `xwd` pour faire des captures d'écran du bureau local
+- Le distant peut appeler `xdotool` pour injecter des frappes clavier dans n'importe quelle application X locale (y compris un terminal, un gestionnaire de mots de passe, un navigateur)
 - Le distant peut lire le presse-papiers local via `xclip` / `xsel`
-- Le distant peut lire les titres de fenêtre, le contenu de la fenêtre focusée, et les selection buffers de la session X
+- Le distant peut lire les titres de fenêtres, le contenu de la fenêtre active et les tampons de sélection de la session X
 
-C'est un trust model wide-open : le distant a effectivement l'équivalent d'un accès process local à la session X. Pre-v0.10.1 BOB avait **zéro détection** de cette configuration. L'asymétrie est fixée en v0.10.1.
+C'est un modèle de confiance grand ouvert : le distant dispose en pratique d'un accès à la session X équivalent à celui d'un processus local. Avant v0.10.1, BOB n'avait **aucune détection** de cette configuration, alors que `X11Forwarding yes` côté serveur était déjà signalé. L'asymétrie est corrigée en v0.10.1.
 
-Le guidance remediation pointe vers `ForwardX11Trusted no` (extension SECURITY X11) comme path de hardening per-Host quand le transfert X11 est vraiment nécessaire, plus `ssh -X` on-demand comme alternative à `ForwardX11 yes`-by-default.
+Les conseils de remédiation orientent les opérateurs vers `ForwardX11Trusted no` (extension X11 SECURITY, disponible dans OpenSSH depuis le début des années 2000) comme voie de durcissement par Host quand le transfert X11 est réellement nécessaire, plus `ssh -X` à la demande comme alternative à `ForwardX11 yes` par défaut.
 
-### Back-compat — ignore.yml + --explain
+### Rétrocompatibilité — ignore.yml
 
-- Pre-v0.10.1 entries `ignore.yml` avec `ssh.x11_forwarding` couvrent les 2 nouvelles sub-keys via le shim v0.10.0 [SUBCHECK_RENAMES_V100](../bob/_v100_subcheck_renames.py) (le glob fnmatch `ssh.x11.forwarding.*`).
-- Pre-v0.10.1 `bob --explain ssh.x11_forwarding` résout vers le contenu server-side via la nouvelle entry EXPLAIN_KEY_ALIASES. **Premier alias live après le retrait D-3 v0.9.0** — la rationale "garder le dict pour qu'un futur rename ait un migration path one-line" rencontre son premier user.
+Les entrées `ignore.yml` d'avant v0.10.1 portant la clé legacy `ssh.x11_forwarding` continuent de neutraliser LES DEUX nouvelles sous-clés via le shim [SUBCHECK_RENAMES_V100](../bob/_v100_subcheck_renames.py) de v0.10.0 :
+
+```python
+SUBCHECK_RENAMES_V100: dict[str, str] = {
+    "ssh.x11_forwarding": "ssh.x11.forwarding.*",   # v0.10.1 ships THIS rank
+    ...
+}
+```
+
+`fnmatch.fnmatch("ssh.x11.forwarding.server", "ssh.x11.forwarding.*")` et `fnmatch.fnmatch("ssh.x11.forwarding.client", "ssh.x11.forwarding.*")` renvoient tous deux True, si bien que `bob/scoring.py::ScoreEngine.apply::_is_ignored` neutralise les deux constats chez les opérateurs qui avaient ignoré la clé legacy. Aucune migration d'`ignore.yml` requise.
+
+La fondation du shim de v0.10.0 connaît maintenant sa première utilisation réelle — le contrat tient de bout en bout.
+
+### Rétrocompatibilité — `bob --explain`
+
+Un `bob --explain ssh.x11_forwarding` d'avant v0.10.1 se résout vers le contenu côté serveur via une nouvelle entrée d'EXPLAIN_KEY_ALIASES :
+
+```python
+EXPLAIN_KEY_ALIASES: dict[str, str] = {
+    "ssh.x11_forwarding": "ssh.x11.forwarding.server",  # v0.10.1 D-4 Rank 1
+    # The dict had been empty since v0.9.0 D-3 retrait emptied it...
+}
+```
+
+C'est le **premier alias réel** depuis le retrait D-3 de v0.9.0. La livraison D-3 de v0.9.0 avait explicitement choisi de garder le dict + la mécanique de recherche (plutôt que de les retirer entièrement), pour qu'un futur renommage ait un chemin de migration d'une ligne — v0.10.1 est ce futur renommage, et la ligne `"ssh.x11_forwarding": "ssh.x11.forwarding.server"` est tout ce qu'il a fallu.
+
+`normalize_key("ssh.x11_forwarding")` renvoie `"ssh.x11.forwarding.server"` après résolution de l'alias.
 
 ### Locale (EN + FR)
 
-Migration namespace `ssh.x11_forwarding` → `ssh.x11.forwarding.server` + 4 nouvelles entries client-side (message + detail + explain.{title,why,how}) avec wording risque client-side dédié.
+Le contenu existant de `ssh.x11_forwarding` a migré dans le nouvel espace de noms imbriqué `ssh.x11.forwarding.server`, et 4 nouvelles entrées côté client ont été ajoutées :
 
-### EXPLAIN_KEYS catalog
+| Clé | EN | FR |
+|---|---|---|
+| `ssh.x11.forwarding.client` | "Client config enables X11 forwarding (ForwardX11 yes) — forwarding your display INTO a remote host lets that host inspect your local desktop" | "La config client active le transfert X11 (ForwardX11 yes) — transférer ton display VERS un hôte distant lui donne accès à ton bureau local" |
+| `ssh.x11.forwarding.client_detail` | "X11 forwarding from your machine TO a remote host opens your display server to the remote — a hostile remote can take screenshots, inject keystrokes, and read clipboard data via the X protocol. Disable ForwardX11 in ~/.ssh/config..." | "Le transfert X11 de ta machine VERS un hôte distant ouvre ton serveur d'affichage au distant — un host hostile peut prendre des captures d'écran, injecter des frappes clavier, et lire le presse-papiers via le protocole X. Désactive ForwardX11 dans ~/.ssh/config..." |
+| `explain.ssh.x11.forwarding.client.title` | "Client X11 forwarding enabled (ForwardX11 yes)" | "Transfert X11 client activé (ForwardX11 yes)" |
+| `explain.ssh.x11.forwarding.client.why` | Explication complète du risque côté client (~3 phrases) | Explication complète du risque côté client en FR |
+| `explain.ssh.x11.forwarding.client.how` | Remédiation en 4 étapes, dont l'extension SECURITY `ForwardX11Trusted no` | Remédiation en 4 étapes en FR |
 
-168 → **169** (+1 pour le nouveau `ssh.x11.forwarding.client`). Le constant `test_total_keys_match_audit_count` bumpé. La regex canonical_pattern étendue avec exception `_SSH_X11_FORWARDING_RE` (soeur des exceptions `_FILE_PERMS_MULTI_RE` et `_SERVICES_MULTI_RE` existantes).
+Les entrées côté serveur `ssh.x11.forwarding.server*` + `explain.ssh.x11.forwarding.server.*` conservent mot pour mot le contenu d'avant v0.10.1 — les opérateurs qui mettent à jour ne voient aucun changement dans la formulation existante côté serveur.
 
-### CIS refs
+### Catalogue EXPLAIN_KEYS
 
-| Key | Référence CIS |
+168 → **169** (+1 pour le nouveau `ssh.x11.forwarding.client`).
+
+[tests/test_explain_naming_convention.py](../tests/test_explain_naming_convention.py) :
+
+- constante de `test_total_keys_match_audit_count` passée de 168 à 169
+- exception `_SSH_X11_FORWARDING_RE = re.compile(r"^ssh\.x11\.forwarding\.(server|client)$")` ajoutée à `_is_canonical()` (sœur des exceptions existantes `_FILE_PERMS_MULTI_RE` et `_SERVICES_MULTI_RE`). La regex à un seul point `_SINGLE_DOT_RE` ne correspond pas aux clés à 4 segments ; l'exception préserve l'invariant de « motif canonique » tout en faisant de la place au découpage de v0.10.1. Les futurs rangs D-4 (Rank 2 ssh.dsa.*, Rank 3-8) étendront ou généraliseront ce motif quand ils seront livrés.
+
+### Références CIS
+
+| Clé | Référence CIS |
 |---|---|
-| `ssh.x11.forwarding.server` | CIS Ubuntu 22.04 L1 — 5.2.6 (unchanged) |
-| `ssh.x11.forwarding.client` | Best practice (no formal CIS code today) |
+| `ssh.x11.forwarding.server` | CIS Ubuntu 22.04 L1 — 5.2.6 — « Ensure SSH X11 forwarding is disabled » (inchangé par rapport à `ssh.x11_forwarding` avant v0.10.1) |
+| `ssh.x11.forwarding.client` | Bonne pratique — « Disable client-side X11 forwarding (ForwardX11 no) — prevents untrusted remotes from inspecting your local display » (pas de code CIS formel aujourd'hui) |
+
+[tests/test_cis_refs.py::test_code_format_matches_pattern](../tests/test_cis_refs.py) a été mis à jour pour utiliser la nouvelle clé canonique `ssh.x11.forwarding.server` au lieu de la clé plate retirée.
+
+### Surcharges de profil + complétion bash
+
+[bob/data/profiles/desktop.conf](../bob/data/profiles/desktop.conf) + [workstation.conf](../bob/data/profiles/workstation.conf) — la surcharge existante `ssh.x11_forwarding = info` (qui ramène l'avertissement à info sur les postes personnels, où le transfert X11 est une pratique courante) renommée en `ssh.x11.forwarding.server`. La nouvelle clé côté client n'a pas de surcharge de profil (le warn par défaut s'applique à tous les profils — le ForwardX11 côté client est plus difficile à justifier que son équivalent côté serveur, et le défaut conservateur est d'alerter).
+
+[bob/data/bob.bash-completion](../bob/data/bob.bash-completion) — liste `_EXPLAIN_KEYS` régénérée depuis `bob.explain.EXPLAIN_KEYS` à l'exécution, pour que `bob --explain ssh.x11.forwarding.<TAB>` complète à la fois `server` et `client`.
 
 ### Tests
 
-[tests/test_v0101_ssh_x11_client.py](../tests/test_v0101_ssh_x11_client.py) — 10 tests dédiés sur 3 classes (`TestServerSideRename`, `TestClientSideDetection`, `TestBackCompat`) + 9 updates ailleurs. Total **+19 tests** (6242 → 6261). 0 régression.
+[tests/test_v0101_ssh_x11_client.py](../tests/test_v0101_ssh_x11_client.py) — 10 tests dédiés répartis sur 3 classes :
 
-### Numbers
+- **`TestServerSideRename`** (2 tests) : la ligne `_BadDirective` épingle la nouvelle clé canonique ; la clé legacy `ssh.x11_forwarding` n'apparaît jamais comme littéral `key="..."` dans `bob/checks/ssh/*.py` (seulement dans des commentaires documentant le renommage + comme entrée du dict EXPLAIN_KEY_ALIASES — que le périmètre du test exclut en ne lisant que les fichiers source).
+- **`TestClientSideDetection`** (3 tests) : la nouvelle branche `elif k == "forwardx11"` est présente dans `_check_client_config` ; les 4 nouvelles clés de locale existent dans les locales EN + FR (aucun risque de repli entre crochets) ; les feuilles `explain.ssh.x11.forwarding.client.{title,why,how}` sont présentes et non vides dans les deux locales (exigé par `test_locale_coverage`).
+- **`TestBackCompat`** (5 tests) : l'entrée legacy `ssh.x11_forwarding` existe dans `SUBCHECK_RENAMES_V100` avec le bon motif glob ; `matches_legacy_ignore` couvre les deux sous-clés ; `normalize_key("ssh.x11_forwarding")` renvoie la clé canonique côté serveur via `EXPLAIN_KEY_ALIASES` ; les nouvelles sous-clés canoniques traversent `normalize_key` inchangées (elles ne sont pas elles-mêmes des alias).
+
+Plus 9 autres tests mis à jour pour le renommage (constante de `test_total_keys_match_audit_count`, regex canonique, politique de gel, format de code CIS, paramétrisation de clé legacy de `test_ssh.py`, référence de clé de surcharge de `test_profiles.py`). Total **+19 tests** (6242 → 6261). 0 régression.
+
+### Chiffres
 
 - **Tests 6242 → 6261** (+19). 0 régression.
-- 2 fichiers code production modifiés (`_directives.py`, `_subchecks.py`).
-- 1 fichier module modifié (`explain.py` — EXPLAIN_KEY_ALIASES entry + EXPLAIN_KEYS rename).
-- 2 fichiers locale modifiés (EN + FR — migration namespace + 4 nouvelles entries).
-- 1 fichier CIS refs + 2 fichiers profile + 1 fichier bash completion modifiés.
-- 1 nouveau test file + 4 test files existants modifiés.
+- 2 fichiers de code de production modifiés ([bob/checks/ssh/_directives.py](../bob/checks/ssh/_directives.py), [bob/checks/ssh/_subchecks.py](../bob/checks/ssh/_subchecks.py)) — ~25 lignes changées.
+- 1 fichier de module modifié ([bob/explain.py](../bob/explain.py)) — renommage dans EXPLAIN_KEYS + entrée EXPLAIN_KEY_ALIASES, ~5 lignes changées.
+- 2 fichiers de locale modifiés ([bob/locales/en.json](../bob/locales/en.json), [bob/locales/fr.json](../bob/locales/fr.json)) — migration d'espace de noms + 4 nouvelles clés + 6 nouvelles feuilles explain par locale.
+- 1 fichier de références CIS modifié ([bob/data/cis_refs.json](../bob/data/cis_refs.json)) — renommage + 1 nouvelle entrée.
+- 2 fichiers de profil modifiés ([desktop.conf](../bob/data/profiles/desktop.conf), [workstation.conf](../bob/data/profiles/workstation.conf)) — 1 ligne chacun.
+- 1 fichier de complétion bash modifié ([bob/data/bob.bash-completion](../bob/data/bob.bash-completion)) — `_EXPLAIN_KEYS` régénéré.
+- 1 nouveau fichier de test ([tests/test_v0101_ssh_x11_client.py](../tests/test_v0101_ssh_x11_client.py)) — 10 tests.
+- 4 fichiers de test existants modifiés pour le renommage ([test_explain.py](../tests/test_explain.py), [test_explain_naming_convention.py](../tests/test_explain_naming_convention.py), [test_cis_refs.py](../tests/test_cis_refs.py), [test_ssh.py](../tests/test_ssh.py), [test_profiles.py](../tests/test_profiles.py)).
+- Toute la surface de release (pyproject + man + badges + debian + rpm + 4 CHANGELOG + TESTING + note mémoire) bumpée selon la convention.
 
-### Upgrade
+### Mise à jour
 
 ```
 pipx upgrade bodyguard-of-bits
 ```
 
-Pas d'action de migration requise depuis v0.10.0 ou v0.9.x.
+Aucune action de migration requise depuis v0.10.0 ou v0.9.x. Les opérateurs dont `ignore.yml` contient `ssh.x11_forwarding` ne voient aucun changement de comportement (la clé legacy couvre les deux nouvelles sous-clés via le shim). Les opérateurs qui lancent `bob --explain ssh.x11_forwarding` voient le contenu côté serveur (via la nouvelle entrée d'EXPLAIN_KEY_ALIASES). La détection côté client apparaît comme un nouveau constat sur les systèmes portant `ForwardX11 yes` dans `~/.ssh/config` — les opérateurs voudront peut-être revoir leur `~/.ssh/config` et appliquer le correctif recommandé, ou documenter une exception via `bob --ignore ssh.x11.forwarding.client`.
 
-**v0.7.x reste EOL** (déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1).
-**v0.6.x reste EOL** (déclaré en v0.7.2).
+**v0.7.x reste en fin de vie** (déclaration formelle dans [SECURITY.md](../SECURITY.md) depuis v0.8.1).
+**v0.6.x reste en fin de vie** (déclarée en v0.7.2).
 
-### Field test scope
+### Périmètre du test terrain
 
-Le workflow conservateur ne requiert pas une campagne cross-distro 5-distros pour un patch D-4 single-rank. Un smoke local sur l'host (operator avec `~/.ssh/config` pour exercer la détection client-side) couvre le nouveau code path ; la parité locale EN+FR est enforced par les tests automatisés `TestClientSideDetection::test_locale_keys_present_in_both_locales` + `test_explain_content_present_in_both_locales`.
+Le workflow conservateur n'exige pas de campagne multi-distro sur 5 distros pour un patch D-4 d'un seul rang. Un smoke local sur l'hôte (un opérateur avec un `~/.ssh/config` pour exercer la détection côté client) couvre le nouveau chemin de code ; la parité des locales EN+FR est imposée par les tests automatiques `TestClientSideDetection::test_locale_keys_present_in_both_locales` + `test_explain_content_present_in_both_locales`.
 
-### Déféré aux futurs patches v0.10.x (toujours aligné avec workflow conservateur)
+Si un utilisateur signale un problème sur la détection côté client (faux positif sur une configuration de transfert légitime, faux négatif sur une forme de configuration que l'analyseur rate), rouvrir le rang pour un patch de suivi.
 
-- **D-4 Rank 2-8** — cosmétique / granular ignore.yml. Pas de signal user → pas de ship.
-- **F-1 parallel checks** — perf 30s → 5-10s. **Zéro signal user perf**. Ne pas shipper sans demande mesurée.
-- **SNAPSHOT.md deep refresh** — module-by-module + tailles fichier. Low-priority doc patch candidate.
+### Déféré à de futurs patchs v0.10.x (toujours aligné sur le workflow conservateur)
+
+- **D-4 Rank 2-8** — cosmétique / ignore.yml plus granulaire. Pas de signal utilisateur → pas de livraison. Possiblement abandonné indéfiniment si 5 majeures passent sans signal (motif de compare-breakdown-diff en v0.8.4).
+- **F-1 checks en parallèle** — perf 30 s → 5-10 s. **Signal utilisateur nul sur la perf**. Ne pas livrer sans demande mesurée. Le plan issu de l'audit reste dans l'entrée CHANGELOG de v0.10.0 pour le jour où quelqu'un le signalera.
+- **Rafraîchissement en profondeur de SNAPSHOT.md** — mentions module par module + tailles de fichiers. Les patchs chirurgicaux de v0.10.0 ont couvert les paragraphes porteurs qui avaient dérivé ; un rafraîchissement plus profond est un candidat de patch de documentation à faible priorité.
 
 ### Leçons
 
-- **EXPLAIN_KEY_ALIASES kept-but-empty paye off.** Le retrait D-3 v0.9.0 a vidé le dict mais explicitement gardé la machinery `normalize_key()` pour qu'un futur rename ait un migration path one-line. v0.10.1 D-4 Rank 1 est exactement ce futur rename. Pattern validé.
-- **Workflow conservateur a tenu en pratique.** Le proposal v0.10.x a appliqué "gain × risque = STOP" aux 9 items déférés ; 1 a passé le filtre, 8 ont fail.
-- **Ajouter une nouvelle détection est qualitativement différent du rename d'une détection existante.** Le framing coût/valeur surface cette distinction.
+- **Garder EXPLAIN_KEY_ALIASES vide mais présent est payant.** Le retrait D-3 de v0.9.0 a vidé le dict mais a explicitement gardé la mécanique de recherche dans `normalize_key()`, pour qu'un futur renommage ait un chemin de migration d'une ligne. v0.10.1 D-4 Rank 1 est exactement ce futur renommage — la ligne `"ssh.x11_forwarding": "ssh.x11.forwarding.server"` est tout ce qu'il a fallu. Motif validé : **garder une infrastructure dépréciée quand le coût de la garder est faible et le coût de la recréer non trivial**.
+- **Le filtre du workflow conservateur a tenu en pratique.** La proposition v0.10.x a appliqué « gain × risque = STOP » à 9 éléments déférés ; 1 a passé le filtre (D-4 Rank 1) parce qu'il ajoute une **nouvelle capacité de détection** (pas seulement un renommage). 8 ont échoué parce qu'ils étaient cosmétiques ou sans signal utilisateur. Livrer le 1 + déférer les 8 est le bon choix quand l'objectif est « moins de releases, plus de signal par release ».
+- **Ajouter une détection est qualitativement différent de renommer une détection existante.** Les découpages Rank 2-8 auraient relevé du travail de « renommage » même avec un périmètre agressif ; Rank 1 est le seul des 9 qui ajoute un vrai nouveau constat que l'opérateur ne verrait pas autrement. Le cadrage coût-valeur fait ressortir cette distinction.
 
 ---
 
 ## [v0.10.0] — 09-06-2026
 
-**Première release v0.10.x — release de préparation** ouvrant la prochaine fenêtre de bundle BREAKING. Ship la foundation du shim de migration sub-check D-4 + ScoreEngine ignore.yml back-compat wiring + refresh SNAPSHOT.md, en déférant intentionnellement les implémentations D-4 splits réelles et le refactor F-1 parallel-check aux patches hardening v0.10.1+.
+**Première release v0.10.x — release de préparation** qui ouvre la fenêtre du prochain lot BREAKING. Livre la fondation du shim de migration des sous-checks D-4 + le branchement de rétrocompatibilité d'ignore.yml dans ScoreEngine + un rafraîchissement de SNAPSHOT.md, tout en déférant volontairement les implémentations des découpages D-4 et le refactor F-1 des checks en parallèle aux patchs de hardening v0.10.1+.
 
 ### Pourquoi une release de préparation
 
-Deux audits sub-agent ont été runs le 2026-06-08 pour scoper le travail bundle BREAKING v0.10.0 :
+Deux audits par sous-agent ont été menés le 2026-06-08 pour cadrer le travail du lot BREAKING de v0.10.0 :
 
-1. **Audit candidates D-4 sub-checks** — walk `bob/checks/*.py` à la recherche de finding keys qui lump plusieurs subcases sous un seul nom. Identifié 8 candidates split ranked avec estimations d'effort par split, plus une liste "do NOT split" de 5 keys qui ressemblent à des candidates mais restent unifiées. Estimation effort D-4 total : **≈ 20 heures** (le shim wildcard est la nouveauté principale vs le shim baseline simple `str → str` v0.9.2).
+1. **Audit des candidats au découpage en sous-checks D-4** — a parcouru `bob/checks/*.py` à la recherche de clés de constat qui regroupent plusieurs sous-cas sous un même nom. A identifié 8 candidats au découpage, classés, avec une estimation d'effort par découpage, plus une liste « NE PAS découper » de 5 clés qui ressemblent à des candidats mais restent unifiées. Estimation totale de l'effort D-4 : **≈ 20 heures** (le contrat de shim par joker est la principale nouveauté par rapport au simple shim de baseline `str → str` de v0.9.2).
 
-2. **Audit thread-safety F-1 parallel-check** — inventaire shared state dans `bob/runner.py::run_checks` (engine, report, output, i18n, GEO cache, network_context, audited_ports cross-check), classifié les check functions comme pure vs side-effecting (~38 sur ~38 sont pure une fois leur snapshot collecté), identifié torn-read risks dans les apt-related checks (apt-get -s + apt-cache policy prennent un frontend lock). Recommandé **Option B** : Phase 0 séquentielle firewall/ports/network_context (cross-check deps) + Phase 1 `ThreadPoolExecutor(max_workers=min(8, cpu_count()))` snapshot+check fan-out avec apt slot serialization + Phase 2 merge séquentielle en ordre canonique `_SECTIONS`. Estimation effort F-1 total : **≈ 6-8 heures** + 4 nouveaux test files determinism.
+2. **Audit de sûreté des threads pour les checks en parallèle (F-1)** — a inventorié l'état partagé dans `bob/runner.py::run_checks` (moteur, rapport, sortie, i18n, cache GEO, network_context, vérification croisée d'audited_ports), classé les fonctions de check en pures ou à effets de bord (~38 sur ~38 sont pures une fois leur snapshot collecté), identifié des risques de lecture déchirée dans les checks liés à apt (apt-get -s + apt-cache policy prennent un verrou du frontend). A recommandé l'**Option B** : Phase 0 séquentielle pare-feu/ports/network_context (dépendances de vérification croisée) + Phase 1 `ThreadPoolExecutor(max_workers=min(8, cpu_count()))` en éventail snapshot+check avec sérialisation d'un créneau apt + Phase 2 fusion séquentielle dans l'ordre canonique de `_SECTIONS`. Estimation totale de l'effort F-1 : **≈ 6-8 heures** + 4 nouveaux fichiers de tests de déterminisme (`test_v0100_parallel_determinism.py`, `_parallel_flake.py`, `_parallel_json_stable.py`, `_apt_slot.py`).
 
-Effort combiné estimé : **≈ 30 heures** pour le bundle BREAKING v0.10.0 complet (D-4 splits + F-1 + refresh SNAPSHOT + release surface), ce qui dépassait une session ship unique. Le call pragmatique a été de **stager le travail** :
+Estimation d'effort cumulée : **≈ 30 heures** pour le lot BREAKING complet de v0.10.0 (découpages D-4 + F-1 + rafraîchissement de SNAPSHOT + surface de release), ce qui dépassait une seule session de livraison. Le choix pragmatique a été d'**étaler le travail** :
 
-  - **v0.10.0 (cette release)** — ship la foundation du shim D-4 pour que les huit patches follow-up puissent landing sans re-toucher le fichier shim. Ship le refresh SNAPSHOT.md pour que le doc project-snapshot couvre les trois majeures de drift sur lesquelles la branche v0.10.x sit. Bump la version pour marquer la branche v0.10.x ouverte.
-  - **v0.10.1+** — implémenter les 8 D-4 splits un par un (Rank 1 en premier comme exemple canonique ssh.x11 server/client), chacun avec son propre locale + EXPLAIN + tests. Implémenter F-1 Option B dans un patch dédié avec les quatre test files determinism landing à côté du refactor.
+  - **v0.10.0 (cette release)** — livrer la fondation du shim D-4 pour que les huit patchs de suivi puissent atterrir sans retoucher le fichier du shim. Livrer le rafraîchissement de SNAPSHOT.md pour que le document d'instantané du projet couvre les trois majeures de dérive sur lesquelles repose la branche v0.10.x. Faire monter la version pour marquer l'ouverture de la branche v0.10.x.
+  - **v0.10.1+** — implémenter les 8 découpages D-4 un par un (Rank 1 d'abord, comme exemple canonique serveur/client de ssh.x11), chacun avec ses locales + EXPLAIN + tests. Implémenter l'Option B de F-1 dans un patch dédié, avec les quatre fichiers de tests de déterminisme qui atterrissent avec le refactor.
 
-Cette approche miroite le cycle v0.7.x → v0.8.x où le bundle BREAKING a landed comme single ship (v0.8.0 + drift batch v0.8.0 + items déférés v0.7.0) et les patches hardening ont follow-up (v0.8.1 / v0.8.2 / v0.8.3 / v0.8.4).
+Cette approche reprend le cycle v0.7.x → v0.8.x, où le lot BREAKING avait atterri en une seule livraison (v0.8.0 + le lot de dérive de v0.8.0 + les éléments déférés de v0.7.0) et où les patchs de hardening avaient suivi (v0.8.1 / v0.8.2 / v0.8.3 / v0.8.4).
 
-### Foundation shim migration D-4
+### Fondation du shim de migration D-4
 
-[bob/_v100_subcheck_renames.py](../bob/_v100_subcheck_renames.py) — nouveau module 90-lignes exportant `SUBCHECK_RENAMES_V100` (dict 14 entries legacy v0.9.x → patterns glob `fnmatch`) + `matches_legacy_ignore()` + `any_legacy_ignore_matches()` helpers.
+[bob/_v100_subcheck_renames.py](../bob/_v100_subcheck_renames.py) — nouveau module de 90 lignes qui exporte :
 
-La shape a changé vs `bob/_v090_renames.py` v0.9.2 parce que D-4 couvre trois topologies de migration en une map :
+```python
+SUBCHECK_RENAMES_V100: dict[str, str] = {
+    "ssh.x11_forwarding":             "ssh.x11.forwarding.*",
+    "ssh.host_key_dsa":               "ssh.dsa.host_key",
+    "ssh.dsa_key":                    "ssh.dsa.private_key",
+    "ssh.authorized_keys_dsa":        "ssh.dsa.authorized_key",
+    "ssh.known_hosts_deprecated":     "ssh.dsa.known_host",
+    "auditd.missing_sensitive_rules": "auditd.missing.*",
+    "samba.guest_writable":           "samba.share.guest_writable.*",
+    "samba.guest_readonly":           "samba.share.guest_readonly.*",
+    "log_rotation.journald_volatile": "log_rotation.journald.*",
+    "firewall_rules.duplicate_found": "firewall_rules.duplicate.*",
+    "kernel_modules.risky_fs":        "kernel_modules.risky.*",
+    "kernel_modules.risky_net":       "kernel_modules.risky.*",
+    "ssh.weak_ciphers":               "ssh.weak.cipher.*",
+    "ssh.weak_macs":                  "ssh.weak.mac.*",
+    "ssh.weak_kex":                   "ssh.weak.kex.*",
+}
 
-1. **1-to-1 simple renames** (Rank 2 DSA family) — le pattern est la target exacte sans wildcard
-2. **1-to-N enumerated splits** (Rank 1 ssh.x11 server+client, Rank 5 journald, Rank 6 firewall_rules duplicate) — le pattern utilise `*` pour couvrir chaque sibling canonique
-3. **1-to-many runtime-discovered** (Rank 4 samba per-share, Rank 7 kernel modules per-name, Rank 8 SSH weak crypto per-algo) — le set de keys canoniques est unbounded, le wildcard est la seule représentation viable
+def matches_legacy_ignore(finding_key: str, ignore_entry: str) -> bool: ...
+def any_legacy_ignore_matches(finding_key: str, ignore_keys: ...) -> bool: ...
+```
 
-Le runtime helper `matches_legacy_ignore(finding_key, ignore_entry)` résout `ignore_entry` contre `SUBCHECK_RENAMES_V100` et run `fnmatch.fnmatch(finding_key, pattern)`.
+La forme a changé par rapport au `bob/_v090_renames.py` de v0.9.2, parce que D-4 couvre trois topologies de migration dans une seule table :
 
-### Wiring ScoreEngine.apply ignore.yml back-compat
+1. **Renommages simples 1-vers-1** (Rank 2, famille DSA — `ssh.host_key_dsa` → `ssh.dsa.host_key`). Le motif est la cible exacte, sans joker. `fnmatch.fnmatch("ssh.dsa.host_key", "ssh.dsa.host_key")` renvoie True ; le helper les traite comme les cas avec joker.
+2. **Découpages 1-vers-N énumérés** (Rank 1 ssh.x11 serveur+client, Rank 5 journald volatile+storage_unknown, Rank 6 firewall_rules duplicate.exact+duplicate.proto_implicit). Le motif utilise `*` pour couvrir chaque frère canonique sans les lister en ligne (ce qui exigerait de garder la table synchronisée à mesure que de nouveaux frères arrivent).
+3. **1-vers-beaucoup découverts à l'exécution** (Rank 4 samba par partage, Rank 7 modules noyau par nom, Rank 8 cryptographie SSH faible par algorithme). L'ensemble des clés canoniques est non borné — la forme avec joker est la seule représentation viable.
 
-[bob/scoring.py::ScoreEngine.apply](../bob/scoring.py) a été update pour consulter à la fois le path exact-match existant ET le nouveau path legacy-glob via `_is_ignored()` helper interne.
+Le helper d'exécution `matches_legacy_ignore(finding_key, ignore_entry)` résout `ignore_entry` dans `SUBCHECK_RENAMES_V100` et lance `fnmatch.fnmatch(finding_key, pattern)`. Renvoie False pour les entrées inconnues (l'opérateur a tapé quelque chose qui n'est pas dans la table legacy — probablement déjà canonique, ou une faute de frappe). `any_legacy_ignore_matches(finding_key, ignore_keys)` est l'enveloppe de commodité qui renvoie True si N'IMPORTE QUELLE entrée de l'`ignore.yml` de l'opérateur couvre la clé de constat via le chemin legacy.
 
-Aujourd'hui ça ne change pas de behavior visible parce qu'aucun check émet les nouvelles sub-keys canoniques. Le shim devient load-bearing dès que v0.10.1 ship le premier split D-4.
+### Branchement de rétrocompatibilité d'ignore.yml dans ScoreEngine.apply
 
-### Refresh SNAPSHOT.md
+[bob/scoring.py::ScoreEngine.apply](../bob/scoring.py) a été mis à jour pour consulter à la fois le chemin existant de correspondance exacte ET le nouveau chemin glob legacy :
 
-[DOCUMENTS/SNAPSHOT.md](../DOCUMENTS/SNAPSHOT.md) a été refresh pour la dernière fois pour v0.7.4 (2026-06-02, refresh depuis baseline v0.6.0). v0.10.0 ajoute deux paragraphes : drift v0.7.4 → v0.9.2 (couvre les cycles v0.8.x et v0.9.x) + paragraphe préparation v0.10.0 (stratégie staging + estimations d'audit).
+```python
+def _is_ignored(key: str | None) -> bool:
+    if not (ignored_keys and key):
+        return False
+    if key in ignored_keys:
+        return True
+    return any_legacy_ignore_matches(key, ignored_keys)
 
-### Numbers
+for deduction in result.deductions:
+    if not _is_ignored(deduction.key):
+        self._apply_deduction(deduction)
+for finding in result.findings:
+    if _is_ignored(finding.key):
+        self.ignored_findings.append(finding)
+    else:
+        self.findings.append(finding)
+```
 
-- **Tests 6242 → 6242** (pas de delta dans cette release de préparation). 0 régression.
+Aujourd'hui, cela ne change aucun comportement visible, parce qu'aucun check n'émet encore les nouvelles sous-clés canoniques. Le shim devient porteur dès que v0.10.1 livre le premier découpage D-4. Les opérateurs qui mettent à jour leur `ignore.yml` vers les sous-clés canoniques ne voient aucun changement de comportement (le chemin de correspondance exacte les attrape en premier).
+
+### Rafraîchissement de SNAPSHOT.md
+
+[DOCUMENTS/SNAPSHOT.md](../DOCUMENTS/SNAPSHOT.md) avait été rafraîchi pour la dernière fois pour v0.7.4 (2026-06-02, rafraîchi depuis la base de v0.6.0). v0.10.0 ajoute deux paragraphes :
+
+- **Dérive de v0.7.4 à v0.9.2, en un paragraphe** — couvre le cycle v0.8.x (lot de dérive de v0.8.0 + actions de cadrage A1+A2 + audit des lacunes de fonctionnalités silencieuses clôturant v0.7.x, hardening en profondeur de v0.8.1 sur 26 niveaux en 3 passes de sous-agent, dont le retrait BREAKING de l'alias workstation, lot conservateur de v0.8.2 + consolidation de `bob/_i18n_safe.py` + `--test-webhook` + descriptions de `--check=list` + avertissement de dépréciation D-3 + linter de locale, hotfix de v0.8.3 sur un chemin d'audit UnboundLocalError venu de la livraison de v0.8.2 qui masquait l'import du module `UserConfig` dans `main()`, nettoyage de v0.8.4 sur la surveillance de 7 mois d'`is_unit_enabled` + nouveau `DOCUMENTS/TUTORIAL{,_FR}.md`) et le cycle v0.9.x (lot BREAKING de v0.9.0 clôturant D-1/D-2/D-3/TD-1/F-2/F-3 + correctif `cur="="` de la complétion bash, hotfix de v0.9.1 sur l'ergonomie du message F-3 avec un repli entre crochets dû à un `i18n.t` appelé avant l'initialisation dans `parse_args`, i18n de BaselineLoadError de v0.9.2 + shim de migration de baseline entre versions).
+
+- **Paragraphe de préparation de v0.10.0** — décrit la stratégie d'étalement : fondation du shim de migration D-4 dans cette release + implémentations des découpages D-4 et refactor de l'Option B de F-1 dans les patchs de hardening v0.10.1+. Consigne les deux rapports d'audit par sous-agent et les estimations d'effort que suit directement le travail de v0.10.1+.
+
+La bannière de vue sur un écran passe de `bob v0.8.0 ~30.7 kLoC` à `bob v0.10.0 ~32+ kLoC`. Les sections détaillées module par module situées sous la bannière sont LARGEMENT INCHANGÉES structurellement — le tableau des découpages de v0.8.0, le diagramme des couches de v0.7.4 et les paragraphes consacrés aux modules restent exacts en v0.9.2 pour les chemins de fichiers et la forme générale (la dérive de v0.8.x / v0.9.x consistait surtout en changements de comportement sur place, pas en découpages d'architecture). Les paragraphes de dérive ci-dessus sont le renvoi qui fait foi vers le détail par release de `DOCUMENTS/CHANGELOG_FULL.md` pour tout lecteur qui a besoin d'un instantané plus fin ; un rafraîchissement plus profond module par module est un candidat de patch de documentation v0.10.2+, quand les découpages post-D-4 + post-F-1 le justifieront.
+
+### Chiffres
+
+- **Tests 6242 → 6242** (aucun écart dans cette release de préparation). 0 régression.
 - 1 nouveau module ([bob/_v100_subcheck_renames.py](../bob/_v100_subcheck_renames.py)) — 90 lignes.
-- 1 fichier code production modifié ([bob/scoring.py](../bob/scoring.py)) — `_is_ignored` helper + consultation `any_legacy_ignore_matches`, ~15 lignes changées.
-- 1 fichier documentation modifié ([DOCUMENTS/SNAPSHOT.md](../DOCUMENTS/SNAPSHOT.md)) — 3 paragraphes ajoutés.
-- 4 surfaces changelog + TESTING.md + man pages + debian + rpm + memory note bumpées per convention.
+- 1 fichier de code de production modifié ([bob/scoring.py](../bob/scoring.py)) — helper `_is_ignored` + consultation d'`any_legacy_ignore_matches`, ~15 lignes changées.
+- 1 fichier de documentation modifié ([DOCUMENTS/SNAPSHOT.md](../DOCUMENTS/SNAPSHOT.md)) — 3 paragraphes ajoutés (dérive de v0.7.4 à v0.9.2 + préparation de v0.10.0 + changement de version de la bannière).
+- 4 surfaces de changelog + TESTING.md + pages de manuel + debian + rpm + note mémoire mises à jour selon la convention.
 
-### Upgrade
+### Mise à jour
 
 ```
 pipx upgrade bodyguard-of-bits
 ```
 
-Pas d'action de migration requise depuis v0.9.x. La foundation shim D-4 ne change pas le behavior visible sur les entries `ignore.yml` existantes parce que les keys legacy ne sont pas encore émises comme sub-keys canoniques.
+Aucune action de migration requise depuis v0.9.x. La fondation du shim D-4 ne change aucun comportement visible sur les entrées `ignore.yml` existantes, parce que les clés legacy ne sont pas encore émises sous forme de sous-clés canoniques. Les opérateurs qui passent à v0.10.0 aujourd'hui verront exactement la même sortie d'audit qu'en v0.9.2.
 
-**v0.7.x reste EOL** (déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1).
-**v0.6.x reste EOL** (déclaré en v0.7.2).
+Le shim devient porteur dès que v0.10.1+ livre le premier découpage D-4. À ce moment-là, les entrées `ignore.yml` legacy continuent de neutraliser les sous-clés sur le point d'être découpées sans intervention de l'opérateur — les seuls qui doivent agir sont les opérateurs qui veulent migrer leur `ignore.yml` vers les noms de sous-clés canoniques, par clarté.
 
-### Déféré à v0.10.1+ (intentionnellement stagé)
+**v0.7.x reste en fin de vie** (déclaration formelle dans [SECURITY.md](../SECURITY.md) depuis v0.8.1).
+**v0.6.x reste en fin de vie** (déclarée en v0.7.2).
 
-8 splits D-4 (Rank 1-8) avec leur effort estimé chacun + F-1 Option B refactor + 4 test files determinism — tous décrits avec file:line dans les reports audit sub-agent enregistrés dans le transcript de session projet.
+### Déféré à v0.10.1+ (étalé volontairement)
+
+- **D-4 Rank 1** — découpage de `ssh.x11_forwarding` en `ssh.x11.forwarding.server` (renommage) + `ssh.x11.forwarding.client` (NOUVELLE détection côté client dans `_check_client_config`). Le plus petit découpage, l'exemple canonique de D-4. Effort : ~2 h.
+- **D-4 Rank 2** — unification de la famille DSA sous le préfixe `ssh.dsa.*`. 4 renommages simples 1-vers-1. Effort : ~2 h.
+- **D-4 Rank 3** — découpage d'`auditd.missing_sensitive_rules` en 4 familles de fichiers (`passwd_group`, `shadow`, `sudoers`, `ssh_config`) avec un plafond par famille. Effort : ~3 h.
+- **D-4 Rank 4** — découpage de `samba.guest_{writable,readonly}` en clés par nom de partage via une boucle d'émission à l'exécution. Le motif d'entrée ignore.yml avec joker est le premier cas découvert à l'exécution à être livré. Effort : ~3 h.
+- **D-4 Rank 5** — découpage de `log_rotation.journald_volatile` en `volatile` contre `storage_unknown`. Effort : ~1 h.
+- **D-4 Rank 6** — découpage de `firewall_rules.duplicate_found` en `duplicate.exact` contre `duplicate.proto_implicit`. Effort : ~2 h.
+- **D-4 Rank 7** — découpage de `kernel_modules.risky_{fs,net}` en clés par nom de module, avec plafond. Effort : ~3 h.
+- **D-4 Rank 8** — découpage de `ssh.weak_{ciphers,macs,kex}` en clés par algorithme, avec plafond. Effort : ~3 h.
+- **F-1** — refactor Option B de runner.py (Phase 0 / Phase 1 ThreadPoolExecutor / Phase 2 fusion séquentielle + sérialisation d'un créneau apt). 4 nouveaux fichiers de tests de déterminisme. Effort : ~6-8 h.
+
+Chaque élément atterrit dans son propre patch v0.10.x, avec locales + EXPLAIN + tests. Le schéma correspond au cycle v0.8.x (v0.8.0 BREAKING + 4 patchs de hardening v0.8.1 / v0.8.2 / v0.8.3 / v0.8.4) et au cycle v0.9.x (v0.9.0 BREAKING + 2 patchs de hardening v0.9.1 / v0.9.2).
 
 ### Leçons
 
-- **Stage les bundles BREAKING quand l'effort estimé par l'audit dépasse une session ship unique.** Les audits v0.10.0 ont estimé ~30 heures de travail d'implémentation. Shipper la foundation shim dans une release de préparation veut dire que les huit patches follow-up n'ont pas besoin de re-toucher le fichier shim, et la surface de bug est petite par patch au lieu d'une grosse surface à travers le bundle.
-- **Les audits sub-agent restent la façon la moins chère de scoper un bundle BREAKING.** Deux audits parallèles tournant en background pour ~3 min chacun ont produit des file:line citations concrètes + listes ranked candidate + estimations d'effort + Options recommandées qui ont informé la décision de staging.
-- **La foundation shim est forward-compatible** — ajouter un nouveau rename D-4 en v0.10.x+ est une entry one-line dans `SUBCHECK_RENAMES_V100`.
+- **Étaler les lots BREAKING quand l'estimation d'effort issue de l'audit dépasse une seule session de livraison.** Les audits de v0.10.0 estimaient ~30 heures de travail d'implémentation. Livrer la fondation du shim dans une release de préparation signifie que les huit patchs de suivi n'ont pas à retoucher le fichier du shim (ni à se soucier de la rétrocompatibilité d'entrées legacy déjà livrées), et que la surface de bug est petite par patch au lieu d'une grande surface sur tout le lot. C'est le même schéma d'étalement que celui du cycle v0.7.0 (T1 / T2 / T3, chacun atterri comme une phase distincte) et du cycle v0.8.x (chaque niveau `T<n>` livré dans son propre commit).
+- **Les audits par sous-agent restent le moyen le moins cher de cadrer un lot BREAKING.** Deux audits parallèles tournant en arrière-plan environ 3 minutes chacun ont produit des citations fichier:ligne concrètes + des listes de candidats classées + des estimations d'effort + des options recommandées qui ont éclairé la décision d'étalement. Sans les audits, l'étalement aurait été une estimation au doigt mouillé ; avec eux, c'est une décision de périmètre défendable que le prochain opérateur peut revérifier.
+- **La fondation du shim est compatible avec l'avenir** — ajouter un nouveau renommage D-4 en v0.10.x+ est une entrée d'une ligne dans `SUBCHECK_RENAMES_V100` ; les helpers d'exécution et le branchement de `ScoreEngine.apply` la couvrent déjà. Le coût d'une mauvaise décision sur un candidat D-4 est désormais un retour arrière d'une ligne, pas un rollback sur plusieurs fichiers.
 
 ---
 
 ## [v0.9.2] — 08-06-2026
 
-**Ferme les deux gaps i18n / UX documentés dans le CHANGELOG v0.9.1 comme "déférés à v0.10.0+"** — tous deux surfacés par la campagne field test cross-distro v0.9.0. Les deux sont purement additifs (pas de changement BREAKING wire-format, pas de risque pour le chemin audit golden), donc ils fit naturellement comme un patch v0.9.x plutôt que d'attendre v0.10.0.
+**Ferme les deux lacunes i18n / ergonomie documentées dans le CHANGELOG de v0.9.1 comme « déférées à v0.10.0+ »** — toutes deux mises au jour par la campagne de test terrain multi-distro de v0.9.0. Les deux sont purement additives (aucun changement BREAKING du format de sortie, aucun risque pour le chemin d'audit de référence), donc elles trouvent naturellement leur place dans un patch v0.9.x plutôt que d'attendre v0.10.0.
 
-### BaselineLoadError i18n
+### i18n de BaselineLoadError
 
-Pre-v0.9.2, les quatre sites raise `BaselineLoadError` dans [bob/compare.py](../bob/compare.py) utilisaient des messages anglais hardcoded même sur systèmes FR. Seul le prefix "Erreur :" était localisé (via la clé locale `cli.error.prefix` dans le path d'affichage erreur [bob/__main__.py](../bob/__main__.py)), le body du message lui-même restait anglais.
+Avant v0.9.2, les quatre sites qui lèvent ``BaselineLoadError`` dans [bob/compare.py](../bob/compare.py) utilisaient des messages anglais codés en dur, même sur les systèmes en FR. Seul le préfixe « Erreur : » était localisé (via la clé de locale ``cli.error.prefix`` dans le chemin d'affichage des erreurs de [bob/__main__.py](../bob/__main__.py)), le corps du message restait lui en anglais :
 
-Contrairement au problème F-3 v0.9.0 (qui firait avant `i18n.init()`), ces raises se passent APRÈS `i18n.init()` (load_baseline est invoqué depuis le chemin audit, pas depuis `parse_args`), donc les messages PEUVENT être proprement i18n'd via le helper `bob._i18n_safe.t_or_hardcoded`.
+```
+Erreur : Baseline file not found: /tmp/X — check the path and that the file exists on this machine.
+```
 
-Quatre nouvelles clés locale landent sous `compare.baseline_load.*` (EN + FR) :
+Contrairement au problème F-3 de v0.9.0 (qui se déclenchait avant ``i18n.init()``), ces levées surviennent APRÈS ``i18n.init()`` (load_baseline est invoquée depuis le chemin d'audit, pas depuis ``parse_args``), si bien que les messages PEUVENT être correctement internationalisés via le helper ``bob._i18n_safe.t_or_hardcoded``.
 
-| Clé                                  | Baseline EN                                                                                                                                                  | Localisation FR                                                                                                                                                |
-|--------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `not_found`                           | `Baseline file not found: {path} — check the path and that the file exists on this machine.`                                                                  | `Baseline introuvable : {path} — vérifie le chemin et que le fichier existe sur cette machine.`                                                                  |
-| `invalid_json`                        | `Baseline file {path} could not be read or parsed as JSON: {error}`                                                                                           | `Le fichier baseline {path} n'a pas pu être lu ou parsé comme JSON : {error}`                                                                                    |
-| `v1_schema`                           | `Baseline file {path} carries the legacy v0.6.x schema (schema_version="1") which was retired in v0.9.0 F-3. Re-generate the baseline on a v0.9.0+ host.`     | `Le fichier baseline {path} porte le schéma legacy v0.6.x (schema_version="1") qui a été retiré en v0.9.0 F-3. Régénère le baseline sur un host v0.9.0+.`        |
-| `bad_shape`                           | `Baseline file {path} has unexpected shape: {error}`                                                                                                           | `Le fichier baseline {path} a une forme inattendue : {error}`                                                                                                    |
+Quatre nouvelles clés de locale arrivent sous ``compare.baseline_load.*`` (EN + FR) :
 
-Le helper `t_or_hardcoded` fallback vers la baseline EN au module-level quand i18n n'est pas initialisée — même pattern que la consolidation `bob/_i18n_safe.py` v0.8.2.
+| Clé                                  | Référence EN                                                                                                                                               | Localisation FR                                                                                                                                              |
+|--------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ``not_found``                         | ``Baseline file not found: {path} — check the path and that the file exists on this machine.``                                                              | ``Baseline introuvable : {path} — vérifie le chemin et que le fichier existe sur cette machine.``                                                              |
+| ``invalid_json``                      | ``Baseline file {path} could not be read or parsed as JSON: {error}``                                                                                       | ``Le fichier baseline {path} n'a pas pu être lu ou parsé comme JSON : {error}``                                                                                |
+| ``v1_schema``                         | ``Baseline file {path} carries the legacy v0.6.x schema (schema_version="1") which was retired in v0.9.0 F-3. Re-generate the baseline on a v0.9.0+ host.`` | ``Le fichier baseline {path} porte le schéma legacy v0.6.x (schema_version="1") qui a été retiré en v0.9.0 F-3. Régénère le baseline sur un host v0.9.0+.``    |
+| ``bad_shape``                         | ``Baseline file {path} has unexpected shape: {error}``                                                                                                       | ``Le fichier baseline {path} a une forme inattendue : {error}``                                                                                                |
 
-Post-v0.9.2 le système FR montre :
+Le helper ``t_or_hardcoded`` se rabat sur la référence EN au niveau du module quand l'i18n n'est pas initialisée — même schéma que la consolidation ``bob/_i18n_safe.py`` de v0.8.2. Les quatre sites de BaselineLoadError se lisent désormais ainsi :
+
+```python
+msg = t_or_hardcoded(
+    "compare.baseline_load.not_found",
+    f"Baseline file not found: {src} — check the path and "
+    f"that the file exists on this machine.",
+).format(path=src)
+raise BaselineLoadError(msg) from exc
+```
+
+Après v0.9.2, le système en FR affiche :
 
 ```
 Erreur : Baseline introuvable : /tmp/X — vérifie le chemin et que le fichier existe sur cette machine.
 ```
 
-### Migration shim baseline cross-version
+### Shim de migration de baseline entre versions
 
-Pre-v0.9.2, un baseline écrit par v0.7.x / v0.8.x portait des finding keys avec des prefixes renommés en v0.9.0 D-1 :
+Avant v0.9.2, une baseline écrite par v0.7.x / v0.8.x portait des clés de constat avec des préfixes renommés en v0.9.0 D-1 :
 
 ```
 iptables_nft.input_accept
@@ -8698,16 +9242,16 @@ cron_audit.pipe_to_shell
 ...
 ```
 
-L'audit v0.9.0+ émet les prefixes canoniques (`firewall_iptables.input_accept`, `cron.pipe_to_shell`, …), donc `compute_delta` voyait le même problème physique comme *résolu* (vieille clé dans `prev.finding_keys`) ET *nouveau* (clé canonique dans `curr.finding_keys`). Le field test Ubuntu 26.04 a surfacé le bug déterministiquement :
+L'audit de v0.9.0+ émet les préfixes canoniques (``firewall_iptables.input_accept``, ``cron.pipe_to_shell``, …), si bien que ``compute_delta`` voyait le même problème physique à la fois comme *résolu* (ancienne clé dans ``prev.finding_keys``) ET comme *nouveau* (clé canonique dans ``curr.finding_keys``). Le test terrain sur Ubuntu 26.04 a fait apparaître le bug de façon déterministe :
 
 ```
 ✔ [OK] Résolu : iptables_nft.input_accept
 ⚠ [ATTENTION] Nouveau finding : firewall_iptables.input_accept
 ```
 
-Deux findings affichés pour le même problème sous-jacent. Documenté dans le CHANGELOG v0.9.0 comme "les entries ignore.yml doivent être migrées à la main" — mais c'était le path diff, pas ignore.yml.
+Deux constats affichés pour le même problème sous-jacent. Documenté dans le CHANGELOG de v0.9.0 comme « les entrées ignore.yml doivent être migrées à la main » — mais il s'agissait ici du chemin de diff, pas d'ignore.yml.
 
-Le fix est un tiny pure transform dans [bob/_v090_renames.py](../bob/_v090_renames.py) :
+Le correctif est une minuscule transformation pure dans [bob/_v090_renames.py](../bob/_v090_renames.py) :
 
 ```python
 def remap_finding_key(key: str) -> str:
@@ -8720,63 +9264,71 @@ def remap_finding_key(key: str) -> str:
     return f"{new_prefix}.{suffix}"
 ```
 
-Wire dans `load_baseline` après le parse JSON raw, avant la construction AuditBaseline.
+Branchée dans ``load_baseline`` après l'analyse JSON brute, avant la construction de l'AuditBaseline :
 
-Couvre les 7 renames D-1. Self-contained :
+```python
+raw_keys = raw.get("finding_keys")
+if isinstance(raw_keys, list):
+    finding_keys = [remap_finding_key(str(k)) for k in raw_keys]
+else:
+    finding_keys = None
+```
 
-- Ne modifie PAS le fichier baseline on-disk (le `save_baseline` du prochain audit écrit les noms canoniques — self-healing naturel)
-- N'affecte PAS les baselines déjà écrits par v0.9.0+ (le shim est idempotent sur input canonique ; `remap_finding_key("ssh.password_auth")` retourne `"ssh.password_auth"` inchangé)
-- Ne touche PAS la sémantique `ignore.yml` (requiert toujours une migration manuelle per le contrat v0.9.0)
+Couvre les 7 renommages D-1. Autonome :
 
-Post-v0.9.2, le même scénario field test Ubuntu 26.04 surface proprement :
+- Ne modifie PAS le fichier de baseline sur disque (le ``save_baseline`` de l'audit suivant écrit les noms canoniques — une autoréparation naturelle)
+- N'affecte PAS les baselines déjà écrites par v0.9.0+ (le shim est idempotent sur une entrée canonique ; ``remap_finding_key("ssh.password_auth")`` renvoie ``"ssh.password_auth"`` inchangé)
+- Ne touche PAS à la sémantique d'``ignore.yml`` (qui exige toujours une migration manuelle selon le contrat de v0.9.0)
+
+Après v0.9.2, le même scénario de test terrain sur Ubuntu 26.04 s'affiche proprement :
 
 ```
 ℹ [INFO] Score inchangé
 ✔ [OK] Aucun changement détecté depuis le dernier audit
 ```
 
-### Extraction map partagée
+### Extraction de la table partagée
 
-Pre-v0.9.2 la map legacy → canonical vivait inline dans [bob/runner.py](../bob/runner.py) comme `_RENAMED_SECTIONS_V090`. L'extraire dans un module dédié [bob/_v090_renames.py](../bob/_v090_renames.py) était nécessaire parce que :
+Avant v0.9.2, la table legacy → canonique vivait en ligne dans [bob/runner.py](../bob/runner.py), sous le nom ``_RENAMED_SECTIONS_V090``. L'extraire dans un module dédié, [bob/_v090_renames.py](../bob/_v090_renames.py), était nécessaire parce que :
 
-- `bob/compare.py` a besoin de la map pour le migration shim
-- `bob/compare.py` ne peut pas importer depuis `bob/runner.py` (runner importe déjà depuis compare → circulaire)
-- Dupliquer le dict risquerait un drift entre les deux call sites (un contributeur v0.10.0 ajoute une entry à un mais pas à l'autre)
+- ``bob/compare.py`` a besoin de la table pour le shim de migration
+- ``bob/compare.py`` ne peut pas importer depuis ``bob/runner.py`` (runner importe déjà depuis compare → import circulaire)
+- Dupliquer le dict risquerait une dérive entre les deux sites d'appel (un contributeur de v0.10.0 ajoute une entrée à l'un mais pas à l'autre)
 
-[bob/runner.py](../bob/runner.py) garde le nom legacy `_RENAMED_SECTIONS_V090` comme re-export back-compat pointant vers le dict partagé :
+[bob/runner.py](../bob/runner.py) garde le nom legacy ``_RENAMED_SECTIONS_V090`` comme ré-export de rétrocompatibilité pointant sur le dict partagé :
 
 ```python
 from bob._v090_renames import SECTION_RENAMES_V090 as _RENAMED_SECTIONS_V090
 ```
 
-[tests/test_v092_baseline_i18n_and_shim.py::TestV090RenamesSharedModule::test_runner_legacy_alias_points_at_shared_module](../tests/test_v092_baseline_i18n_and_shim.py) asserte l'identité `is` (même objet) — le drift entre les deux noms devient impossible. `test_seven_entries_match_d1_table` pin le contenu exact de la map contre la table CHANGELOG v0.9.0 documentée.
+[tests/test_v092_baseline_i18n_and_shim.py::TestV090RenamesSharedModule::test_runner_legacy_alias_points_at_shared_module](../tests/test_v092_baseline_i18n_and_shim.py) affirme l'identité ``is`` (même objet) — la dérive entre les deux noms devient impossible. ``test_seven_entries_match_d1_table`` épingle le contenu exact de la table contre le tableau documenté du CHANGELOG de v0.9.0.
 
-### Numbers
+### Chiffres
 
 - **Tests 6212 → 6242** (+30 sur 4 classes) :
-  - `TestV090RenamesSharedModule` (2 tests) : back-compat shared-map + contrat 7-entries
-  - `TestRemapFindingKey` (18 tests) : 8 parametrize legacy → canonical + 6 pass-through canonical + 4 edge cases unaffected (y compris suffix-with-dots)
-  - `TestLoadBaselineMigrationShim` (4 tests) : baselines v0.7.x et v0.8.x remappés, pass-through v0.9.x, guard pre-v1.22 absent-field
-  - `TestBaselineLoadErrorI18n` (6 tests) : rendering FR pour 3 des 4 messages + sanity présence locale-key dans les deux locales
+  - ``TestV090RenamesSharedModule`` (2 tests) : rétrocompatibilité de la table partagée + contrat des 7 entrées
+  - ``TestRemapFindingKey`` (18 tests) : 8 paramétrisations legacy → canonique + 6 passages inchangés de clés canoniques + 4 cas limites non affectés (dont un suffixe contenant des points)
+  - ``TestLoadBaselineMigrationShim`` (4 tests) : baselines v0.7.x et v0.8.x remappées, passage inchangé en v0.9.x, garde du champ absent d'avant v1.22
+  - ``TestBaselineLoadErrorI18n`` (6 tests) : rendu FR de 3 des 4 messages + contrôle de présence des clés de locale dans les deux locales
 - 0 régression.
-- Code production : ~50 lignes changées à travers [bob/_v090_renames.py](../bob/_v090_renames.py) (nouveau fichier, 50 lignes), [bob/runner.py](../bob/runner.py) (5 lignes — le dict inline remplacé par l'import), [bob/compare.py](../bob/compare.py) (~20 lignes — 4 sites raise utilisent `t_or_hardcoded` + le remap finding_keys dans la construction AuditBaseline).
-- Locale : 4 nouvelles clés × 2 locales = 8 entries sous `compare.baseline_load.*`.
+- Code de production : ~50 lignes changées dans [bob/_v090_renames.py](../bob/_v090_renames.py) (nouveau fichier, 50 lignes), [bob/runner.py](../bob/runner.py) (5 lignes — le dict en ligne remplacé par l'import), [bob/compare.py](../bob/compare.py) (~20 lignes — les 4 sites de levée utilisent ``t_or_hardcoded`` + le remappage des finding_keys dans la construction de l'AuditBaseline).
+- Locale : 4 nouvelles clés × 2 locales = 8 entrées sous ``compare.baseline_load.*``.
 
-### Upgrade
+### Mise à jour
 
 ```
 pipx upgrade bodyguard-of-bits
 ```
 
-**v0.7.x reste EOL** (déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1).
-**v0.6.x reste EOL** (déclaré en v0.7.2).
+**v0.7.x reste en fin de vie** (déclaration formelle dans [SECURITY.md](../SECURITY.md) depuis v0.8.1).
+**v0.6.x reste en fin de vie** (déclarée en v0.7.2).
 
 ### Leçons
 
-- **La liste "déféré à v0.10.0+" est un holding pattern utile, pas un cimetière.** Les deux items avaient été write-off comme future travail v0.10.0 en v0.9.1 ("zéro signal user"), mais l'estimation d'effort s'est révélée petite (~1.5 h total) et la campagne field test avait déjà fait le hard work de documenter les bugs reproductiblement. Ré-évaluer la liste déférée à chaque patch cycle coûte ~5 minutes et surface occasionnellement des wins "en fait on peut le faire maintenant".
-- **L'évitement d'import circulaire via tiny shared modules** est cheap. `bob/_v090_renames.py` est 50 lignes, a zéro dépendance runtime, expose un dict et un helper. L'alias back-compat dans `runner.py` garde n'importe quel script out-of-tree fonctionnel. Pattern réutilisable pour toute future situation "deux consumers, ne peuvent pas s'importer".
-- **Les pure transforms sont plus faciles à tester que les features wired-in**. `remap_finding_key` est une pure function 5-lignes — 18 tests parametrize couvrent chaque classe d'input raisonnable. Le test du baseline shim wired-in est alors un thin integration test au-dessus de la pure transform trusted.
-- **Le release same-day v0.9.1 + v0.9.2 est fine** quand le travail est genuinely petit et indépendant. v0.9.1 a fixé un bug de code-correctness ; v0.9.2 a fermé deux gaps UX. Les combiner aurait muddied le message hotfix v0.9.1 (qui délibérément n'a PAS touché ces items pour que le fix F-3 soit le seul diff à reviewer).
+- **La liste « déféré à v0.10.0+ » est une salle d'attente utile, pas un cimetière.** Les deux éléments avaient été passés par pertes et profits en v0.9.1 comme du travail futur de v0.10.0 (« signal utilisateur nul »), mais l'estimation d'effort s'est révélée faible (~1,5 h au total) et la campagne de test terrain avait déjà fait le gros du travail en documentant les bugs de façon reproductible. Réévaluer la liste des éléments déférés à chaque cycle de patch coûte ~5 minutes et fait parfois apparaître des gains du type « en fait, on peut le faire maintenant ».
+- **Éviter les imports circulaires via de minuscules modules partagés** ne coûte pas cher. ``bob/_v090_renames.py`` fait 50 lignes, n'a aucune dépendance d'exécution, expose un dict et un helper. L'alias de rétrocompatibilité de ``runner.py`` garde fonctionnel tout script externe à l'arbre. Schéma réutilisable pour toute future situation « deux consommateurs qui ne peuvent pas s'importer mutuellement ».
+- **Les transformations pures sont plus faciles à tester que les fonctionnalités branchées**. ``remap_finding_key`` est une fonction pure de 5 lignes — 18 tests paramétrés couvrent chaque classe d'entrée raisonnable. Le test du shim de baseline branché est alors un mince test d'intégration au-dessus de la transformation pure, en qui l'on a confiance.
+- **Livrer v0.9.1 + v0.9.2 le même jour ne pose pas de problème** quand le travail est réellement petit et indépendant. v0.9.1 corrigeait un bug de justesse du code ; v0.9.2 fermait deux lacunes d'ergonomie. Les combiner aurait brouillé le message du hotfix de v0.9.1 (qui, volontairement, ne touchait PAS à ces éléments, pour que le correctif de F-3 soit le seul diff à relire).
 
 ---
 
@@ -8886,147 +9438,167 @@ pipx upgrade bodyguard-of-bits
 
 ## [v0.9.0] — 07-06-2026
 
-**Première release v0.9.x — bundle BREAKING qui ferme le cleanup architectural déféré v0.7.0 → v0.8.x.**
+**Première release v0.9.x — lot BREAKING qui clôt le nettoyage d'architecture déféré de v0.7.0 → v0.8.x.**
 
-Cette release ship les items BREAKING déférés depuis v0.7.0 : renumber + uniformité naming sections (D-1), fusion `_ALL_SECTIONS`/`_ALWAYS_ON_SECTIONS` (D-2), retrait `EXPLAIN_KEY_ALIASES` (D-3), retrait trap door `BOB_SANDBOX_LEGACY` (TD-1), retrait schéma legacy `--json-v1` (F-3), compare cross-machine `--diff [PATH]` (F-2), plus un bug fix bash completion compagnon de v0.8.2.
+Cette release livre les éléments BREAKING déférés depuis v0.7.0 : renumérotation des sections + uniformité de nommage (D-1), fusion de `_ALL_SECTIONS`/`_ALWAYS_ON_SECTIONS` (D-2), retrait d'`EXPLAIN_KEY_ALIASES` (D-3), retrait de la trappe `BOB_SANDBOX_LEGACY` (TD-1), retrait du schéma legacy `--json-v1` (F-3), comparaison entre machines `--diff [CHEMIN]` (F-2), plus un correctif de bug de la complétion bash, compagnon de celui de v0.8.2.
 
-### D-1 BREAKING — 7 renames sections
+### D-1 BREAKING — 7 renommages de sections
 
-Pre-v0.9.0 les noms de sections avaient drifté à travers l'historique v0.5.x-v0.8.x : collisions entre filterables et always-on (`docker_audit` vs always-on `docker`, `services_state` vs always-on `services`), suffixes redondants incohérents entre siblings (`cron_audit` à côté de `auditd` qui n'a pas de `_audit`), et noms trop génériques qui peuvent vouloir dire n'importe quoi (`rules` standalone peut être ufw, iptables, audit, sudoers, …).
+Avant v0.9.0, les noms de sections avaient dérivé au fil de l'histoire de v0.5.x à v0.8.x : collisions entre filtrables et toujours actives (`docker_audit` contre la section toujours active `docker`, `services_state` contre la section toujours active `services`), suffixes redondants incohérents entre sections sœurs (`cron_audit` à côté d'`auditd`, qui n'a pas de `_audit`), et noms trop génériques qui pouvaient tout désigner (`rules` seul pouvait être ufw, iptables, audit, sudoers, …).
 
-Les 7 renames :
+Les 7 renommages :
 
-| Ancien           | Nouveau            | Raison                                                                  |
-|------------------|--------------------|-------------------------------------------------------------------------|
-| `cron_audit`     | `cron`             | Drop suffix `_audit` redondant (cf. `auditd`, `samba`)                  |
-| `docker_audit`   | `docker_hardening` | Résout collision avec section always-on `docker`                        |
-| `services_state` | `services_health`  | Résout collision avec section always-on `services`                      |
-| `ports_analysis` | `ports`            | Drop suffix `_analysis` redondant                                       |
-| `rules`          | `firewall_rules`   | `rules` standalone trop générique                                       |
-| `iptables_nft`   | `firewall_iptables`| Unifie le namespace `firewall_*`                                        |
-| `firewall_stack` | `firewall_drivers` | "drivers" décrit ce que le check audit (iptables vs nftables)           |
+| Ancien           | Nouveau            | Raison                                                            |
+|------------------|--------------------|-------------------------------------------------------------------|
+| `cron_audit`     | `cron`             | Supprimer le suffixe redondant `_audit` (cf. `auditd`, `samba`)   |
+| `docker_audit`   | `docker_hardening` | Résout la collision avec la section toujours active `docker`      |
+| `services_state` | `services_health`  | Résout la collision avec la section toujours active `services`    |
+| `ports_analysis` | `ports`            | Supprimer le suffixe redondant `_analysis`                        |
+| `rules`          | `firewall_rules`   | `rules` seul était trop générique                                 |
+| `iptables_nft`   | `firewall_iptables`| Unifie l'espace de noms `firewall_*`                              |
+| `firewall_stack` | `firewall_drivers` | « drivers » décrit ce que le check audite (iptables contre nftables) |
 
-La migration touche les surfaces suivantes, toutes synchronisées dans cette release :
+La migration touche les surfaces suivantes, toutes tenues synchronisées dans cette release :
 
-- [bob/runner.py](../bob/runner.py) — tuple `_SECTIONS` (post-D-2) porte les nouveaux noms ; chaque site `_sec(...)` et `emit_section(...)` migré ; nouveau dict `_RENAMED_SECTIONS_V090` + le fatal-migration-error path dans `validate_check_filters`.
-- [bob/checks/*.py](../bob/checks/) — chaque site `key="<old>.X"` et `t("<old>.X")` migré dans `cron_audit.py`, `docker_audit.py`, `services_state.py`, `iptables_nftables.py`, `firewall_stack.py`, et les clés `rules.X` dans `firewall.py`. Noms de fichiers gardés tels quels — les chemins module internes ne sont pas API publique, les renommer forcerait du noisy git history sans bénéfice user.
-- [bob/explain.py](../bob/explain.py) — entries `EXPLAIN_KEYS` renommées (168 clés).
-- [bob/data/cis_refs.json](../bob/data/cis_refs.json) — 20 clés CIS reference renommées.
-- [bob/data/profiles/{container,desktop,workstation}.conf](../bob/data/profiles/) — overrides sévérité profile + skip list section du profile `container`.
-- [bob/data/bob.bash-completion](../bob/data/bob.bash-completion) — `_SECTIONS` list bumpée pour matcher `_ALL_SECTIONS`.
-- [bob/locales/{en,fr}.json](../bob/locales/en.json) — namespaces root, `sections.X`, `sections.descriptions.X`, et entries `explain.X` renommées sous les 7 prefixes. Deux nouvelles clés locale : `cli.runner.section_renamed` (message migration per-token) + `cli.runner.section_renamed_fatal` (pointer one-shot vers la table de migration).
-- [bob/scoring.py](../bob/scoring.py) + [bob/json_output.py](../bob/json_output.py) + [bob/domain_scores.py](../bob/domain_scores.py) — refs clé hardcoded migrées.
-- ~167 lignes à travers 14 fichiers tests updates par mechanical prefix migration.
+- [bob/runner.py](../bob/runner.py) — le tuple `_SECTIONS` (après D-2) porte les nouveaux noms ; chaque site d'appel `_sec(...)` et `emit_section(...)` migré ; nouveau dict `_RENAMED_SECTIONS_V090` + le chemin d'erreur de migration fatale dans `validate_check_filters`.
+- [bob/checks/*.py](../bob/checks/) — chaque site `key="<ancien>.X"` et `t("<ancien>.X")` migré dans `cron_audit.py`, `docker_audit.py`, `services_state.py`, `iptables_nftables.py`, `firewall_stack.py`, et les clés `rules.X` de `firewall.py`. Noms de fichiers gardés tels quels — les chemins de modules internes ne sont pas une API publique, et les renommer imposerait un historique git bruyant sans bénéfice pour l'utilisateur.
+- [bob/explain.py](../bob/explain.py) — entrées d'`EXPLAIN_KEYS` renommées (168 clés).
+- [bob/data/cis_refs.json](../bob/data/cis_refs.json) — 20 clés de référence CIS renommées.
+- [bob/data/profiles/{container,desktop,workstation}.conf](../bob/data/profiles/) — surcharges de gravité des profils + la liste des sections ignorées du profil `container`.
+- [bob/data/bob.bash-completion](../bob/data/bob.bash-completion) — liste `_SECTIONS` mise à jour pour correspondre à `_ALL_SECTIONS`.
+- [bob/locales/{en,fr}.json](../bob/locales/en.json) — espaces de noms racines, entrées `sections.X`, `sections.descriptions.X` et `explain.X` renommées sous les 7 préfixes. Deux nouvelles clés de locale : `cli.runner.section_renamed` (message de migration par jeton) + `cli.runner.section_renamed_fatal` (renvoi unique vers le tableau de migration).
+- [bob/scoring.py](../bob/scoring.py) + [bob/json_output.py](../bob/json_output.py) + [bob/domain_scores.py](../bob/domain_scores.py) — références de clés codées en dur migrées.
+- ~167 lignes dans 14 fichiers de test mises à jour par migration mécanique des préfixes.
 
-Le migration error path dans `validate_check_filters` fire AVANT le générique "no match / did you mean" path pour que les users voient le remplacement canonique précis (`cron_audit` → `cron`) au lieu d'une fuzzy `difflib` guess. Mirror path pour `--skip`. Les titres section headers (rendus locale, affichés pendant l'audit) sont inchangés ; la surface BREAKING est le nom de token script-visible uniquement.
+Le chemin d'erreur de migration de `validate_check_filters` se déclenche AVANT le chemin générique de suggestion « aucune correspondance / vouliez-vous dire », pour que les utilisateurs voient le remplaçant canonique précis (`cron_audit` → `cron`) au lieu d'une approximation floue de `difflib`. Chemin miroir pour `--skip`. Les titres des en-têtes de section (rendus par la locale, affichés pendant l'audit) sont inchangés ; la surface BREAKING est uniquement le nom de jeton visible des scripts.
 
-#### Fix sémantique validateur (effet de bord D-1)
+#### Correctif sémantique du validateur (effet de bord de D-1)
 
-Après l'ajout de `firewall_iptables` / `firewall_rules` / `firewall_drivers` à `_ALL_SECTIONS`, le token `firewall` matche un filterable via la règle `startswith` existante, ce qui silenceait le warning "no effect" que les operateurs attendent légitimement pour `--skip=firewall` (la section always-on). La boucle skip-token dans `validate_check_filters` check maintenant **exact always-on matches** AVANT les prefix filterable matches. Même fix appliqué pour les prefixes `--check=docker` et `--check=services` qui ont maintenant aussi des companions filterables.
+Après l'ajout de `firewall_iptables` / `firewall_rules` / `firewall_drivers` à `_ALL_SECTIONS`, le jeton `firewall` correspond à une section filtrable via la règle `startswith` existante, ce qui ferait taire l'avertissement « sans effet » que les opérateurs attendent pour `--skip=firewall` (la section toujours active). La boucle des jetons de skip de `validate_check_filters` vérifie désormais les **correspondances exactes avec les sections toujours actives** AVANT les correspondances par préfixe avec les sections filtrables. Même correctif appliqué aux préfixes `--check=docker` et `--check=services`, qui ont désormais eux aussi des compagnons filtrables.
 
-### D-2 internal — fusion `_ALL_SECTIONS` + `_ALWAYS_ON_SECTIONS`
+### D-2 interne — fusion de `_ALL_SECTIONS` + `_ALWAYS_ON_SECTIONS`
 
-Pre-v0.9.0, deux tuples parallèles (`_ALL_SECTIONS` pour filterable et `_ALWAYS_ON_SECTIONS` pour inconditionnel) devaient être maintenus en sync manuellement : ajouter une section voulait dire se rappeler quel tuple update, et la logique de validation + le rendering `bob --check=list` devaient unir les deux.
+Avant v0.9.0, deux tuples parallèles (`_ALL_SECTIONS` pour les filtrables et `_ALWAYS_ON_SECTIONS` pour les inconditionnelles) devaient être tenus synchronisés à la main : ajouter une section exigeait de se rappeler quel tuple mettre à jour, et la logique de validation + le rendu de `bob --check=list` devaient faire l'union des deux.
 
-Le nouveau [`_SECTIONS: tuple[_Section, ...]`](../bob/runner.py) est une source unique de vérité où chaque entry porte un flag boolean `always_on`. Les legacy `_ALL_SECTIONS` / `_ALWAYS_ON_SECTIONS` sont des vues dérivées construites une fois à import time. External consumers ([bob/__main__.py](../bob/__main__.py) + 3 fichiers tests) gardent les noms legacy — les vues dérivées sont des tuples immutables computés une fois à import. New code devrait consommer `_SECTIONS` directement pour accéder au flag `always_on`.
+Le nouveau [`_SECTIONS: tuple[_Section, ...]`](../bob/runner.py) est une source unique de vérité où chaque entrée porte un drapeau booléen `always_on`. Les anciens `_ALL_SECTIONS` / `_ALWAYS_ON_SECTIONS` sont des vues dérivées, construites une fois à l'import :
 
-### D-3 cleanup — `EXPLAIN_KEY_ALIASES` retiré
+```python
+class _Section(NamedTuple):
+    name:      str
+    always_on: bool
 
-Pre-v0.9.0, `EXPLAIN_KEY_ALIASES` portait un seul entry live (`services_state.service_inactive` → `services_state.enabled_inactive`, devenu `services_health.*` après le rename D-1) qui était un pont sur un drift source-side v0.5.5 : `services_state.py` émet `services_state.service_inactive` comme sa finding key, mais l'entry EXPLAIN_KEYS + le bloc locale étaient nommés `enabled_inactive`. Le D-3 warning de déprécation v0.8.2 a annoncé le retrait pour v0.9.0.
+_SECTIONS: tuple[_Section, ...] = (
+    _Section("ipv6",              False),
+    _Section("smtp",              False),
+    ...
+    _Section("firewall",          True),
+    _Section("firewall_rules",    True),
+    ...
+)
 
-v0.9.0 D-3 résout le drift à la source au lieu de le bridger :
-- L'entry EXPLAIN_KEYS a été renommée `services_health.enabled_inactive` → `services_health.service_inactive` pour matcher ce que `services_state.py` émet
-- Le namespace locale `explain.services_health.enabled_inactive` → `service_inactive` (EN + FR)
-- Entry [bob/data/cis_refs.json](../bob/data/cis_refs.json) renommée (duplicate causé par mon mass-pass de rename D-1 dédupliqué)
-- `EXPLAIN_KEY_ALIASES = {}` (dict gardé vide pour qu'un futur rename ait un migration path one-line)
-- Machinery `_warn_alias_deprecation` + `_WARNED_ALIASES` retirée
-- Les 4 tests deprecation v0.8.2 dans [tests/test_v082_items.py::TestExplainKeyAliasDeprecation](../tests/test_v082_items.py) retirés (le dict est vide, la machinery est gone)
+_ALL_SECTIONS:        tuple[str, ...] = tuple(s.name for s in _SECTIONS if not s.always_on)
+_ALWAYS_ON_SECTIONS:  tuple[str, ...] = tuple(s.name for s in _SECTIONS if s.always_on)
+```
 
-### TD-1 BREAKING — trap door `BOB_SANDBOX_LEGACY=1` retiré
+Les consommateurs externes ([bob/__main__.py](../bob/__main__.py) + 3 fichiers de test) continuent d'utiliser les anciens noms — les vues dérivées sont des tuples immuables calculés une fois à l'import. Le nouveau code doit consommer directement `_SECTIONS` pour accéder au drapeau `always_on`.
 
-Pre-v0.9.0, l'env var bypassait le sandbox subprocess (spawn) et exécutait les plugins dans le processus parent avec builtins complets. Un WARNING stderr voyant + log CRITICAL firait à chaque audit qui entrait réellement en legacy mode, by design assez voyant pour que personne ne puisse l'utiliser en prod sans le remarquer.
+### D-3 nettoyage — `EXPLAIN_KEY_ALIASES` retiré
 
-Le trap door a été annoncé pour retrait dans le ship v0.7.0 + [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.0. v0.9.0 TD-1 retire :
+Avant v0.9.0, `EXPLAIN_KEY_ALIASES` portait une seule entrée active (`services_state.service_inactive` → `services_state.enabled_inactive`, devenue `services_health.*` après le renommage D-1) qui faisait le pont sur une dérive côté source de v0.5.5 : `services_state.py` émet `services_state.service_inactive` comme clé de constat, mais l'entrée d'EXPLAIN_KEYS + le bloc de locale s'appelaient `enabled_inactive`. L'avertissement de dépréciation D-3 de v0.8.2 annonçait le retrait pour v0.9.0.
 
-- Helper static `SandboxRunner._legacy_active()`
-- Helper static `SandboxRunner._emit_legacy_warning()`
-- Méthode `SandboxRunner._run_legacy()` (path exec in-process)
-- Les branches `if self._legacy_active():` dans `__init__` et `run`
+v0.9.0 D-3 résout la dérive à la source au lieu de la contourner :
+- L'entrée d'EXPLAIN_KEYS a été renommée `services_health.enabled_inactive` → `services_health.service_inactive`, pour correspondre à ce qu'émet `services_state.py`
+- L'espace de noms de locale `explain.services_health.enabled_inactive` → `service_inactive` (EN + FR)
+- Entrée de [bob/data/cis_refs.json](../bob/data/cis_refs.json) renommée (le doublon causé par ma passe de renommage en masse D-1 a été dédupliqué)
+- `EXPLAIN_KEY_ALIASES = {}` (dict gardé vide pour qu'un futur renommage ait un chemin de migration d'une ligne)
+- Mécanique `_warn_alias_deprecation` + `_WARNED_ALIASES` retirée
+- Les 4 tests de dépréciation de v0.8.2 dans [tests/test_v082_items.py::TestExplainKeyAliasDeprecation](../tests/test_v082_items.py) retirés (le dict est vide, la mécanique a disparu)
 
-Set l'env var n'a maintenant aucun effet ; les plugins s'exécutent toujours dans le subprocess spawn. [SECURITY.md](../SECURITY.md) + [SECURITY_FR.md](../SECURITY_FR.md) mises à jour pour barrer l'entry et marquer la fenêtre de retrait.
+### TD-1 BREAKING — trappe `BOB_SANDBOX_LEGACY=1` retirée
 
-Deux retirement guards dans [tests/test_plugin_sandbox.py::TestLegacyTrapDoorRetired](../tests/test_plugin_sandbox.py) :
+Avant v0.9.0, la variable d'environnement contournait le bac à sable en sous-processus lancé par spawn et exécutait les plugins dans le processus parent, avec tous les builtins. Un AVERTISSEMENT voyant sur stderr + un message de log CRITICAL se déclenchaient à chaque audit qui entrait réellement en mode legacy, volontairement assez bruyants pour que personne ne puisse le faire tourner en production sans s'en apercevoir.
 
-- `test_legacy_env_var_has_no_effect` — set `BOB_SANDBOX_LEGACY=1`, run un plugin qui aurait réussi sous legacy mode (importe `subprocess`), asserte que l'import fail parce que le sandbox le bloque
-- `test_legacy_active_helper_removed` — `hasattr(SandboxRunner, "_legacy_active")` + `_run_legacy` doivent être False tous les deux
+Le retrait de la trappe était annoncé depuis la livraison de v0.7.0 + dans [SECURITY.md](../SECURITY.md) depuis v0.8.0. v0.9.0 TD-1 retire :
+
+- le helper statique `SandboxRunner._legacy_active()`
+- le helper statique `SandboxRunner._emit_legacy_warning()`
+- la méthode `SandboxRunner._run_legacy()` (chemin d'exécution dans le processus)
+- les branches `if self._legacy_active():` dans `__init__` et `run`
+
+Définir la variable d'environnement n'a désormais plus d'effet ; les plugins s'exécutent toujours dans le sous-processus lancé par spawn. [SECURITY.md](../SECURITY.md) + [SECURITY_FR.md](../SECURITY_FR.md) mis à jour pour barrer l'entrée et indiquer la fenêtre de retrait.
+
+Deux gardes de retrait dans [tests/test_plugin_sandbox.py::TestLegacyTrapDoorRetired](../tests/test_plugin_sandbox.py) :
+
+- `test_legacy_env_var_has_no_effect` — définit `BOB_SANDBOX_LEGACY=1`, lance un plugin qui aurait réussi en mode legacy (il importe `subprocess`), affirme que l'import échoue parce que le bac à sable le bloque
+- `test_legacy_active_helper_removed` — `hasattr(SandboxRunner, "_legacy_active")` + `_run_legacy` doivent tous deux être False
 
 ### F-3 BREAKING — schéma legacy `--json-v1` retiré
 
-Pre-v0.9.0, `--json-v1` opt-in au layout JSON v0.6.x (`schema_version="1"`) pour les consumers qui n'avaient pas migré vers v2. v2 est le défaut depuis v0.7.0 (4 majeures) et v0.6.x est EOL depuis v0.7.2 (5 majeures) ; quiconque lit toujours v1 n'a pas updaté son pipeline depuis 6+ mois.
+Avant v0.9.0, `--json-v1` permettait d'opter pour la mise en page JSON de v0.6.x (`schema_version="1"`), pour les consommateurs qui n'avaient pas migré vers v2. v2 est la valeur par défaut depuis v0.7.0 (4 majeures) et v0.6.x est en fin de vie depuis v0.7.2 (5 majeures) ; quiconque lit encore v1 n'a pas mis à jour son pipeline depuis plus de 6 mois.
 
 v0.9.0 F-3 retire :
 
-- Constantes `SCHEMA_V1_REQUIRED_KEYS` + `SCHEMA_V1_FULL_KEYS` de [bob/json_output.py](../bob/json_output.py)
-- Helpers builders `_build_v1` + `_populate_v1_full_blocks` (~170 lignes)
-- Le dispatch `schema_version == "1"` dans `build_json_data()`
+- les constantes `SCHEMA_V1_REQUIRED_KEYS` + `SCHEMA_V1_FULL_KEYS` de [bob/json_output.py](../bob/json_output.py)
+- les helpers de construction `_build_v1` + `_populate_v1_full_blocks` (~170 lignes)
+- l'aiguillage `schema_version == "1"` dans `build_json_data()`
 - `SUPPORTED_SCHEMA_VERSIONS = frozenset({"2"})`
-- Field `AuditConfig.json_v1`
-- `--json-v1` de [bob/data/bob.bash-completion](../bob/data/bob.bash-completion) `long_opts`
-- L'option `--json-v1` du help text
+- le champ `AuditConfig.json_v1`
+- `--json-v1` des `long_opts` de [bob/data/bob.bash-completion](../bob/data/bob.bash-completion)
+- l'option `--json-v1` du texte d'aide
 
-Passer `--json-v1` raise maintenant un `CLIError` (locale key `cli.error.json_v1_retired`, EN + FR) pointant vers le guide de migration CHANGELOG. Tests pinant le contrat baseline v1 : [tests/test_json_schema.py](../tests/) supprimé entièrement (~330 lignes) ; 5 tests v1-spécifiques dans `test_t11_t26_v081.py` + `test_json_schema_v2.py` retirés ; 1 entry retirée de `test_v082_bash_completion.py::TestLongOptsPresence` parametrize.
+Passer `--json-v1` lève désormais une `CLIError` (clé de locale `cli.error.json_v1_retired`, EN + FR) qui renvoie vers le guide de migration du CHANGELOG. Tests épinglant le contrat de référence v1 : [tests/test_json_schema.py](../tests/) entièrement supprimé (~330 lignes) ; 5 tests propres à v1 dans `test_t11_t26_v081.py` + `test_json_schema_v2.py` retirés ; 1 entrée retirée de la paramétrisation de `test_v082_bash_completion.py::TestLongOptsPresence`.
 
-#### Table de migration field v1 → v2
+#### Tableau de migration des champs v1 → v2
 
-| Field v1            | Équivalent v2                                                       |
-|---------------------|---------------------------------------------------------------------|
-| `timestamp`         | `timestamp_utc` (renommé, signale encodage UTC — B-3 en v0.7.0)     |
-| `network_context`   | `network_context` dict dans les deux modes (était str en v1 short, dict en v1 full — fix A-2 P1) |
-| `firewall_stack`    | `firewall_drivers` (BREAKING via D-1 — renommé en v0.9.0)           |
-| —                   | `info_count` ajouté au top level (B-7 en v0.7.0)                    |
-| —                   | Bloc `posture_escalation` ajouté (A-4 en v0.7.0)                    |
-| —                   | `open_ports_all` (full only — B-5 en v0.7.0)                        |
-| —                   | `deductions_raw` (full only — B-4 en v0.7.0)                        |
-| `domain_scores[d]`  | `domain_scores[d]` inclut maintenant le count `deductions` (B-6)     |
-| `risk`              | inchangé — dérivé de `engine.level` (score-only)                    |
-| `posture_escalation.score_level` | nouveau — expose le baseline non-escaladé pour les consumers qui ont besoin des deux vues |
+| Champ v1            | Équivalent v2                                                  |
+|---------------------|----------------------------------------------------------------|
+| `timestamp`         | `timestamp_utc` (renommé, signale l'encodage UTC — B-3 en v0.7.0)|
+| `network_context`   | dict `network_context` dans les deux modes (était une chaîne en v1 court, un dict en v1 complet — correctif P1 A-2) |
+| `firewall_stack`    | `firewall_drivers` (BREAKING issu de D-1 — renommé en v0.9.0)  |
+| —                   | `info_count` ajouté au premier niveau (B-7 en v0.7.0)          |
+| —                   | bloc `posture_escalation` ajouté (A-4 en v0.7.0)               |
+| —                   | `open_ports_all` (complet seulement — B-5 en v0.7.0)           |
+| —                   | `deductions_raw` (complet seulement — B-4 en v0.7.0)           |
+| `domain_scores[d]`  | `domain_scores[d]` inclut désormais le compte des `deductions` (B-6) |
+| `risk`              | inchangé — dérivé d'`engine.level` (score seul)                |
+| `posture_escalation.score_level` | nouveau — expose la référence non remontée, pour les consommateurs qui ont besoin des deux vues |
 
-### F-2 NEW — compare cross-machine `--diff [PATH]`
+### F-2 NOUVEAU — comparaison entre machines `--diff [CHEMIN]`
 
-Pre-v0.9.0, le flag `--diff` comparait l'audit courant contre le baseline local auto-managé à `~/.config/bob/last_baseline.json`. Utile pour "qu'est-ce qui a changé depuis mon dernier audit sur cet host", mais pas moyen de comparer contre un fichier baseline arbitraire (cross-machine, historique, prod-vs-staging).
+Avant v0.9.0, le drapeau `--diff` comparait l'audit courant à la baseline locale gérée automatiquement dans `~/.config/bob/last_baseline.json`. Utile pour « qu'est-ce qui a changé depuis mon dernier audit sur cet hôte », mais sans moyen de comparer à un fichier de baseline arbitraire (entre machines, historique, prod contre préprod).
 
-v0.9.0 F-2 ajoute un argument PATH optionnel :
+v0.9.0 F-2 ajoute un argument CHEMIN optionnel :
 
 ```bash
-sudo bob --diff                            # comportement v0.8.x : load baseline local auto-managé
-sudo bob --diff=/path/to/baseline.json     # NEW : compare contre fichier arbitraire
-sudo bob --diff /backup/server-A.json      # NEW : équivalent space-separated
+sudo bob --diff                            # v0.8.x behaviour: load local auto-managed baseline
+sudo bob --diff=/path/to/baseline.json     # NEW: compare against arbitrary file
+sudo bob --diff /backup/server-A.json      # NEW: space-separated equivalent
 ```
 
-Les deux syntaxes (`--diff=PATH` et `--diff PATH`) sont supportées, miroir de `--watch[=N]`. Le bare `--diff` / `-D` garde la sémantique v0.8.x. La forme space a un guard peek-ahead pour que `sudo bob --diff --verbose` garde `--verbose` comme le flag suivant, pas comme un path baseline.
+Les deux syntaxes (`--diff=CHEMIN` et `--diff CHEMIN`) sont prises en charge, sur le modèle de `--watch[=N]`. Le `--diff` / `-D` nu garde la sémantique de v0.8.x. La forme avec espace a une garde d'anticipation, pour que `sudo bob --diff --verbose` garde `--verbose` comme drapeau suivant et non comme chemin de baseline.
 
 #### Implémentation
 
-- [bob/cli.py](../bob/cli.py) — nouveau field `AuditConfig.diff_baseline_path: Path | None` ; paths de parsing `--diff=PATH` et `--diff PATH`
-- [bob/compare.py](../bob/compare.py) — nouvelle exception `BaselineLoadError` ; `load_baseline(path, strict=True)` raise sur missing/broken file + sur `schema_version="1"` legacy. Défaut `strict=False` préserve le comportement silencieux v0.8.x pour bare `--diff`.
-- [bob/compare.py::AuditBaseline](../bob/compare.py) — nouveau field `hostname: str | None`. `build_baseline()` appelle `socket.gethostname()` pour le populer. Les baselines pre-v0.9.0 sans le field ne causent pas de notice au load.
-- [bob/__main__.py](../bob/__main__.py) — quand `config.diff_baseline_path` est set, appelle `load_baseline(path, strict=True)` ; sur `BaselineLoadError`, émet le message d'erreur locale-préfixé et exit avec `EXIT_ERROR`. Notice cross-machine : si le `hostname` enregistré diffère de `socket.gethostname()`, print `t("compare.cross_machine_notice", baseline_host=..., current_host=...)` avant l'affichage delta.
-- [bob/data/bob.bash-completion](../bob/data/bob.bash-completion) — nouvelle filename completion `--diff=PATH` et `--diff PATH` (`compgen -f -- "${val}"` + `compopt -o filenames`).
-- [man/bob.1](../man/bob.1) — section `.SS Comparison and history` mise à jour avec le nouvel argument optionnel + exemple usage cross-machine.
+- [bob/cli.py](../bob/cli.py) — nouveau champ `AuditConfig.diff_baseline_path: Path | None` ; chemins d'analyse de `--diff=CHEMIN` et `--diff CHEMIN`
+- [bob/compare.py](../bob/compare.py) — nouvelle exception `BaselineLoadError` ; `load_baseline(path, strict=True)` lève sur un fichier manquant/cassé + sur l'ancien `schema_version="1"`. La valeur par défaut `strict=False` préserve le comportement silencieux de v0.8.x pour le `--diff` nu.
+- [bob/compare.py::AuditBaseline](../bob/compare.py) — nouveau champ `hostname: str | None`. `build_baseline()` appelle `socket.gethostname()` pour le remplir. Les baselines d'avant v0.9.0 sans ce champ ne provoquent aucun avis au chargement.
+- [bob/__main__.py](../bob/__main__.py) — quand `config.diff_baseline_path` est défini, appelle `load_baseline(path, strict=True)` ; sur `BaselineLoadError`, émet le message d'erreur préfixé par la locale et sort avec `EXIT_ERROR`. Avis entre machines : si le `hostname` enregistré diffère de `socket.gethostname()`, affiche `t("compare.cross_machine_notice", baseline_host=..., current_host=...)` avant l'affichage du delta.
+- [bob/data/bob.bash-completion](../bob/data/bob.bash-completion) — nouvelle complétion de noms de fichiers pour `--diff=CHEMIN` et `--diff CHEMIN` (`compgen -f -- "${val}"` + `compopt -o filenames`).
+- [man/bob.1](../man/bob.1) — section `.SS Comparison and history` mise à jour avec le nouvel argument optionnel + un exemple d'usage entre machines.
 
 #### Tests
 
 17 nouveaux tests dans [tests/test_v090_diff_baseline_path.py](../tests/test_v090_diff_baseline_path.py) :
 
-- `TestCLIDiffPathParsing` — bare `-D` / `--diff`, `--diff=PATH`, `--diff PATH`, peek-ahead does-not-consume-flag-token, value empty rejeté, `--diff` dupliqué rejeté
-- `TestLoadBaselineStrict` — file missing en strict raise avec path dans message, file missing non-strict return None, JSON invalide en strict raise, `schema_version="1"` en strict raise avec "v0.6.x" dans message, baselines v0.7.x–v0.8.x (sans field `schema_version`) load proprement sous strict
-- `TestHostnameCapture` — roundtrip save→load préserve hostname, baselines pre-v0.9.0 load avec `hostname=None`, `build_baseline` capture le vrai hostname
+- `TestCLIDiffPathParsing` — `-D` / `--diff` nus, `--diff=CHEMIN`, `--diff CHEMIN`, l'anticipation ne consomme pas un jeton de drapeau, valeur vide rejetée, `--diff` en double rejeté
+- `TestLoadBaselineStrict` — fichier manquant en strict lève avec le chemin dans le message, fichier manquant en non strict renvoie None, JSON invalide en strict lève, `schema_version="1"` en strict lève avec « v0.6.x » dans le message, les baselines v0.7.x–v0.8.x (sans champ `schema_version`) se chargent proprement en strict
+- `TestHostnameCapture` — l'aller-retour enregistrer→charger préserve le hostname, les baselines d'avant v0.9.0 se chargent avec `hostname=None`, `build_baseline` capture le vrai hostname
 
-### Bug fix — `bob --check=<TAB><TAB>` sans sudo
+### Correctif de bug — `bob --check=<TAB><TAB>` sans sudo
 
-Compagnon du walk-back guard sudo-dispatcher v0.8.2. v0.8.2 a fixé le cas où `sudo bob --check=<TAB>` retournait zéro candidat parce que le sudo dispatcher invokait `_bob` avec `$prev` mis au littéral `=`. Le cas compagnon : sous invocations non-sudo, certaines versions de bash placent le curseur de completion sur le token littéral `=` (donnant `cur="="`, `prev="--check"`) au lieu d'un trailing empty word ; la branche `prev=="--check"` existante runnait alors `compgen -W "list ${_SECTIONS}" -- "="` qui retourne zéro parce qu'aucun nom de section ne commence par `=`.
+Compagnon de la garde de recul du dispatcher sudo de v0.8.2. v0.8.2 avait corrigé le cas où `sudo bob --check=<TAB>` ne renvoyait aucun candidat, parce que le dispatcher sudo invoquait `_bob` avec `$prev` valant le `=` littéral. Le cas compagnon : sous des invocations sans sudo, certaines versions de bash placent le curseur de complétion sur le jeton `=` littéral (donnant `cur="="`, `prev="--check"`) au lieu d'un mot vide final ; la branche existante `prev=="--check"` lançait alors `compgen -W "list ${_SECTIONS}" -- "="`, qui ne renvoie rien, parce qu'aucun nom de section ne commence par `=`.
 
-Le fix est un companion guard 3-lignes en haut de `_bob` :
+Le correctif est une garde compagne de 3 lignes en tête de `_bob` :
 
 ```bash
 if [[ "${cur}" == "=" ]]; then
@@ -9034,44 +9606,44 @@ if [[ "${cur}" == "=" ]]; then
 fi
 ```
 
-Mirror du walk-back v0.8.2. Après ça, `bob --check=<TAB><TAB>` (non-sudo) restaure l'affichage de liste TAB×2. Vérifié sur 4 cas (sudo + non-sudo × empty-cur + cur="=") dans les tests fonctionnels bash completion existants.
+Miroir du recul de v0.8.2. Après cela, `bob --check=<TAB><TAB>` (sans sudo) rétablit l'affichage de la liste par double TAB. Vérifié sur 4 cas (sudo + sans sudo × cur vide + cur="=") dans les tests fonctionnels existants de la complétion bash.
 
-### Numbers
+### Chiffres
 
 - **Tests 6246 → 6210** (net −36) :
-  - −53 : fichier baseline v1 `test_json_schema.py` (~330 lignes) + 5 tests v1-spécifiques dans `test_t11_t26_v081.py` + `test_json_schema_v2.py` + 4 tests deprecation-warning v0.8.2 (retirés avec la machinery alias) + 1 entry parametrize `--json-v1`
+  - −53 : le fichier de tests de référence v1 `test_json_schema.py` (~330 lignes) + 5 tests propres à v1 dans `test_t11_t26_v081.py` + `test_json_schema_v2.py` + 4 tests d'avertissement de dépréciation de v0.8.2 (retirés avec la mécanique d'alias) + 1 entrée de paramétrisation `--json-v1`
   - +17 : nouveaux tests F-2 dans `test_v090_diff_baseline_path.py`
 - 0 régression.
-- Code production : ~600 lignes changées à travers `bob/runner.py`, `bob/cli.py`, `bob/compare.py`, `bob/json_output.py`, `bob/_sandbox.py`, `bob/explain.py`, `bob/__main__.py`, `bob/scoring.py`, `bob/domain_scores.py`, `bob/data/bob.bash-completion`, et 6 fichiers `bob/checks/*.py`.
-- Locale : 167+ migrations clé dans `bob/locales/{en,fr}.json` + 3 nouvelles clés (`cli.runner.section_renamed`, `cli.runner.section_renamed_fatal`, `cli.error.json_v1_retired`, `compare.cross_machine_notice`) × 2 locales.
+- Code de production : ~600 lignes changées dans `bob/runner.py`, `bob/cli.py`, `bob/compare.py`, `bob/json_output.py`, `bob/_sandbox.py`, `bob/explain.py`, `bob/__main__.py`, `bob/scoring.py`, `bob/domain_scores.py`, `bob/data/bob.bash-completion` et 6 fichiers `bob/checks/*.py`.
+- Locale : 167+ migrations de clés dans `bob/locales/{en,fr}.json` + 3 nouvelles clés (`cli.runner.section_renamed`, `cli.runner.section_renamed_fatal`, `cli.error.json_v1_retired`, `compare.cross_machine_notice`) × 2 locales.
 
-### Upgrade
+### Mise à jour
 
 ```bash
 pipx upgrade bodyguard-of-bits
 ```
 
-Les users avec scripts utilisant `--check=<nom_legacy>`, `--skip=<nom_legacy>`, `--json-v1`, ou `BOB_SANDBOX_LEGACY=1` doivent migrer per les tables ci-dessus :
+Les utilisateurs dont les scripts utilisent `--check=<ancien_nom>`, `--skip=<ancien_nom>`, `--json-v1` ou `BOB_SANDBOX_LEGACY=1` doivent migrer selon les tableaux ci-dessus :
 
-- **Scripts** : `s/--check=cron_audit/--check=cron/`, etc. Le migration error path pointera vers le remplacement canonique à la première invocation échouée si tu en rates.
-- **Consumers JSON** : rewrite pour lire le schéma v2. Les fields renommés et le nouveau bloc `posture_escalation` sont les points pratiques de migration.
-- **Authors de plugins reposant sur `BOB_SANDBOX_LEGACY=1`** : l'env var est ignorée. Rework le plugin pour utiliser la surface API sandbox-allowed, ou run hors de `bob` (ex. comme un cron job séparé).
-- **Entries `ignore.yml`** référençant les finding keys renommées (`cron_audit.pipe_to_shell` → `cron.pipe_to_shell`, etc.) doivent être migrées à la main. Pas d'auto-traduction ; les clés font silently no-op jusqu'à correction.
+- **Scripts** : `s/--check=cron_audit/--check=cron/`, etc. Le chemin d'erreur de migration indiquera le remplaçant canonique à la première invocation échouée si vous en oubliez un.
+- **Consommateurs JSON** : réécrire pour lire le schéma v2. Les champs renommés et le nouveau bloc `posture_escalation` sont les points de migration concrets.
+- **Auteurs de plugins qui dépendaient de `BOB_SANDBOX_LEGACY=1`** : la variable d'environnement est désormais ignorée. Retravailler le plugin pour utiliser la surface d'API autorisée par le bac à sable, ou l'exécuter hors de `bob` (par ex. comme job cron séparé).
+- **Entrées `ignore.yml`** qui référencent les clés de constat renommées (`cron_audit.pipe_to_shell` → `cron.pipe_to_shell`, etc.) : à migrer à la main. Pas de traduction automatique ; les clés ne font rien en silence tant qu'elles ne sont pas corrigées.
 
-**v0.7.x reste EOL** (déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1).
-**v0.6.x reste EOL** (déclaré en v0.7.2).
+**v0.7.x reste en fin de vie** (déclaration formelle dans [SECURITY.md](../SECURITY.md) depuis v0.8.1).
+**v0.6.x reste en fin de vie** (déclarée en v0.7.2).
 
 ### Déféré à v0.9.1
 
-- **D-4** sub-checks granulaires (ex. `ssh.x11_forwarding` → `ssh.x11.forwarding.server` + `.client`) — requiert passe audit sub-agent pour identifier les candidats + écrire le guide de migration. Le quota sub-agent était le blocker au cut v0.9.0.
-- **Parallel checks** via `concurrent.futures.ThreadPoolExecutor` (cible : ~30 s → 5–10 s sur audits multi-core) — même blocker audit sub-agent (invariants threading + discovery race condition).
+- **D-4** sous-checks granulaires (par ex. `ssh.x11_forwarding` → `ssh.x11.forwarding.server` + `.client`) — exige une passe d'audit par sous-agent pour identifier les candidats + écrire le guide de migration. Le quota de sous-agents était le point bloquant au moment de couper v0.9.0.
+- **Checks en parallèle** via `concurrent.futures.ThreadPoolExecutor` (objectif : ~30 s → 5–10 s sur les audits multicœurs) — même point bloquant d'audit par sous-agent (invariants de threading + découverte des conditions de course).
 
 ### Leçons
 
-- **Mechanical prefix renames à scale** (167 lignes × 14 fichiers tests + 88 lignes × 6 fichiers source) sont mieux faits avec un single Python script sur `re.sub(rf'"{old}\.', f'"{new}.', text)`. La boucle d'itération 5-seconde catche le drift dans les strings multi-lignes que le hand-Edit raterait.
-- **Mass-rename dégât collatéral sur les migration maps documentées** — le même regex qui rename le codebase rename aussi la migration map elle-même (ex. `EXPLAIN_KEY_ALIASES`, `_RENAMED_SECTIONS_V090`) où les mappings old → new vivent comme string literals. Toujours ré-instaurer ces maps manuellement après la passe mécanique.
-- **Validateurs cross-cutting ont besoin de re-ordering** quand les namespaces sections fusionnent. L'ordering `_matches_filterable` / `_matches_always_on` tenait pour v0.5.x–v0.8.x parce que les namespaces étaient disjoints. Les renames D-1 v0.9.0 ont créé de l'overlap (`firewall` matchait les deux via prefix), et le test a surfacé la régression immédiatement.
-- **Mode strict pour les loaders explicit-path** — pour tout flag `--option PATH` qui load un file, le défaut silent-fallback est wrong quand le user a explicitement passé un path. v0.8.x `load_baseline()` retournait None sur erreur ; v0.9.0 ajoute `strict=True` pour le cas explicit-path, miroir de comment `open(path)` raise au lieu de retourner None sur missing.
+- **Les renommages mécaniques de préfixes à grande échelle** (167 lignes × 14 fichiers de test + 88 lignes × 6 fichiers source) se font au mieux avec un seul script Python sur `re.sub(rf'"{old}\.', f'"{new}.', text)`. La boucle d'itération de 5 secondes attrape la dérive dans des chaînes multilignes qu'une édition à la main raterait.
+- **Dégâts collatéraux d'un renommage de masse sur les tables de migration documentées** — la même regex qui renomme la base de code renommera aussi la table de migration elle-même (par ex. `EXPLAIN_KEY_ALIASES`, `_RENAMED_SECTIONS_V090`), où les correspondances ancien → nouveau vivent sous forme de littéraux de chaîne. Toujours rétablir ces tables à la main après la passe mécanique.
+- **Les validateurs transverses doivent être réordonnés** quand des espaces de noms de sections fusionnent. L'ordre `_matches_filterable` / `_matches_always_on` tenait en v0.5.x–v0.8.x parce que les espaces de noms étaient disjoints. Les renommages D-1 de v0.9.0 ont créé un recouvrement (`firewall` correspondait aux deux via le préfixe), et le test a fait apparaître la régression immédiatement.
+- **Mode strict pour les chargeurs à chemin explicite** — pour toute option `--option CHEMIN` qui charge un fichier, le repli silencieux par défaut est faux quand l'utilisateur a passé explicitement un chemin. Le `load_baseline()` de v0.8.x renvoyait None en cas d'erreur ; v0.9.0 ajoute `strict=True` pour le cas du chemin explicite, sur le modèle d'`open(path)`, qui lève au lieu de renvoyer None quand le fichier manque.
 
 ---
 
@@ -9232,58 +9804,115 @@ pipx upgrade bodyguard-of-bits
 
 ## [v0.8.2] — 06-06-2026
 
-**Patch conservative-bundle — 6 items user-facing + DX, pas de BREAKING.**
+**Patch « lot conservateur » — 6 éléments utilisateur + DX, pas de BREAKING.**
 
-Nettoie la dette DX des migrations i18n + bash-completion + helper-text v0.7.x / v0.8.0-v0.8.1. Ferme le gap UX `--test-webhook` (la story webhook v0.7.0 a shippé sans commande smoke standalone). Met en place le cleanup architectural v0.9.0 (D-1 / D-2 / D-4 + retrait `BOB_SANDBOX_LEGACY` + parallel checks + `--diff <baseline.json>`) via le warning de déprécation D-3 + le linter locale qui catch les classes de drift exposées par les passes audit 7 + 8.
+Nettoie la dette DX laissée par les migrations i18n + complétion bash + texte d'aide de v0.7.x / v0.8.0-v0.8.1. Ferme la lacune d'ergonomie de ``--test-webhook`` (l'histoire du webhook de v0.7.0 avait été livrée sans commande de smoke autonome). Prépare le nettoyage d'architecture de v0.9.0 (D-1 / D-2 / D-4 + retrait de ``BOB_SANDBOX_LEGACY`` + exécution parallèle des checks + ``--diff <baseline.json>``) via l'avertissement de dépréciation D-3 + le linter de locale qui attrape les classes de dérive mises au jour par les passes d'audit 7 + 8.
 
 6198 → **6244 tests** (+46 net). 0 régression.
 
-### Bash completion v0.8.2
+### Complétion bash v0.8.2
 
-[bob/data/bob.bash-completion](../bob/data/bob.bash-completion) — 4 améliorations + un guard de sync + un fix sudo-dispatcher.
+[bob/data/bob.bash-completion](../bob/data/bob.bash-completion) — quatre améliorations + une garde de synchronisation + un correctif du dispatcher sudo.
 
-- **Sync `_SECTIONS` + `_EXPLAIN_KEYS` avec runtime**. Liste sections déjà sync au ship time ; liste explain-keys (168 entries) insérée fresh depuis `bob.explain.EXPLAIN_KEYS` via le scaffold regenerate pour que tout drift ultérieur surface en CI.
-- **Completions value `--unignore=KEY` / `--ignore=KEY` / `--explain KEY`**. v0.8.1 T57 a ajouté `--unignore` mais n'a pas étendu le script completion. v0.8.2 ajoute handlers dédiés pour les formes space et `=`, sourcés du catalogue canonique 168-keys EXPLAIN_KEYS.
-- **`--json-v1` + `--test-webhook` dans `long_opts`**. Le premier était un ship Phase 2 v0.7.0 ; le second est nouveau ce cycle.
-- **Commentaire alias `workstation` stale retiré**. Pre-v0.8.2 le commentaire de la completion `--profile` claimait *"workstation est un alias backward-compat loading desktop"* ; le retrait v0.8.1 a rendu ça mensonger. Maintenant : *"workstation est désormais un profil FIRST-CLASS distinct de desktop"*.
-- **Fix sudo-dispatcher `=`** (commit `2a62bf3`). Régression user-reportée : `sudo bob --check=s<TAB>` retournait zéro candidat alors que `bob --check=s<TAB>` (sans sudo) marchait. Root cause : le dispatcher sudo de bash-completion (`_command_offset`) invoke `_bob` avec `$prev` mis au littéral `=` au lieu du nom d'option quand `=` reste dans COMP_WORDBREAKS — toutes les combinaisons bash + bash-completion ne le strippent pas via `_init_completion -s`. Aucune des branches par-option `prev == "--check"` / `--ignore` / `--unignore` / `--explain` ne matchait, donc la fonction tombait sur le default long_opts qui ne s'applique pas à une valeur partielle comme `"s"`. Fix : guard défensif 3-lignes en tête de `_bob` qui détecte `prev == "="` et récupère le nom d'option réel en remontant deux positions dans COMP_WORDS. Restaure le value-narrowing pour chaque `--<option>=<partial>` sous sudo ET sans sudo.
+- **Synchroniser ``_SECTIONS`` + ``_EXPLAIN_KEYS`` avec l'exécution**. La liste de sections tenue à la main était déjà synchronisée à la livraison ; la liste des clés explain (168 entrées) a été insérée à neuf depuis ``bob.explain.EXPLAIN_KEYS`` via l'échafaudage de régénération, pour que toute dérive ultérieure apparaisse en CI.
+- **Complétion des valeurs de ``--unignore=KEY`` / ``--ignore=KEY`` / ``--explain KEY``**. v0.8.1 T57 a ajouté ``--unignore`` sans étendre le script de complétion. v0.8.2 ajoute des gestionnaires dédiés pour les formes avec espace et avec ``=``, alimentés par le catalogue canonique de 168 clés EXPLAIN_KEYS.
+- **``--json-v1`` + ``--test-webhook`` dans ``long_opts``**. Le premier est une livraison de la Phase 2 de v0.7.0 ; le second est nouveau dans ce cycle.
+- **Commentaire périmé sur l'alias ``workstation`` retiré**. Avant v0.8.2, le commentaire de complétion de ``--profile`` affirmait *« workstation is a backward-compat alias loading desktop »* ; le retrait de v0.8.1 en a fait un mensonge. Il dit désormais *« workstation is now a FIRST-CLASS profile distinct from desktop »*.
+- **Correctif ``=`` du dispatcher sudo** (commit ``2a62bf3``). Régression signalée par un utilisateur : ``sudo bob --check=s<TAB>`` ne renvoyait aucun candidat alors que ``bob --check=s<TAB>`` (sans sudo) fonctionnait. Cause racine : le dispatcher sudo de bash-completion (``_command_offset``) invoque ``_bob`` avec ``$prev`` valant le ``=`` littéral au lieu du nom de l'option quand ``=`` reste dans COMP_WORDBREAKS — toutes les combinaisons bash + bash-completion ne le retirent pas via ``_init_completion -s``. Aucune des branches par option ``prev == "--check"`` / ``--ignore`` / ``--unignore`` / ``--explain`` ne correspondait, si bien que la fonction retombait sur le défaut long_opts, qui ne peut pas s'appliquer à une valeur partielle comme ``"s"``. Correctif : une garde défensive de 3 lignes en tête de ``_bob`` détecte ``prev == "="`` et retrouve le vrai nom de l'option en reculant de deux positions dans COMP_WORDS. Rétablit le filtrage des valeurs pour toute complétion ``--<option>=<partiel>``, avec ou sans ``sudo``.
 
-[tests/test_v082_bash_completion.py](../tests/test_v082_bash_completion.py) ship 21 tests sur 6 classes : guards de sync (parité set), présence long-opts (parametrized), invocations bash fonctionnelles (source le script dans sub-bash + assert COMPREPLY).
+[tests/test_v082_bash_completion.py](../tests/test_v082_bash_completion.py) livre 21 tests répartis sur 6 classes :
+
+- **Gardes de synchronisation** — ``_SECTIONS`` correspond exactement à ``bob.runner._ALL_SECTIONS`` (égalité d'ensembles), ``_EXPLAIN_KEYS`` correspond exactement à ``bob.explain.EXPLAIN_KEYS``. Une nouvelle section de check livrée sans mise à jour du script de complétion fait échouer la CI.
+- **Présence des options longues** — paramétré sur ``--unignore=``, ``--json-v1``, ``--check=``, ``--skip=``, ``--ignore=``, ``--profile=``, ``--explain``, ``--breakdown`` — épingle que chacune est atteignable par TAB sur le chemin du nom d'option.
+- **Invocation bash fonctionnelle** — source le script dans un sous-bash, appelle ``_bob`` avec ``(cur, prev)`` selon la convention du dispatcher bash-completion, affirme que COMPREPLY contient les candidats attendus. Exerce ``--check=`` → sections, ``--check=ssh`` → ``ssh`` seulement, la forme courte de ``--check=`` (``--c`` → ``--check=``), ``--unignore`` → EXPLAIN_KEYS, ``--unignore=ssh`` → clés ssh.*, ``--ignore`` + ``--ignore=audit`` → clés auditd.*, ``--explain`` + ``--explain=firewall`` → clés firewall.*, ``--profile`` + ``-p`` court → 4 noms de profil.
 
 ### Consolidation i18n — bob/_i18n_safe.py
 
-Pre-v0.8.2, 4 modules définissaient chacun leur propre `_fallback_t` avec comportements drift (`markdown_output` skippait `.format()`, `html_output` conditionnait sur kwargs, `config`/`webhook` formataient toujours). Trois implémentations subtilement différentes pour la même intention.
+Avant v0.8.2, quatre modules définissaient chacun leur propre ``_fallback_t`` :
 
-[bob/_i18n_safe.py](../bob/_i18n_safe.py) — nouveau module — expose une factory unique :
+| Module                  | Comportement                                       |
+| ----------------------- | -------------------------------------------------- |
+| ``config.py``           | Tente toujours ``.format(**kwargs)``, renvoie le gabarit en cas d'erreur |
+| ``webhook.py``          | Comme config.py                                    |
+| ``markdown_output.py``  | **Saute entièrement ``.format()``**                |
+| ``html_output.py``      | **Formate seulement si** ``kw`` n'est pas vide     |
+
+Même intention (se replier sur l'anglais quand aucun traducteur lié à l'opérateur n'est branché) — trois implémentations subtilement différentes. La dérive avait grandi au fil de T10 v0.8.1 (config/webhook), de T11 v0.8.1 (la parité CSV/JSON a réutilisé le motif d'html_output) et de l'extraction i18n M-4 de v0.7.2 (markdown_output/html_output), sans que personne ne réconcilie les trois corps.
+
+[bob/_i18n_safe.py](../bob/_i18n_safe.py) — nouveau module — expose une seule fabrique :
 
 ```python
 from bob._i18n_safe import make_fallback_t
 _fallback_t = make_fallback_t(_FALLBACK_LABELS)
 ```
 
-Le body factory essaie toujours `.format(**kwargs)` + retourne le template brut sur `KeyError` / `IndexError`. Templates sans `{}` passent through unchanged. Plus `t_or_hardcoded(key, fallback)` hoisted out de `__main__.py` (T60 v0.8.1 l'avait introduit comme def locale).
+Le corps de la fabrique tente toujours ``.format(**kwargs)`` + renvoie le gabarit brut en cas de ``KeyError`` / ``IndexError``. Les gabarits sans placeholder ``{}`` passent inchangés (les libellés statiques de markdown_output se comportent donc à l'octet près) et les gabarits avec placeholders sont interpolés (la famille ``{url}`` du webhook s'interpole comme avant).
 
-Tests pin chaque contract + cross-module assertion que les 5 modules migrés importent + appellent la factory.
+En plus, ``t_or_hardcoded(key, fallback)`` est remonté hors de ``__main__.py`` (T60 v0.8.1 l'avait introduit comme def locale) — conditionne ``i18n.t`` au drapeau privé ``_initialized``, renvoie *fallback* quand l'i18n n'est pas encore chargée (chemin d'erreur de parse_args, plantage très précoce dans le catch-all de main()). Remonté pour que de futurs points d'entrée (``--test-webhook``, le lanceur autonome ``--unignore`` prévu) puissent le réutiliser sans importer ``__main__``.
 
-### Commande smoke `--test-webhook`
+Les tests de [tests/test_v082_items.py::TestI18nSafe*](../tests/test_v082_items.py) épinglent chaque contrat : clé connue → gabarit, clé inconnue → la clé elle-même, interpolation des kwargs, placeholder manquant → gabarit brut (défensif), gabarit statique + kwargs → inchangé. En plus, ``TestI18nConsolidationModulesUseFactory`` (transverse aux modules) affirme que les 5 modules migrés importent + appellent réellement la fabrique (garde de régression contre un futur retour arrière).
 
-[bob/webhook.py::test_webhook](../bob/webhook.py) — nouvelle fonction publique. POST un payload minimal avec champs `test=true` + `tag="bob_smoke_test"` (generic) ou attachment Slack-formatted (slack). Réutilise chaque guard URL-validation de `send_webhook` : scheme + plain-http + escape hatch `BOB_WEBHOOK_ALLOW_INSECURE` + redaction `WebhookError` via `redact_url_credentials` (T74 v0.8.1).
+### Commande de smoke --test-webhook
 
-Wire dans CLI à [bob/__main__.py:190-220](../bob/__main__.py#L190). Le flag `--test-webhook` bypass `require_root()` parce que le smoke est une sonde réseau + sérialisation JSON, pas d'inspection système — pas d'audit, pas de sudo. Résolution URL mirror le path audit-time. 4 nouvelles clés locale EN+FR sous `cli.test_webhook.*`.
+[bob/webhook.py::test_webhook](../bob/webhook.py) — nouvelle fonction publique. Envoie en POST une charge minimale avec les champs ``test=true`` + ``tag="bob_smoke_test"`` (générique) ou une pièce jointe au format Slack (slack). Réutilise chaque garde de validation d'URL de ``send_webhook`` :
 
-Pre-v0.8.2 la seule façon de valider une config `bob --webhook=URL` fraîche était de lancer un audit complet (~30 s + sudo). Le gap DX était particulièrement douloureux pour les setups cron.
+- le schéma doit être ``http://`` ou ``https://`` (insensible à la casse depuis v0.7.3 I-5)
+- ``http://`` en clair rejeté sauf si ``BOB_WEBHOOK_ALLOW_INSECURE=1`` est défini
+- caviardage de ``WebhookError`` via ``redact_url_credentials`` (T74 v0.8.1)
+- délai HTTP = même ``_TIMEOUT_SECONDS = 10`` que ``send_webhook``
 
-### Descriptions sections `--check=list`
+Branché dans la CLI à [bob/__main__.py:190-220](../bob/__main__.py#L190). Le drapeau ``--test-webhook`` contourne ``require_root()``, parce que le smoke est une sonde réseau + une sérialisation JSON, sans inspection du système — pas d'audit, pas de sudo. La résolution de l'URL reprend le chemin du moment de l'audit :
 
-[bob/__main__.py:115-152](../bob/__main__.py#L115) — la boucle rendering `--check=list` résout maintenant une description par section via `i18n.t(f"sections.descriptions.{name}")`. Description manquante → fallback au nom de section bare.
+1. ``--webhook=URL`` de l'invocation courante, sinon
+2. ``UserConfig.get_webhook_url()`` depuis ``~/.config/bob/config.conf``
 
-44 descriptions shippent dans EN + FR sous nouveau namespace `sections.descriptions.*`. 1 ligne par section, ≤ 80 chars typique. Couvre les 34 sections filterables + 10 always-on.
+Si aucune n'est définie, la commande sort avec un code non nul et une indication traduite « définissez-en une d'abord avec ``bob --webhook=URL`` » (4 nouvelles clés de locale EN+FR sous ``cli.test_webhook.*``).
 
-Tests pin la parité namespace ↔ runtime sections — nouvelle section sans locale wiring casse CI.
+Résultat en cas de succès : ``✔ Webhook smoke test succeeded: <redacted-url> returned HTTP <status>``. Résultat en cas d'échec : ``✖ Webhook smoke test failed: <translated WebhookError>``. L'erreur traduite passe par le même paramètre ``t=`` que celui utilisé par ``send_webhook``, si bien que les utilisateurs FR obtiennent d'emblée des messages d'erreur en FR.
 
-### Warning déprécation D-3 sur EXPLAIN_KEY_ALIASES
+Les tests de [tests/test_v082_items.py::TestTestWebhookCli + TestTestWebhookSmokeFunction](../tests/test_v082_items.py) couvrent l'analyse CLI, la valeur par défaut False, le rejet d'un schéma invalide et le pin du tag de la charge (affirme que ``tag=bob_smoke_test`` survit à l'envoi urllib via un ``urlopen`` patché).
 
-[bob/explain.py:368-432](../bob/explain.py#L368) — `normalize_key()` émet maintenant un `logger.warning` one-shot quand il résout un alias :
+Avant v0.8.2, le seul moyen de valider une configuration fraîche ``bob --webhook=URL`` était de lancer un audit complet (~30 s + sudo requis). La lacune DX était particulièrement pénible lors de la configuration de webhooks via cron — les opérateurs ne pouvaient pas tester leur URL côté cron sans attendre le prochain audit planifié + lire le rapport .log pour confirmer que le POST était arrivé.
+
+### --check=list avec descriptions des sections
+
+[bob/__main__.py:115-152](../bob/__main__.py#L115) — la boucle de rendu de ``--check=list`` résout désormais une description par section via ``i18n.t(f"sections.descriptions.{name}")``. Description manquante → repli sur le nom nu de la section (compatibilité ascendante pour une section ajoutée sans branchement de locale).
+
+44 descriptions sont livrées dans [bob/locales/en.json](../bob/locales/en.json) + [bob/locales/fr.json](../bob/locales/fr.json) sous le nouvel espace de noms ``sections.descriptions.*``. Une ligne par section, ≤ 80 caractères en général, couvrant :
+
+- **34 sections filtrables** (auditd, auth_log, backup, clamav, cron_audit, …, ssh, ssl_certs, suid_audit, systemd_timers, umask, updates, user_accounts)
+- **10 sections toujours actives** (ddns, docker, firewall, firewall_stack, network_context, ports_analysis, rules, services, ufw_logging, virtualization)
+
+Les tests de [tests/test_v082_items.py::TestCheckListDescriptionsCoverage](../tests/test_v082_items.py) épinglent deux invariants :
+
+- Chaque section de ``_ALL_SECTIONS ∪ _ALWAYS_ON_SECTIONS`` a une description en EN et en FR — un nouveau check livré sans branchement de locale fait échouer la CI.
+- Aucune entrée ``sections.descriptions.*`` orpheline pour une section inconnue — une section renommée ou supprimée fait apparaître l'entrée de locale périmée.
+
+Avant v0.8.2, ``bob --check=list`` déversait les noms bruts des sections, sans contexte :
+
+```
+ssh
+ssl_certs
+suid_audit
+systemd_timers
+```
+
+Après v0.8.2 :
+
+```
+ssh               — SSH hardening — sshd_config, host keys, ~/.ssh, authorized_keys
+ssl_certs         — TLS/SSL certificate expiry — Let's Encrypt, nginx, apache, postfix
+suid_audit        — SUID/SGID binaries — unexpected entries vs whitelist
+systemd_timers    — Systemd timers — risky patterns + permissions
+```
+
+Une prise en main nettement meilleure pour les utilisateurs des drapeaux ``--check=`` / ``--skip=``.
+
+### Avertissement de dépréciation D-3 sur EXPLAIN_KEY_ALIASES
+
+[bob/explain.py:368-432](../bob/explain.py#L368) — ``normalize_key()`` émet désormais un ``logger.warning`` unique quand elle résout un alias.
+
+L'avertissement porte le nom de l'alias, le nom canonique et le calendrier de retrait de v0.9.0 :
 
 ```
 DEPRECATION: explain key 'services_state.service_inactive' is a legacy alias for
@@ -9291,209 +9920,282 @@ DEPRECATION: explain key 'services_state.service_inactive' is a legacy alias for
 Migrate scripts, saved profiles, and ignore.yml entries to the canonical name.
 ```
 
-Logger-only (surface dans `--detailed` `.log` + journald cron) sans polluer les outputs machine-readable JSON / CSV / Markdown. Un set `_WARNED_ALIASES` per-process garantit qu'un watch-mode session ne spam pas le log. Tests pin la sémantique one-shot.
+Émis via ``logger.warning`` (le module ``logging`` de Python), il apparaît dans :
 
-C'est le **bridge** vers le retrait alias v0.9.0 décrit dans `SECURITY.md` (contrat back-compat).
+- les rapports ``.log`` de ``--detailed`` (via le gestionnaire de log de BOB)
+- journald quand l'audit est planifié via cron (le processus appartenant à root hérite du puits journald)
+- les flux visibles par l'opérateur, sans polluer les sorties lisibles par machine JSON / CSV / Markdown
 
-### Linter locale
+Un ensemble ``_WARNED_ALIASES`` par processus garantit que chaque alias n'avertit qu'une fois au plus par processus. Une session en mode ``--watch`` qui résout le même alias à chaque itération voit un seul avertissement, pas 10 par minute. Des tests épinglent ce contrat d'émission unique.
 
-[scripts/lint_locales.py](../scripts/lint_locales.py) — outil dev, pas shipped au runtime. Catch les classes de drift exposées par les passes audit 7 + 8 :
+C'est le **pont** vers le retrait d'alias de v0.9.0 que décrit ``project_v08x_deferred.md`` (mémoire) — avant v0.8.2, l'alias était silencieux, si bien qu'on n'avait aucun signal pour savoir combien d'utilisateurs dépendaient encore du nom legacy. v0.8.2 lance le compte à rebours de la dépréciation ; v0.9.0 retirera l'entrée selon le contrat de ``SECURITY.md``.
 
-- **Parité strict clés EN/FR** — chaque leaf key en en.json apparaît en fr.json et vice-versa.
-- **Parité set placeholders** — chaque `{name}` en EN match le même set en FR. Protège `str.format(**kwargs)` des crashes KeyError.
-- **Contrat trailing-whitespace** pour les `cli.error.*_prefix` keys (invariant I-2 pass 7).
-- **Sanité length** — valeurs vides + > 1500 chars flagged. Threshold tuned pour pas false-positive sur les paragraphes techniques verbeux légitimes des `explain.*.{why,how}`.
+### Linter de locale
 
-[tests/test_v082_items.py::TestLocaleLinterSmoke](../tests/test_v082_items.py) shell vers le script donc un drift casse CI même sans run direct.
+[scripts/lint_locales.py](../scripts/lint_locales.py) — outil de développement, non livré à l'exécution (``scripts/`` n'est pas dans le manifeste de la wheel). Attrape les classes de dérive mises au jour par les passes d'audit 7 + 8 — mais sous forme de script autonome rapide, lançable en local + en pre-commit :
 
-### Items déférés v0.9.0
+```
+$ python3 scripts/lint_locales.py
+✔ locale lint clean: 1941 EN keys × 1941 FR keys, 0 parity drift,
+  0 placeholder drift, 0 trailing-space violation, 0 length anomaly
+```
 
-- **D-1 / D-2 / D-4** de `project_v08x_deferred` — renumber sections + fusion `_ALL_SECTIONS`/`_ALWAYS_ON_SECTIONS` + sub-checks granulaires (BREAKING — affectent syntaxe scripts `bob --check=ssh,firewall`).
-- **Retrait trap door `BOB_SANDBOX_LEGACY=1`** — BREAKING pour users avec env var set.
-- **Parallel check execution** — `concurrent.futures` sur sections I/O-bound, touche threading invariants.
-- **`--diff <baseline.json>`** — cross-machine baseline diff, additif, déféré pour bundler avec migration support de D-4.
-- **Tutorial / getting-started guide** — substantial doc work.
+Quatre classes de contrôle :
 
-### Numbers
+- **Parité stricte des clés EN/FR** — chaque clé feuille de en.json apparaît dans fr.json et inversement. Le contrôle existant de la passe d'audit T38 est dupliqué ici pour que les contributeurs n'aient pas à attendre ``pytest`` pour voir la dérive.
+- **Parité des ensembles de placeholders** — chaque placeholder ``{nom}`` d'une valeur EN correspond au même ensemble dans la valeur FR. Protège ``str.format(**kwargs)`` d'un ``KeyError`` à l'exécution (le FR a un placeholder que l'EN ne fournit pas) et de la perte silencieuse d'une variable de contexte (l'EN en a une, le FR non).
+- **Contrat d'espace final** pour les clés ``cli.error.*_prefix`` (invariant I-2 de la passe 7). Promu d'une garde de test à l'exécution vers un outil autonome, pour que les contributeurs qui éditent le fichier de locale voient la violation immédiatement.
+- **Cohérence de longueur** — les valeurs vides + les valeurs > 1500 caractères sont signalées. Attrape les vraies erreurs de copier-coller (un README entier, un document collé par accident) sans faux positif sur les longs paragraphes ``explain.*.{why,how}``, volontairement détaillés comme descriptions techniques.
+
+[tests/test_v082_items.py::TestLocaleLinterSmoke](../tests/test_v082_items.py) appelle le script, pour qu'une dérive fasse échouer la CI même quand les contributeurs sautent l'étape de lint. ``LANG=C`` imposé via la fixture autouse existante ``_force_posix_locale_for_tests``.
+
+### Éléments déférés à v0.9.0
+
+Pour un suivi honnête au sens SemVer — les éléments suivants restent ouverts pour v0.9.0 :
+
+- **D-1 / D-2 / D-4** de ``project_v08x_deferred`` — renumérotation des sections + fusion de ``_ALL_SECTIONS`` / ``_ALWAYS_ON_SECTIONS`` + sous-checks granulaires (le retrait d'alias + l'uniformisation du nommage des sections sont BREAKING parce qu'ils affectent la syntaxe des scripts ``bob --check=ssh,firewall``).
+- **Retrait de la trappe ``BOB_SANDBOX_LEGACY=1``** — BREAKING pour tout utilisateur ayant défini la variable d'environnement ; déféré pour être regroupé avec les autres nettoyages d'architecture.
+- **Exécution parallèle des checks** — ``concurrent.futures.ThreadPoolExecutor`` sur les sections liées aux E/S ; touche aux invariants de threading + à la gestion d'erreurs, mérite sa propre bêta ciblée.
+- **``--diff <baseline.json>``** — diff de baseline entre machines, fonctionnalité additive, déférée pour être regroupée avec la prise en charge de migration des clés renommées de D-4.
+- **Tutoriel / guide de démarrage** — ``DOCUMENTS/TUTORIAL.md`` — travail de documentation substantiel, déféré pour être regroupé avec le rafraîchissement du README de v0.9.0.
+
+### Chiffres
 
 - **6244 tests** (6198 → 6244, +46 net). 0 régression.
-- 46 tests dédiés v0.8.2 sur 2 files : `test_v082_bash_completion.py` (21) + `test_v082_items.py` (25).
-- 88 nouvelles locale entries (44 sections × 2 langues) + 8 `cli.test_webhook.*` keys.
-- 1941 EN + 1941 FR locale keys total, 0 drift.
+- 46 tests v0.8.2 dédiés répartis sur 2 fichiers : ``test_v082_bash_completion.py`` (21) + ``test_v082_items.py`` (25).
+- 88 nouvelles entrées de locale (44 sections × 2 langues) + 8 clés ``cli.test_webhook.*``.
+- 1941 clés de locale EN + 1941 FR au total, 0 dérive.
 
-### Upgrade
+### Mise à jour
 
-`pipx upgrade bodyguard-of-bits`.
+``pipx upgrade bodyguard-of-bits``.
 
-Gains user-facing :
-- `bob --check=list` désormais self-documenting (44 descriptions sections)
-- `bob --test-webhook` fonctionne (smoke sans audit complet)
-- Bash completion de `--unignore` + `--ignore` + `--explain` keys suggère les EXPLAIN_KEYS canoniques
-- Usage `EXPLAIN_KEY_ALIASES` surface un warning de déprécation pointant vers timeline retrait v0.9.0
+Gains visibles par l'utilisateur :
 
-**v0.7.x reste EOL** (déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md) depuis v0.8.1). **v0.6.x reste EOL** (déclaré v0.7.2).
+- ``bob --check=list`` se documente désormais lui-même (44 descriptions de sections).
+- ``bob --test-webhook`` fonctionne (smoke sans audit complet).
+- La complétion bash des clés de ``--unignore`` + ``--ignore`` + ``--explain`` propose les entrées canoniques d'EXPLAIN_KEYS (était générique / absente).
+- L'usage d'``EXPLAIN_KEY_ALIASES`` fait apparaître un avertissement de dépréciation dans le flux de log, renvoyant au calendrier de retrait de v0.9.0.
+
+**v0.7.x reste en fin de vie** (déclaration formelle dans [SECURITY.md](../SECURITY.md) depuis v0.8.1). **v0.6.x reste en fin de vie** (déclarée en v0.7.2).
 
 ---
 
 ## [v0.8.1] — 05-06-2026
 
-**Maintenance mineure + cycle audit deep-hardening.**
+**Maintenance mineure + cycle d'audit de hardening en profondeur.**
 
-Ferme **26 tiers de gaps** sur 3 passes d'audit sub-agent (6/7/8) + un sweep initial drift / framing / silent-feature-gap. 5521 → **6198 tests**, +677 net, 0 régression. ~190 tests dédiés v0.8.1.
+Ferme **26 niveaux de lacunes** sur 3 passes d'audit par sous-agent (6/7/8), plus un balayage initial de dérive / cadrage / lacunes de fonctionnalités silencieuses. 5521 → **6198 tests**, +677 net, 0 régression. ~190 tests dédiés à v0.8.1.
 
-### Cycle initial (12 tiers)
+### Cycle initial (12 niveaux)
 
-#### T6 — audit couverture sévérité profiles
+#### T6 — audit de couverture des gravités par profil
 
-`bob/data/profiles/desktop.conf` +24 overrides → 36 au total ; `workstation.conf` +28 overrides → 31 distincts de desktop. Couverture ~30% des 107 actionable warn/alert keys. Domaines couverts : clamav (5 keys), rootkit.db_outdated, auditd.* (3), secure_boot.*, file_integrity.*, log_rotation.*, backup.no_backup, mac_policy.apparmor_no_enforce, password_policy.weak_minlen, firewall_stack.ip_forward_enabled, services.exposure.open_local, ssh.* secondaires.
+`bob/data/profiles/desktop.conf` +24 surcharges → 36 au total ; `workstation.conf` +28 surcharges → 31 distinctes de desktop. Couverture d'environ 30 % des 107 clés warn/alert actionnables. Domaines couverts : clamav (5 clés), rootkit.db_outdated, auditd.* (3), secure_boot.*, file_integrity.*, log_rotation.*, backup.no_backup, mac_policy.apparmor_no_enforce, password_policy.weak_minlen, firewall_stack.ip_forward_enabled, services.exposure.open_local, ssh.* secondaires (login_grace_time / x11_use_localhost — ce dernier retiré en M-1 de la passe 6, quand T32 a attrapé l'orphelin).
 
-#### T10 — i18n exceptions webhook + config + __main__
+#### T10 — i18n des messages d'exception de webhook + config + __main__
 
-14 nouvelles locale keys EN+FR sous `webhook.error.*` × 6 / `config.error.*` × 4 / `cli.error.*` × 4. Pattern fallback dict miroir v0.7.2 M-4 : `_FALLBACK_LABELS` + `_fallback_t` dans chaque module ; signatures `send_webhook(..., t=None)` etc. acceptent un t optionnel. Pre-fix : 9 exception messages EN hardcoded, users FR voyaient mixed-language.
+14 nouvelles clés de locale EN+FR sous `webhook.error.*` × 6 / `config.error.*` × 4 / `cli.error.*` × 4. Motif de dict de repli calqué sur M-4 de v0.7.2 : `_FALLBACK_LABELS` + `_fallback_t` dans chaque module ; `send_webhook(..., t=None)` + `UserConfig.set(...t=None)` + `EmailStore.add(..., t=None)` acceptent un `t` optionnel ; l'appelant de production (`bob/__main__.py`) passe le `t` lié à l'audit, pour des messages d'erreur dans la bonne locale. Avant le correctif : 9 messages d'exception en anglais codé en dur (5 dans webhook.py + 4 dans config.py) ; les utilisateurs FR voyaient un mélange de langues sur un `bob --webhook HTTPS://...` invalide, etc.
 
-#### Retrait alias workstation (BREAKING)
+#### Retrait de l'alias workstation (BREAKING)
 
-`bob/profiles.py:123-124` — l'alias v0.1.0 qui silencieusement redirigeait `bob -p workstation` vers `desktop` est retiré. workstation.conf est maintenant un profile **first-class**. **BREAKING** : users sur l'alias voient sévérités différentes pour `backup.no_backup` / `auditd.*` / `mac_policy.apparmor_no_enforce` (restent à WARN sur workstation, INFO sur desktop).
+`bob/profiles.py:123-124` — l'alias de v0.1.0, qui redirigeait en silence `bob -p workstation` vers le profil `desktop` (si bien que workstation.conf était du code mort depuis v0.1.0), a été retiré. workstation.conf est désormais un profil **de premier rang**, avec ses propres surcharges pour le contexte professionnel. **BREAKING** pour les ~6 semaines d'utilisateurs de l'alias : leur audit aura des gravités différentes pour `backup.no_backup` / `auditd.*` / `mac_policy.apparmor_no_enforce` (qui restent en WARN sur workstation alors que desktop les ramène à INFO).
 
-**Migration** : copier `desktop.conf` vers `~/.config/bob/profiles/workstation.conf` pour restaurer la sémantique v0.8.0.
+**Migration** : copier `bob/data/profiles/desktop.conf` vers `~/.config/bob/profiles/workstation.conf` pour retrouver la sémantique de v0.8.0.
 
-#### T11 — parité field Finding.detail (CSV + JSON v1/v2)
+Le test `tests/test_profiles.py::test_workstation_is_now_distinct_from_desktop` épingle ce changement BREAKING avec 3 assertions explicites (backup / auditd / mac_policy restent à None = WARN sur workstation).
 
-`bob/csv_output.py:25-44` column `detail` insérée entre `message` et `fix_cmd`. `bob/json_output.py:240-251 + 448-460` field `detail` dans finding dict v1 + v2. Additif, pas de schema break.
+#### T11 — parité du champ Finding.detail (CSV + JSON v1/v2)
 
-#### T26 — dispatch explain services.exposed.<id>
+`bob/csv_output.py:25-44` : nouvelle colonne `detail` insérée entre `message` et `fix_cmd` (position épinglée par un test). `bob/json_output.py:240-251 + 448-460` : champ `detail` ajouté au dict de constat de v1 + v2. Additif (les consommateurs qui lisent champ par nom ne sont pas affectés). Ferme la lacune de parité de formats qui subsistait après T9 de v0.8.0 (MD/HTML) pour les 3 sorties lisibles par machine restantes.
 
-`bob/explain.py:433-510` nouveau `_render_dynamic_service_explain()` route lookup via `ServiceRegistry.get(svc_id)` + `service_risk.<subkey>.{level,exposure,threat}`. 38 services auto-explainables. Live UX : `bob --explain services.exposed.ssh` produit contenu CRITICAL/EXPOSURE/THREAT du SSH Server.
+#### T26 — aiguillage explain de services.exposed.<id>
 
-#### T27 — payload webhook detail + note parity
+`bob/explain.py:433-510` : nouveau helper `_render_dynamic_service_explain()`, qui fait passer la recherche par `ServiceRegistry.get(svc_id)` + `service_risk.<sous-clé>.{level,exposure,threat}` (contenu déjà présent depuis T4 de v0.8.0). Injecté dans `run_explain` avant le repli `unknown_key`. 38 services expliqués automatiquement, avec une interface cohérente (libellés `risk_context.exposure` + `risk_context.threat`). En conditions réelles : `bob --explain services.exposed.ssh` produit le contenu CRITICAL/EXPOSURE/THREAT du serveur SSH, de même pour samba/ollama/tailscale/etc.
 
-Generic payload embarque `detail` + `note` per finding ; Slack inline concatène le `detail` après ` — ` séparateur. Ferme format-parity pattern.
+#### T27 — detail + note dans la charge utile du webhook
 
-#### T31/T37 — nature backfill 90 sites
+`bob/webhook.py:150-170` (générique) — chaque dict de constat porte désormais `detail` + `note` (chaînes vides `""` quand absents). `bob/webhook.py:185-200` (Slack en ligne) — les `finding_lines` concatènent le `detail` après un séparateur ` — `, pour que les lecteurs de Slack voient le contexte explicatif. Ferme le motif de parité de formats qui couvrait déjà texte/MD/HTML/CSV/JSON v1/v2.
 
-90 sites `warn/alert(_with_deduction)` sans `nature=` classifiés : 69 action + 59 improvement + 1 structural. Pre-fix `bob/fixes.py:32-34` filtre `nature == "action"` donc 88% des findings actionnables étaient silencieusement skipped par `--fix --apply`. Post-fix 100%.
+#### T31/T37 — remplissage de `nature` sur 90 sites + retours arrière alignés sur les tests existants
 
-Edge case ssh/_directives.py refactoré pour propager nature via kwargs dict explicit. 5 reverts pour aligner avec tests existants : risky_fs/risky_net (improvement), ntp.not_synchronized/not_enabled (improvement), smtp.exposed (improvement), rules.duplicate_found (action), rules.ipv6_missing (improvement).
+`bob/checks/*.py` — 90 sites `warn/alert(_with_deduction)` sans kwarg `nature=` sont désormais classés : **69 action + 59 improvement + 1 structural**. Avant le correctif, `bob/fixes.py:32-34` filtre `if f.nature == "action" and f.cmd`, si bien que 88 % des constats actionnables étaient ignorés en silence par `--fix --apply`. Après le correctif : couverture de 100 %.
 
-#### T32 — validation typo profiles
+Cas limite : `bob/checks/ssh/_directives.py::_apply_bad_directive` refactoré pour propager `nature` via un dict de kwargs explicite (c'était un `**kwargs` implicite → en conflit avec la regex de visibilité de test_t31). La `nature` au niveau de la règle (venant de la dataclass) l'emporte, sinon valeur par défaut selon la gravité : alert → action / warn → improvement.
 
-`_recognised_override_keys` build catalogue (lru_cache(maxsize=1)) : EXPLAIN_KEYS ∪ `services.exposed.<id>` ∪ literal `key="..."` harvest. À la load, `[overrides]` keys absentes émettent `logger.warning(...)`. Compat-preserving.
+5 retours arrière pour s'aligner sur des tests existants d'avant v0.8.1 qui épinglaient `improvement` : kernel_modules.risky_fs + risky_net, ntp.not_synchronized + not_enabled, smtp.exposed, rules.duplicate_found, rules.ipv6_missing.
 
-**Self-catch notable** : T32 a chopé `ssh.x11_use_localhost` que J'AI moi-même ajouté en T6 — orphan dans desktop+workstation. Le mécanisme fait son boulot sur mes propres erreurs.
+#### T32 — validation des fautes de frappe dans les profils
 
-#### T39 — orphan service_risk.ollama_llm_server cleanup
+`bob/profiles.py::_recognised_override_keys` construit un catalogue (lru_cache(maxsize=1)) des clés reconnues : EXPLAIN_KEYS ∪ `services.exposed.<id>` ∪ récolte des littéraux `key="..."` dans `bob/checks/*.py`. Au chargement de chaque profile.conf, les clés de `[overrides]` absentes du catalogue émettent `logger.warning("override key %r is not recognised...")`. Préserve la compatibilité : la surcharge est quand même chargée (les profils legacy portant des clés de checks retirés ne cassent pas le chargement).
 
-Block locale retiré. Service Ollama réel a subkey `ollama_local_llm` (entry valide depuis v0.8.0 T2).
+**Auto-attrapage notable** : T32 a attrapé `ssh.x11_use_localhost`, que J'AVAIS moi-même ajouté en T6 comme surcharge de desktop+workstation. Aucun check n'émet cette clé — j'avais introduit un orphelin en croyant surcharger un vrai constat. Le mécanisme fait son travail, du premier coup, sur mes propres erreurs.
 
-#### T57 — CLI --unignore
+#### T39 — nettoyage de l'orphelin service_risk.ollama_llm_server
 
-`bob/ignore.py:127-184` nouveau `remove_ignore_key()`. Wire CLI + 2 locale keys + mutual-exclusion guard avec `--ignore` (ajouté pass 6 M-4).
+`bob/locales/{en,fr}.json:545-549` : bloc `service_risk.ollama_llm_server.{level,exposure,threat}` retiré. Le vrai service Ollama a pour libellé « Ollama (local LLM) », qui se transforme en `ollama_local_llm` — entrée valide depuis T2 de v0.8.0. L'orphelin était un reste du renommage pendant le cycle T2.
+
+#### T57 — chemin CLI --unignore
+
+`bob/ignore.py:127-184` : nouveau helper `remove_ignore_key()`. `bob/cli.py:134-145, 185` + `bob/__main__.py:172-192` branchent le chemin CLI. 2 nouvelles clés de locale `cli.ignore.removed` / `cli.ignore.not_present`. Garde d'exclusion mutuelle avec `--ignore` ajoutée en M-4 de la passe 6. Contrat d'écriture atomique préservé (calqué sur `add_ignore_key`).
+
+Avant T57, les utilisateurs pouvaient faire `bob --ignore=KEY` pour ajouter, mais devaient éditer `~/.config/bob/ignore.yml` à la main pour retirer — une lacune de symétrie fonctionnelle.
 
 #### T60 — helper _t_or_hardcoded
 
-`bob/__main__.py:67-83` returne `t(key)` si i18n initialisé, sinon `fallback`. Wire 3 sites pre/post-init (parse_args CLIError, main() catch-all). Pre-T60 : `Fatal error: …` + `Set BOB_DEBUG=1...` hardcoded EN même en audit FR.
+`bob/__main__.py:67-83` : nouveau helper `_t_or_hardcoded(key, fallback)` qui renvoie `i18n.t(key)` si l'i18n est initialisée, sinon `fallback`. Branché sur 3 sites avant/après l'initialisation : la CLIError de `parse_args` (L90, avant l'initialisation), le catch-all de `main()` (L530-543, après l'initialisation sur le chemin nominal, mais possiblement avant en cas de plantage très précoce). Avant T60 : `Fatal error: …` + `Set BOB_DEBUG=1 for full traceback.` en anglais codé en dur, même dans un audit en FR.
 
-#### T74 — redaction credentials URL webhook
+#### T74 — caviardage des identifiants dans l'URL du webhook
 
-`bob/webhook.py:60-66` regex ancré sur `://` boundary + `redact_url_credentials(url)` public helper. Wire `send_webhook` WebhookError sites + `__main__.py:386` success print. Original URL reste pour POST réel ; seul l'affichage opérateur est sanitisé.
+`bob/webhook.py:60-66` : regex `_URL_USERINFO_RE` ancrée sur la frontière `://` + `bob/webhook.py:79-103` : helper public `redact_url_credentials(url) -> str`, qui remplace `user:pass@host` par `[REDACTED]@host`. Branché dans `send_webhook` sur les 2 sites de construction de WebhookError (lignes 282-286) + dans `bob/__main__.py:386-392` sur le chemin de succès `output.print_info(f"Webhook: POST → {url}")`. L'URL d'origine reste utilisée pour le vrai POST — seul l'affichage pour l'opérateur est assaini.
 
-### Audit pass 6 (5 findings shipped)
+Avant le correctif : les identifiants embarqués (motif courant chez Slack/Discord/Mattermost) fuyaient en clair sur stdout + .log + stderr + la sortie cron + les tubes de supervision.
 
-#### I-1 — preservation comments ignore.yml
+### Passe d'audit 6 (5 constats livrés)
 
-`remove_ignore_key` re-écrivait en canonical form, détruisait silencieusement commentaires opérateur (`# Per ticket SECOPS-1234`).
+#### I-1 — préservation des commentaires d'ignore.yml
 
-Fix : line-walk in-place. Drop seulement `- key: <removed>`, préserve reste verbatim.
+`bob/ignore.py::remove_ignore_key` réécrivait le fichier sous forme canonique `ignore:\n  - key: X\n`. Tout commentaire de l'opérateur (`# Per ticket SECOPS-1234`, etc.) était détruit en silence au premier `--unignore`. Avant T57 (livré avec ce comportement), les utilisateurs éditaient le YAML à la main pour retirer des clés, et l'avaient donc naturellement annoté.
 
-#### M-1 — T32 regex digits + file_perms.*
+Correctif : parcours ligne par ligne sur place. Ne supprimer que les lignes `- key: <retirée>`, préserver tout le reste tel quel. Retrait du commentaire avant comparaison, pour éviter les collisions de préfixe (`ssh.password_auth` ≠ `ssh.password_auth_v2`).
 
-Regex `[a-z_]+` rejetait segments avec chiffres → `fail2ban.ssh_jail_active`, `ipv6.*` déclenchaient spurious warnings. Fix : `[a-z][a-z0-9_]*` + `file_perms.*` permissive prefix.
+#### M-1 — chiffres dans la regex de T32 + file_perms.*
 
-#### M-2 — services.exposure canonical set
+La regex `[a-z_]+` de `bob/profiles.py:192` rejetait les segments contenant des chiffres → `fail2ban.ssh_jail_active`, `ipv6.ufw_disabled_no_listeners`, `ipv6.port_no_v6_rule` (de vraies émissions à l'exécution) déclenchaient de faux avertissements « non reconnue ».
 
-Pre-fix registrait `services.exposure.{svc.id}` (bogus — runtime émet `services.exposure.{exposure_value}`). Fix : retrait + ajout canonical set de 7 base values × 2 (avec `_ufw_inactive` — narrowed pass 8 M-2 plus tard).
+Correctif : regex → `[a-z][a-z0-9_]*` (alignée sur `_CANONICAL_KEY_RE` de v0.7.1 M-5) + préfixe permissif `file_perms.*` pour les émissions en f-string (`file_perms.passwd.world_writable`, etc.), qui ne sont pas récoltables comme littéraux.
 
-#### M-3 — service_label_to_subkey consolidation
+#### M-2 — ensemble canonique de services.exposure
 
-T26 docstring claimait "single source of truth" mais display.py avait 2 copies inline. Fix : extract vers `bob/registry.py:60-92`, les 3 sites délèguent via import.
+`bob/profiles.py:175` (désormais retiré) — avant le correctif, le catalogue enregistrait `services.exposure.{svc.id}` pour CHAQUE service (par ex. `services.exposure.ollama`, `services.exposure.nginx`). Mais l'exécution n'émet PAS ces clés — elle émet `services.exposure.{exposure.value}`, où exposure.value appartient à `{open_world, open_local, deny, no_rule, loopback, loopback_no_rule, not_listening}` (depuis bob/checks/services.py:353-355,390-403).
 
-#### M-4 — --unignore docs + mutual-exclusion
+`services.exposure.ollama = info` dans un profil était donc accepté en silence comme « valide », mais sans aucun effet à l'exécution. Faux négatif symétrique des faux positifs de M-1.
 
-Man page entry + CLIError guard.
+Correctif : retrait de la ligne 175 + ajout de l'ensemble canonique de 7 valeurs de base × 2 (avec la variante `_ufw_inactive` — restreinte plus tard en M-2 de la passe 8).
 
-### Audit pass 7 (3 findings shipped)
+#### M-3 — consolidation de la transformation service_label_to_subkey
 
-#### I-1 — remove_ignore_key regex match loader grammar
+La docstring de T26 (`bob/explain.py:412-425`) affirmait : *« Mirrors the transform used by `bob/display.py::display_risk_context` (single source of truth for service_risk locale lookups) »*. Mais `display.py` avait **2 copies en ligne** de la transformation (lignes 152-154 + 630-632), et aucune ne déléguait au helper.
 
-`startswith("- key:")` (un espace) ≠ loader regex (`\s+`). Files yamllint-style avec 2 spaces silencieusement un-removable → misleading "Key not present".
+Correctif : `service_label_to_subkey()` extrait dans `bob/registry.py:60-92` (il vit naturellement avec `ServiceRegistry`, qui détient la sémantique des libellés). Les 2 sites en ligne de display.py + le helper d'explain.py délèguent via un import. La docstring de T26 dit désormais vrai. Ferme le risque de dérive si la transformation change (par ex. un nouveau libellé contenant `&` ou `+`).
 
-Fix : nouveau sibling regex `_KEY_LINE_MATCH_RE` (sans `\s*$` anchor). Cf. pass 8 I-1 pour unification définitive.
+#### M-4 — documentation de --unignore + exclusion mutuelle
 
-#### I-2 — FR colon typography drift
+`man/bob.1:300-310` : nouvelle entrée `--unignore=KEY`, calquée sur `--ignore=KEY` (préserve les commentaires + le YAML personnalisé). `bob/cli.py:613-620` : garde CLIError « --ignore and --unignore are mutually exclusive » ajoutée (sur le modèle des gardes d'exclusion mutuelle de v0.7.x, comme le recouvrement `--check + --skip`).
 
-T10 + T60 ont laissé `:` ASCII hardcodé après `t()`. Convention FR = ` : `. Plus `cli.error.webhook_failed_prefix` contenait déjà ` : ` dans valeur FR → double-colon mixed style.
+### Passe d'audit 7 (3 constats livrés)
 
-Fix : colon-space embarqué dans valeurs locale (EN `"Error: "`, FR `"Erreur : "`). 4 sites print drop le `: ` hardcodé. Drift introduit par mon propre T10.
+#### I-1 — la regex de remove_ignore_key alignée sur la grammaire du chargeur
 
-#### M-1 — --show-ignored man description
+`bob/ignore.py:167` (passe 6) utilisait `stripped.startswith("- key:")` (exactement un espace), mais la regex du chargeur (L29) `_KEY_LINE_RE = r"^\s*-\s+key:\s+(\S+)\s*$"` accepte `\s+`. Donc :
 
-Man page claimait "list keys and exit", code fait l'opposé (display inline pendant audit). Fix : réécriture du paragraphe.
+```yaml
+ignore:
+  -  key: ssh.permit_root_login    # 2 spaces, yamllint-friendly
+```
 
-### Audit pass 8 (5 findings shipped)
+→ le chargeur voit `ssh.permit_root_login` (présente)
+→ `remove_ignore_key('ssh.permit_root_login')` → False (le parcours ne correspond pas)
+→ la sortie défensive de L180-184 avale le décalage
+→ l'utilisateur voit le trompeur **`"Key not present in the ignore list"`**
 
-#### I-1 — _KEY_LINE_RE unification
+Correctif : nouvelle regex sœur `_KEY_LINE_MATCH_RE` (sans l'ancre `\s*$`) utilisée dans le parcours. Le chargeur + le retireur partagent la même grammaire `\s+`. Cf. I-1 de la passe 8 plus loin pour l'unification définitive.
 
-Le pass 7 sibling regex pour inline comments était unreachable (defensive guard `load_ignore_keys` short-circuit avant). Méta-régression dans mon fix pass 7.
+#### I-2 — dérive typographique des deux-points en français
 
-Fix : drop `\s*$` anchor de `_KEY_LINE_RE` itself, retirer `_KEY_LINE_MATCH_RE`. Loader + remover share single relaxed regex.
+T10 + T60 avaient internationalisé les préfixes d'erreur mais laissé un `:` ASCII codé en dur après le `t()` :
+- `bob/__main__.py:90, 235, 396, 530` : `f"{t('cli.error.prefix')}: {exc}"` etc.
 
-#### I-2 — runner.py 3 Warning sites un-i18n'd
+La convention FR est ` : ` (espace avant ET après). Plus précisément, `cli.error.webhook_failed_prefix` contenait déjà ` : ` dans sa valeur FR (`"Avertissement : échec du webhook"`) → résultat `"Avertissement : échec du webhook: connection refused"` (double deux-points de styles mélangés).
 
-T10 a loupé `runner.py:143,157,161`. Fix : `cli.error.warning_prefix` (FR `"Avertissement : "`) + namespace `cli.runner.*` (6 nouvelles keys × 2 langues).
+Correctif : Option A, cohérente — les deux-points et l'espace sont embarqués dans les valeurs de locale. EN `"Error: "` / FR `"Erreur : "` / `"Fatal error: "` / `"Erreur fatale : "` / `"Warning: webhook failed: "` / `"Avertissement : échec du webhook : "`. Les 4 sites d'impression abandonnent le `: ` codé en dur.
 
-#### M-1 — --webhook-secret phantom
+Dérive introduite par mon propre T10. Le sous-agent l'a attrapée.
 
-`bob/cli.py:193` listait `--webhook-secret` dans `_VALUE_TAKING_OPTS` mais aucun handler n'existait. Errors inconsistents entre `--opt val` et `--opt=val`. Fix : retrait 1-line.
+#### M-1 — réécriture de la description de --show-ignored dans le man
 
-#### M-2 — _ufw_inactive narrowed
+`man/bob.1:311-314` affirmait : *« List the persistently-ignored finding keys (contents of ~/.config/bob/ignore.yml) and exit. Useful to audit what has been muted before a security review. »*
 
-Mon M-2 pass 6 registrait `_ufw_inactive` pour les 7 exposures, runtime n'émet QUE pour `(no_rule, loopback_no_rule)`. Méta-régression dans mon fix pass 6. Fix : narrow.
+Mais le code (`bob/__main__.py:433` + texte d'aide de `bob/cli.py:718` + description de `DOCUMENTS/SNAPSHOT.md:558`) fait l'**inverse** : il lance l'audit complet et affiche en grisé les constats ignorés, ne déverse pas le YAML et ne sort pas. La page de manuel était l'exception.
 
-#### M-3 — t() trailing whitespace contract
+Correctif : réécriture du paragraphe. *« During the audit, display previously-ignored findings as dimmed lines instead of suppressing them silently. … The audit still runs end-to-end — this flag does NOT exit early or dump the ignore file's contents. »*
 
-8 tests parametrized pin que `t()` ne strip pas trailing whitespace sur les 4 `cli.error.*_prefix` keys × {EN, FR}. Defends I-2 pass 7.
+### Passe d'audit 8 (5 constats livrés)
 
-### Plus — autouse fixture i18n init
+#### I-1 — unification de _KEY_LINE_RE
 
-`tests/conftest.py` `_ensure_i18n_initialised_for_tests` mirror production invariant. Opt-out pour `test_i18n.py` (qui exerce bracketed-fallback contract).
+La regex sœur `_KEY_LINE_MATCH_RE` de la passe 7 (sans l'ancre `\s*$`, pour correspondre aux commentaires en ligne) était **inatteignable**. La garde `if key not in load_ignore_keys(path): return False` de `remove_ignore_key:165` court-circuite AVANT le parcours. Et `load_ignore_keys` utilise la `_KEY_LINE_RE` STRICTE (avec `\s*$`), qui rejette les lignes portant des commentaires en ligne. Donc :
 
-### Numbers
+1. L'utilisateur a `- key: ssh.x  # comment` dans ignore.yml → le chargeur ne la voit PAS comme ignorée
+2. `bob --unignore=ssh.x` → sortie de la garde défensive → l'utilisateur voit « Key not present »
+3. La promesse de la docstring de la regex sœur est inatteignable
+
+Méta-régression dans mon correctif de la passe 7. Le sous-agent l'a attrapée.
+
+Correctif : retirer l'ancre `\s*$` de `_KEY_LINE_RE` elle-même, supprimer `_KEY_LINE_MATCH_RE`. Le chargeur + le retireur partagent une seule regex assouplie. Les entrées avec commentaire en ligne sont enfin chargées ET retirables.
+
+#### I-2 — 3 sites Warning de runner.py non internationalisés
+
+`bob/runner.py:143, 157, 161` : 3 sites impriment `Warning: --check '...' matches no known section` / `Warning: --skip '...' has no effect (always-on section)` / `Warning: --skip '...' matches no known section`. T10 avait internationalisé les préfixes d'erreur de `__main__.py` mais avait raté ces 3 sites du runner.
+
+Correctif : nouvelle clé de locale `cli.error.warning_prefix` (EN `"Warning: "` / FR `"Avertissement : "`) + espace de noms `cli.runner.*` (check_no_match, check_no_match_fatal, skip_no_effect, skip_no_match, suggest_did_you_mean, suggest_run_list — 6 nouvelles clés × 2 langues = 12). Branchés dans `validate_check_filters` et `_suggest` via `from bob import i18n` (import dans la fonction, pour éviter une référence circulaire au premier niveau).
+
+#### M-1 — fantôme --webhook-secret
+
+`bob/cli.py:193` listait `"--webhook-secret"` dans `_VALUE_TAKING_OPTS`, mais aucun `elif arg.startswith("--webhook-secret")` n'existait + aucun champ `webhook_secret` dans `AuditConfig`. Résultat incohérent :
+- `bob --webhook-secret foo` → CLIError « --webhook-secret requires a value » (trompeur)
+- `bob --webhook-secret=foo` → CLIError « Unknown option: '--webhook-secret=foo' » (correct)
+
+Correctif : retrait en une ligne de l'entrée fantôme. Cohérent : les deux formes donnent désormais « Unknown option ».
+
+#### M-2 — variantes _ufw_inactive restreintes
+
+Mon M-2 de la passe 6 enregistrait `services.exposure.{value}_ufw_inactive` pour LES 7 expositions. Mais `bob/checks/services.py:352-355` n'émet `_ufw_inactive` QUE pour `(NO_RULE, LOOPBACK_NO_RULE)`. Donc `services.exposure.open_world_ufw_inactive = info` était accepté en silence comme valide → aucun effet à l'exécution. Le même échec d'ergonomie que M-2 de la passe 6 était censé fermer.
+
+Méta-régression dans mon correctif de la passe 6. Le sous-agent l'a attrapée.
+
+Correctif : restreindre l'enregistrement de `_ufw_inactive` à `(no_rule, loopback_no_rule)` seulement. Les variantes restantes (`open_world_ufw_inactive`, `deny_ufw_inactive`, etc.) déclenchent désormais correctement l'avertissement.
+
+#### M-3 — épinglage par test du contrat d'espace final de t()
+
+L'I-2 de la passe 7 dépend crucialement de ce que `cli.error.prefix` garde son espace final (`"Error: "`, `"Erreur : "`). Aucun test n'épinglait que `t()` ne retire pas l'espace final. Un futur script de normalisation JSON qui appellerait `.strip()` sur les valeurs, ou un changement de l'i18n qui retirerait l'espace final, casserait en silence le correctif de la passe 7. La régression se manifesterait par `"Erreurmessage…"` (sans espace) — visible mais difficile à attribuer.
+
+Correctif : 8 tests `test_X_t_preserves_trailing_space[key]` paramétrés sur les 4 clés `cli.error.*_prefix` × {EN, FR}. Défend le contrat pour les futurs contributeurs.
+
+### En plus — fixture autouse d'initialisation de l'i18n dans tests/conftest.py
+
+L'I-2 de la passe 8 a rendu `bob/runner.py::validate_check_filters` dépendante d'`i18n.init()` (sinon `i18n.t()` renvoie le repli entre crochets `[key]`). L'appelant de production (`bob/__main__.py:184`) initialise l'i18n avant. Mais les tests unitaires qui appellent runner.py directement (tests/test_cli.py::TestValidateCheckFilters, etc.) ne le faisaient pas.
+
+Solution : une fixture autouse `_ensure_i18n_initialised_for_tests` dans `tests/conftest.py`, qui reproduit l'invariant de production. **Désactivable** pour `test_i18n.py` via `request.module.__name__.endswith("test_i18n")`, parce que ce fichier exerce délibérément le contrat de repli entre crochets d'avant l'initialisation (`test_before_init_returns_bracketed_key`, etc.) et a son propre nettoyage `reset_i18n`.
+
+### Chiffres
 
 - **6198 tests** (5521 → 6198, +677 net). 0 régression.
-- ~190 tests dédiés v0.8.1 sur 8 fichiers
-- 26 tiers de gaps fermés sur 3 cycles d'audit
-- 22 nouvelles locale keys EN+FR
-- 38 services explainable via T26 dispatch
-- 90 sites nature backfill T31
+- ~190 tests dédiés à v0.8.1 sur 8 fichiers
+- 26 niveaux de lacunes fermés sur 3 cycles d'audit
+- 14 nouvelles clés de locale pour T10 + 2 pour T57 + 6 pour la passe d'audit 8 = 22 nouvelles clés de locale EN+FR
+- 38 services explicables via l'aiguillage de T26
+- 90 sites de remplissage de `nature` pour T31
+- workstation désormais profil de premier rang, distinct de desktop
 
-### Upgrade
+### Mise à jour
 
 `pipx upgrade bodyguard-of-bits`.
 
-Shifts comportementaux user-facing :
-- **Profile workstation distinct de desktop** (BREAKING)
-- **4 findings peuvent maintenant déduire des points** (T3 v0.8.0 + T31 v0.8.1) — score peut baisser 1-3pts
-- **`bob --fix --apply`** couvre 100% des actionable findings (était 12%)
-- **`bob --explain services.exposed.<svc>`** produit du contenu pour 38 services
-- **`bob --unignore=KEY`** existe (CLI symmetry avec `--ignore`)
-- **Webhook URLs credentials** affichées redacted
-- **FR audits cohérents** sur typographie colon
-- **Profile typos** émettent `logger.warning`
-- **`--show-ignored`** correctement documenté
+Changements de comportement visibles par l'utilisateur :
+- **Profil workstation distinct de desktop** (BREAKING — déposer une copie de desktop.conf dans `~/.config/bob/profiles/workstation.conf` pour préserver la sémantique de v0.8.0)
+- **4 constats peuvent désormais retirer des points** (T3 de v0.8.0 + T31 de v0.8.1) — un hôte avec des services critiques inactifs / des services actifs désactivés / une politique de pare-feu inconnue / un réseau snap de virtualisation voit son score baisser de 1 à 3 points
+- **`bob --fix --apply`** couvre 100 % des constats actionnables (c'était 12 % avant v0.8.1)
+- **`bob --explain services.exposed.<svc>`** produit du contenu pour les 38 services (c'était « No explanation available »)
+- **`bob --unignore=KEY`** existe désormais (symétrie de la CLI avec `--ignore`)
+- **Les URL de webhook portant des identifiants embarqués** s'affichent sous forme caviardée `https://[REDACTED]@host/path`
+- **Les audits en FR sont cohérents** sur la typographie des deux-points (espace-deux-points-espace partout)
+- **Les surcharges de profil comportant des fautes de frappe** émettent un `logger.warning` au lieu de ne rien faire en silence
+- **`--show-ignored`** : le rendu en ligne est correctement documenté dans la page de manuel (ne sort pas, ne déverse pas le YAML)
 
-**v0.7.x est désormais en fin de vie depuis le 05-06-2026** — déclaration formelle dans [SECURITY_FR.md](../SECURITY_FR.md), miroir du pattern qui a retiré v0.6.x en v0.7.2. Aucun correctif de sécurité ne sera backporté en v0.7.x ; les utilisateurs doivent `pipx upgrade bodyguard-of-bits` vers v0.8.x pour les patchs sécurité. La ligne v0.8.x est largement rétro-compatible avec v0.7.x via les re-exports `__init__.py` + `--json-v1` pour les consumers JSON legacy, sauf pour le shift BREAKING workstation décrit ci-dessus (copier `desktop.conf` vers `~/.config/bob/profiles/workstation.conf` pour restaurer la sémantique v0.7.x sur ce profil).
+**v0.7.x est en fin de vie depuis le 2026-06-05** — déclaration formelle dans [SECURITY.md](../SECURITY.md), sur le modèle de celle qui a retiré v0.6.x en v0.7.2. Aucun correctif de sécurité ne sera rétroporté en v0.7.x ; les utilisateurs doivent faire `pipx upgrade bodyguard-of-bits` vers v0.8.x pour recevoir les correctifs de sécurité. La ligne v0.8.x est largement rétrocompatible avec v0.7.x via les ré-exports de `__init__.py` + `--json-v1` pour les consommateurs JSON legacy, à l'exception du changement BREAKING du profil workstation décrit ci-dessus (déposer une copie de `desktop.conf` dans `~/.config/bob/profiles/workstation.conf` pour retrouver la sémantique de v0.7.x sur ce profil).
 
-v0.6.x reste EOL (déclaré en v0.7.2).
+v0.6.x reste en fin de vie (déclarée en v0.7.2).
 
 ---
 
@@ -9685,107 +10387,392 @@ v0.6.x reste EOL (déclaré en v0.7.2).
 
 ## [v0.7.3] — 02-06-2026
 
-**Troisième patch hardening v0.7.x — full deep-audit pass.**
+**Troisième patch hardening v0.7.x — passe d'audit complète en profondeur.**
 
-Audit sub-agent deep sur le codebase v0.7.2 a fait surfacer 0 Critique + 6 Important + 13 Mineur findings. Après cross-check de chaque finding dans le code, v0.7.3 ship 14 fixes (6I + 8M) et skip explicitement 5 mineurs avec rationale clair.
+Un audit en profondeur par sous-agent sur la base de code v0.7.2 a fait remonter 0 critique + 6 importants + 13 mineurs. Après vérification croisée de chaque constat dans le code, v0.7.3 livre 14 correctifs (6I + 8M) et écarte explicitement 5 mineurs, avec une justification claire.
 
-### Ce qui est fixé
+### Ce qui est corrigé
 
-#### Important
+#### I-1 — locale FR « finding » → « découverte »
 
-- **I-1 — locale FR "finding" → "découverte"** : v0.7.2 M-4 extraction avait laissé "finding" anglais dans 2 entries FR (`html_output.no_findings` / `findings_count`). Maintenant consistent avec le reste du codebase.
-- **I-2 — `completion.py` SUDO_USER non validé** ([bob/completion.py:36-37](../bob/completion.py)) : `pwd.getpwnam(sudo_user)` raisait `KeyError` non géré sur value malformée/spoofée. Guardé maintenant via même regex pattern + `try/except KeyError` que `sysinfo.get_user_home`.
-- **I-3 — colonne CSV `section` → `nature` (BREAKING)** ([bob/csv_output.py:26](../bob/csv_output.py)) : pre-v0.7.3 le CSV avait une colonne `section` qui portait en fait `Finding.nature`. Tests baked the mislabel. Consumers CSV externes parsant `section` recevaient nature strings. Header renommé pour matcher le contenu. CSV n'a pas de `schema_version` field donc wire-format break.
-- **I-4 — `manage_logs.py` 3 `input()` bruts → `safe_input()`** ([bob/manage_logs.py:104, 365, 388](../bob/manage_logs.py)) : violait convention projet #2 (chaque prompt interactif via `bob._tty.safe_input`). Ligne 104 retient `input()` brut pour readline integration ; 365/388 sans excuse.
-- **I-5 — scheme URL webhook case-insensitive** ([bob/webhook.py:206](../bob/webhook.py)) : `HTTPS://example.com` rejeté à tort. RFC 3986 permet toute casse ; normalisé via `url.lower()` pour le scheme check.
-- **I-6 — convergence guard level markdown/html** ([bob/markdown_output.py:131-138](../bob/markdown_output.py)) : les 2 extractions M-4 v0.7.2 utilisaient idiomes différents pour le fallback `effective_level`. Convergé sur l'idiom html plus sûr.
+Dans `bob/locales/fr.json`, `html_output.no_findings` valait `"Aucun finding détecté."` et `html_output.findings_count` valait `"{count} finding(s)"` — les deux laissaient fuiter le mot anglais « finding » dans les audits en français. Corrigés en `"Aucune découverte détectée."` et `"{count} découverte(s)"`. L'erreur était la mienne, à l'ajout des entrées de locale FR en v0.7.2 M-4.
 
-#### Mineur
+#### I-2 — SUDO_USER non validé dans `completion.py`
 
-- **M-2 — forme `--lang VALUE` espace-séparée acceptée** ([bob/cli.py:236-243](../bob/cli.py)) : pre-v0.7.3 seul `--lang=VALUE` accepté ; autres options value-taking supportaient les 2 formes.
-- **M-3 — `bob -e ""` empty key rejeté** ([bob/cli.py:308-313](../bob/cli.py)) : pre-v0.7.3 arg vide silencieusement consommé.
-- **M-4 — argv hardening sur `-w` / `--ignore` / `--output-dir`** ([bob/cli.py](../bob/cli.py)) : le check space-form exige maintenant que next arg ne commence pas par `-`, donc typos comme `bob -w --quiet` errent au parse-time au lieu de silencieusement setter `webhook_url="--quiet"`.
-- **M-5 — labels champs `report.py` i18n** ([bob/report.py:333-360](../bob/report.py)) : 6 labels EN hardcoded ("OK", "Warning", "Alert", "Score", "Risk", "Context") dans rapport `.txt` on-disk maintenant traduits via dict `labels=`. Nouvelles keys sous `report.field_*` + `report.summary_title` en `en.json` + `fr.json`.
-- **M-6 — fix double-escape URL chars `_inline_format`** ([bob/report_markdown.py:469-481](../bob/report_markdown.py)) : URLs contenant `&` `<` `>` `"` double-escapées (parent `html.escape` + `_safe_url`'s `html.escape(quote=True)`), produisant `&amp;amp;` dans `href="..."`. Fixé via `html.unescape(m.group(2))` avant `_safe_url`. Latent (pas de BOB-emitted Markdown trigger ça aujourd'hui) mais réel.
-- **M-10 — extract helper `set_posture_from_engine`** ([bob/scoring.py:683-720](../bob/scoring.py)) : setup posture-escalation dupliqué dans `bob/__main__.py` (audit summary) et `bob/watch.py` (boucle watch) consolidé en un seul helper. Ajoute aussi le guard dict-vs-int sur `domain_scores["firewall"]` (leçon Phase 1 4ed2e3b).
-- **M-11 — `send_html_email` CRLF stripping défensif** ([bob/report_markdown.py:565-578](../bob/report_markdown.py)) : `\r\n` strippés des headers `recipient`, `subject`, `from_email`. Défense en profondeur contre callers tainted futurs ; callers actuels internes BOB.
-- **M-12 — label risk html_output traduit** ([bob/html_output.py:140-152](../bob/html_output.py)) : pre-v0.7.3 le badge risk du summary header affichait `LOW`/`HIGH` quel que soit le locale. Maintenant les 2 surfaces utilisent le même contrat i18n. Nouvelles keys `html_output.risk_low/medium/high/critical` en `en.json` + `fr.json` (FR : `FAIBLE`/`MOYEN`/`ÉLEVÉ`/`CRITIQUE`).
+`bob/sysinfo.get_user_home` et `chown_to_sudo_user` protègent tous deux `pwd.getpwnam(sudo_user)` par `re.match(r"^[a-zA-Z0-9_.-]{1,256}$", sudo_user)` avant l'appel. `bob/completion.py:36-37` ne validait PAS — un `SUDO_USER` malformé ou usurpé (tout ce qui n'est pas dans `/etc/passwd`) faisait planter `install_completion()` avec une `KeyError` non gérée au lieu de renvoyer le code de sortie 3.
 
-### Skippés per `feedback-conservative-refactor` (5)
+v0.7.3 passe par la même regex + le motif `try/except KeyError`. La branche `else: candidate = None` continue en silence quand l'utilisateur n'existe pas.
 
-- M-1 f-string sans interpolation (registry.py)
-- M-7 timestamp CSV sur every row (by-design self-contained CSV)
-- M-8 `formatter.py` zéro in-tree consumers (documented stub future-API)
-- M-9 `_atomic.py` `BaseException` width (intentionnel — catches Ctrl+C pour tmp cleanup)
-- M-13 EXPLAIN_KEYS list→frozenset (perf cosmétique)
+#### I-3 — renommage de colonne CSV : `section` → `nature` (BREAKING)
 
-### Numbers
+`bob/csv_output.py:18-30` déclarait la colonne d'en-tête `"section"`, mais le remplissage des lignes à la ligne 64 utilisait `f.nature`, dont les valeurs documentées sont `"action" / "improvement" / "structural" / ""` (selon `bob/scoring.py:129`). Les tests de `tests/test_csv_output.py:143, 411, 487` avaient figé ce mauvais libellé (`assert rows[0]["section"] == "ssh_audit"` avec `nature="ssh_audit"`). Les consommateurs CSV externes qui lisaient la colonne `section` recevaient des chaînes de `nature`, pas des noms de sections d'audit.
 
-5490 → **5502 tests** (+12 net) : 1 pin CSV rename, 3 pins case-insensitivity webhook scheme, 6 pins CLI argv hardening, 2 pins traduction HTML risk-level. 0 régression.
+v0.7.3 renomme la colonne en `"nature"` pour correspondre aux données réelles. Le CSV n'a pas de champ `schema_version`, c'est donc une rupture du format de sortie pour les consommateurs externes ; le CHANGELOG documente clairement le renommage.
 
-### Upgrade
+Décision de l'utilisateur : `Rename section → nature` (option A) — le mauvais libellé était pire que le renommage. Tests mis à jour (`sed -i 's/"section"/"nature"/g'`) plus un nouveau pin explicite `TestCsvColumnNatureRename::test_header_carries_nature_not_section`.
 
-`pipx upgrade bodyguard-of-bits`.
+#### I-4 — 3 `input()` nus dans `manage_logs.py` violaient le contrat safe_input
 
-Seuls shifts comportementaux user-facing : rename colonne CSV (consumers externes doivent update), rapports audit `.txt` FR ont désormais labels champs FR (plus de mixed-language), rapports HTML ont badges risque FR en locale FR. Webhook URL scheme matching case-insensitive.
+La convention n° 2 du projet exige que toute invite interactive passe par `bob._tty.safe_input` ou `prompt_wizard`. `bob/manage_logs.py` avait 3 sites `input()` nus :
+
+  - Ligne 104 — l'invite de chemin intégrée au compléteur de chemins de readline. Le sous-agent a reconnu qu'elle a une « excuse d'intégration readline » — laissée telle quelle.
+  - Ligne 365 — invite de confirmation du déplacement des logs. Migrée vers `safe_input`.
+  - Ligne 388 — invite de confirmation de suppression totale. Migrée vers `safe_input`.
+
+La gestion manuelle `try/except EOFError: confirm = ""` d'avant v0.7.3 est équivalente à la sémantique EOFError→"" de `safe_input`.
+
+#### I-5 — schéma d'URL du webhook insensible à la casse
+
+`bob/webhook.py:206` faisait `url.startswith(("http://", "https://"))` — sensible à la casse. La RFC 3986 autorise les schémas en n'importe quelle casse (par ex. `HTTPS://...`). Avant v0.7.3 :
+
+  - `HTTPS://example.com` → rejeté avec l'erreur erronée `"must start with https:// (or http://...)"`.
+  - `Http://example.com` → rejeté à la ligne 206 au lieu de passer jusqu'à la garde http-insecure de v0.7.1 I-5 à la ligne 208.
+
+v0.7.3 normalise via `url_lower = url.lower()` et utilise `url_lower.startswith(...)` pour la garde de schéma comme pour la garde http-insecure. C'est toujours l'`url` d'origine qui atteint `urllib.request`, si bien que la vraie requête préserve la casse de l'utilisateur.
+
+Tests : 3 nouveaux pins dans `TestSendWebhookSchemeCaseInsensitive` — `HTTPS://...` accepté, `HtTpS://...` accepté, `HTTP://...` rejeté (sans la soupape).
+
+#### I-6 — convergence de la garde de niveau markdown/html
+
+L'extraction i18n M-4 de v0.7.2 a ajouté un repli `effective_level` dans `bob/markdown_output.py` et `bob/html_output.py`, mais avec des idiomes différents :
+
+  - markdown : `level_value = getattr(_eff_level, "value", "")` puis `level_value.capitalize() if level_value else t("...risk_unknown")`. Un mock avec `effective_level = SomeObj()` (sans attribut `.value`) retombe en silence sur « unknown ».
+  - html : `_eff_level is not None: str(_eff_level.value).upper()` sinon `t("...risk_unknown")`. Un mock sans attribut `.value` planterait.
+
+v0.7.3 fait converger markdown sur l'idiome plus sûr de html (contrôle `is not None` + accès direct à `.value`, qui fait apparaître une confusion de type via AttributeError). Le rendu capitalize contre upper est aussi documenté.
+
+#### M-2 — forme séparée par une espace `--lang VALEUR`
+
+`bob/cli.py:226-231` acceptait `--lang=VALEUR` mais pas `--lang VALEUR`. Toutes les autres options à valeur acceptent les deux formes. Avant v0.7.3, un utilisateur qui tapait `bob --lang fr` obtenait `CLIError: Unknown option: 'fr'`.
+
+v0.7.3 ajoute la branche de forme avec espace juste après la forme `=`, avec le contrôle standard « l'argument suivant ne commence pas par `-` ». Nouveau pin : `test_lang_accepts_space_separated_form`.
+
+#### M-3 — clé vide `bob -e ""` rejetée
+
+`bob/cli.py:302-304` consommait l'argument suivant s'il ne commençait pas par `-`. Pour `""`, c'était vrai, donc `config.explain_key = ""` était fixé. Puis `if config.explain_key:` à `__main__.py:84` valait False (une chaîne vide est fausse) — la branche explain était entièrement sautée, mais l'argument avait été consommé. Effet net = comme sans `-e`, sans aucune erreur.
+
+v0.7.3 ajoute un contrôle explicite de vide après la consommation : `if not value: raise CLIError("--explain requires a key...")`. Nouveau pin : `test_explain_empty_value_rejected`.
+
+#### M-4 — durcissement d'argv sur `-w`/`--ignore`/`--output-dir`
+
+Les branches de forme avec espace de ces trois drapeaux n'avaient pas le contrôle « l'argument suivant ne commence pas par `-` ». Une faute de frappe comme `bob -w --quiet` s'analysait en `webhook_url="--quiet"` ; pour `--ignore`, la valeur malformée échouait ensuite au validateur de clés canoniques de v0.7.1 M-5 avec un message déroutant ; pour `--output-dir`, un répertoire nommé `--quiet` était créé en silence.
+
+v0.7.3 ajoute le même contrôle `not argv[i+1].startswith("-")` aux trois drapeaux. La branche d'option inconnue attrape désormais la faute de frappe à l'analyse. Nouveaux pins : 3 tests (`test_webhook_space_form_rejects_dash_value`, `test_ignore_space_form_rejects_dash_value`, `test_output_dir_space_form_rejects_dash_value`).
+
+Le nettoyage plus large de la désambiguïsation d'argv reste un candidat pour v0.8.0 (tous les autres drapeaux ont encore la même forme, simplement personne n'a encore fait de faute de frappe dessus en pratique).
+
+#### M-5 — i18n des libellés de champs de `report.py`
+
+`bob/report.py:344-349` avait 6 libellés anglais codés en dur :
+
+```
+self._writeln(f"OK      : {ok_count}")
+self._writeln(f"Warning : {warn_count}")
+self._writeln(f"Alert   : {alert_count}")
+self._writeln(f"Score   : {score}/10")
+self._writeln(f"Risk    : {risk_str}")
+self._writeln(f"Context : {context_str}")
+```
+
+Le dict `labels=` ne portait que `"summary"` et `"breakdown"`. Un audit en français (`bob -d --french`) produisait un fichier `.log` avec des noms de champs anglais mêlés au reste du contenu français.
+
+v0.7.3 étend `labels=` avec 6 nouvelles entrées (`ok`, `warning`, `alert`, `score`, `risk`, `context`). L'appelant dans `bob/display.py:585-598` les remplit via `t("report.field_*")`. Nouvelles clés sous `report.field_*` + `report.summary_title` ajoutées à `en.json` et `fr.json`. FR : `Attention` / `Alerte` / `Risque` / `Contexte`.
+
+Les valeurs par défaut correspondent exactement à la sortie anglaise de v0.7.2, si bien que les appelants legacy (mocks de test antérieurs à l'extraction i18n) produisent le même contenu `.txt`.
+
+#### M-6 — correctif du double échappement des caractères d'URL dans `_inline_format`
+
+`bob/report_markdown.py:467-473` (le convertisseur en ligne Markdown→HTML des rapports par e-mail) appliquait `text = html.escape(text)` à TOUTE l'entrée, y compris l'URL du lien entre `(...)`. Puis `_LINK_RE.sub` correspondait et appelait `_safe_url(m.group(2))`, qui appelle à nouveau `html.escape(url, quote=True)` — double échappement.
+
+Impact concret : une URL `https://example.com/?a=1&b=2` devient `https://example.com/?a=1&amp;b=2` après le premier échappement, puis `https://example.com/?a=1&amp;amp;b=2` après le second. Le `href="..."` rendu porte la valeur doublement échappée.
+
+Latent en v0.7.x : le Markdown émis par BOB ne contient pas aujourd'hui d'URL avec `&` `<` `>` `"`. Mais le bug est réel.
+
+Correctif de v0.7.3 : `raw_url = html.unescape(m.group(2))` avant de passer à `_safe_url`. La partie libellé (`m.group(1)`) reste échappée une seule fois, comme il se doit.
+
+#### M-10 — extraction du helper `set_posture_from_engine`
+
+`bob/__main__.py:297-304` et `bob/watch.py:107-114` exécutaient tous deux :
+
+```python
+_fw = engine.domain_scores.get("firewall")
+engine.set_posture(
+    firewall_inactive=not fw_active,
+    iptables_input_accept=any(f.key == "iptables_nft.input_accept" for f in engine.findings),
+    firewall_domain_score=_fw["score"] if isinstance(_fw, dict) else None,
+)
+```
+
+Les deux sites avaient des idiomes de garde subtilement différents (`isinstance(_fw, dict)` contre `_fw`), mais la même intention.
+
+v0.7.3 extrait `bob.scoring.set_posture_from_engine(engine, fw_active)` comme source unique de vérité. Le helper consolide la garde dict-contre-int sur le score du domaine pare-feu, pour qu'un futur point d'entrée (par ex. un nouvel enveloppeur HTTP `bob/serve.py`) ne puisse pas passer par accident la mauvaise forme — la classe de régression 4ed2e3b de la Phase 1 est fermée par construction.
+
+Selon la règle `feedback-conservative-refactor` (« gain × risque = STOP »), ce serait limite s'il était livré seul (seulement 2 sites d'appel). Regroupé avec les autres changements de v0.7.3, la retouche de ces 2 fichiers s'amortit sur plusieurs modifications substantielles.
+
+#### M-11 — suppression défensive des CRLF dans `send_html_email`
+
+`bob/report_markdown.py:567-583` (l'expéditeur d'e-mail HTML du pipeline markdown-vers-html) fixait des en-têtes MIME depuis les `from_email`, `recipient`, `subject` fournis par l'appelant. `email.MIMEText` gère les valeurs bien formées, mais une valeur corrompue contenant un `\r\nBcc:` serait acceptée par certains MTA comme une injection d'en-tête.
+
+v0.7.3 retire les `\r\n` des trois en-têtes via un helper local `_strip_crlf`. Défense en profondeur ; les appelants actuels sont internes à BOB et non corrompus.
+
+#### M-12 — libellé de risque d'html_output traduit
+
+`bob/html_output.py:158` affichait le badge de niveau de risque via `str(_eff_level.value).upper()` — toujours en anglais (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`), quelle que soit la locale de l'audit. Les badges des constats en dessous utilisaient déjà les clés traduites `_LEVEL_LABEL_KEY`, si bien qu'un audit en français affichait `Aucune découverte détectée.` à côté de `<strong>LOW</strong>` — une ergonomie à deux langues.
+
+v0.7.3 fait passer le libellé de risque par `t(f"html_output.risk_{_eff_level.value}")`, avec un repli sur la valeur en majuscules quand la clé de locale manque (pour qu'une future valeur de l'enum RiskLevel fonctionne sans casser immédiatement le badge). Nouvelles clés dans `en.json` (`risk_low/medium/high/critical = LOW/MEDIUM/HIGH/CRITICAL`) et `fr.json` (`FAIBLE/MOYEN/ÉLEVÉ/CRITIQUE`). Pins : 2 tests (`test_french_locale_yields_translated_risk_label`, `test_fallback_to_uppercased_value_when_key_missing`).
+
+### Écartés selon `feedback-conservative-refactor` (5)
+
+  - **M-1** — `bob/registry.py:363` `f"..."` sans interpolation. Purement cosmétique ; le préfixe `f` n'a aucun impact fonctionnel. Écarté selon le refactor conservateur.
+  - **M-7** — horodatage/score/risque répétés sur chaque ligne de `csv_output.py`. Voulu — le CSV est autonome par ligne (l'intention de conception de v0.4.x). Le sous-agent l'a signalé « pour visibilité, pas pour action ». Écarté.
+  - **M-8** — `bob/formatter.py` n'a aucun consommateur dans l'arbre. La docstring de la ligne 6 explique déjà que c'est un bouchon pour la migration Option A de la Phase 2 déférée à v0.5.0+ ; le module est CONÇU comme un emplacement d'API future. Écarté jusqu'à ce que la migration avance.
+  - **M-9** — `except BaseException` à `bob/_atomic.py:68` est plus large qu'`except Exception` — mais le commentaire dit « TOUT chemin d'échec » délibérément. Attraper `KeyboardInterrupt` ici est NÉCESSAIRE pour que `os.unlink(tmp_name)` s'exécute et qu'on ne laisse pas de fichier `.tmp` sur Ctrl+C. La recommandation du sous-agent de restreindre à `Exception` réintroduirait le bug du tmp orphelin. Écarté.
+  - **M-13** — `bob/explain.py::EXPLAIN_KEYS` est une `list[str]` utilisée comme un ensemble dans `display.py:477` (O(n) par appel). 23 000 comparaisons par audit sont bien en dessous de tout seuil de perf ; `feedback-conservative-refactor` dit « gain × risque = STOP » — écarté.
+
+### Tests
+
+5490 → **5502** (+12 net), 0 régression. Détail :
+
+  - 1 nouveau pin dans `tests/test_csv_output.py::TestCsvColumnNatureRename` (I-3)
+  - 3 nouveaux pins dans `tests/test_webhook.py::TestSendWebhookSchemeCaseInsensitive` (I-5)
+  - 6 nouveaux pins dans `tests/test_cli.py::TestArgvHardeningV073` (M-2 + M-3 + M-4 × 4 drapeaux)
+  - 2 nouveaux pins dans `tests/test_html_output.py::TestHtmlRiskLevelTranslated` (M-12)
+
+La CI multi-Python (3.10/3.11/3.12/3.13/3.14) × multi-distro (Debian 12+13, Ubuntu 22.04+24.04+25.04, Kali, Fedora 41) valide après le push du tag.
+
+### Mise à jour
+
+```bash
+pipx upgrade bodyguard-of-bits
+sudo bob --version   # doit afficher 0.7.3
+```
+
+Changements de comportement visibles par l'utilisateur :
+
+  - **Le renommage de la colonne CSV `section` → `nature`** est un changement cassant pour les consommateurs externes qui analysent le CSV. Les données étaient déjà `Finding.nature` ; le renommage les étiquette simplement correctement. Mettez à jour vos analyseurs CSV.
+  - **Les rapports `.txt` des audits en français** ont désormais des libellés de champs en français (`OK / Attention / Alerte / Score / Risque / Contexte`) — fini le mélange de langues. Les audits en anglais sont inchangés.
+  - **Les rapports HTML** en locale française ont désormais des badges de risque en français (`FAIBLE` / `MOYEN` / `ÉLEVÉ` / `CRITIQUE`). Locale anglaise inchangée.
+  - **La correspondance du schéma d'URL du webhook** est désormais insensible à la casse. `HTTPS://example.com` fonctionne.
+  - **`bob --lang fr`** (forme avec espace) fonctionne désormais. Avant, seul `--lang=fr` marchait.
+  - **`bob -w --quiet`** (faute de frappe) donne désormais une erreur à l'analyse. Idem pour `--ignore --quiet` et `--output-dir --quiet`.
+
+### Contrat déféré
+
+**Le cycle d'audit v0.7.x est désormais entièrement clos.** Il ne reste aucun élément déféré pour v0.7.4. Si un nouvel audit sous-agent est lancé d'ici v0.8.0, ses constats seront triés directement dans v0.7.4. La mémoire `project_v08x_deferred` continue de suivre les éléments réservés à la prochaine majeure.
 
 ---
 
 ## [v0.7.2] — 01-06-2026
 
-**Deuxième patch hardening v0.7.x — clôture les 6 mineurs déférés par v0.7.1 + formalise EOL v0.6.x.**
+**Deuxième patch hardening v0.7.x — clôture les 6 mineurs déférés par l'audit sous-agent de v0.7.1 + formalise l'EOL de v0.6.x.**
 
-### Ce qui est fixé
+v0.7.1 a livré 4 importants + 3 mineurs ; l'audit avait fait remonter 8 mineurs de plus (comptés comme 6 actionnables, plus 1 résolu en ligne et 1 « skip-forever ») déférés à v0.7.2 selon le tri documenté « gain × risque ». Cette release solde entièrement ce contrat — il ne reste aucun backlog déféré pour v0.7.3.
 
-- **M-4 extraction i18n sur exports Markdown / HTML** — `bob/markdown_output.py` + `bob/html_output.py` routent maintenant chaque string user-facing via fonction `t(key, **kwargs)` optionnelle ; quand `t=None` (callers legacy / tests), un dict fallback EN `_FALLBACK_LABELS` dans chaque module fournit les strings v0.7.1 unchanged. Callers `__main__.py` passent le `t` + `lang` bound de l'audit pour que les exports héritent du locale opérateur. Nouvelles entries locale : 24 keys sous `markdown_output.*` + 22 keys sous `html_output.*` dans `en.json` + `fr.json`.
-- **M-6 sysinfo accepte IPv6 public IP** — `bob/sysinfo.py:199` regex `^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$` remplacée par validation `ipaddress.ip_address()` ; hosts v6-only reportent maintenant leur adresse publique réelle au lieu de string vide.
-- **M-7 collision tmp-file `_atomic.py` sous writers concurrents** — `tmp = path.with_suffix(path.suffix + ".tmp")` remplacé par `tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))`. Deux invocations `bob` concurrentes (cron + manuel + watch loop coïncident) ne racent plus sur le même tmp path.
-- **M-8 `SCHEMA_*_KEYS` wirés comme invariants enforced** — `bob/json_output.py` exporte les frozensets `SCHEMA_V1_REQUIRED_KEYS` / `SCHEMA_V1_FULL_KEYS` / `SCHEMA_V2_REQUIRED_KEYS` / `SCHEMA_V2_FULL_KEYS`. Nouvelle classe test `TestSchemaConstantsPinActualOutput` assert chaque frozenset matche ce que le producer émet.
-- **M-9 `--json-full --json-v1` help text** — `bob/cli.py:604` mentionne maintenant explicitement la combinaison.
-- **M-10 paths détection posture `display.py` dédupés** — extrait `_compute_posture_annotation(engine, t) -> tuple` helper remplaçant le pattern dupliqué pendant le hotfix v0.7.0.
-- **v0.6.x officiellement déclaré EOL dans `SECURITY.md` + `SECURITY_FR.md`** + GitHub Release v0.6.2 notes porte un banner EOL prominent.
+### Ce qui est corrigé
 
-### Numbers
+#### M-4 — extraction i18n des générateurs d'export HTML / Markdown
 
-5479 → **5490 tests** (+11 net) : 4 SCHEMA_*_KEYS pin tests (M-8), 3 pins routing i18n Markdown (M-4), 4 pins routing i18n HTML (M-4 + `lang` attr). 0 régression.
+`bob/markdown_output.py` et `bob/html_output.py` étaient livrés avec toutes les chaînes visibles codées en dur en anglais (« Summary », « Score Deductions », « Generated by [BOB] », `<html lang="en">`, etc.). Cela violait le contrat documenté du projet selon lequel toute chaîne visible passe par `t = bob.i18n.get_translation(lang); t("namespace.key")`. L'impact était faible (la sortie est hors ligne, pas le terminal où l'i18n est appliquée partout ailleurs), mais bloquait de futures locales comme `de.json` / `es.json` sur ces deux surfaces.
 
-### Skippés
+v0.7.2 :
 
-- M-11 (import Iterator cosmétique) NON shippé per `feedback-conservative-refactor` — skip-forever item.
+  - `build_markdown_output()` et `build_html_output()` acceptent toutes deux une fonction de traduction `t` optionnelle. Quand l'appelant passe `t` (en production : `bob/__main__.py` le fait désormais), chaque chaîne passe par elle. Quand `t=None` (appelants legacy / tests non mis à jour), un dictionnaire de repli anglais `_FALLBACK_LABELS` déclaré dans chaque module fournit les chaînes de v0.7.1 inchangées — c'est donc entièrement rétrocompatible.
+  - `build_html_output()` accepte aussi un kwarg `lang: str = "en"` qui fixe l'attribut `<html lang="...">`. `bob/__main__.py` passe `config.lang`, si bien que les audits en français obtiennent `<html lang="fr">`.
+  - 24 nouvelles clés sous `markdown_output.*` + 22 nouvelles clés sous `html_output.*` dans `bob/locales/en.json` et `bob/locales/fr.json`. La clé `findings_count` utilise une variable de gabarit `{count}` pour que les pluriels puissent se localiser correctement dans de futures locales (le FR actuel utilise le motif anglais « (s) » ; à affiner).
+  - 4 nouveaux pins HTML dans `tests/test_html_output.py::TestHtmlT18nExtraction` : `lang="en"` par défaut, propagation d'un `lang` personnalisé, une sentinelle `t` personnalisée routée par chaque clé, assertion de complétude du repli.
+  - 3 nouveaux pins Markdown dans `tests/test_markdown_output.py::TestMarkdownT18nExtraction` : repli anglais, routage par une sentinelle `t` personnalisée, complétude du repli.
 
-### Upgrade
+Le dictionnaire anglais `_FALLBACK_LABELS` de chaque module est la référence canonique pour les futurs traducteurs — copier ses valeurs dans `bob/locales/<lang>.json` sous l'espace de noms correspondant.
 
-`pipx upgrade bodyguard-of-bits`. Webhook `BOB_WEBHOOK_ALLOW_INSECURE=1` (v0.7.1 I-5) reste la seule env var opt-in.
+#### M-6 — la regex IPv4-only de `sysinfo.get_public_ip()` rejetait les réponses IPv6
+
+`bob/sysinfo.py:199` contenait `re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")`. Sur les hôtes où la requête HTTPS au fournisseur passe par IPv6 (typique des allocations FAI IPv6-only), les fournisseurs (ipify, icanhazip, ifconfig.me) renvoient une adresse v6 — que la regex rejetait, si bien que `get_public_ip()` renvoyait toujours `""` sur ces hôtes alors qu'ils avaient une adresse publique fonctionnelle. La fonction en aval `detect_network_context()` a un repli v6, donc la détection du contexte réseau fonctionnait encore, mais le champ JSON `public_ip` documenté dans le README ne reflétait pas la réalité.
+
+v0.7.2 : la regex est remplacée par `ipaddress.ip_address(response.strip())`, qui accepte syntaxiquement v4 et v6 tout en rejetant les chaînes malformées, les réponses de type nom d'hôte et autres déchets via `ValueError` (attrapée dans la clause `except` existante). Changement de trois lignes ; aucun test n'a cassé, car les tests existants utilisent des chaînes sentinelles plutôt que de vraies réponses de fournisseurs.
+
+#### M-7 — collision de fichier temporaire dans `_atomic.py` sous écritures concurrentes
+
+Avant v0.7.2, le nom du fichier temporaire suivait le motif fixe `path.with_suffix(path.suffix + ".tmp")`. Deux invocations `bob` concurrentes (job cron + `sudo bob` manuel + boucle watch déclenchée à l'heure — les trois peuvent coïncider sur un hôte de type serveur) se disputaient le même chemin `.tmp`. Le drapeau `O_TRUNC` laissait l'écrivain B écraser les octets de A en plein vol ; l'`os.replace` de A validait alors un fichier incohérent.
+
+v0.7.2 : remplacé par `tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))`, qui génère un nom temporaire unique par appel. En plus, un `try` / `except BaseException` enveloppe la boucle d'écriture du fichier temporaire pour qu'un renommage échoué déclenche un nettoyage `os.unlink(tmp_name)` — l'ancien code laissait des fichiers `.tmp` orphelins dans `~/.config/bob/` à chaque écriture échouée (rare, mais cumulatif).
+
+Le fsync de v0.7.1 M-2 (fd du fichier + fd du répertoire parent) reste intact.
+
+#### M-8 — frozensets `SCHEMA_*_KEYS` branchés comme invariants appliqués
+
+`bob/json_output.py` déclarait quatre frozensets publics (`SCHEMA_V1_REQUIRED_KEYS`, `SCHEMA_V1_FULL_KEYS`, `SCHEMA_V2_REQUIRED_KEYS`, `SCHEMA_V2_FULL_KEYS`) dont la docstring disait « Tests assert this set as a hard invariant ». Avant v0.7.2, ils étaient déclarés mais aucun test ne les importait — un renommage ou un ajout dans le producteur aurait laissé les frozensets silencieusement faux (motif d'API anticipé, documenté par la mémoire `feedback-release-monitoring`).
+
+v0.7.2 :
+
+  - `tests/test_json_schema_v2.py` importe les quatre frozensets et les utilise à la place de ses propres copies locales `EXPECTED_REQUIRED_KEYS_V2` / `EXPECTED_FULL_KEYS_V2`. Les copies locales sont désormais des alias des constantes de production, si bien que toute dérive future du producteur déclenche immédiatement les tests d'assertion v2 existants.
+  - La nouvelle classe de test `TestSchemaConstantsPinActualOutput` ajoute 4 pins explicites (1 par combinaison schéma × court/complet) qui affirment `set(data.keys()) == SCHEMA_X_KEYS` contre la sortie réelle du producteur. Le message du test inclut la différence symétrique, pour qu'un contributeur voie à la fois ce qui a été ajouté sans mettre à jour le frozenset ET ce qui a été retiré sans mettre à jour le producteur.
+
+#### M-9 — lacune du texte d'aide `--json-full --json-v1`
+
+La ligne d'aide de `bob/cli.py:604` mentionne désormais que `--json-v1` est « combinable avec `--json-full` / `-J` pour la mise en page complète legacy ». Correctif de documentation d'une ligne.
+
+#### M-10 — chemins de détection de posture de `display.py` consolidés
+
+Le motif `getattr(engine, "effective_level", engine.level)` + `unpack_posture_escalation(engine)` + recherche conditionnelle `t(key)` apparaissait à deux endroits : `_summary_header_lines` (cadre de score du terminal) et `print_audit_summary` (rapport `.txt` sur disque). Duplication de pur nettoyage, sans dérive de comportement entre les deux.
+
+v0.7.2 extrait `_compute_posture_annotation(engine, t) -> (effective_level, annotation: str)` au niveau du module. Les deux sites d'appel invoquent désormais le helper ; comportement identique, source unique de vérité pour l'affichage de la posture.
+
+Selon la règle mémoire `feedback-conservative-refactor` (« gain × risque = STOP »), ce changement de pur nettoyage a été regroupé avec M-4 dans le même commit v0.7.2, pour que la retouche de `display.py` s'amortisse sur plusieurs modifications substantielles. Pas livré comme refactor autonome.
+
+### v0.6.x officiellement déclarée EOL
+
+`SECURITY.md` et `SECURITY_FR.md` mis à jour :
+
+  - 0.7.x marquée ✅ courante
+  - 0.6.x marquée ❌ fin de vie (était courante avant v0.7.0)
+  - Nouveau paragraphe explicatif : « **v0.6.x est en fin de vie depuis le 2026-06-01** (le jour même de la sortie de v0.7.0). Aucun correctif de sécurité ne sera rétroporté en v0.6.x. Les utilisateurs de v0.6.x doivent faire `pipx upgrade bodyguard-of-bits` vers v0.7.x pour recevoir les correctifs de sécurité. La release v0.7.0 est rétrocompatible avec l'API publique de v0.6.x via les ré-exports de `__init__.py` + le drapeau `--json-v1` pour les consommateurs JSON legacy — la mise à jour est transparente pour la grande majorité des utilisateurs. »
+
+En plus, les notes de la GitHub Release v0.6.2 portent un bandeau EOL bien visible en tête (édité à la main via `gh release edit`).
+
+### M-11, élément « skip-forever »
+
+`bob/registry.py:30` `from typing import Iterator` est utilisé dans une seule annotation — pourrait être remplacé en ligne par `collections.abc.Iterator`. Selon `feedback-conservative-refactor` (« Pas de churn cosmétique : gain faible × risque non-nul = STOP »), c'est exactement le type de changement purement cosmétique qui n'apporte rien. **Non livré, et ne sera livré dans aucun futur patch v0.7.x.** Si un futur contributeur touche `registry.py` pour des raisons substantielles, il pourra le reprendre à coût marginal nul ; sinon, laisser tel quel.
+
+### Tests
+
+5479 → **5490** (+11 net), 0 régression. Détail :
+
+  - 4 nouveaux pins dans `tests/test_json_schema_v2.py::TestSchemaConstantsPinActualOutput` pour M-8
+  - 3 nouveaux pins dans `tests/test_markdown_output.py::TestMarkdownT18nExtraction` pour M-4 markdown
+  - 4 nouveaux pins dans `tests/test_html_output.py::TestHtmlT18nExtraction` pour M-4 html (dont l'attribut `lang`)
+
+Toutes les clés de locale ajoutées dans `bob/locales/{en,fr}.json` passent le scan AST existant de `tests/test_locale_coverage.py` (46 nouvelles clés × 2 locales = 92 assertions exécutées, toutes vertes).
+
+La CI multi-Python (3.10/3.11/3.12/3.13/3.14) × multi-distro (Debian 12+13, Ubuntu 22.04+24.04+25.04, Kali, Fedora 41) valide après le push du tag.
+
+### Mise à jour
+
+```bash
+pipx upgrade bodyguard-of-bits
+sudo bob --version   # doit afficher 0.7.2
+```
+
+Aucun changement du contrat CLI. Aucun changement du contrat JSON. Les exports Markdown / HTML produisent une sortie visiblement localisée quand l'audit tourne en français (`--french` ou `BOB_LANG=fr`) — avant v0.7.2, ils étaient toujours en anglais.
+
+### Contrat déféré
+
+**Le cycle d'audit v0.7.x est désormais entièrement clos.** Il ne reste aucun élément déféré pour v0.7.3 — si un nouvel audit sous-agent est lancé d'ici v0.8.0, ses constats seront triés directement dans v0.7.3. La mémoire `project_v08x_deferred` continue de suivre les éléments réservés au prochain bump majeur.
 
 ---
 
 ## [v0.7.1] — 01-06-2026
 
-**Premier patch hardening v0.7.x — follow-up same-day à v0.7.0 final.**
+**Premier patch hardening v0.7.x — suivi le jour même de v0.7.0 finale.**
 
-Audit sub-agent deep sur le codebase v0.7.0 complet a surfacé 0C + 5I + 11M findings ; v0.7.1 ship 4 important + 3 minor (le reste déféré à v0.7.2).
+Un audit en profondeur par sous-agent sur toute la base de code v0.7.0 (le même schéma qui a piloté v0.5.5, v0.6.1, la Phase 2.1, T3 Step 4) a fait remonter 0 critique + 5 importants + 11 mineurs. v0.7.1 livre 4 importants + 3 mineurs. Le 1 important et les 8 mineurs restants sont déférés à v0.7.2 (voir la section « Déféré » ci-dessous) ; les 5 « limitations connues » documentées et épinglées par v0.7.0 (évasion architecturale PEP 416 + contournement I-1 par dict non lié sur les builtins du bac à sable) ne sont PAS dans le périmètre et restent volontairement ouvertes, conformément au « Modèle de menace » de `SECURITY.md`.
 
-### Ce qui est fixé
+### Ce qui est corrigé
 
-- **I-1 drift contrat watch-mode** — `bob --watch` créait un `ScoreEngine()` neuf par iteration mais n'appelait jamais `engine.set_posture(...)` et ne settait jamais `engine.ignore_keys = load_ignore_keys()`. Résultat : un host dont UFW vient de tomber continuait à afficher "risque FAIBLE" en watch mode alors que le prochain audit non-watch escalait correctement en HIGH. Fixé en propageant ignore list + règles posture v0.7.0 per iteration, et affichant `engine.effective_level.value` next to le score bar.
-- **I-2 drift signature `MarkdownReport.write_summary`** — `display.print_audit_summary` (appelé uniquement sur `AuditReport` aujourd'hui) passe `posture_annotation=...` à `report.write_summary`. Le Protocol `Report` et l'impl `MarkdownReport.write_summary` n'acceptaient PAS le kwarg. Bug ne fire pas aujourd'hui mais c'est une mine. Fixé en ajoutant `posture_annotation: str = ""` aux deux.
-- **I-3 break wire-format `risk` JSON v1** — v0.7.0 Phase 1 avait silencieusement shifté `risk` dans le schema v1 JSON de `engine.level.value` (score-derived) à `engine.effective_level.value` (posture-escalated). Cassait le contrat documenté "v1 layout matches v0.6.x EXACTLY". v0.7.1 revert le shift ; consumers v1 restent gelés à la sémantique v0.6.x. Consumers nécessitant la valeur escalated migrent à v2's `posture_escalation.score_level`.
-- **I-5 URL webhook plaintext acceptée** — `send_webhook(url, ...)` acceptait `http://` et `https://`. Payload audit contient hostname + public_ip + score + alerts — leak posture audit en plaintext sur tout path réseau. v0.7.1 rejette `http://` par défaut ; opt out via nouvelle env var `BOB_WEBHOOK_ALLOW_INSECURE=1`.
-- **M-1 import non utilisé** — `from typing import Any` dans `bob/plugin_checks.py` resté après le retrait T3 Step 3.
-- **M-2 `_atomic.py` ne fsync pas** — docstring promettait persistance crash-safe mais l'impl skippait `fsync(fd)` avant close ET `fsync(dir_fd)` après rename. Fsync sur les 2 fds maintenant.
-- **M-5 `--ignore=KEY` ne validait pas le pattern** — `add_ignore_key("anything goes here")` silencieusement accepté, writer YAML splittait sur whitespace et truncait au premier mot. v0.7.1 valide contre le pattern canonique EXPLAIN_KEYS AVANT le write ; bad keys retournent `EXIT_ERROR=3` avec hint.
+#### I-1 — `bob --watch` ne propageait ni l'escalade de posture ni ignore.yml
 
-### Numbers
+La boucle watch créait un `ScoreEngine()` neuf à chaque itération (correct — chaque audit doit être indépendant), mais ne fixait jamais `engine.ignore_keys = load_ignore_keys()` et n'appelait jamais `engine.set_posture(...)`. Résultat :
 
-5466 → 5479 tests (+13 net) : 5 pins ignore-validation, 1 atomic fsync spy, 2 pins webhook http rejection, 3 pins MarkdownReport signature parity, 2 pins watch-mode propagation. JSON contract test renamed + body inverted (`test_v1_risk_pins_score_only_level_not_effective_level`).
+  - Un hôte dont l'UFW venait de tomber (firewall_inactive déclenché) continuait d'afficher `LOW risk` dans `bob --watch=30`, alors que l'audit hors watch suivant affichait correctement `HIGH risk (raised by posture: firewall inactive)`. Watch était l'entrée « facile » pour surveiller précisément ce genre d'incident — et il le cachait.
+  - Les constats du `~/.config/bob/ignore.yml` de l'utilisateur réapparaissaient à chaque itération watch : la déduction était appliquée, le WARN imprimé, l'opérateur agacé deux fois par minute.
+
+v0.7.1 :
+
+  - `engine.ignore_keys = load_ignore_keys()` fixé juste après la construction, à chaque itération.
+  - `engine.set_posture(firewall_inactive=not result.fw_active, iptables_input_accept=..., firewall_domain_score=...)` appelé après `finalize()` + `apply_domain_score_override()`, avec la même forme d'entrée que celle utilisée par `bob/__main__.py` pour le chemin d'audit hors watch.
+  - La ligne par itération de watch imprime désormais `[effective_level]` à côté de la barre de score, pour que l'opérateur voie immédiatement le niveau remonté par la posture (par ex. `[high]` sur un hôte au pare-feu tombé au lieu de `[low]`).
+  - `_score_bar()` rejette désormais explicitement `bool` (sous-classe de `int`) — aligné sur la garde I-3 de la Phase 2.1 de v0.7.0 dans `ScoreEngine.set_posture`. Sans elle, `_score_bar(True)` renvoyait silencieusement `"█░░░░░░░░░"` parce que `isinstance(True, int) is True`. Défensif ; aucun appelant de production ne passe un bool.
+
+#### I-2 — le Protocol `Report` + `MarkdownReport.write_summary` n'acceptaient pas `posture_annotation`
+
+`bob/display.py:567` passe `posture_annotation=...` à `report.write_summary` (ajouté en v0.7.0 Phase 2.1 M-3 pour le rapport `.txt`). Le Protocol `Report` de `bob/report.py:72-83` ET l'implémentation `MarkdownReport.write_summary` de `bob/report_markdown.py:152-163` gardaient tous deux la signature à 9 paramètres de v0.6.x. Aujourd'hui le bug ne se déclenche pas, parce que `display.print_audit_summary` ne reçoit jamais que des instances `AuditReport` / `NullReport` — mais la dérive de contrat est une mine : toute future plomberie qui ferait passer le résumé d'audit par `MarkdownReport` (par ex. le chemin d'e-mail HTML-via-Markdown prévu) lèverait un TypeError à chaque appel.
+
+v0.7.1 ajoute `posture_annotation: str = ""` au Protocol et à `MarkdownReport.write_summary`. L'implémentation Markdown rend l'annotation entre parenthèses à côté de la ligne Risk (`| Risk | HIGH (raised by posture: firewall inactive) |`) — même forme que le rapport `.txt`. Trois nouveaux tests dans `test_report.py::TestMarkdownReportWriteSummarySignatureParity` épinglent la parité des signatures via `inspect.signature`, ainsi que le rendu pour une annotation vide et non vide.
+
+#### I-3 — le champ `risk` du JSON v1 avait changé de sémantique en silence en v0.7.0
+
+Le schéma v1 est documenté (`DOCUMENTS/README_TECH.md`, « JSON output schema ») comme « v0.6.x à l'identique ». La Phase 1 de v0.7.0 a déplacé en silence le champ `risk` de v1 de `engine.level.value` (dérivé du score) vers `engine.effective_level.value` (remonté par la posture). Conséquence concrète :
+
+  - Un consommateur v0.6.x qui fait `if data["risk"] == "low": green` verrait `"high"` sur un hôte au score 9 (LOW) mais à l'UFW inactif — alors même que le champ score dit toujours 9.
+  - La docstring de v0.7.0 à `bob/json_output.py:178-183` reconnaissait bien ce déplacement, mais le contrat « v1 à l'identique » est l'invariant le plus fort. v0.7.1 revient en arrière : `data["risk"] = engine.level.value` à nouveau.
+
+Les consommateurs qui ont besoin de la valeur remontée par la posture doivent migrer vers `posture_escalation.score_level` de v2 (le niveau d'origine dérivé du score, plus un champ `applied: bool`) et le `risk_level` de premier niveau de v2 (la valeur remontée, équivalente à ce que v0.7.0 mettait par erreur dans v1).
+
+Le test préexistant `test_v1_risk_reflects_effective_level_not_score_only` était le pin M-5 de la Phase 2.1 de v0.7.0 pour ce déplacement. v0.7.1 le renomme en `test_v1_risk_pins_score_only_level_not_effective_level` et inverse son corps pour affirmer le retour arrière, si bien qu'un nouveau déplacement ferait échouer la suite avant le push du tag.
+
+#### I-5 — le webhook acceptait des URL `http://` en clair
+
+`bob/webhook.py:200` acceptait à la fois `http://` et `https://`. La « Surface réseau » de `SECURITY.md` documente le webhook comme HTTPS seulement, parce que la charge utile contient `hostname + public_ip + score + alerts` — exactement les données qu'un attaquant sur le chemin voudrait pour un bruteforce ciblé ou un rapprochement de vulnérabilités. Un utilisateur qui copiait-collait une URL de point de terminaison mal configurée produisait en silence une fuite en clair à chaque audit.
+
+v0.7.1 rejette `http://` avec un message d'erreur clair :
+
+> `Webhook URL is plain http:// — audit payload would be sent unencrypted. Use https:// or set BOB_WEBHOOK_ALLOW_INSECURE=1 to override`
+
+La nouvelle variable d'environnement `BOB_WEBHOOK_ALLOW_INSECURE=1` est la soupape pour les labos hors ligne / réseaux privés où l'opérateur a audité le chemin. Documentée dans le message de `WebhookError` et épinglée par `tests/test_webhook.py::TestSendWebhookInvalidUrl::test_rejects_plain_http_by_default` + `::test_plain_http_accepted_with_escape_hatch`.
+
+#### M-1 — import périmé `from typing import Any` dans `bob/plugin_checks.py`
+
+Reste de T3 Step 3, quand le champ de dataclass `_module: Any` a été retiré. Suppression d'une ligne. Aucun changement de comportement.
+
+#### M-2 — `_atomic.py` ne faisait de fsync ni sur les données ni sur l'inode du répertoire parent
+
+La docstring du module promettait « une coupure de courant / SIGKILL / OOM entre le début de `atomic_write` et son retour réussi laisse le fichier de destination dans son état précédent ». En mode de journal ext4 par défaut `data=ordered` et sur la plupart des autres systèmes de fichiers Linux, l'implémentation ne suffisait pas à tenir cette promesse :
+
+  - `os.replace(tmp, dest)` ne garantit l'atomicité du renommage que du point de vue du noyau. La durabilité du renommage en cas de coupure de courant exige un fsync de l'inode du répertoire parent.
+  - Les données du nouveau fichier n'atteignent le stockage stable qu'après `fsync(fd)` sur le descripteur de fichier ouvert du fichier temporaire. Sans cela, les métadonnées du renommage peuvent être validées avant les données, laissant un fichier de zéro octet après une coupure de courant.
+
+v0.7.1 : `fh.flush() + os.fsync(fh.fileno())` avant la fermeture, puis `os.fsync(dir_fd)` sur l'inode du répertoire parent après `os.replace`. Le fsync du répertoire parent est best-effort (certains systèmes de fichiers / options de montage le rejettent avec `EINVAL` — `tmpfs`, certains montages réseau), donc l'OSError y est avalée. Le nouveau test `test_atomic_write_calls_fsync_on_fd_and_parent_dir` espionne `os.fsync` pour vérifier que les deux appels ont lieu.
+
+#### M-5 — `--ignore=KEY` acceptait n'importe quelle chaîne et tronquait en silence les valeurs à plusieurs mots
+
+`add_ignore_key("anything goes here")` produisait `- key: anything` dans `ignore.yml` (l'écrivain YAML coupait sur l'espace dès le premier caractère de la valeur). Le `_KEY_LINE_RE = r"^\s*-\s+key:\s+(\S+)\s*$"` du chargeur faisait ensuite correspondre `"anything"`, qui ne correspond à aucune clé de constat d'audit — l'ignore voulu par l'utilisateur ne faisait donc rien à l'audit suivant. Bug d'ergonomie, pas de sécurité, mais signalé par assez d'utilisateurs perplexes (selon l'audit) pour que v0.7.1 le ferme.
+
+v0.7.1 :
+
+  - Le nouveau `bob.ignore.is_valid_ignore_key(key)` valide contre le motif canonique d'EXPLAIN_KEYS `r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$"` — la même forme que celle imposée par `tests/test_explain_naming_convention.py` sur les 117 clés / 30 préfixes déclarés dans `bob/explain.py`.
+  - `add_ignore_key()` appelle d'abord `is_valid_ignore_key()` ; une mauvaise clé renvoie `False` et saute entièrement l'écriture (le fichier n'est ni créé ni touché).
+  - Le gestionnaire CLI de `bob/__main__.py` valide AVANT l'écriture et renvoie `EXIT_ERROR=3` avec une indication : « Invalid key {key!r} — expected canonical `<prefix>.<finding_id>` snake_case. Run `bob --explain list` to see the available keys. »
+
+Cinq nouveaux pins dans `tests/test_ignore.py::TestAddIgnoreKey` : mot nu sans point, majuscules, espaces, préfixe numérique, et un pin d'acceptation positive pour la forme canonique.
 
 ### Déféré à v0.7.2
 
-I-4, M-4, M-6, M-7, M-8, M-9, M-10, M-11.
+  - **I-4** — un bool passe le contrôle `isinstance(int)` à `bob/watch.py:140-141`. Déjà corrigé en ligne dans v0.7.1 dans le cadre du travail sur I-1 (la garde explicite `isinstance(score, bool) or not isinstance(score, int)`) ; marqué ici comme résolu par symétrie, pas déféré.
+  - **M-4** — `bob/html_output.py` + `bob/markdown_output.py` sont livrés avec des titres anglais codés en dur (« Summary », « Score Deductions », « Generated by BOB », `<html lang="en">`). Hors de la politique `t()` appliquée partout ailleurs. Déféré parce que le correctif est une passe d'extraction de locale de 30 lignes, mieux appariée à la prochaine campagne i18n (quand des traducteurs `de.json` / `es.json` arriveront).
+  - **M-6** — la détection d'IP publique IPv4-only de `bob/sysinfo.py:199` échoue en silence sur les hôtes v6-only. Vrai cas limite, impact faible : la détection du contexte réseau a un repli v6, donc la chaîne d'audit fonctionne encore. Correctif facile de deux lignes avec `ipaddress.ip_address()`, mais déféré à v0.7.2 parce qu'il change la forme d'un champ JSON documenté.
+  - **M-7** — collision de fichier temporaire de `bob/_atomic.py` sous écritures concurrentes. Vraie course (cron + watch + exécution manuelle peuvent coïncider), faible probabilité, déféré à v0.7.2 avec une réécriture en `tempfile.NamedTemporaryFile`.
+  - **M-8** — frozensets publics `SCHEMA_*_KEYS` de `bob/json_output.py` sans aucun consommateur. Selon la mémoire `feedback_release_monitoring` — API anticipée. Soit les supprimer, soit les brancher sur un invariant de test ; déféré à v0.7.2.
+  - **M-9** — la combinaison valide `--json-full --json-v1` n'est pas mentionnée dans `bob --help`. Cosmétique.
+  - **M-10** — chemins de détection de posture dupliqués dans `bob/display.py`. Pur refactor — selon `feedback_conservative_refactor` (« gain × risque = STOP »), déféré indéfiniment sauf s'il est apparié à un autre changement dans le même fichier.
+  - **M-11** — import cosmétique de `Iterator`. Ignoré entièrement.
 
-### Upgrade
+### Tests
 
-`pipx upgrade bodyguard-of-bits`. Aucun changement contrat CLI ; consumers v1 JSON peuvent voir `risk` revert de posture-escalated à score-derived (intentionnel — c'est le fix I-3).
+5466 → **5479** (+13 net). Détail :
+
+  - 5 nouveaux pins dans `tests/test_ignore.py` pour la validation des clés canoniques (M-5)
+  - 1 nouveau pin dans `tests/test_atomic_v061.py` pour les appels fsync (M-2)
+  - 2 nouveaux pins dans `tests/test_webhook.py` pour le rejet de http:// + la soupape (I-5)
+  - 3 nouveaux pins dans `tests/test_report.py::TestMarkdownReportWriteSummarySignatureParity` pour la parité du Protocol (I-2)
+  - 2 nouveaux pins dans `tests/test_watch.py::TestWatchContractParity` pour la propagation d'ignore + posture (I-1)
+
+Plus 3 tests mis à jour (pas des ajouts nets) :
+
+  - `tests/test_watch.py::test_bool_is_accepted` → `test_bool_raises_type_error` (assertion inversée pour I-4)
+  - `tests/test_json_schema.py::test_v1_risk_reflects_effective_level_not_score_only` → `test_v1_risk_pins_score_only_level_not_effective_level` (assertion inversée pour I-3)
+  - 3 tests de `tests/test_ignore.py` qui utilisaient des fixtures de clé non canoniques « k » / « k1 », mis à jour vers le motif canonique
+
+Les 5479 passent sur Python 3.12.3 en local. La CI multi-Python (3.10/3.11/3.12/3.13/3.14) + multi-distro (Debian 12+13, Ubuntu 22.04+24.04+25.04, Kali, Fedora 41) validera après le push du tag.
+
+### Mise à jour
+
+```bash
+pipx upgrade bodyguard-of-bits
+sudo bob --version   # doit afficher 0.7.1
+```
+
+Aucun changement du contrat CLI. Le seul changement de comportement visible est le retour arrière d'I-3 : quiconque consomme le `risk` du JSON v1 le verra repasser au niveau dérivé du score (typiquement de « high » à « low » sur un hôte au pare-feu tombé et au score bas). C'est l'intention — v1 doit se comporter comme v0.6.x.
+
+Quiconque utilise des webhooks avec des URL `http://` doit soit passer à `https://`, soit fixer `BOB_WEBHOOK_ALLOW_INSECURE=1` dans l'environnement d'exécution de bob.
 
 ---
 
@@ -9843,7 +10830,7 @@ D-1 sections renumber, D-2 fusion `_ALL_SECTIONS`+`_ALWAYS_ON_SECTIONS`, D-3 ret
 
 - **C-1** : `from pathlib import os` smuggleait module `os` live au-delà de l'allowlist d'import ; strip list manquait `posix_spawn` / `open` / `write` / `chmod` / `unlink` / `environ` / `chdir`.
 - **C-2** : RCE processus parent via pickle `mp.Queue` : plugin obtenait `eval` réel via `json.dumps.__globals__["__builtins__"]`, construisait classe avec `__reduce__` malicieux, attachait à `findings[0].template_vars`, le `q.get()` parent unpicklait et lançait `os.system` sous sudo.
-- **Échappement architectural** : `real_import = json.dumps.__globals__["__builtins__"]["__import__"]` puis `real_import("subprocess")` — bypass tout hook en 5 lignes, consensus communauté Python depuis PEP 416 retiré (2012).
+- **Échappement architectural** : `real_import = json.dumps.__globals__["__builtins__"]["__import__"]` puis `real_import("subprocess")` — bypass tout hook en 5 lignes, consensus de la communauté Python depuis le rejet de la PEP 416 (2012).
 
 ### Décision stratégique : Option B — défense en profondeur honnête + AppArmor real boundary
 
@@ -9996,43 +10983,63 @@ La ligne stable v0.6.x n'est pas affectée. Le canal beta est purement opt-in vi
 
 ## [v0.6.2] — 29-05-2026
 
-**Hotfix packaging critique.** Tous les wheels shippés depuis v0.6.0 (v0.6.0 + v0.6.1) manquaient `bob/checks/ssh/` et `bob/cron/`. Voir `CHANGELOG_FR.md` pour le détail. Notes spécifiques à ce doc FULL :
+**Hotfix critique de packaging.** Chaque wheel livrée depuis v0.6.0 (v0.6.0 + v0.6.1) omettait `bob/checks/ssh/` et `bob/cron/` — les deux sous-paquets introduits par les découpages de v0.6.0. Les utilisateurs qui ont fait `pipx upgrade` se heurtaient à `ModuleNotFoundError: No module named 'bob.checks.ssh'` au démarrage. Voir `CHANGELOG.md` pour le récit complet de la cause racine et du correctif. Notes propres à ce document FULL :
 
 ### Pourquoi ce bug est intéressant
 
-C'est un cas d'école du failure mode "tests passent, ship casse". Trois couches de tests avaient chacune une raison de ne pas le catcher :
+C'est un exemple d'école du mode d'échec « les tests passent, la livraison casse ». Trois couches de tests avaient chacune une raison de ne pas l'attraper :
 
-1. **Tests unitaires** importent depuis le source tree. Le package `bob.checks.ssh` existe comme répertoire dans le working tree ; la résolution d'import Python le trouve via `sys.path` contenant le repo root. La config packaging discovery dans `pyproject.toml` est complètement bypassée.
+1. **Les tests unitaires** importent depuis l'arborescence source. Le paquet `bob.checks.ssh` existe comme répertoire dans l'arbre de travail ; la résolution d'import de Python le trouve via un `sys.path` qui contient la racine du dépôt. La configuration de découverte des paquets de `pyproject.toml` est entièrement contournée.
 
-2. **Smoke pre-ship `sudo python3 -m bob`** tournait depuis le working tree. Même résolution source-tree. Le smoke sur so6desktop reportait `BOB v0.6.1` et un audit normal — exactement parce qu'il chargeait le source directement, pas le wheel v0.6.1.
+2. **Le smoke `sudo python3 -m bob` d'avant livraison** tournait depuis l'arbre de travail (`cd ~/github/bodyguard-of-bits && sudo python3 -m bob …`). Même résolution depuis les sources. Le smoke test sur so6desktop affichait `BOB v0.6.1` et un audit normal — précisément parce qu'il chargeait les sources directement, pas la wheel v0.6.1.
 
-3. **CI `integration.yml`** utilisait `pip install -e .` (mode editable). Les editable installs ajoutent le repo root à `site-packages` via un fichier `.pth`. Ils bypassent DÉLIBÉRÉMENT la discovery `find_packages()` pour iteration rapide.
+3. **`integration.yml` de la CI** utilisait `pip install -e .` (mode éditable). Les installations éditables ajoutent la racine du dépôt à `site-packages` via un fichier `.pth`. Elles contournent DÉLIBÉRÉMENT la découverte `find_packages()` pour itérer vite. Le job d'intégration testait donc l'arbre source enveloppé dans un venv — pas la wheel.
 
-Le bug surface seulement quand : (a) un wheel est build, (b) installé là où le source tree N'est PAS sur `sys.path`, (c) l'installer import un module depuis un sous-package manquant.
+Le bug n'apparaît que lorsque :
+- une wheel est construite (`python -m build` ou `python setup.py bdist_wheel`)
+- cette wheel est installée à un endroit où l'arbre source n'est PAS sur `sys.path`
+- l'installation importe ensuite un module d'un sous-paquet manquant
 
-C'est exactement le workflow pipx upgrade.
+C'est exactement le flux `pipx upgrade` : pipx télécharge la wheel depuis PyPI, l'installe dans un venv privé (`~/.local/share/pipx/venvs/bodyguard-of-bits/`), et le shim binaire `bob` invoque `python -c "from bob.__main__ import main"`. Avec ssh/ et cron/ manquants, la chaîne d'import de runner.py plante.
 
-### Mécanique du fix
+### Mécanique du correctif
 
-Changement d'1 ligne dans `pyproject.toml` :
+Le changement d'une ligne dans `pyproject.toml` :
 ```diff
 -include = ["bob", "bob.checks", "bob.tui"]
 +include = ["bob*"]
 ```
 
-Le glob `bob*` matche tout package commençant par `bob`. C'est `bob`, `bob.checks`, `bob.checks.ssh`, `bob.cron`, `bob.tui`, et tout futur `bob.something`.
+Le glob `bob*` correspond à tout paquet dont le nom commence par `bob` (le `*` est un glob setuptools, pas une regex). Cela donne `bob`, `bob.checks`, `bob.checks.ssh`, `bob.cron`, `bob.tui`, et tout futur paquet `bob.something`. La garde d'origine (exclure d'éventuels répertoires `bob_*` de premier niveau qui ne sont pas des paquets) est préservée, parce que le glob ne correspond qu'aux vrais paquets Python découverts par `find_packages()`.
 
-### Hardening CI
+### Durcissement de la CI
 
 Deux changements complémentaires dans `.github/workflows/integration.yml` :
 
-**(1)** `pip install -e .` → `pip install .` — chaque distro build et install un vrai wheel.
+**(1) `pip install -e .` → `pip install .`**
 
-**(2)** Nouveau smoke step explicite qui import chaque module v0.6.x-ajouté. Tout futur contributeur qui ajoute un `bob/foo/` sous-package doit étendre cette liste.
+Supprime le contournement du mode éditable. Chaque distro de la matrice construit et installe désormais une vraie wheel — le même chemin de code que celui des utilisateurs PyPI. Tout futur bug de configuration de packaging apparaîtra désormais sur chaque PR avant fusion.
 
-### Validation cross-distro
+**(2) Nouvelle étape de smoke explicite**
 
-Le nouveau smoke step CI a tourné sur les 7 distros (Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali rolling, Fedora 41) pour le push v0.6.2 et passe partout. Confirme que le fix est correct et le garde opérationnel.
+```yaml
+- name: Smoke — packaging includes all subpackages
+  run: |
+    python3 -c "import bob.checks.ssh; from bob.checks.ssh import check_ssh, SSHSnapshot"
+    python3 -c "import bob.cron; from bob.cron import CronEntry, run_install_cron, _atomic_write"
+    python3 -c "from bob._atomic import atomic_write"
+    python3 -c "from bob._tty import safe_input, prompt_wizard, read_line"
+```
+
+Les quatre imports couvrent chaque module ajouté en v0.6.x. Tout futur contributeur qui ajoute un sous-paquet `bob/foo/` doit étendre cette liste — un smoke test qui échoue est plus visible qu'une wheel qui exclut discrètement un répertoire.
+
+### Validation multi-distro
+
+La nouvelle étape de smoke de la CI a tourné sur les 7 distros (Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali rolling, Fedora 41) pour le push de v0.6.2 et a réussi partout. Cela confirme que le correctif est juste et que la garde est opérationnelle.
+
+### Ce que cela change à la base de la campagne d'audit
+
+La campagne d'audit en profondeur v0.5.x d'avant v0.6.2 se concentrait sur la justesse du code (bugs de logique, violations de contrat, odeurs de sécurité). Ce bug relève d'une autre catégorie : **la dérive de configuration du système de build / packaging**. L'audit excluait `pyproject.toml` de son périmètre, parce que ce n'est pas du code Python qui s'exécute pendant l'audit. Ajouter la configuration de packaging aux périmètres des futurs audits est une leçon consignée dans la mémoire `project_v062_packaging_hotfix.md`.
 
 ### Tests
 
@@ -10041,79 +11048,111 @@ $ python3 -m pytest tests/ -q
 .................. 4600 passed in ~6s
 ```
 
-**4600 inchangés.** Le fix est dans `pyproject.toml` (config packaging) et workflow CI (opérationnel), pas dans le code.
+**4600 inchangé.** Le correctif est dans `pyproject.toml` (configuration de packaging) et dans le workflow CI (opérationnel), pas dans le code. Cette classe de bug n'est pas testable unitairement depuis Python — la tester exige de construire une wheel et de la réinstaller, ce que fait précisément la nouvelle étape de CI.
 
-### Path d'upgrade
+### Chemin de mise à jour
+
+Si vous avez mis à jour vers v0.6.0 ou v0.6.1 via pipx, votre installation est actuellement cassée. Lancez :
 
 ```bash
 pipx upgrade bodyguard-of-bits
-bob --version  # doit afficher "bob 0.6.2"
-sudo bob --help > /dev/null  # doit pas crash
 ```
 
-### Leçons enregistrées
+pour obtenir la wheel v0.6.2 corrigée. Vérifiez avec :
 
-- **Editable installs cachent les bugs packaging.** Tous les CI integration utilisent `pip install .` désormais.
-- **Glob > liste figée** pour `setuptools.packages.find.include` dans les projets qui peuvent splitter des modules.
-- **Smoke import step pour chaque nouveau sous-package** : catch-all low-cost qui surface le bug class à CI time au lieu du runtime utilisateur.
-- **Les audits scopes devraient inclure `pyproject.toml`** pour le packaging drift, pas seulement le code Python runtime.
+```bash
+bob --version  # doit afficher "bob 0.6.2"
+sudo bob --help > /dev/null  # ne doit pas planter
+```
+
+### Leçons consignées
+
+- **Les installations éditables cachent les bugs de packaging.** Toute CI d'intégration utilise désormais `pip install .`.
+- **Un glob plutôt qu'une liste littérale** pour `setuptools.packages.find.include` dans les projets susceptibles de découper des modules.
+- **Une étape de smoke d'import pour chaque nouveau sous-paquet** est un filet bon marché qui fait apparaître cette classe de bug en CI plutôt qu'à l'exécution sur le système de l'utilisateur.
+- **Les périmètres d'audit doivent inclure `pyproject.toml`** pour la dérive de packaging, pas seulement le code Python exécuté.
 
 ---
 
 ## [v0.6.1] — 29-05-2026
 
-**Première release hardening sur la branche v0.6.x.** Sub-agent d'audit profond a produit 14 findings (0 critique + 6 important + 8 mineur) ; 6 important + 4 mineur shippés. L'audit a révélé deux **contrats demi-appliqués** depuis v0.5.x — atomic-write (paths de mutation fixés en v0.5.7 #I-3 mais pas les paths de création) et gestion EOF (`manage_logs.py` fixé en v0.5.7 #I-2 mais pas les wizards cron ni `fixes.py`) — plus une **branche validator non-testée** dans le parser de step cron. Tous adressés.
+**Première release de hardening de la branche v0.6.x.** Une passe d'audit en profondeur par sous-agent a produit 14 constats (0 critique + 6 importants + 8 mineurs) ; 6 importants + 4 mineurs livrés. L'audit a révélé deux **contrats à moitié appliqués** hérités de v0.5.x et une **branche de validateur non testée**. Voir `CHANGELOG.md` pour le détail constat par constat. Notes propres à ce document FULL :
 
-Voir `CHANGELOG_FR.md` pour le détail par finding. Cette release introduit `bob/_atomic.py` (helper consolidé) et `bob/_tty.safe_input()`. Le pattern audit→fix→ship répété de v0.5.x continue.
+### Pourquoi les découpages + l'abandon de v0.6.0 ne les ont pas fait apparaître plus tôt
 
-### Pourquoi les splits + sunset v0.6.0 n'avaient pas surfacé ces bugs plus tôt
+La livraison de v0.6.0 était structurelle (découpages + retrait d'UFW_AUDIT_SHARE) — aucune nouvelle logique, aucun changement de comportement attendu. La campagne d'audit en profondeur v0.5.x d'avant v0.6.0 (v0.5.5 à v0.5.8) portait sur un autre ensemble de modules : `bob/checks/logs.py`, `bob/manage_logs.py`, `bob/tui/cron.py`, plus 22 modules du cœur. Les chemins d'installation cron (`bob/cron/_install.py`, la branche d'installation cron de `bob/tui/cron.py`) et `bob/ignore.py` faisaient partie des ~25 modules « contrôlés par sondage » plutôt qu'audités en profondeur — d'où la survie du contrat d'écriture atomique à moitié appliqué (mutation corrigée en v0.5.7 #I-3, création non touchée) et de l'écriture non atomique d'`ignore.py`.
 
-v0.6.0 était structurel (splits + suppression UFW_AUDIT_SHARE) — pas de nouvelle logique. La campagne v0.5.x focalisait sur un set de modules différent : `bob/checks/logs.py`, `bob/manage_logs.py`, `bob/tui/cron.py`, plus 22 modules core. Les paths d'install cron (`bob/cron/_install.py`, branche cron-install de `bob/tui/cron.py`) et `bob/ignore.py` étaient parmi les ~25 modules "spot-checked" plutôt que deep-audited — donc le contrat atomic-write demi-appliqué (mutation fixé en v0.5.7 #I-3, création non touché) et l'écriture non-atomique de `ignore.py` ont survécu.
+L'audit de v0.6.1 ciblait explicitement la dérive post-v0.5.x + les modules que v0.5.x avait contrôlés par sondage. C'est de là que viennent les 6 constats importants.
 
-L'audit v0.6.1 ciblait explicitement le drift post-v0.5.x + les modules que v0.5.x avait spot-checked. C'est de là que viennent les 6 findings important.
+### Consolidation du contrat d'écriture atomique (nettoyage à fort levier)
 
-### Consolidation contrat atomic-write (cleanup high-leverage)
+Avant v0.6.1, 5 modules implémentaient leur propre version de « écrire dans un tmp + os.replace », avec des variations subtiles :
+- `bob/config.py:121, 363` — `UserConfig._save` + `EmailStore._save`
+- `bob/compare.py:185` — `save_baseline`
+- `bob/history.py:74` — `_rotate_if_needed` seulement
+- `bob/recurrence.py:61` — `save_recurrence`
+- `bob/cron/_io.py:28` — `_atomic_write` (l'implémentation canonique)
 
-Avant v0.6.1, 5 modules implémentaient leur propre version "write tmp + os.replace" avec variations subtiles. 3 modules N'utilisaient PAS atomic write malgré la décision architecturale SNAPSHOT.md qui le réclamait. 1 module (`bob/history.py:58`) utilisait `Path.open("a")` qui hérite du umask process — privacy-sensitive vu le contenu.
+Trois modules n'utilisaient PAS d'écritures atomiques, alors que la décision d'architecture de SNAPSHOT.md affirmait le contraire :
+- `bob/cron/_install.py:261, 280` (installation neuve — script + fichier cron)
+- `bob/tui/cron.py:731, 749` (installation curses — mêmes chemins)
+- `bob/ignore.py:93` (`os.open(O_TRUNC)` brut)
 
-v0.6.1 extrait `bob/_atomic.py::atomic_write(path, content, *, mode=)` source unique. Tous les sites existants migrés ; tous les sites manquants fixés. `bob/cron/_io.py::_atomic_write` gardé en alias une-ligne pour backwards-compat tests.
+Et un module (`bob/history.py:58`) utilisait `Path.open("a")`, qui hérite de l'umask du processus — sensible pour la vie privée vu le contenu.
 
-### Complétion contrat gestion EOF
+v0.6.1 extrait `bob/_atomic.py::atomic_write(path, content, *, mode=)` comme source unique de vérité. Les 5 sites existants migrés ; les 4 sites manquants corrigés. Changement net : −100 LoC d'implémentation dupliquée + 50 LoC de nouveau helper + docstring complète.
 
-v0.5.7 #I-2 annonçait "tous les sites de read interactif dans BOB routent EOF à empty-string". C'était vrai pour `bob/_tty.read_line` et `bob/manage_logs.py` (les 3 sites fixés en v0.5.7). C'était faux pour `bob/_tty.prompt_wizard` (aucune try), `bob/cron/_install.py` (5 sites), `bob/cron/_manage.py` (5 sites), `bob/fixes.py:103`.
+`bob/cron/_io.py::_atomic_write` est conservé comme alias d'une ligne (`from bob._atomic import atomic_write as _atomic_write`) — le test existant `TestApplyCronScheduleAtomic` patche exactement ce nom. Rétrocompatibilité préservée.
 
-v0.6.1 ajoute `safe_input(prompt) -> str` à `bob/_tty.py` (variante swallow-EOFError) et :
-- Patche `prompt_wizard()` pour aussi catcher `EOFError → None`
-- Migre les 11 sites `input()` brut vers `safe_input`
+### Achèvement du contrat de gestion d'EOF
 
-Différence sémantique intentionnelle : confirmations (`y/N`) veulent `""` = "non", wizards cancelables veulent `None` = "user abandonne".
+v0.5.7 #I-2 annonçait que « tous les sites de lecture interactive de BOB acheminent désormais l'EOF vers une sémantique de chaîne vide ». C'était vrai pour `bob/_tty.read_line` (qui avait déjà un `try/except EOFError`) et pour `bob/manage_logs.py` (les 3 sites corrigés en v0.5.7). C'était faux pour :
+- `bob/_tty.prompt_wizard` (`raw = input(label).strip()` sans try)
+- `bob/cron/_install.py` (5 `input()` nus)
+- `bob/cron/_manage.py` (5 `input()` nus)
+- `bob/fixes.py:103` (1 `input()` nu)
 
-### `_validate_cron_field` step bounds (I-3)
+v0.6.1 ajoute `safe_input(prompt) -> str` à `bob/_tty.py` (la variante qui avale l'EOFError) et :
+- Patche `prompt_wizard()` pour attraper aussi `EOFError → None`
+- Migre les 11 sites `input()` nus vers `safe_input`
 
-Vrai bug. Validator à `bob/cron/_parse.py:262` checkait `step_s.isdigit() and int(step_s) >= 1` — mais jamais borné `int(step_s)` contre le range du field. Pour minute (0-59), `*/200` validait avec succès ; cron interprétait "toutes les 200 minutes" = ne se déclenche jamais (roll-over horaire). Reproducer :
+La différence sémantique entre `safe_input` (renvoie `""`) et `prompt_wizard` (renvoie `None`) est volontaire : les invites de confirmation (`y/N`) veulent que `""` signifie « non », tandis que les assistants annulables veulent que `None` signifie « l'utilisateur a abandonné ». Les deux contrats sont désormais appliqués uniformément.
+
+### Bornes du pas dans `_validate_cron_field` (I-3)
+
+C'était un vrai bug. Le validateur de `bob/cron/_parse.py:262` vérifiait `step_s.isdigit() and int(step_s) >= 1` — mais ne bornait jamais `int(step_s)` par la plage du champ. Pour le champ des minutes (0-59), `*/200` passait la validation ; cron l'interprétait alors comme « toutes les 200 minutes », ce qui ne se déclenche jamais (bascule toutes les heures). Reproduction :
 ```python
 >>> _validate_cron_field("*/200", "minute", 0, 59)
-''  # pré-fix : vide = valide
+''  # pre-fix: empty = valid
 ```
-Post-fix retourne `"minute step '200' exceeds field range (60)"`. Cas boundary `*/60` toujours accepté (= "minute 0 chaque heure").
+Après correction, renvoie `"minute step '200' exceeds field range (60)"`. Le cas limite `*/60` reste accepté (signifie « se déclencher à la minute 0 de chaque heure » = équivalent à `0 * * * *`). 
 
-### `shlex.quote()` sur paths `cmd=` (I-4)
+Ce bug était inaccessible via le TUI curses (qui restreint autrement la saisie du pas), mais accessible via `--validate "* * * * *"` (qui n'existe pas encore mais est une fonctionnalité souvent demandée) et via `parse_cron_file` sur un fichier cron édité à la main.
 
-Les strings de commande auto-fix interpolent des paths dans des commandes shell. Le path auto-apply (`bob/fixes.py`) utilise `shlex.split(cmd)` avant `subprocess.run([list])`, donc un path-with-spaces non-quoté est split en multiples tokens et chmod target le mauvais fichier.
+### `shlex.quote()` sur les chemins de `cmd=` (I-4)
 
-8 sites fixés (SSH paths from `pwd.getpwnam(SUDO_USER).pw_dir`, file_perms scans, firmware pkg). 13 sites restants safe-by-construction.
+Les chaînes de commande d'auto-correction interpolent des chemins dans des commandes shell. Le vrai chemin d'application automatique (`bob/fixes.py`) utilise `shlex.split(cmd)` avant `subprocess.run([liste])`, ce qui veut dire qu'un chemin non quoté contenant des espaces est découpé en plusieurs jetons et que le chmod vise le mauvais fichier.
 
-### `history.jsonl` mode 0o600 (I-5)
+Sites où les chemins proviennent de sources contrôlées par l'utilisateur :
+- SSH : `snapshot.user_home` issu de `pwd.getpwnam(SUDO_USER).pw_dir` — peut valoir `"/home/Cédric Dev"`, etc.
+- file_perms : `fi.path` issu du scan du système de fichiers de `/etc/`, `/var/log/`, etc.
+- firmware : `pkg` issu de la sortie de `dpkg-query` (typiquement `intel-microcode`/`amd64-microcode`, mais quoté par précaution)
 
-Bug class subtile : `Path.open("a")` utilise le umask process pour le create-mode. Umask défaut `0o022` → `0o644` = world-readable. Cadence audit + timestamps score privacy-sensitive sur systèmes multi-user.
+8 sites corrigés. Les 13 sites `cmd=` restants sont sûrs par construction (entiers de port, chaînes fixes, ID de conteneurs en hexa). Confirmé par grep.
 
-Le path de rotation à `bob/history.py:74` utilisait déjà `os.open(..., 0o600)`. Le first-write à ligne 58 non. Fix : `os.open(O_WRONLY | O_APPEND | O_CREAT, 0o600)` puis `os.fdopen(fd, "a")`. Mode 0o600 appliqué seulement à création ; mode fichier existant préservé.
+### `history.jsonl` en mode 0o600 (I-5)
 
-### `ignore.py` atomic write (I-6)
+Classe de bug subtile : `Path.open("a")` ouvre en mode texte ajout et utilise l'umask du processus comme mode de création. Avec l'umask par défaut `0o022`, cela donne `0o644` — lisible par tous. La cadence d'audit + les horodatages de score de `history.jsonl` sont sensibles pour la vie privée sur les systèmes partagés/multi-utilisateurs.
 
-Pré-fix, `bob/ignore.py:93` faisait `os.open(str(path), O_WRONLY | O_CREAT | O_TRUNC, 0o600)` direct sur la destination. Power-loss entre `O_TRUNC` et `write` laissait `ignore.yml` vide (corruption — perte de toutes les clés précédemment ignorées, sans path de recovery).
+Le chemin de rotation à `bob/history.py:74` utilisait déjà `os.open(..., 0o600)` (atomique + mode restrictif). Le chemin de première écriture à la ligne 58, non.
 
-Migré à `atomic_write(path, content, mode=0o600)` via le helper v0.6.1.
+Correctif : utiliser `os.open(str(_HISTORY_FILE), O_WRONLY | O_APPEND | O_CREAT, 0o600)` puis `os.fdopen(fd, "a", encoding="utf-8")` pour l'ajout. Le mode 0o600 n'est appliqué qu'à la création ; le mode d'un fichier existant est préservé (les utilisateurs qui ont explicitement fait un chmod en 0o644 ne voient pas leur permission écrasée à chaque audit).
+
+### Écriture atomique d'`ignore.py` (I-6)
+
+Avant correction, `bob/ignore.py:93` faisait `os.open(str(path), O_WRONLY | O_CREAT | O_TRUNC, 0o600)` directement sur le fichier de destination. Une coupure de courant / OOM entre `O_TRUNC` et `write` laissait `ignore.yml` vide (corruption — perte de toutes les clés ignorées jusque-là, sans voie de récupération).
+
+Migré vers `atomic_write(path, content, mode=0o600)` via le helper de v0.6.1.
 
 ### Tests
 
@@ -10124,27 +11163,50 @@ $ python3 -m pytest tests/ -q
 
 **4583 → 4600 (+17).**
 
-Nouveaux : `TestAtomicWritePublicAPI` (4), `TestCronLegacyAliasStillWorks` (1), `TestHistoryFileMode` (2), `TestIgnoreAtomic` (2), `TestSafeInput` (3), `TestStepBoundedToFieldRange` (5).
+Nouvelles classes de test :
+- `tests/test_atomic_v061.py::TestAtomicWritePublicAPI` (4) — épingle le contrat `atomic_write(path, content, *, mode=)` : fichier créé avec le mode explicite (0o600 / 0o640 / 0o755), contenu proprement écrasé au second appel, contenu d'origine intact quand `os.replace` lève (garantie d'atomicité).
+- `tests/test_atomic_v061.py::TestCronLegacyAliasStillWorks` (1) — `bob.cron._io._atomic_write is bob._atomic.atomic_write` (rétrocompatibilité pour les patchs de test).
+- `tests/test_atomic_v061.py::TestHistoryFileMode` (2) — I-5 : première écriture en 0o600 + mode préservé lors des ajouts suivants.
+- `tests/test_atomic_v061.py::TestIgnoreAtomic` (2) — I-6 : écriture atomique + un échec simulé d'`os.replace` laisse le contenu d'`ignore.yml` intact.
+- `tests/test_atomic_v061.py::TestSafeInput` (3) — I-2 : `safe_input()` renvoie `""` sur EOF, renvoie la valeur sur une saisie normale, `prompt_wizard` renvoie `None` sur EOF.
+- `tests/test_cron.py::TestStepBoundedToFieldRange` (5) — I-3 : bornes du pas pour minute / heure / cas limite / zéro / expression complète.
 
 ### Diff net
 
-Voir CHANGELOG_FULL.md (en) pour le tableau détaillé. ~12 fichiers code + 2 fichiers test + standard 17 fichiers version/changelogs.
+| Fichier | Delta |
+|---|---|
+| `bob/_atomic.py` (nouveau) | +40L |
+| `bob/_tty.py` | +20L / −1L (safe_input + EOFError de prompt_wizard) |
+| `bob/cron/_io.py` | −22L / +5L (remplacé par un alias) |
+| `bob/config.py`, `bob/compare.py`, `bob/history.py`, `bob/recurrence.py` | net −30L (5 sites migrés, chacun économise ~5-8L) |
+| `bob/cron/_install.py` | −8L / +8L (migration atomic_write + safe_input) |
+| `bob/tui/cron.py` | −8L / +8L (migration atomic_write) |
+| `bob/cron/_manage.py` | +1L (import de safe_input + migration de 5 sites) |
+| `bob/fixes.py` | +1L (import de safe_input + migration d'1 site) |
+| `bob/ignore.py` | −2L / +6L (atomic_write + commentaire) |
+| `bob/cron/_parse.py` | +3L (contrôle de borne du pas + commentaire) |
+| 8 `bob/checks/**/*.py` | +8L / −8L (shlex.quote sur 8 sites) |
+| `bob/checks/ssh/_directives.py`, `bob/checks/ssh/_subchecks.py`, `bob/__main__.py`, `bob/cli.py` | petits correctifs M-2/M-3/M-6/M-8 |
+| `tests/test_atomic_v061.py` (nouveau) | +130L |
+| `tests/test_cron.py` | +30L |
+| `tests/test_watch.py` | mise à jour d'un libellé attendu |
+| Bump de version + changelogs | ~17 fichiers habituels |
 
-### Cumul campagne audit
+### Bilan cumulé de la campagne d'audit
 
-| Release | Modules touchés | Findings shippés | Tests ajoutés |
+| Release | Modules touchés | Constats livrés | Tests ajoutés |
 |---|---|---|---|
-| v0.5.5 | 22 deep + ~15 spot | 19 (4C + 4I + 11M) | +7 |
+| v0.5.5 | 22 en profondeur + ~15 par sondage | 19 (4C + 4I + 11M) | +7 |
 | v0.5.6 | logs.py (662L) | 10 (0C + 2I + 8M) | +15 |
-| v0.5.7 | manage_logs.py + tui/cron.py (~1920L) | 6 shippés + 5 déférés | +11 |
-| v0.5.8 | 5 mineurs v0.5.7-déférés | 5 (tous mineurs) | +12 |
-| **v0.6.1** | **audit codebase-wide + modules post-split v0.6.0** | **6I + 4M (4M déférés)** | **+17** |
+| v0.5.7 | manage_logs.py + tui/cron.py (~1920L) | 6 livrés + 5 déférés | +11 |
+| v0.5.8 | les 5 mineurs déférés par v0.5.7 | 5 (tous mineurs) | +12 |
+| **v0.6.1** | **audit de toute la base + modules post-découpage de v0.6.0** | **6I + 4M (4M déférés)** | **+17** |
 
-**Cumul** : ~85 findings hardening fermés sur 5 cycles audit. 0 finding critique en suspens. Deux contrats uniformément enforced (atomic-write + EOF handling). La recommandation "extraction helper atomic-write" des observations cross-cutting SNAPSHOT.md est maintenant actionnée.
+**Cumul** : ~85 constats de hardening fermés en 5 cycles d'audit. Aucun constat critique en suspens. Deux contrats appliqués uniformément (écriture atomique + gestion d'EOF). La recommandation « extraction d'un helper d'écriture atomique » des observations transverses de SNAPSHOT.md est désormais réalisée.
 
-### Et après
+### Et ensuite
 
-v0.6.x continuera à recevoir des releases hardening au fil des findings (typiquement via tests cross-distro ou reports contributeurs). Pas de nouvelle campagne audit planifiée — la passe v0.6.1 a fermé les gaps cross-cutting que la campagne v0.5.x avait laissés ouverts. Releases bug-fix futures seront targeted par-issue plutôt que wholesale audit-driven.
+v0.6.x continuera de recevoir des releases de hardening au fil des constats (typiquement via les tests multi-distro ou les retours de contributeurs). Aucune nouvelle campagne d'audit prévue — la passe de v0.6.1 a fermé les lacunes transverses que la campagne v0.5.x avait laissées ouvertes. Les futures releases correctives seront ciblées problème par problème plutôt que pilotées par un audit global.
 
 ---
 
@@ -11090,85 +12152,209 @@ $ python3 -m pytest tests/ -q
 
 ## [v0.5.2] — 22-05-2026
 
-**Refactor v0.5.x — Phase 3 sur 5.** Deux findings d'audit : **#4 table directive SSH** et **#3 extension callbacks `runner._sec`**. Aucun changement de comportement — 4538/4538 tests inchangés, sortie wire bit-identique à v0.5.1.
+**Refactor v0.5.x — Phase 3 sur 5.** Deux constats d'audit : **#4 table des directives SSH** et **#3 extension des callbacks de `runner._sec`**. Aucun changement de comportement — 4538/4538 tests inchangés, sortie identique à l'octet près à v0.5.1.
 
 ### #4 — Table déclarative `_BAD_DIRECTIVES` pour sshd_config
 
-**Problème.** `_check_sshd_config` avait ~9 blocs `if` quasi-identiques : lecture directive depuis `cfg.get()`, comparaison contre une enum "mauvaise", émission finding + déduction associée avec points/clé-i18n/level fixes. Le helper Phase 2 `warn_with_deduction` collapsait déjà chaque paire en un seul appel, mais la *cascade de 9 directives* restait 9 blocs impératifs séparés.
+**Problème.** `_check_sshd_config` avait ~9 blocs if quasi identiques : lire la directive depuis `cfg.get()`, comparer la valeur à une énumération « mauvaise », émettre le constat + la déduction correspondante avec points/clé i18n/niveau fixes. Le helper `warn_with_deduction` de la Phase 2 avait déjà réduit chaque paire à un seul appel, mais la *cascade de 9 directives* restait 9 blocs impératifs distincts.
 
-**Fix.** Nouvelle table déclarative + dataclass frozen + helper dans `bob/checks/ssh.py` (cf. version EN pour le code source de `_BadDirective`).
+**Correctif.** Nouvelle table déclarative + dataclass gelée + fonction helper dans `bob/checks/ssh.py` :
 
-Le check de mutual-exclusion dans `__post_init__` attrape les erreurs de programmation à l'instanciation de la classe (le `dataclass` frozen est créé une fois au chargement du module — toute entrée mal formée fait crasher le démarrage, pas le premier audit).
+```python
+@dataclass(frozen=True)
+class _BadDirective:
+    """Declarative rule for one sshd_config directive."""
+    name: str            # lowercase directive key in cfg dict
+    default: str         # value returned by cfg.get() when directive is missing
+    level: str           # "warn" or "alert"
+    key: str             # i18n key for finding message + deduction reason
+    points: int          # deduction amount
+    bad_values: tuple[str, ...] = ()    # values that trigger the finding
+    safe_values: tuple[str, ...] = ()   # alternative: anything not in this set is bad
+    nature: str = ""     # "" → defaults via warn/alert level
+    detail_key: str = "" # optional separate i18n key for detail=
 
-`_apply_bad_directive(rule, cfg, result, _t) -> bool` lit la valeur de la directive via `cfg.get(rule.name, rule.default)`, invoque `rule.is_bad(value)`, et émet le finding+déduction via le helper approprié `warn_with_deduction` / `alert_with_deduction` (API Phase 2).
+    def __post_init__(self) -> None:
+        if bool(self.bad_values) == bool(self.safe_values):
+            raise ValueError(
+                f"_BadDirective({self.name!r}): exactly one of bad_values "
+                f"or safe_values must be set"
+            )
+        if self.level not in ("warn", "alert"):
+            raise ValueError(f"_BadDirective({self.name!r}): level must be 'warn' or 'alert'")
+
+    def is_bad(self, value: str) -> bool:
+        v = value.lower()
+        if self.bad_values:
+            return v in self.bad_values
+        return v not in self.safe_values
+```
+
+Le contrôle d'exclusion mutuelle de `__post_init__` attrape les erreurs de programmation à l'instanciation de la classe (la `dataclass` gelée est créée une fois au chargement du module — toute entrée malformée fait planter le démarrage, pas le premier audit).
+
+`_apply_bad_directive(rule, cfg, result, _t) -> bool` lit la valeur de la directive via `cfg.get(rule.name, rule.default)`, invoque `rule.is_bad(value)` et émet le constat + la déduction via le helper `warn_with_deduction` / `alert_with_deduction` approprié (API de la Phase 2).
 
 **Directives migrées (8)** — entrées de la table :
 
-| Directive | `bad_values` / `safe_values` | Level | Points | Notes |
+| Directive | `bad_values` / `safe_values` | Niveau | Points | Notes |
 |---|---|---|---|---|
-| `PermitEmptyPasswords` | bad: `("yes",)` | alert | 5 | nature="improvement" |
-| `X11Forwarding` | bad: `("yes",)` | warn | 1 | |
-| `IgnoreRhosts` | bad: `("no",)` | warn | 2 | |
-| `HostbasedAuthentication` | bad: `("yes",)` | alert | 3 | nature="improvement" |
-| `PermitUserEnvironment` | bad: `("yes",)` | warn | 1 | |
-| `StrictModes` | bad: `("no",)` | warn | 2 | |
-| `AllowTcpForwarding` | safe: `("no", "local")` | warn | 1 | `"local"` acceptable — utilise le style `safe_values` |
-| `PubkeyAuthentication` | bad: `("no",)` | alert | 3 | nature="improvement", detail_key |
+| `PermitEmptyPasswords` | bad : `("yes",)` | alert | 5 | nature="improvement" |
+| `X11Forwarding` | bad : `("yes",)` | warn | 1 | |
+| `IgnoreRhosts` | bad : `("no",)` | warn | 2 | |
+| `HostbasedAuthentication` | bad : `("yes",)` | alert | 3 | nature="improvement" |
+| `PermitUserEnvironment` | bad : `("yes",)` | warn | 1 | |
+| `StrictModes` | bad : `("no",)` | warn | 2 | |
+| `AllowTcpForwarding` | safe : `("no", "local")` | warn | 1 | `"local"` est acceptable (plus restrictif que `"yes"`) — utilise le style `safe_values` |
+| `PubkeyAuthentication` | bad : `("no",)` | alert | 3 | nature="improvement", detail_key |
 
-`AllowTcpForwarding` est la seule entrée utilisant `safe_values` — l'alternative serait d'énumérer toutes les bad values mais `"no"` et `"local"` sont les valeurs explicitement acceptables selon la doc OpenSSH.
+`AllowTcpForwarding` est la seule entrée qui utilise `safe_values` — l'alternative serait d'énumérer toutes les mauvaises valeurs (`"yes"`, etc.), mais `"no"` et `"local"` sont les valeurs acceptables explicites selon la documentation d'OpenSSH.
 
-**Sites gardés impératifs (5+ patterns)** — ne fittent pas le style enum :
+**Sites restés impératifs (5+ motifs)** — ils n'entrent pas dans une table de type énumération :
 
-- **`PermitRootLogin`** : branchement 4-way. `"yes"` → ALERT (-3pts), `"no"` → OK (message spécifique), `"prohibit-password"` ou `"forced-commands-only"` → OK (message différent avec template var `value=`), autre → INFO.
-- **`PasswordAuthentication`** : dépend du flag orchestrator-level `ssh_exposed`. Quand SSH est exposé (réseau public ou policy `allow`), WARN + déduction. Quand SSH est LAN-only, downgrade en INFO avec message context-aware.
-- **`MaxAuthTries`** : seuil entier (`>3`). Pas un enum ; la template var (`value=N`) est l'entier observé.
-- **`LoginGraceTime`** : seuil entier (`>60s`) mais INFO uniquement — pas de déduction.
-- **`AllowUsers/AllowGroups`** : détecte l'*absence* de directive de restriction. INFO uniquement.
-- **Match block** : INFO quand le parser a détecté des sous-blocs (leur contenu est policy-dépendant et hors scope).
-- **Weak Ciphers/MACs/KexAlgorithms** : géré par `_check_weak_algo`. La "mauvaise valeur" est une *intersection de set* entre la liste d'algorithmes configurée et le set d'algorithmes faibles — forme différente que `_BadDirective`.
+- **`PermitRootLogin`** : branchement à 4 voies. `"yes"` → ALERT (−3 pts), `"no"` → OK (avec un message spécifique), `"prohibit-password"` ou `"forced-commands-only"` → OK (message différent avec la variable de gabarit `value=`), toute autre valeur → INFO.
+- **`PasswordAuthentication`** : dépend du drapeau `ssh_exposed` de l'orchestrateur. Quand SSH est exposé (réseau public ou politique `allow`), WARN + déduction. Quand SSH est limité au LAN, ramené à INFO avec un message tenant compte du contexte.
+- **`MaxAuthTries`** : seuil entier (`>3`). Pas de type énumération ; la variable de gabarit du message (`value=N`) est l'entier observé.
+- **`LoginGraceTime`** : seuil entier (`>60 s`) mais INFO seulement — pas de déduction.
+- **`AllowUsers/AllowGroups`** : détecte l'*absence* de toute directive de restriction. INFO seulement.
+- **Bloc Match** : INFO quand l'analyseur a détecté des blocs de sous-configuration (leur contenu dépend de la politique et sort du périmètre).
+- **Ciphers/MACs/KexAlgorithms faibles** : gérés par `_check_weak_algo(cfg, result, _t, name, weak_set, t_key, param, points)`. La « mauvaise valeur » y est une *intersection d'ensembles* entre la liste d'algorithmes configurée et l'ensemble des algorithmes faibles — une forme différente de `_BadDirective`.
 
-**Résultat.** Le corps de `_check_sshd_config` passe de ~180 LoC à ~50 LoC (réduction ~70% de la taille de fonction). La table + dataclass + helper ajoutent ~130 LoC en tête de fichier. Net `ssh.py` : +56 LoC.
+**Résultat.** Le corps de `_check_sshd_config` passe de ~180 LoC à ~50 LoC (~70 % de réduction de la taille de la fonction). La table + la dataclass + le helper ajoutent ~130 LoC en tête de fichier. `ssh.py` net : +56 LoC.
 
-**Audit-vs-réalité.** L'audit original estimait que #4 économiserait -150 LoC. La réalité est +56 net. L'écart vient de la verbosité Python dataclass.
+**Audit contre réalité.** L'audit d'origine estimait que #4 économiserait −150 LoC. La réalité est +56 net. L'écart vient de :
+- la verbosité des dataclasses Python (14 LoC pour `_BadDirective` + 16 LoC de docstring/commentaires)
+- 8 entrées de table × ~7 LoC chacune = 56 LoC pour la table
+- le helper `_apply_bad_directive` : 18 LoC
+- la validation de `__post_init__` : 8 LoC
+- Infrastructure totale de la table : ~130 LoC
 
-Le *bénéfice est structurel*, pas LoC-économique : ajouter un nouveau "bad sshd directive" nécessite maintenant d'ajouter 1 entrée à `_BAD_DIRECTIVES`, pas dupliquer un if-bloc. La classe de drift (oublier `nature=` sur une déduction, ou copier-coller un mismatch de `key=` entre finding et déduction) est maintenant structurellement impossible.
-
----
-
-### #3 — Extension `runner._sec` avec callbacks `skip_if=` et `post_display=`
-
-**Problème.** La closure `_sec(section, snapshot, check_fn, **check_kwargs)` introduite en Phase 1 (v0.5.0) gérait le pattern canonique. Mais 4 sections ne pouvaient pas l'utiliser car elles nécessitaient des extensions orthogonales :
-
-- **Gating conditionnel sur snapshot** : `samba`, `docker_audit`, `desktop_apps` doivent skipper toute la section (pas d'en-tête, pas de check) quand le snapshot reporte que le service sous-jacent n'est pas installé/détecté.
-- **Appels d'affichage post-check** : `disk` nécessite un appel `display_disk_partitions(snapshot, t, output)` additionnel après le display standard.
-
-Pre-v0.5.2, ces 4 blocs étaient open-coded inline, chacun ~8 LoC dupliquant le corps de `_sec`.
-
-**Fix.** Deux paramètres callback keyword-only ajoutés à `_sec` (cf. version EN pour la signature détaillée).
-
-Le séparateur `*,` force les deux callbacks à être passés en kwargs — empêche la confusion d'args positionnels aux call sites. Les 16+ call sites `_sec(...)` existants ne sont pas affectés (aucun n'utilisait d'args positionnels après le 3ème).
-
-**Sites migrés (4)** : `samba`, `docker_audit`, `desktop_apps`, `disk`. Net `runner.py` : **−29 LoC**.
-
-**Sites NON migrés** (légitimement complexes) : `services`, `firewall`, `rules`, `ports_analysis` — couplages cross-check, snapshot variables consommées par plusieurs checks suivants.
+Le *gain est structurel*, pas une économie de LoC : ajouter un nouveau contrôle de « mauvaise directive sshd » demande désormais d'ajouter 1 entrée à `_BAD_DIRECTIVES`, pas de dupliquer un bloc if. La classe de dérive (oublier `nature=` sur une déduction, ou un `key=` copié-collé incohérent entre constat et déduction) devient structurellement impossible — la dataclass porte ces valeurs une seule fois.
 
 ---
 
-### #13 (split ssh.py) — déféré à Phase 5
+### #3 — Extension de `runner._sec` avec les callbacks `skip_if=` et `post_display=`
+
+**Problème.** La fermeture `_sec(section, snapshot, check_fn, **check_kwargs)` introduite en Phase 1 (v0.5.0) gérait le motif canonique : `print_section + write_section + check + apply_profile + engine.apply + display_result + print`. Mais 4 sections ne pouvaient pas l'utiliser, parce qu'il leur fallait des extensions orthogonales :
+
+- **Filtrage conditionné au snapshot** : `samba`, `docker_audit`, `desktop_apps` doivent sauter toute la section (aucun titre imprimé, aucun check lancé) quand le snapshot indique que le service sous-jacent n'est pas installé/détecté. Le check est rapide (il lit juste le snapshot), mais émettre un titre de section vide est disgracieux.
+- **Appels d'affichage après le check** : `disk` a besoin d'un appel supplémentaire `display_disk_partitions(snapshot, t, output)` après l'affichage standard. (La même forme s'applique au `display_ports_overview` de `ports_analysis`, mais ce bloc a des dépendances de vérification croisée supplémentaires et reste en ligne.)
+
+Avant v0.5.2, ces 4 blocs étaient codés en ligne, chacun dupliquant ~8 LoC du corps de `_sec`.
+
+**Correctif.** Deux paramètres de callback nommés uniquement ajoutés à `_sec` :
+
+```python
+def _sec(
+    section: str,
+    snapshot,
+    check_fn,
+    *,
+    skip_if=None,                # Callable[[snapshot], bool]
+    post_display=None,           # Callable[[snapshot, result], None]
+    **check_kwargs,
+) -> None:
+    """Run one audit section.
+    ...
+    Args:
+        section: section key (drives header text + `_section_enabled` gate
+            via profile / `--check`).
+        snapshot: pre-collected snapshot object (passed positionally to
+            ``check_fn``).
+        check_fn: pure check function returning a ``CheckResult``.
+        skip_if: optional ``Callable[[snapshot], bool]`` — when truthy,
+            the section is skipped without emitting the header (used for
+            "if installed" / "if detected" gates that depend on the
+            snapshot rather than the profile).
+        post_display: optional ``Callable[[snapshot, result], None]``
+            invoked after ``display_result`` (still inside the ``if not
+            config.quiet`` block conceptually).
+        **check_kwargs: forwarded to ``check_fn`` after ``snapshot`` and ``t``.
+    """
+    if not _section_enabled(section, config, profile):
+        return
+    if skip_if is not None and skip_if(snapshot):
+        return
+    emit_section(section)
+    result = check_fn(snapshot, t=t, **check_kwargs)
+    if profile is not None:
+        apply_profile(result, profile)
+    engine.apply(result)
+    display_result(result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+    if post_display is not None and not config.quiet:
+        post_display(snapshot, result)
+    if not config.quiet:
+        print()
+```
+
+Le séparateur `*,` force le passage des deux callbacks en kwargs — évite la confusion d'arguments positionnels aux sites d'appel. Les 16+ sites d'appel `_sec(...)` existants ne sont pas affectés (aucun n'utilisait d'argument positionnel après le 3e).
+
+**Sites migrés (4)** :
+
+```python
+# Before (8 lines):
+if _section_enabled("samba", config, profile):
+    samba_snapshot = SambaSnapshot.from_system()
+    if samba_snapshot.installed:
+        emit_section("samba")
+        samba_result = check_samba(samba_snapshot, t=t)
+        if profile is not None:
+            apply_profile(samba_result, profile)
+        engine.apply(samba_result)
+        display_result(samba_result, report, config.verbose, ...)
+        if not config.quiet:
+            print()
+
+# After (3 lines):
+samba_snapshot = SambaSnapshot.from_system()
+_sec("samba", samba_snapshot, check_samba,
+     skip_if=lambda s: not s.installed)
+```
+
+```python
+# disk before (with post-display call):
+disk_snapshot = DiskSnapshot.from_system()
+if _section_enabled("disk", config, profile):
+    emit_section("disk")
+    disk_result = check_disk(disk_snapshot, t=t)
+    if profile is not None:
+        apply_profile(disk_result, profile)
+    engine.apply(disk_result)
+    display_result(disk_result, report, config.verbose, ...)
+    if not config.quiet:
+        display_disk_partitions(disk_snapshot, t, output)
+        print()
+
+# disk after:
+disk_snapshot = DiskSnapshot.from_system()
+_sec("disk", disk_snapshot, check_disk,
+     post_display=lambda snap, _r: display_disk_partitions(snap, t, output))
+```
+
+Les 4 sites : `samba`, `docker_audit`, `desktop_apps`, `disk`. `runner.py` net : **−29 LoC**.
+
+**Sites NON migrés** (légitimement complexes) :
+- bloc `services` — a besoin de dépendances de vérification croisée (`audited_ports` en sort, `network_context` y entre), reste en ligne.
+- bloc `firewall` — premier check, met en place des variables de snapshot consommées par 5+ checks ultérieurs.
+- bloc `rules` — a besoin des références croisées `ufw_numbered`, `ufw_verbose`.
+- `ports_analysis` — reçoit `audited_ports` du bloc services ; a son propre appel `display_ports_overview` après le check. Pourrait être migré avec les deux callbacks, mais le couplage de vérification croisée est plus serré — gardé en ligne.
+
+---
+
+### #13 (découpage de ssh.py) — déféré à la Phase 5
 
 La prédiction de l'audit :
-> Combiné avec #1, ssh.py descend sous 1000 LoC → #13 (ssh.py split) devient inutile.
+> Combined with #1, ssh.py descends below 1000 LoC → #13 (ssh.py split) becomes unnecessary.
 
-Réalité (table) :
+Tableau de la réalité :
 
-| Étape | ssh.py LoC | Delta |
+| Étape | LoC de ssh.py | Delta |
 |---|---|---|
-| v0.4.8 (avant refactor v0.5.x) | 1387 | — |
-| v0.5.0 (Phase 1) | 1387 | 0 |
+| v0.4.8 (avant le refactor v0.5.x) | 1387 | — |
+| v0.5.0 (Phase 1) | 1387 | 0 (aucun changement SSH) |
 | v0.5.1 (Phase 2 — #1) | 1268 | −119 |
 | v0.5.2 (Phase 3 — #4) | 1324 | +56 |
 
-ssh.py reste à 1324 LoC, 32% au-dessus de la cible 1000. Selon la règle *refactor conservateur*, split de ssh.py est une chirurgie medium-risk. Décision déférée à **Phase 5 (v0.5.4)** avec #14 (split cron.py) et #15b (ré-attribution `_PREFIX_TO_DOMAIN`).
+ssh.py fait encore 1324 LoC, 32 % au-dessus de l'objectif de 1000 LoC. Selon la règle du *refactor conservateur*, le découpage de ssh.py est une chirurgie à risque moyen (il faut préserver les imports `from bob.checks.ssh import SSHSnapshot` dans 122 tests, propager la visibilité des sous-fonctions `_check_*` pour les tests). Décision déférée à la **Phase 5 (v0.5.4)**, avec #14 (découpage de cron.py), une fois l'état final connu. Les deux découpages seront revus ensemble avec #15b (réattribution de `_PREFIX_TO_DOMAIN`).
 
 ---
 
@@ -11179,27 +12365,37 @@ $ python3 -m pytest tests/ -q
 .................. 4538 passed in ~6s
 ```
 
-**4538 → 4538 (inchangé).** #4 et #3 sont des refactors purement structurels.
+**4538 → 4538 (inchangé).** #4 et #3 sont tous deux de purs refactors structurels. Toute la suite `test_ssh.py` (122 tests) passait avant, pendant et après la migration vers `_BAD_DIRECTIVES` — la table produit des entrées `Finding` et `Deduction` identiques à l'octet près à celles des anciens blocs if.
+
+### Test terrain
+
+La couverture multi-distro de v0.5.0/v0.5.1 (5 distros : Mint x2, Debian 13, Kali, Ubuntu 26.04 LTS) s'applique. v0.5.2 préserve exactement la sortie — le test terrain recommandé est `pipx upgrade bodyguard-of-bits && sudo bob -v -d`, en vérifiant que le score, le détail et les barres par domaine sont identiques à l'octet près à v0.5.1 (aux changements d'état du système près).
 
 ### Compatibilité
 
 - **Contrat JSON** : `schema_version="1"`, les 116 EXPLAIN_KEYS, les 34 sections filtrables — **inchangés**.
-- **Sortie wire** : bit-identique à v0.5.1.
-- **Score par domaine** : inchangé.
-- **API externe** : aucun breaking change. `_BadDirective` et `_BAD_DIRECTIVES` sont module-private ; l'extension de signature `_sec` est keyword-only.
-- **i18n** : aucun changement de clé locale.
+- **Surface CLI** : aucun drapeau ajouté, aucun retiré.
+- **Détail du score par domaine** : inchangé (même `_PREFIX_TO_DOMAIN`, même rattachement de domaine pour chaque clé émise).
+- **Sortie** : identique à l'octet près à v0.5.1.
+- **API externe** : aucun changement cassant. `_BadDirective` et `_BAD_DIRECTIVES` sont privés au module ; l'extension de signature de `_sec` est en arguments nommés uniquement (tous les sites d'appel existants sont épargnés).
+- **i18n** : aucun changement de clé de locale.
+
+### Phases suivantes
+
+- **v0.5.3 (Phase 4)** : #5 (table LEVEL_DISPATCH de `display_result`) + #12 (helpers extraits de `print_audit_summary`) + #8 (retrait de la trappe `CheckResult.log_data`). Risque moyen : changements de mise en page observables.
+- **v0.5.4 (Phase 5)** : #6 (helper `_prompt` de l'assistant cron) + #9 (abandon d'`UFW_AUDIT_SHARE`) + décisions finales sur #13 (découpage de ssh.py), #14 (découpage de cron.py), #15b (réattribution de `_PREFIX_TO_DOMAIN`).
 
 ---
 
 ## [v0.5.1] — 22-05-2026
 
-**Refactor v0.5.x — Phase 2 sur 5.** Le gros gain LoC. Cette release attaque **l'audit finding #1** : l'idiom paired `result.warn(...) + result.add_deduction(...)` se répétant ~130 fois dans `bob/checks/*.py`. Après que Phase 1 (v0.5.0) ait shippé les findings low-risk additifs + la passe couverture cron, Phase 2 collapse le pattern boilerplate dominant.
+**Refactor v0.5.x — Phase 2 sur 5.** Le gros gain en LoC. Cette version s'attaque au **constat d'audit n° 1** : l'idiome apparié `result.warn(...) + result.add_deduction(...)`, qui revient ~130 fois dans `bob/checks/*.py`. Après la Phase 1 (v0.5.0), qui a livré des constats additifs à faible risque + la passe de couverture cron, la Phase 2 résorbe ce motif de code passe-partout dominant.
 
-**Aucun changement de comportement.** Les tests restent à 4538/4538 parce que le helper produit un `Finding` et une `Deduction` par appel, bit-identique à la séquence 2 appels pré-migration.
+**Aucun changement de comportement.** Les tests restent à 4538/4538, car le helper produit un `Finding` et une `Deduction` par appel, identiques au bit près à la séquence de 2 appels d'avant la migration.
 
-### Nouvelle API `CheckResult` (additive — pas de breaking change)
+### Nouvelle API `CheckResult` (additive — aucun changement BREAKING)
 
-Deux méthodes ajoutées à `bob/scoring.py:CheckResult` (après les shorthands `warn`/`alert` existants) :
+Deux méthodes ajoutées à `bob/scoring.py:CheckResult` (après les raccourcis `warn`/`alert` existants) :
 
 ```python
 def warn_with_deduction(
@@ -11216,66 +12412,120 @@ def warn_with_deduction(
     cmd_type: str = "fix",
     note: str = "",
     template_vars: dict | None = None,
-) -> None: ...
+) -> None:
+    """Add a WARN finding and a matching deduction in one call.
 
-def alert_with_deduction(self, ...) -> None: ...   # miroir, nature default = "action"
+    Collapses the paired `result.warn(...) + result.add_deduction(...)` idiom
+    that recurs ~130 times across bob/checks/*.py. The same `key` and
+    `template_vars` are used for both the finding and the deduction. The
+    deduction `reason` defaults to `message` — pass `reason=` explicitly
+    when the deduction string uses a different translation key (e.g.
+    `ssh.host_key_dsa_reason` differs from `ssh.host_key_dsa`).
+    """
+    self.warn(message=message, detail=detail, nature=nature,
+              cmd=cmd, cmd_type=cmd_type, note=note,
+              key=key, template_vars=template_vars)
+    self.add_deduction(
+        reason=reason if reason is not None else message,
+        points=points, context=context,
+        key=key, template_vars=template_vars,
+    )
+
+def alert_with_deduction(self, ...) -> None:
+    # Mirror, nature default = "action"
 ```
 
-**Pourquoi keyword-only après `key`** : forcer `message=`, `points=`, etc. comme arguments keyword empêche la confusion d'args positionnels aux call sites. Le slot positionnel `key` rend le site d'appel lisible comme `result.warn_with_deduction(key="ssh.x11_forwarding", ...)` — la clé étant l'identifiant le plus important.
+**Pourquoi des arguments nommés obligatoires après `key`** : imposer `message=`, `points=`, etc. en arguments nommés évite toute confusion d'arguments positionnels aux sites d'appel. L'emplacement positionnel de `key` fait se lire le site d'appel comme `result.warn_with_deduction(key="ssh.x11_forwarding", ...)` — la clé étant l'identifiant le plus important.
 
-### Périmètre de migration (120 sites dans 27 fichiers)
+### Périmètre de la migration (120 sites dans 27 fichiers)
 
-La migration a été menée en **6 vagues**, ordonnées par complexité de fichier (plus simple d'abord), avec la suite complète relancée après chaque vague :
+La migration s'est faite en **6 vagues**, ordonnées par complexité de fichier (les plus simples d'abord), avec la suite de tests complète relancée après chaque vague :
 
-#### Vague 1 — fichiers single-site (7 sites)
-`backup.py`, `ddns.py`, `logs.py`, `memory.py`, `network_context.py`, `smtp.py`, `suid_audit.py`. Swaps triviaux avec override `reason=` au besoin (`backup.no_backup_reason`, `logs.deduction.brute_force`, `smtp.exposed_reason`, `suid_audit.unexpected_suid_reason`).
+#### Vague 1 — fichiers à un seul site (7 sites)
+`backup.py`, `ddns.py`, `logs.py`, `memory.py`, `network_context.py`, `smtp.py`, `suid_audit.py`. Substitutions triviales, avec surcharge `reason=` là où nécessaire (`backup.no_backup_reason`, `logs.deduction.brute_force`, `smtp.exposed_reason`, `suid_audit.unexpected_suid_reason`).
 
-#### Vague 2 — fichiers 2-site (16 sites)
+#### Vague 2 — fichiers à deux sites (16 sites)
 `cron_audit.py` (2), `docker_audit.py` (2), `fail2ban.py` (2), `firmware.py` (2), `ipv6.py` (1 sur 2), `kernel_modules.py` (2), `ntp.py` (2), `password_policy.py` (2), `ports.py` (1 sur 2), `secure_boot.py` (2), `systemd_timers.py` (2), `umask.py` (2), `updates.py` (2), `user_accounts.py` (2 sur 2).
 
-#### Vague 3 — fichiers 3-site (15 sites)
-`auditd.py` (3), `file_integrity.py` (3), `kernel_hardening.py` (3), `log_rotation.py` (3), `rootkit.py` (3). `ssl_certs.py` (3) volontairement skip — les 3 sites utilisent un compteur cappé `total_deduction`.
+#### Vague 3 — fichiers à trois sites (15 sites)
+`auditd.py` (3), `file_integrity.py` (3), `kernel_hardening.py` (3), `log_rotation.py` (3), `rootkit.py` (3). `ssl_certs.py` (3) volontairement écarté — ses 3 sites utilisent un compteur `total_deduction` plafonné.
 
-#### Vague 4 — fichiers 4-6 sites (29 sites)
+#### Vague 4 — fichiers à 4-6 sites (29 sites)
 `file_perms.py` (1 sur 4), `firewall_stack.py` (4), `firewall.py` (4 sur 6 — pilote), `disk.py` (5), `iptables_nftables.py` (5), `clamav.py` (5), `mac_policy.py` (5 sur 6), `samba.py` (5 sur 6).
 
 #### Vague 5 — `hardening.py` (8 sites)
-Toutes les branches de policy sysctl : rp_filter, accept_redirects, tcp_syncookies, accept_source_route, accept_redirects_v6, send_redirects, protected_hardlinks, protected_symlinks. Tous `points=1`, tous `context="local"`, message==reason — le fichier le plus uniforme de la migration.
+Toutes les branches de politique sysctl : rp_filter, accept_redirects, tcp_syncookies, accept_source_route, accept_redirects_v6, send_redirects, protected_hardlinks, protected_symlinks. Tous à `points=1`, tous à `context="local"`, message==reason — le fichier le plus uniforme de la migration.
 
 #### Vague 6 — `ssh.py` (24 sites)
-Le plus gros fichier (1387 LoC) et la migration la plus complexe. Couvre toutes les directives sshd_config, les clés hôte, le helper `_check_weak_algo`, le dossier `~/.ssh`, les clés privées (incluant le cas suffix `_reason`), authorized_keys (DSA + RSA faible + duplicates), config client (StrictHostKeyChecking, UserKnownHostsFile, ForwardAgent), et known_hosts (types de clé obsolètes). ssh.py a rétréci de **−146 lignes** (33% de toutes les LoC retirées en vague 6).
+Le plus gros fichier (1387 LoC) et la migration la plus complexe. Couvre toutes les directives de sshd_config, les clés d'hôte, le helper `_check_weak_algo`, le répertoire `~/.ssh`, les clés privées (y compris le cas du suffixe `_reason`), authorized_keys (DSA + RSA faible + doublons), la configuration client (StrictHostKeyChecking, UserKnownHostsFile, ForwardAgent) et known_hosts (types de clé obsolètes). ssh.py a perdu **−146 lignes** (33 % de toutes les LoC retirées par la vague 6).
 
-### Sites volontairement laissés en 2-appels (13)
+### Sites volontairement laissés en 2 appels (13)
 
-La migration a été conservatrice — les sites où l'API helper ne fitte pas ont été laissés tels quels et documentés :
+La migration a été conservatrice — les sites où l'API du helper ne convient pas ont été laissés intacts et documentés :
 
-| Pattern | Compte | Fichiers |
+| Motif | Nombre | Fichiers |
 |---|---|---|
-| Déduction cappée (compteur local `_deductions < CAP`) | 7 | `services_state.py` (1), `ssl_certs.py` (3), `file_perms.py` (2), `ipv6.py` (1) |
-| Branching de niveau (warn OU alert sur condition séparée) | 4 | `services.py` (1), `ports.py` (1), `docker.py` (2) |
+| Déduction plafonnée (compteur local `_deductions < CAP`) | 7 | `services_state.py` (1), `ssl_certs.py` (3), `file_perms.py` (2), `ipv6.py` (1) |
+| Branchement de niveau (warn OU alert selon une condition séparée) | 4 | `services.py` (1), `ports.py` (1), `docker.py` (2) |
 | Calcul conditionnel `points = 0 or N` | 1 | `docker.py:172-187` |
-| `template_vars` différents entre finding et reason | 1 | `firewall.py:_check_open_any` (`rule=clean` pour finding, `rule=""` pour déduction) |
+| `template_vars` différents entre constat et motif | 1 | `firewall.py:_check_open_any` (`rule=clean` pour le constat, `rule=""` pour la déduction) |
 
-L'override `reason=` du helper gère le cas le plus facile d'asymétrie (clé i18n différente, mêmes template_vars). Des template_vars différents est un pattern plus rare qui ne justifie pas un deuxième paramètre d'override.
+La surcharge `reason=` du helper gère le cas d'asymétrie le plus simple (clé de traduction différente, mêmes template_vars). Des template_vars différents constituent un motif plus rare, qui ne justifie pas un second paramètre de surcharge.
 
-### Usage de l'override `reason=`
+### Usage de la surcharge `reason=`
 
-Sur les 120 migrations, ~85 sites passent un `reason=` explicite parce que le code original utilisait une clé i18n suffixée `_reason` pour la déduction (ex `ssh.host_key_dsa_reason` vs `ssh.host_key_dsa`). Ce pattern a été introduit en début de v0.4.x pour garder les strings de breakdown de déduction concises vs les messages de finding plus longs. Le helper préserve la distinction en acceptant l'override ; le défaut de `reason` à `message` couvre les ~35 sites où le code original avait `_t(KEY)` deux fois.
+Sur les 120 migrations, ~85 sites passent un `reason=` explicite parce que le code d'origine utilisait une clé de traduction suffixée `_reason` pour la déduction (p. ex. `ssh.host_key_dsa_reason` contre `ssh.host_key_dsa`). Ce motif avait été introduit au début de v0.4.x pour garder les chaînes du détail des déductions concises face aux messages de constat plus longs. Le helper préserve la distinction en acceptant la surcharge ; faire valoir `reason` par défaut à `message` couvre les ~35 sites où le code d'origine appelait `_t(KEY)` deux fois.
 
 ### Pourquoi la migration n'a pas changé les tests
 
-Chaque appel helper appelle en interne `self.warn(...)` (ou `.alert(...)`) suivi de `self.add_deduction(...)`. Les deux méthodes appendent un `Finding` et une `Deduction` à `result.findings` et `result.deductions` respectivement. Les tests vérifient ces listes via `len()`, accès attribut sur les entrées individuelles, ou `assert_count_per_level()` — aucun ne se préoccupe de savoir si les entrées ont été émises via le helper ou via 2 appels séparés. La sortie wire est identique.
+Chaque appel au helper appelle en interne `self.warn(...)` (ou `.alert(...)`) puis `self.add_deduction(...)`. Les deux méthodes ajoutent respectivement un `Finding` et une `Deduction` à `result.findings` et `result.deductions`. Les tests vérifient ces listes via `len()`, l'accès aux attributs des entrées individuelles, ou `assert_count_per_level()` — aucun ne se soucie de savoir si les entrées ont été émises via le helper ou via 2 appels séparés. La sortie est identique.
 
-Le seul risque théorique serait si un test patchait `CheckResult.warn` ou `.add_deduction` pour compter les invocations. Un grep a trouvé zéro test ainsi — tous les tests attestent sur les listes `result.findings` / `result.deductions` résultantes.
+Le seul risque théorique serait qu'un test patche `CheckResult.warn` ou `.add_deduction` pour compter les invocations. Un grep n'a trouvé aucun test de ce genre — tous les tests portent sur les listes résultantes `result.findings` / `result.deductions`.
 
-### Diff stats
+### Statistiques du diff
 
 ```
 $ git diff --stat
+ bob/checks/auditd.py            |  24 +-
+ bob/checks/backup.py            |   9 +-
+ bob/checks/clamav.py            |  56 +---
+ bob/checks/cron_audit.py        |  20 +-
+ bob/checks/disk.py              |  56 +---
+ bob/checks/docker_audit.py      |  18 +-
+ bob/checks/fail2ban.py          |  24 +-
+ bob/checks/file_integrity.py    |  30 +-
+ bob/checks/file_perms.py        |   8 +-
+ bob/checks/firewall_stack.py    |  30 +-
+ bob/checks/firewall.py          |  37 +--
+ bob/checks/firmware.py          |  24 +-
+ bob/checks/hardening.py         |  91 ++-----
+ bob/checks/iptables_nftables.py |  50 +---
+ bob/checks/ipv6.py              |  11 +-
+ bob/checks/kernel_hardening.py  |  21 +-
+ bob/checks/kernel_modules.py    |  22 +-
+ bob/checks/log_rotation.py      |  21 +-
+ bob/checks/logs.py              |   9 +-
+ bob/checks/mac_policy.py        |  48 +---
+ bob/checks/memory.py            |   8 +-
+ bob/checks/network_context.py   |  17 +-
+ bob/checks/ntp.py               |  26 +-
+ bob/checks/password_policy.py   |  24 +-
+ bob/checks/ports.py             |  10 +-
+ bob/checks/rootkit.py           |  39 +-
+ bob/checks/samba.py             |  66 +-----
+ bob/checks/secure_boot.py       |  22 +-
+ bob/checks/smtp.py              |  14 +-
+ bob/checks/ssh.py               | 287 +++++--------------
+ bob/checks/suid_audit.py        |  15 +-
+ bob/checks/systemd_timers.py    |  24 +-
+ bob/checks/umask.py             |  24 +-
+ bob/checks/updates.py           |  24 +-
+ bob/checks/user_accounts.py     |  26 +-
+ bob/scoring.py                  |  66 ++++++
  37 files changed, 483 insertions(+), 1002 deletions(-)
 ```
 
-**Net : −519 lignes.** Plus proche de l'estimation "~800 LoC retirés" de l'audit si les 13 sites skip avaient aussi été migrés, mais l'approche conservatrice sur les patterns `_deductions < CAP` et le branching `warn`/`alert` est le bon arbitrage — ces sites nécessiteraient un helper de forme différente et une réécriture de leur logique environnante.
+**Net : −519 lignes.** On se serait rapproché de l'estimation de l'audit (« ~800 LoC retirées ») si les 13 sites écartés avaient aussi été migrés, mais l'approche conservatrice envers les motifs `_deductions < CAP` et le branchement `warn`/`alert` est le bon compromis — ces sites demanderaient une autre forme de helper et une réécriture de la logique qui les entoure.
 
 ### Tests
 
@@ -11284,120 +12534,338 @@ $ python3 -m pytest tests/ -q
 .................. 4538 passed in ~6s
 ```
 
-**4538 → 4538 (inchangé).** Chacune des 6 vagues a passé `pytest tests/` proprement avant de passer à la suivante. Aucun nouveau test nécessaire (le comportement du helper est pinné par les tests de comptage finding/déduction existants à travers les 33 fichiers de check).
+**4538 → 4538 (inchangé).** Chacune des 6 vagues a passé `pytest tests/` proprement avant de passer à la suivante. Aucun nouveau test nécessaire (le comportement des helpers est épinglé par les tests existants de comptage des constats/déductions, à travers les 33 fichiers de checks).
 
 ### Compatibilité
 
 - **Contrat JSON** : `schema_version="1"`, les 116 EXPLAIN_KEYS, les 34 sections filtrables — **inchangés**.
-- **Surface CLI** : aucun nouveau flag, aucun flag retiré.
-- **Score par domaine** : inchangé (même `_PREFIX_TO_DOMAIN`, même mapping de domaine pour chaque clé émise).
-- **Sortie wire** : bit-identique à v0.5.0. Messages de findings, raisons de déductions, template_vars, recurrences, refs CIS — tous préservés.
-- **API externe** pour les auteurs de plugins : la forme 2-appels (`result.warn(...) + result.add_deduction(...)`) **fonctionne toujours**. Le helper est additif — le code plugin inchangé.
-- **i18n** : zéro changement de clé locale (les helpers routent à travers les appels `_t` existants à chaque call site).
+- **Surface CLI** : aucune nouvelle option, aucune option retirée.
+- **Détail du score par domaine** : inchangé (même `_PREFIX_TO_DOMAIN`, même rattachement de domaine pour chaque clé émise).
+- **Sortie** : identique au bit près à v0.5.0. Messages de constat, motifs de déduction, template_vars, récurrences, références CIS — tous préservés.
+- **API externe** pour les auteurs de plugins : la forme à 2 appels (`result.warn(...) + result.add_deduction(...)`) **fonctionne toujours**. Le helper est additif — code des plugins inchangé.
+- **i18n** : aucun changement de clé de locale (les helpers passent par les appels `_t` existants à chaque site d'appel).
 
 ### Prochaines phases de v0.5.x
 
-- **v0.5.2 (Phase 3)** : audit findings #4 (table directive SSH — `_check_sshd_config` → déclaratif `_BAD_DIRECTIVES`) + #3 (étendre `runner._sec` avec callbacks `skip_if=` et `post_display=`). Risque medium : touche le plus gros fichier de tests (`test_ssh.py`, 1022 LoC) et le control flow du runner.
-- **v0.5.3 (Phase 4)** : #5 (table `display_result` LEVEL_DISPATCH) + #12 (helpers extraits de `print_audit_summary`) + #8 (retirer l'escape hatch `CheckResult.log_data`). Risque medium : changements de layout observables.
-- **v0.5.4 (Phase 5)** : #6 (helper `_prompt` wizard cron) + #9 (chemin sunset `UFW_AUDIT_SHARE`) + décisions finales sur #13 (split ssh.py) / #14 (split cron.py) / #15b (ré-attribution `_PREFIX_TO_DOMAIN`).
+- **v0.5.2 (Phase 3)** : constats d'audit n° 4 (table des directives SSH — `_check_sshd_config` → `_BAD_DIRECTIVES` déclarative) + n° 3 (étendre `runner._sec` avec les callbacks `skip_if=` et `post_display=`). Risque moyen : touche le plus gros fichier de tests (`test_ssh.py`, 1022 LoC) et le flot de contrôle central du runner.
+- **v0.5.3 (Phase 4)** : n° 5 (table LEVEL_DISPATCH de `display_result`) + n° 12 (helpers extraits de `print_audit_summary`) + n° 8 (retrait de l'échappatoire `CheckResult.log_data`). Risque moyen : changements de mise en page observables.
+- **v0.5.4 (Phase 5)** : n° 6 (helper `_prompt` de l'assistant cron) + n° 9 (chemin de retrait de `UFW_AUDIT_SHARE`) + décisions finales sur n° 13 (découpage de ssh.py) / n° 14 (découpage de cron.py) / n° 15b (réattribution de `_PREFIX_TO_DOMAIN`).
 
 ---
 
 ## [v0.5.0] — 21-05-2026
 
-**Refactor v0.5.x — Phase 1 sur 5.** Cette release ouvre la **branche v0.5.x**. C'est le premier épisode d'un refactor en 5 phases mappé depuis un audit sub-agent (general-purpose, dispatché 2026-05-21 avec `DOCUMENTS/SNAPSHOT.md` en briefing principal). L'audit a retourné **15 findings refactor**, classés par value/effort, avec classification de risque explicite.
+**Refactor v0.5.x — Phase 1 sur 5.** Cette release ouvre la **branche v0.5.x**. C'est le premier volet d'un refactor en 5 phases, tiré d'un audit par sous-agent (généraliste, lancé le 2026-05-21 avec `DOCUMENTS/SNAPSHOT.md` comme briefing principal). L'audit a renvoyé **15 constats de refactor**, classés par valeur/effort, avec une classification explicite du risque.
 
-Principe bottom-up pour les 5 phases : **le comportement du pipeline d'audit ne change pas**. JSON `schema_version="1"`, les 7 domaines de score, les 116 EXPLAIN_KEYS, les 34 sections filtrables, les alias `--explain`, les flags CLI, l'héritage de profils, les clés de locale — tout est stable. Phase 1 fait le tri des findings additifs et low-risk.
+Le principe directeur de tout ce refactor en 5 phases : **le comportement du pipeline d'audit ne change pas**. Le `schema_version="1"` du JSON, les 7 domaines de score, les 116 EXPLAIN_KEYS, les 34 sections filtrables, les alias de `--explain`, les drapeaux CLI, l'héritage des profils, les clés de locale — tout est stable. La Phase 1 retient les constats additifs à faible risque, qui n'exigent aucune chirurgie touchant aux contrats.
 
-### Plan des phases (figé 2026-05-21)
+### Plan des phases (établi le 2026-05-21)
 
-| Phase | Version | Thème | Findings | Risque |
+| Phase | Version | Thème | Constats | Risque |
 |---|---|---|---|---|
-| 1 | **v0.5.0** (cette release) | Quick wins + couverture cron | #7, #2, #10, #11, #15a + tests cron | low |
-| 2 | v0.5.1 | Le gros gain LoC | #1 `warn_with_deduction` ~130 sites | low |
-| 3 | v0.5.2 | Table directive SSH + extension `_sec` | #4, #3 | medium |
-| 4 | v0.5.3 | Refactor display + escape hatch log_data | #5, #12, #8 | medium |
-| 5 | v0.5.4 | Wizards cron + sunset UFW_AUDIT_SHARE | #6, #9, possiblement #13/#14/#15b | medium |
+| 1 | **v0.5.0** (cette release) | Gains rapides + couverture cron | #7, #2, #10, #11, #15a + tests cron | faible |
+| 2 | v0.5.1 | Le gros gain de LoC | #1 `warn_with_deduction` ~130 sites | faible |
+| 3 | v0.5.2 | Table des directives SSH + extension de `_sec` | #4, #3 | moyen |
+| 4 | v0.5.3 | Refactor de l'affichage + trappe log_data | #5, #12, #8 | moyen |
+| 5 | v0.5.4 | Assistants cron + abandon d'UFW_AUDIT_SHARE | #6, #9, éventuellement #13/#14/#15b | moyen |
 
-#13 et #14 (splits ssh.py / cron.py) sont **conditionnels** — réévalués fin Phase 5. #15b (ré-attribution des fallbacks silencieux) est medium-risk car il change les sorties de scoring — explicitement reporté.
+Les constats #13 (découpage de ssh.py) et #14 (découpage de cron.py) sont **conditionnels** : réévalués à la fin de la Phase 5, une fois que #1+#4 et #6 auront réduit ces fichiers. Le constat #15b (réattribuer `smtp`/`fail2ban`/`desktop_apps`/`virt` hors du fourre-tout pare-feu) est à risque moyen parce qu'il change les sorties de score — explicitement déféré par rapport à #15a.
 
 ---
 
 ### #7 — `is_unit_active()` / `is_unit_enabled()` centralisés
 
-**Problème.** Dans 9 modules check, l'idiom `out = (_run("systemctl", "is-active", X) or "").strip(); if out == "active"` se répétait : `auditd.py`, `fail2ban.py`, `clamav.py`, `ntp.py`, `ddns.py`, `updates.py`, `ssh.py`, `backup.py`, `log_rotation.py`. `backup.py` ajoutait `.lower()` défensif.
+**Problème.** Sur 9 modules de check, le même idiome revenait :
+```python
+out = (_run("systemctl", "is-active", X) or "").strip()
+if out == "active":
+    snap.service_active = True
+```
+Avec des formulations différentes dans `auditd.py`, `fail2ban.py`, `clamav.py`, `ntp.py`, `ddns.py`, `updates.py`, `ssh.py`, `backup.py`, `log_rotation.py` (ce dernier avec un `timeout=5` explicite issu d'un nettoyage de v0.4.8). `backup.py` faisait en plus `out.lower() == "active"` par garde défensive.
 
-**Fix.** Deux helpers publics dans `bob/checks/_run.py` (cf. version EN pour le code). Le `.lower()` défensif est promu au helper — bénéficie aux 9 appelants. **Validé explicitement par l'utilisateur** lors de la review : "peut-être paranoïaque, mais dans le cas peu probable mais existant qu'une distro outpute 'Active\n' ce serait embêtant, et le coût est nul".
+**Correctif.** Deux nouveaux helpers publics dans `bob/checks/_run.py` :
 
-`services.py::_detect_single_unit_state` n'est **PAS migré** selon la recommandation de l'audit — sémantique plus riche (templates, state machine active/enabled).
+```python
+def is_unit_active(name: str, timeout: int = _CMD_TIMEOUT) -> bool:
+    return _run("systemctl", "is-active", name, timeout=timeout).strip().lower() == "active"
 
-Tests adaptés : `test_fail2ban.py` et `test_ntp.py` patchent maintenant aussi `bob.checks.X.is_unit_active`.
+def is_unit_enabled(name: str, timeout: int = _CMD_TIMEOUT) -> bool:
+    return _run("systemctl", "is-enabled", name, timeout=timeout).strip().lower() == "enabled"
+```
 
-**Monitoring** : `is_unit_enabled` sans consommateur immédiat — gardé pour symétrie d'API, tracé dans `feedback_release_monitoring.md`.
+Le `.lower()` défensif a été promu de `backup.py` vers le helper — il s'applique aux 9 appelants. Coût : un appel de méthode par check. Bénéfice : ferme toute la classe de bug potentiel « une distro dérivée émet `Active\n` et on le rate ». **L'utilisateur a explicitement validé cette marge de sécurité** — rétablie après une brève discussion où la migration l'avait d'abord supprimée.
+
+9 sites migrés :
+
+| Fichier | Avant | Après |
+|---|---|---|
+| `auditd.py` | `out = (_run(...) or "").strip(); snap.service_active = out == "active"` | `snap.service_active = is_unit_active("auditd")` |
+| `fail2ban.py` | même motif, `"fail2ban"` | `is_unit_active("fail2ban")` |
+| `clamav.py` | boucle sur 3 noms d'unité avec sortie à la première correspondance | boucle sur 3 noms d'unité, `if is_unit_active(unit)` |
+| `ntp.py` | boucle sur `_NTP_SERVICES` | boucle, `if is_unit_active(svc): return svc` |
+| `ddns.py` | boucle sur `client_def.services` | `if is_unit_active(svc): return True` |
+| `updates.py` | `timer_out = _run(...); enabled = (timer_out or "").strip() == "active"; return True, enabled` | `enabled = is_unit_active("apt-daily-upgrade.timer"); return True, enabled` (variable intermédiaire rétablie après revue) |
+| `ssh.py` | boucle sur `("ssh", "sshd")` | boucle, `if is_unit_active(unit): snap.sshd_active = True; break` |
+| `backup.py` | `out.lower() == "active"` (défensif) | `is_unit_active(service)` (le défensif déplacé dans le helper) |
+| `log_rotation.py` | `_run("systemctl", "is-active", name, timeout=5).strip() == "active"` | `is_unit_active(name, timeout=5)` |
+
+`services.py::_detect_single_unit_state` (qui gère les variantes de services modèles `foo@instance`, les combinaisons d'états `is-active` + `is-enabled` et les replis par listage d'unités) n'est **PAS migré**, selon la recommandation de l'audit — sa sémantique est plus riche qu'un booléen et il est mûr.
+
+Tests mis à jour : `test_fail2ban.py` et `test_ntp.py` sont passés du patch de `bob.checks.X._run` (qui n'intercepte plus l'appel systemctl, puisqu'il passe désormais par `is_unit_active` dans l'espace de noms de `_run.py`) à un patch supplémentaire de `bob.checks.X.is_unit_active`. Le bouchon `_make_run_stub` a perdu son paramètre `service_active` (géré à part).
+
+**Surveillance** : `is_unit_enabled` n'a encore aucun consommateur (services.py garde sa propre logique). Ajouté pour la symétrie de l'API. Suivi dans `feedback_release_monitoring.md` — à revoir à chaque release v0.5.x.
 
 ---
 
-### #2 — `bob.output.print_titled_box()` extrait (+ leak `--no-color` corrigé)
+### #2 — `bob.output.print_titled_box()` extrait (+ fuite de `--no-color` corrigée)
 
-**Problème.** Pattern 3-lignes open-coded à 4 sites (cron.py x3, manage_logs.py x1) avec ANSI escapes inline `\033[1;34m` contournant `_c` — **bug UX latent** : `--no-color` n'affectait pas ces 4 boîtes.
+**Problème.** Un motif de titre encadré ASCII de 3 lignes était codé en ligne 4 fois :
 
-**Fix.** Nouveau `print_titled_box(title, width=62)` dans `bob.output`. Passe par `_c.blue_bold/.bold/.reset` — `--no-color` fonctionne désormais. Utilise `_visual_width(title)` au lieu de `len(title)` (plus robuste i18n).
+| Site | Ce qu'il dessine |
+|---|---|
+| `cron.py:461` (assistant d'installation) | cadre de titre « Installation cron BOB » |
+| `cron.py:686` (sous-menu du magasin d'e-mails) | cadre de titre « Email store » |
+| `cron.py:1056` (assistant de gestion) | cadre de titre « Manage cron » |
+| `manage_logs.py:252` (repli texte brut) | cadre de titre « Manage logs » |
 
-`bob/fixes.py` non migré : forme différente (streaming `╔ ║ ╠`), déjà via `_c`.
+Chaque site calculait `W=62`, `pad = W - 6 - len(title)` et imprimait trois lignes avec des **séquences ANSI en ligne** :
+```python
+print(f"\033[1;34m╔{'═'*(W-2)}╗\033[0m")
+print(f"\033[1;34m║\033[0m  \033[1m{title}\033[0m{' '*max(0,pad)}  \033[1;34m║\033[0m")
+print(f"\033[1;34m╚{'═'*(W-2)}╝\033[0m")
+```
 
-**Monitoring** : paramètre `width` exposé mais jamais surchargé — tracé.
+Le `\033[1;34m` en ligne contournait `bob.output._c` (la palette qui respecte `--no-color`). Résultat : même avec `--no-color`, ces cadres s'imprimaient avec des séquences de couleur du terminal. **Bug d'ergonomie latent** pour les utilisateurs qui redirigent la sortie vers des tubes/logs.
+
+**Correctif.** Nouvelle fonction `bob.output.print_titled_box(title: str, width: int = 62) -> None`. Passe par `_c.blue_bold`, `_c.bold`, `_c.reset` — `--no-color` retire désormais correctement les couleurs de ces 4 sites.
+
+La fonction utilise `_visual_width(title)` au lieu de `len(title)` pour le remplissage — plus robuste face aux caractères multi-octets dans les titres i18n (en pratique aucun titre actuel n'en a, mais la justesse ne coûte pas cher).
+
+`bob/fixes.py:38` n'a **pas été migré** : son cadre est `╔ ║ ╠` (continuation en flux, le contenu suit à l'intérieur) — une autre forme, et ce site passe déjà correctement par `_c.blue_bold`. Le migrer exigerait un helper de flux distinct — hors périmètre de la Phase 1.
+
+**Surveillance** : le paramètre `width` est exposé mais jamais surchargé aux sites d'appel (les 4 utilisent la valeur par défaut 62). Gardé pour la souplesse (les titres i18n pourraient s'allonger). Suivi dans `feedback_release_monitoring.md`.
 
 ---
 
 ### #10 — Protocol `bob.report.Report` (PEP 544)
 
-**Problème.** `AuditReport`, `NullReport`, `MarkdownReport` partagent un contrat de méthodes write sans type formel. `MarkdownReport` est duck-typed (pas d'héritage). Annotation `runner.run_checks(report: AuditReport)` imprécise.
+**Problème.** Trois classes de rapport (`AuditReport`, `NullReport`, `MarkdownReport`) partagent un contrat externe de méthodes d'écriture, mais sans type formel :
+- `AuditReport` (texte brut, `bob/report.py:87`) et `NullReport` (sous-classe sans effet, `bob/report.py:357`) sont dans le même module — `NullReport(AuditReport)` est un héritage structurel.
+- `MarkdownReport` (`bob/report_markdown.py:43`) est indépendante — pas d'héritage, juste une parité de noms de méthodes, typage par canard.
 
-**Fix.** Protocol `Report` dans `bob/report.py` avec 12 membres. `runner.run_checks(report: Report)` annote l'abstrait. Pas de `@runtime_checkable` (statique only, zéro overhead). `__enter__/__exit__` exclus (personne n'utilise `with report:`). `write_services_panorama` exclu (unique à Markdown).
+`runner.run_checks(report: AuditReport, ...)` acceptait n'importe laquelle à l'exécution, mais l'annotation était inexacte pour `MarkdownReport`.
+
+**Correctif.** Nouveau Protocol `Report` (`bob/report.py:39-94`) :
+
+```python
+class Report(Protocol):
+    path: Optional[Path]
+    enabled: bool
+
+    def write_header(self, info: "SystemInfo") -> None: ...
+    def write_group(self, title: str) -> None: ...
+    def write_section(self, title: str) -> None: ...
+    def write_finding(self, level: str, message: str, detail: str = "") -> None: ...
+    def write_raw(self, text: str) -> None: ...
+    def write_indented(self, text: str, indent: int = 4) -> None: ...
+    def write_separator(self, thin: bool = False) -> None: ...
+    def write_summary(self, score, risk_level, network_context, public_ip,
+                      ok_count, warn_count, alert_count, breakdown, labels) -> None: ...
+    def write_risk_context_section(self, section_title: str, entries: list[dict]) -> None: ...
+    def write_next_steps(self, steps: list[str]) -> None: ...
+    def close(self) -> None: ...
+```
+
+`runner.run_checks(report: Report, ...)` annote désormais le Protocol abstrait. `init_report` garde son type de retour `-> AuditReport` (elle ne renvoie jamais que `AuditReport` ou `NullReport`, jamais `MarkdownReport`).
+
+**Notes de conception :**
+- **Pas de `@runtime_checkable`** : typage purement statique. `isinstance(x, Report)` lève `TypeError` — confirmé par un smoke test. Si un contrôle à l'exécution devient un jour nécessaire, ajouter le décorateur est un changement d'une ligne.
+- **`__enter__`/`__exit__` exclus** : grep a confirmé qu'aucun appelant n'utilise `with report: ...`.
+- **`write_services_panorama` exclu** : propre à `MarkdownReport`, pas un contrat partagé.
+- **Méthodes de classe `open()` / `null()` exclues** : questions d'instanciation, pas de contrat à l'exécution.
+- **Référence anticipée `"SystemInfo"` (chaîne)** : la classe `SystemInfo` est définie sous le Protocol dans le même fichier.
 
 ---
 
-### #11 — Closures `emit_section()` + `emit_group()` dans `runner.py`
+### #11 — fermetures `emit_section()` + `emit_group()` dans `runner.py`
 
-**Problème.** Motif `if not config.quiet: print_section(t(...)); report.write_section(t(...))` répété 20 fois dans `run_checks()`. Surface de drift.
+**Problème.** Le motif
 
-**Fix.** Deux closures en tête de `run_checks()` (pattern identique à `_sec()` existant). 5 `emit_group` (groupes) + 15 `emit_section` (sections) migrés. `_sec()` lui-même dogfoode `emit_section`. **Net runner.py : −28 lignes.**
+```python
+if not config.quiet:
+    print_section(t("sections.firewall"))
+report.write_section(t("sections.firewall"))
+```
 
-Sites NON migrés : ligne 373 (`print_section(t("sections.logs"))` orphelin, pas de `report.write_section` matchant — anomalie préexistante, hors scope) et boucle plugin ligne 648 (`plugin.name` brut, pas une clé traduite).
+se répétait 20 fois dans `run_checks()` (et de même pour `print_group` / `write_group` sur 5 sites). La garde `if not config.quiet` devait être revérifiée à la main à chaque fois, et la clé de traduction était répétée dans les deux appels — une surface de dérive (si un futur changement voulait envelopper l'émission des sections d'autre chose, 20 sites seraient à modifier).
+
+**Correctif.** Deux fermetures définies en tête de `run_checks()` :
+
+```python
+def emit_section(section_key: str) -> None:
+    """Print and write a section header (respects --quiet)."""
+    title = t(f"sections.{section_key}")
+    if not config.quiet:
+        print_section(title)
+    report.write_section(title)
+
+def emit_group(group_key: str) -> None:
+    """Print and write a group header (respects --quiet)."""
+    title = t(f"groups.{group_key}")
+    if not config.quiet:
+        print_group(title)
+    report.write_group(title)
+```
+
+Des fermetures (pas des fonctions libres), parce qu'elles référencent `t`, `config`, `report` dans la portée englobante — le même motif que celui déjà établi par `_sec()`.
+
+`_sec()` utilise désormais elle-même `emit_section(section)` en interne (on mange sa propre cuisine).
+
+20 sites migrés :
+
+| Type | Clés |
+|---|---|
+| `emit_group` (5) | firewall_network, exposure_services, access_control, system_hardening, detection_health |
+| `emit_section` (15) | firewall, rules, ufw_logging, iptables_nft, firewall_stack, network_context, services, ports_analysis, ddns, docker, virtualization, samba, docker_audit, disk, desktop_apps |
+
+**Sites NON migrés** (volontairement) :
+- Ligne 373 — `print_section(t("sections.logs"))` est orphelin : pas d'appel `report.write_section` correspondant. Anomalie préexistante (le titre de la section des logs dans le rapport est vraisemblablement émis par `display_log_results`). Hors périmètre de la Phase 1.
+- Ligne 648 (boucle des plugins) — `print_section(plugin.name)` passe un titre brut, pas une clé de traduction.
+
+**Diff net de `runner.py` :** −65 / +37 = **−28 lignes**. La lecture de `run_checks()` de haut en bas est désormais nettement plus claire.
 
 ---
 
 ### #15a — `tests/test_domain_scores_mapping_complete.py`
 
-**Problème.** Tout préfixe de clé absent de `_PREFIX_TO_DOMAIN` tombe silencieusement dans le catch-all `"firewall"`.
+**Problème.** `bob/domain_scores.py::_PREFIX_TO_DOMAIN` est un dict qui associe des préfixes de clé de constat (par ex. `"ssh"`) à des domaines (par ex. `"ssh"`). Tout préfixe absent du dict tombe en silence dans le fourre-tout `"firewall"`. SNAPSHOT documentait ce piège pour les futurs auteurs de checks.
 
-**Fix.** Test AST scan sur `bob/checks/*.py` qui exige chaque préfixe soit dans `_PREFIX_TO_DOMAIN` OU dans `_CATCH_ALL_BY_DESIGN` avec une justification une-ligne. Le whitelist capture l'état v0.4.x (préfixes domaine-firewall légitimes + fallbacks silencieux à revoir Phase 5 #15b : `smtp`, `fail2ban`, `desktop_apps`, `virt`, `docker_audit`, `ddns`, `prerequisites`).
+L'audit donnait deux options :
+- **(a)** Un test qui force chaque préfixe à être traité explicitement (faible risque, cette release).
+- **(b)** Réattribuer les replis silencieux à des domaines plus sémantiques (risque moyen — change les sorties de score par domaine ; déféré à la Phase 5).
 
-**+4 tests.** Tout nouveau check ajoutant un préfixe sans handling explicite verra le test échouer avec un message actionnable.
+**Correctif (option a) :** nouveau fichier de test reprenant l'approche par balayage AST inaugurée par `test_locale_coverage.py` (v0.4.5).
+
+Le test parcourt `bob/checks/*.py`, trouve chaque `ast.Call` dont `func.attr` vaut `add_deduction`, `warn`, `alert`, `info` ou `ok`, et extrait le kwarg littéral `key="X.Y"` si c'est une chaîne constante. Le premier segment avant le point est le préfixe. Le test affirme que chaque préfixe est :
+
+1. Soit associé explicitement dans `_PREFIX_TO_DOMAIN`,
+2. Soit listé dans `_CATCH_ALL_BY_DESIGN` avec une justification non vide.
+
+La liste blanche capture l'état de l'art de v0.4.x :
+
+```python
+_CATCH_ALL_BY_DESIGN: dict[str, str] = {
+    # Legitimate firewall-domain prefixes
+    "firewall":        "Self-mapping: the catch-all IS firewall",
+    "rules":           "UFW rules analysis is part of firewall scoring",
+    "ports":           "Port exposure is part of firewall surface",
+    "services":        "Service exposure is part of firewall surface",
+    "iptables_nft":    "iptables/nftables fallback is firewall stack",
+    "firewall_stack":  "Firewall stack consistency analysis",
+    "network_context": "Network interfaces / connections inventory",
+    "ipv6":            "IPv6 consistency relative to UFW",
+    "docker":          "Docker network exposure (port mappings)",
+    "ddns":            "DDNS external exposure surface",
+
+    # v0.4.x silent fallbacks — review in Phase 5 (#15b)
+    "smtp":            "v0.4.x catch-all: local SMTP exposure → review in v0.5.4",
+    "fail2ban":        "v0.4.x catch-all: anti-bruteforce → candidate for 'ssh' domain in v0.5.4",
+    "desktop_apps":    "v0.4.x catch-all: desktop process detection → review in v0.5.4",
+    "virt":            "v0.4.x catch-all: virtualization bypass risk → candidate for 'hardening' in v0.5.4",
+    "docker_audit":    "v0.4.x catch-all: container hardening → candidate for 'hardening' in v0.5.4",
+    "prerequisites":   "Prerequisites check (UFW installed) — INFO-only, no scoring impact",
+}
+```
+
+Deux tests supplémentaires attrapent les entrées périmées (avertissements, pas des échecs) : les clés de `_CATCH_ALL_BY_DESIGN` sans émetteur actuel, et les clés de `_PREFIX_TO_DOMAIN` sans émetteur statique actuel (ces dernières peuvent légitimement utiliser des clés dynamiques — d'où le seuil en commentaire). Et un test affirme que chaque entrée du fourre-tout a une justification non vide.
+
+**+4 tests au total.** Sortie :
+```
+tests/test_domain_scores_mapping_complete.py::TestDomainMappingCompleteness::test_every_emitted_prefix_is_mapped_or_whitelisted PASSED
+tests/test_domain_scores_mapping_complete.py::TestDomainMappingCompleteness::test_no_stale_catchall_entries PASSED
+tests/test_domain_scores_mapping_complete.py::TestDomainMappingCompleteness::test_no_stale_prefix_to_domain_entries PASSED
+tests/test_domain_scores_mapping_complete.py::TestCatchAllJustifications::test_all_entries_have_justifications PASSED
+```
+
+Un futur contributeur qui ajoute un check émettant `key="weird_thing.X"` obtiendra immédiatement un échec de test avec un message clair et actionnable :
+```
+AssertionError: Finding-key prefixes emitted by bob/checks/*.py but neither
+mapped in _PREFIX_TO_DOMAIN nor whitelisted in _CATCH_ALL_BY_DESIGN:
+['weird_thing']
+Either map the prefix to a domain in bob/domain_scores.py, or add it to
+_CATCH_ALL_BY_DESIGN with a justification.
+```
 
 ---
 
-### Passe de couverture cron (préalable Phase 5)
+### Passe de couverture de cron (préliminaire à la Phase 5)
 
-cron.py a le pire ratio de tests du codebase (SNAPSHOT : 0.60×). Phase 5 refactorera les 3 wizards plain-text (#6) — couverture *avant* refactor = filet de sécurité.
+cron.py a le **pire ratio de tests** de la base de code selon SNAPSHOT (0,60×). La Phase 5 refactorera les trois assistants en texte brut (#6 : extraire un helper `_prompt(t, key, validator)` + dédupliquer). Ajouter de la couverture *avant* le refactor, c'est le filet de sécurité.
 
-**+35 tests** dans 5 nouvelles classes : `TestValidateCronField` (13), `TestValidateCustomCron` (7), `TestBuildScriptContent` (7), `TestApplyCronSchedule` (3), `TestApplyCronEmail` (5).
+**+35 tests** dans 5 nouvelles classes de `tests/test_cron.py` :
 
-Les tests `TestApplyCronEmail` couvrent notamment la **parité regex legacy `NOTIFY_EMAIL=` (sans S)** pour compatibilité wrappers pré-v0.3.
+#### `TestValidateCronField` (13 tests)
+Validation pure d'un champ cron. Toutes les branches :
+
+| Test | Ce qu'il épingle |
+|---|---|
+| `test_wildcard_is_valid` | `*` |
+| `test_plain_integer_in_range` | `30` dans `[0,59]` |
+| `test_plain_integer_out_of_range_returns_error` | `70` rejeté |
+| `test_range_valid` | `0-30` |
+| `test_range_out_of_bounds_rejected` | `0-1000` — **classe de régression de v0.4.3** |
+| `test_range_reversed_rejected` | `30-10` |
+| `test_step_valid` | `*/5` |
+| `test_step_zero_rejected` | `*/0` |
+| `test_step_non_numeric_rejected` | `*/abc` |
+| `test_list_all_valid` | `0,15,30,45` |
+| `test_list_one_out_of_range_rejected` | `0,15,99` |
+| `test_empty_entry_rejected` | `0,,30` |
+| `test_garbage_rejected` | `xyz` |
+
+#### `TestValidateCustomCron` (7 tests)
+Expression cron complète à 5 champs : `0 3 * * *`, `0 3 * * 0`, `*/15 * * * *`, rejet à 4 champs, rejet à 6 champs, rejet de l'heure 25, rejet de la minute 70.
+
+#### `TestBuildScriptContent` (7 tests)
+Génération du script bash : shebang, comportement de `shlex.quote()` pour `NOTIFY_EMAILS` (simple + avec espace), `LOG_DIR` (simple + avec espace), invocation `--quiet --detailed`, exports `AUDIT_EMAIL` / `AUDIT_LOG`.
+
+#### `TestApplyCronSchedule` (3 tests)
+Helper de modification de fichier : le remplacement de la planification préserve le commentaire d'e-mail, un fichier manquant renvoie une chaîne OSError. **A fait apparaître un bug latent — voir ci-dessous.**
+
+#### `TestApplyCronEmail` (5 tests)
+Mise à jour du commentaire d'e-mail + de la ligne `NOTIFY_EMAILS=` du script, **parité de regex avec l'ancien `NOTIFY_EMAIL=` (sans S)** (compatibilité avec l'enveloppe d'avant v0.3), tolérance d'un script manquant, quotation par `shlex.quote()`.
 
 ---
 
 ### Bug latent corrigé — `_os.open` dans `apply_cron_schedule` (découvert par les nouveaux tests)
 
-`TestApplyCronSchedule::test_replaces_schedule` a remonté immédiatement :
+**Reproduit** par `TestApplyCronSchedule::test_replaces_schedule` :
 ```
 E   NameError: name '_os' is not defined
 bob/cron.py:855: NameError
 ```
 
-**Cause.** Extraction v0.4.8 incomplète : `apply_cron_schedule()` appelait `_os.open(...)`, mais `_os` est aliasé localement dans 3 *autres* fonctions de `cron.py` (lignes 649, 931, 1215 — `import os as _os` scopé à la fonction). Au niveau module, seul `os`. Le helper était silencieusement mort depuis v0.4.8 — l'API publique câblée à la TUI curses (non testée automatiquement) ne le révélait qu'à l'exécution interactive.
+**Cause.** La déduplication cron de v0.4.8 a promu `apply_cron_schedule()` d'un helper privé du TUI curses en API publique de `bob.cron`. L'extraction a copié-collé le corps du helper mais a oublié de renommer `_os.open(...)` en `os.open(...)`. L'alias `_os` est local à trois *autres* fonctions de `cron.py` :
 
-**Fix.** 3 références sur 2 lignes : `_os` → `os`.
+```
+bob/cron.py:649:    import os as _os
+bob/cron.py:931:    import os as _os
+bob/cron.py:1215:   import os as _os
+```
+
+Chacun de ces imports est limité à sa fonction. Au niveau du module, seul `os` est importé. Le helper était mort en silence depuis la livraison de v0.4.8 — l'API publique était branchée sur `bob/tui/cron.py` (le TUI curses), que les tests automatiques n'exercent pas, si bien que le `NameError` ne survenait qu'à l'exécution, quand un utilisateur tentait de modifier une planification cron depuis le menu curses.
+
+**Correctif.** 3 références sur 2 lignes dans `apply_cron_schedule` :
+```python
+- fd = _os.open(str(entry.cron_path), _os.O_WRONLY | _os.O_CREAT | _os.O_TRUNC, 0o640)
+- with _os.fdopen(fd, "w") as fh:
++ fd = os.open(str(entry.cron_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o640)
++ with os.fdopen(fd, "w") as fh:
+```
+
+`apply_cron_email()` (juste en dessous) était déjà correcte — elle utilise le helper local `_atomic_write()`.
+
+**Tests qui épinglent le correctif :** `TestApplyCronSchedule::test_replaces_schedule`, `test_preserves_email_comment`, `test_missing_file_returns_error`.
 
 ---
 
@@ -11408,48 +12876,113 @@ $ python3 -m pytest tests/ -q
 .................. 4538 passed in 7.77s
 ```
 
-`4499 → 4538` (+39) : +4 depuis `test_domain_scores_mapping_complete.py`, +35 depuis les nouvelles classes cron.
+`4499 → 4538` (+39) : +4 de `test_domain_scores_mapping_complete.py`, +35 des nouvelles classes cron.
 
 ### Compatibilité
 
 - **Contrat JSON** : `schema_version="1"`, les 116 EXPLAIN_KEYS, les 34 sections filtrables — **inchangés**.
-- **Surface CLI** : aucun flag ajouté/retiré.
-- **Score par domaine** : inchangé (aucune modif `_PREFIX_TO_DOMAIN` — #15b reporté).
-- **Fichiers de config** : inchangés. **Clés de locale** : inchangées. **Contrat plugin** : inchangé.
+- **Surface CLI** : aucun drapeau ajouté, aucun retiré.
+- **Détail du score par domaine** : inchangé (aucune modification de `_PREFIX_TO_DOMAIN` — #15b déféré).
+- **Fichiers de configuration** (`config.conf`, `services.json`, profils) : inchangés.
+- **Clés de locale** : inchangées.
+- **Contrat des plugins** : inchangé.
+
+### Fichiers modifiés
+
+- `bob/__init__.py` — bump de version 0.4.8 → 0.5.0
+- `bob/checks/_run.py` — +30 lignes (helpers)
+- `bob/checks/auditd.py`, `bob/checks/backup.py`, `bob/checks/clamav.py`, `bob/checks/ddns.py`, `bob/checks/fail2ban.py`, `bob/checks/log_rotation.py`, `bob/checks/ntp.py`, `bob/checks/ssh.py`, `bob/checks/updates.py` — migration vers `is_unit_active`
+- `bob/output.py` — +22 lignes (`print_titled_box`)
+- `bob/cron.py` — migration vers `print_titled_box` (3 sites) + correctif du bug `_os` → `os`
+- `bob/manage_logs.py` — migration vers `print_titled_box` (1 site)
+- `bob/report.py` — +65 lignes (Protocol `Report`)
+- `bob/runner.py` — fermetures `emit_section`/`emit_group` + 20 migrations + annotation de type `Report` (net −26 lignes)
+- `tests/test_cron.py` — +35 tests
+- `tests/test_fail2ban.py`, `tests/test_ntp.py` — sites de patch mis à jour pour la nouvelle couche de helpers
+- `tests/test_domain_scores_mapping_complete.py` — **nouveau fichier**, +4 tests
+- `pyproject.toml` — bump de version
+- `bob/data/schemas/{service,services-list,plugin-file}.schema.json` — bump de l'URL `$id`
+- `README.md` + `README_FR.md` — version de la bannière
+- `DOCUMENTS/README_TECH.md` + `DOCUMENTS/README_TECH_FR.md` — bannière + badge + références « As of vX.Y.Z »
+- `man/bob.1`, `man/bob.conf.5`, `man/bob-profile.5` — version du `.TH`
+- `CHANGELOG.md`, `CHANGELOG_FR.md`, `DOCUMENTS/CHANGELOG_FULL.md`, `DOCUMENTS/CHANGELOG_FULL_FR.md` — cette entrée
+- `DOCUMENTS/TESTING.md` + `DOCUMENTS/TESTING_FR.md` — ligne + section v0.5.0
+- `debian/changelog`, `packaging/rpm/bob.spec` — strophes de packaging
 
 ---
 
 ## [v0.4.8] — 21-05-2026
 
-**Passe d'audit code-quality 4** — réalisée par un sub-agent `general-purpose` dispatché après le reset du quota mensuel org, briefé avec `DOCUMENTS/SNAPSHOT.md` comme cartographie primaire. L'agent a lancé 4 chasses de patterns de bugs distincts (champs dataclass morts, helpers réinventés, timeouts incohérents, code mort post-refactor) et a retourné **4 IMPORTANT + 5 MINOR + 3 SUGGESTION findings**. Tous corrigés dans cette release, bundlés avec 6 améliorations pyproject.toml queueées depuis v0.4.7. 4499/4499 tests passent.
+**Passe d'audit de qualité du code n° 4** — réalisée par un sous-agent `general-purpose` lancé après la remise à zéro du quota mensuel de l'organisation, avec `DOCUMENTS/SNAPSHOT.md` comme cartographie principale. L'agent a mené 4 chasses distinctes à des motifs de bug (champs de dataclass morts, helpers réinventés, incohérences de délais, code mort laissé par des refactors) et a renvoyé **4 constats IMPORTANT + 5 MINOR + 3 SUGGESTION**. Tous traités dans cette release, regroupés avec 6 améliorations de pyproject.toml mises en attente depuis v0.4.7. 4499/4499 tests au vert.
 
-### I4 — fichiers de log `sudo bob -d` appartenaient à root (seul bug observable utilisateur)
+### I4 — les fichiers de log de `sudo bob -d` appartenaient à root (le seul bug observable de l'extérieur)
 
-**Reproduit** : n'importe quel `sudo bob -d` sur Linux. Le rapport détaillé à `~/.local/share/bob/logs/bob_YYYYMMDD_HHMMSS.log` était créé en mode `0o600` (correct — output confidentiel) mais avec ownership `root:root` parce que le syscall `open()` se passe dans le contexte sudo. L'utilisateur réel invocateur ne pouvait ni lire ni supprimer ses propres rapports après coup. Idem pour le répertoire parent `logs/` à sa première création via `mkdir(parents=True)`.
+**Reproduit** : toute exécution de `sudo bob -d` sous Linux. Le rapport d'audit détaillé `~/.local/share/bob/logs/bob_YYYYMMDD_HHMMSS.log` était créé en mode `0o600` (correct — sortie confidentielle) mais avec la propriété `root:root`, parce que l'appel système `open()` a lieu dans le contexte sudo. L'utilisateur réel qui avait lancé l'audit ne pouvait ensuite ni lire ni supprimer ses propres rapports. Idem pour le répertoire parent `logs/` lors de son premier `mkdir(parents=True)`.
 
-**Pourquoi ça a survécu 4 audits** : BOB a un pattern chown-back bien établi via `bob.sysinfo::chown_to_sudo_user(path)` — un thin wrapper autour de `os.chown(path, pw_uid, pw_gid)` résolu depuis `$SUDO_USER`, avec un no-op silencieux quand pas sous sudo. Le pattern était correctement appliqué à **7 modules** qui écrivent dans `~/.config/bob/` (`config.py`, `history.py`, `ignore.py`, `compare.py`, `recurrence.py`, `profiles.py`, `registry.py`) — mais jamais branché pour les deux modules qui écrivent dans `~/.local/share/bob/logs/`. L'omission ne se manifeste qu'au runtime via "permission denied" quand l'utilisateur essaie de `cat`/`rm` son rapport.
+**Pourquoi il a survécu à 4 audits** : BOB a un motif bien établi de rétrocession de propriété via `bob.sysinfo::chown_to_sudo_user(path)` — une fine enveloppe autour de `os.chown(path, pw_uid, pw_gid)` résolue depuis `$SUDO_USER`, avec un repli silencieux sans effet hors de sudo. Le motif était correctement appliqué dans **7 modules** qui écrivent dans `~/.config/bob/` (`config.py`, `history.py`, `ignore.py`, `compare.py`, `recurrence.py`, `profiles.py`, `registry.py`) — mais n'avait jamais été branché pour les deux modules qui écrivent dans `~/.local/share/bob/logs/`. L'omission ne se manifeste qu'à l'exécution, par un « permission denied » quand l'utilisateur tente de faire `cat`/`rm` sur son rapport.
 
-**Fix** : `bob/report.py::AuditReport.__init__` appelle `chown_to_sudo_user(path)` juste après le `os.open(..., 0o600)`. `bob/manage_logs.py::get_or_prompt_log_dir` appelle `chown_to_sudo_user(d)` après chaque `d.mkdir(parents=True, exist_ok=True)` (4 branches : `--output-dir`, config sauvée, non-interactif, interactif).
+**Correctif** :
 
-Le fix est non-invasif : zéro impact hors sudo (pas de `SUDO_USER` → early return).
+```python
+# bob/report.py — AuditReport.__init__
+fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+self._fh = os.fdopen(fd, "w", encoding="utf-8")
+# When invoked under sudo, the report file is owned by root by default
+# and cannot be read/deleted afterwards by the real user. Chown it back
+# so `sudo bob -d` reports land in the user's account, not root's.
+from bob.sysinfo import chown_to_sudo_user
+chown_to_sudo_user(path)
+```
 
-### I1-I3 + M4-M5 — champs dataclass morts purgés
+```python
+# bob/manage_logs.py — get_or_prompt_log_dir
+from bob.sysinfo import chown_to_sudo_user, get_user_home
 
-Huit champs dataclass populés par `from_system()` (i.e. faisant du vrai travail I/O à chaque audit) mais jamais lus par aucun consumer. Même classe de bug que le fix v0.4.3 C1 qui avait retiré 5 attrs morts de `HardeningSnapshot` causant des crashes `--json-full`.
+# (4 branches: --output-dir / saved config / non-interactive / interactive)
+d.mkdir(parents=True, exist_ok=True)
+chown_to_sudo_user(d)
+```
 
-| Check / dataclass | Champ(s) retiré(s) |
-|---|---|
-| `SSHSnapshot` | `config_source_files` (populé par walker récursif Include sshd_config ; le paramètre `sources` de `_parse_config_file()` est aussi dropped) |
-| `FirewallStatus` | `ipv4_rules_count` + `ipv6_rules_count` (deux counters calculés à chaque audit via `sum(1 for ln in ...)` ; seuls consumers étaient les fixtures de tests) |
-| `SambaSnapshot` | `min_protocol` (capturé depuis `min protocol` smb.conf ; seul `smb1_enabled` dérivé est consommé) |
-| `ClamAVSnapshot` | `last_scan_log_path` + `db_path` (`_find_last_scan_date()` retournait un tuple mais seul `date` était utilisé ; simplifié pour retourner `Optional[str]`) |
-| `SecureBootSnapshot` | `method` (détection method interne, "mokutil"/"efivars"/"bootctl" ; seul `state` est consommé) |
+Les quatre branches mkdir de `get_or_prompt_log_dir` (chemin `--output-dir`, chemin de la configuration enregistrée, défaut non interactif, invite interactive) appellent désormais chacune `chown_to_sudo_user(d)` après un mkdir réussi.
 
-Tests mis à jour pour ne plus passer les kwargs supprimés. `test_default_method_is_none` dans `test_secure_boot.py` retiré (testait juste l'existence du champ). Net : -1 test.
+Le correctif est non invasif : aucun impact hors sudo (pas de `SUDO_USER` → retour immédiat).
 
-### M1 — cohérence `_C_LOCALE_ENV`
+### I1-I3 + M4-M5 — champs de dataclass morts purgés
 
-Trois sites subprocess by-passaient la convention `env=_C_LOCALE_ENV` :
+Huit champs de dataclass remplis par `from_system()` (donc faisant de vraies E/S à chaque audit) mais jamais lus par aucun consommateur. Même classe de bug que le correctif C1 de v0.4.3, qui avait retiré 5 attributs morts de `HardeningSnapshot` à l'origine de plantages de `--json-full`.
+
+#### I1 — `SSHSnapshot.config_source_files`
+
+```python
+@dataclass
+class SSHSnapshot:
+    ...
+    sshd_config:             dict = field(default_factory=dict)
+    config_source_files:     List[str] = field(default_factory=list)  # ← removed
+    ...
+```
+
+Rempli par `_parse_config_file()` pendant la résolution récursive des directives `Include` de sshd_config. L'intention était de faire apparaître la liste des fichiers sources contributeurs à des fins de diagnostic. Jamais consommé — ni par `check_ssh`, ni par `display`, ni par `json_output`, ni par aucun test. Le paramètre compagnon `sources` de `_parse_config_file()` était lui aussi inutilisé, donc il disparaît également (la signature de la fonction se simplifie de `(path, config, seen, sources)` à `(path, config, seen)`).
+
+#### I2 — `FirewallStatus.ipv4_rules_count` + `ipv6_rules_count`
+
+Deux compteurs entiers calculés par deux passes `sum(1 for ln in ... if "(v6)" not in ln)` / `... if "(v6)" in ln` sur le `numbered_output` d'UFW à chaque audit. Utilisés nulle part — les tests passaient simplement des valeurs pour satisfaire le constructeur de la dataclass. Retirés ; les 4 fichiers de test (`test_firewall.py`, `test_degraded.py`, `test_ufw_logging.py`) mis à jour pour ne plus les passer. Si un futur consommateur a besoin de ces comptes, ils se dérivent à la demande de `numbered_output.count("(v6)")`.
+
+#### I3 — `SambaSnapshot.min_protocol`
+
+Capturé depuis la directive `min protocol` de `smb.conf`. Consommé uniquement par la variable locale `min_proto`, utilisée pour calculer `smb1_enabled` — le champ de dataclass est redondant. Retiré.
+
+#### M4 — `ClamAVSnapshot.last_scan_log_path`
+
+`_find_last_scan_date()` renvoyait un tuple `(date, log_path)`, mais seule `date` était consommée. La valeur `log_path` (le fichier d'où provenait la date) aurait pu être une information de diagnostic utile, mais elle n'était affichée nulle part. Champ supprimé ; la fonction simplifiée pour renvoyer `Optional[str]` (juste la date).
+
+#### M5 — `ClamAVSnapshot.db_path` + `SecureBootSnapshot.method`
+
+Tous deux remplis, tous deux jamais consommés par leur fonction `check_*` ni par aucun affichage en aval. Les tests affirmaient seulement que les champs existaient et contenaient une valeur donnée — le genre de test le plus fragile (muet si le champ cesse d'être rempli). Champs supprimés ; `tests/test_clamav.py:481` et `tests/test_secure_boot.py:200` nettoyés. La méthode de détection de secure_boot (« mokutil » / « efivars » / « bootctl ») est désormais purement interne — seul `state` compte en aval.
+
+### M1 — cohérence de `_C_LOCALE_ENV`
+
+Trois sites de sous-processus contournaient la convention `env=_C_LOCALE_ENV` :
 
 | Fichier | Ligne | Commande |
 |---|---|---|
@@ -11457,51 +12990,80 @@ Trois sites subprocess by-passaient la convention `env=_C_LOCALE_ENV` :
 | `bob/checks/smtp.py` | 58 | `ps -eo comm` |
 | `bob/checks/smtp.py` | 102 | `ss -tlnp` / `netstat -tlnp` |
 
-Aujourd'hui les sorties se trouvent indépendantes de la locale sur toutes les distros ciblées, donc le bypass est bénin. Mais la convention existe pour une raison — un futur `ss` qui localiserait "LISTEN" ou `ps` qui localiserait ses headers casserait silencieusement la détection dans ces checks pendant que tous les autres checks de BOB continueraient de fonctionner. Même leçon v0.4.3 strptime, appliquée préemptivement. Corrigé via `env=_C_LOCALE_ENV` sur les 3 sites.
+Aujourd'hui, les sorties de `ps`, `ss` et `netstat` se trouvent être indépendantes de la locale sur toutes les distros visées par BOB, donc le contournement est bénin. Mais la convention existe pour une raison — un futur `ss` qui localiserait le mot-clé « LISTEN », ou un `ps` qui localiserait ses en-têtes de colonnes, casserait en silence la détection de ces checks, alors que tous les autres checks de BOB continueraient de fonctionner. Même leçon que celle du strptime de v0.4.3, appliquée par anticipation. Corrigé via `env=_C_LOCALE_ENV` sur les trois sites (avec l'import approprié ajouté).
 
-### M3 — `log_rotation._service_active` inliné via `_run`
+### M3 — `log_rotation._service_active` remplacée en ligne via `_run`
 
-La fonction faisait 12 lignes de `subprocess.run(["systemctl", "is-active", name], ...)` + handling d'exception + `.stdout.strip() == "active"`. Le même pattern était déjà implémenté en one-liner via `_run()` dans `clamav.py`, `fail2ban.py`, `auditd.py`, `ssh.py`. Remplacé par `return _run("systemctl", "is-active", name, timeout=5).strip() == "active"`. Les imports locaux `subprocess` et `_C_LOCALE_ENV` devenus inutiles après le nettoyage — aussi retirés.
+La fonction faisait 12 lignes de `subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True, timeout=5, env=_C_LOCALE_ENV)` + gestion d'exceptions + `.stdout.strip() == "active"`. Le même motif était déjà implémenté en une ligne via `_run()` dans `clamav.py`, `fail2ban.py`, `auditd.py`, `ssh.py`. Remplacée par `return _run("systemctl", "is-active", name, timeout=5).strip() == "active"`. Les imports locaux `import subprocess` et `_C_LOCALE_ENV` n'étaient plus nécessaires après le nettoyage — retirés aussi.
 
-### M2 + S2 — dédoublonnement gestion cron (avec parité NOTIFY_EMAIL legacy)
+### M2 + S2 — déduplication de la gestion cron (avec parité legacy de NOTIFY_EMAIL)
 
-`bob/cron.py::edit_cron_schedule` (wizard plain-text) et `bob/tui/cron.py::_apply_cron_schedule` (curses TUI) dupliquaient la même logique atomic-write + regex. Idem pour `edit_cron_email` (plain) vs `_apply_cron_email_str` (curses). La branche curses utilisait `r"^NOTIFY_EMAILS=.*$"` (force la forme S-suffixée moderne), tandis que la branche plain utilisait `r"^NOTIFY_EMAILS?=.*$"` (le `?` rend le S optionnel, supportant les cron files BOB pré-v0.3 qui écrivaient `NOTIFY_EMAIL=` sans le S). Résultat net : les users migrant d'une entrée cron pré-v0.3 pouvaient éditer leur email de notification via le wizard plain mais pas via la TUI curses — inconsistance UX silencieuse.
+`bob/cron.py::edit_cron_schedule` (assistant en texte brut, invoqué par `--manage-cron` hors TTY) et `bob/tui/cron.py::_apply_cron_schedule` (TUI curses pour la même opération) dupliquaient la même logique de modification atomique de fichier :
 
-**Fix** : `apply_cron_schedule(entry, schedule_expr) -> str` et `apply_cron_email(entry, new_email) -> tuple[str, int]` promus en helpers publics dans `bob/cron.py`. `bob/tui/cron.py` les importe et expose des wrappers fins sous les noms `_apply_*` originaux pour les call sites existants (délégation d'une ligne chacun). La regex legacy `NOTIFY_EMAILS?=` est maintenant l'unique source de vérité pour les deux branches.
+```python
+new_line = f"{schedule_expr}  root  {entry.script_path}"
+new_text = re.sub(
+    r"^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+root\s+\S+.*$",
+    lambda _: new_line, text, flags=re.MULTILINE,
+)
+fd = os.open(str(entry.cron_path), os.O_WRONLY|os.O_CREAT|os.O_TRUNC, 0o640)
+with os.fdopen(fd, "w") as fh:
+    fh.write(new_text)
+```
 
-### S1 — fenêtre auth_log 90 jours documentée comme intentionnelle
+Même motif pour `edit_cron_email` (texte brut) contre `_apply_cron_email_str` (curses). La branche curses utilisait `r"^NOTIFY_EMAILS=.*$"` (impose la forme moderne avec S), tandis que la branche texte brut utilisait `r"^NOTIFY_EMAILS?=.*$"` (le `?` rend le S optionnel, prenant en charge les fichiers cron de BOB d'avant v0.3 qui écrivaient `NOTIFY_EMAIL=` sans S). Résultat net : les utilisateurs venant d'une entrée cron d'avant v0.3 pouvaient modifier leur e-mail de notification via l'assistant en texte brut, mais pas via le TUI curses — une incohérence d'ergonomie silencieuse.
 
-`bob/checks/auth_log.py::_read_auth_from_journald` hardcode `max_days: int = 90` pour l'historique d'authentification SSH via `journalctl -t sshd --since=...`. L'audit a flaggé l'asymétrie avec le flag CLI `--log-days` (default 7) qui contrôle l'analyse des logs UFW dans `bob/checks/logs.py`. Investigation : c'est **intentionnel** et les deux fenêtres ont des sémantiques différentes.
+**Correctif** : `apply_cron_schedule(entry, schedule_expr) -> str` et `apply_cron_email(entry, new_email) -> tuple[str, int]` promues en helpers publics de `bob/cron.py`. `bob/tui/cron.py` les importe désormais et expose de fines enveloppes sous les noms d'origine `_apply_*` pour les sites d'appel existants (une délégation d'une ligne chacune). La regex legacy `NOTIFY_EMAILS?=` est désormais la source unique de vérité pour les deux branches. `bob/tui/cron.py` perd aussi ses références devenues inutiles à `import re`, `import shlex`, `_atomic_write`.
 
-Les logs UFW sont bruyants à chaque tentative de connexion — une fenêtre de 7 jours garde la table top-IPs / brute-force lisible et évite d'enterrer les vrais signaux. Les tentatives brute-force SSH peuvent être lentes et sporadiques sur plusieurs semaines ou mois (surtout contre un SSH hardenisé qui auto-ban après N essais — l'attaquant rotate ses IPs). Une fenêtre de 90 jours attrape ce signal long-tail. Documenté dans le docstring de la fonction pour que les audits futurs ne le re-flaggent pas comme inconsistance.
+### S1 — fenêtre de 90 jours d'auth_log documentée comme intentionnelle
+
+`bob/checks/auth_log.py::_read_auth_from_journald` code en dur `max_days: int = 90` pour récupérer l'historique d'authentification SSH via `journalctl -t sshd --since=...`. L'audit a signalé l'asymétrie avec le drapeau CLI `--log-days` (7 par défaut), qui contrôle l'analyse des logs UFW dans `bob/checks/logs.py`. Enquête : c'est **intentionnel**, et les deux fenêtres ont des sémantiques différentes.
+
+Les logs UFW sont bruyants à chaque tentative de connexion — une fenêtre de 7 jours garde lisibles le tableau des IP principales / de force brute et évite d'enterrer les vrais signaux. Les tentatives de force brute SSH, au contraire, peuvent être lentes et sporadiques sur des semaines ou des mois (surtout contre un SSH durci qui bannit automatiquement après N essais — l'attaquant fait tourner ses IP). Une fenêtre de 90 jours attrape ce signal de longue traîne. Documenté dans la docstring de la fonction, pour que les futurs audits ne le signalent plus comme une incohérence :
+
+```python
+def _read_auth_from_journald(max_days: int = 90) -> str:
+    """...
+    The 90-day default is intentional and **independent of `--log-days`**
+    (which controls UFW log analysis in `bob/checks/logs.py`). UFW logs are
+    noisy and a narrow 7-day default avoids burying the report; SSH brute-
+    force attempts can be slow and sporadic over months, so we need a wider
+    window to catch them.
+    """
+```
 
 ### S3 — `SCORE_BAR_WIDTH` exporté depuis `bob.output`
 
-`_BAR_WIDTH = 10` était dupliqué en constante module-level dans `bob/breakdown.py`, `bob/domain_scores.py`, et `bob/display.py`. Les deux premiers sont des largeurs de barres de score (unité : score, range 0-10) ; le troisième est la largeur de barre disque-pourcent (unité : pourcentage, range 0-100) et est indépendant.
+`_BAR_WIDTH = 10` était dupliqué comme constante de module dans `bob/breakdown.py`, `bob/domain_scores.py` et `bob/display.py`. Les deux premiers sont des largeurs de barre de score (unité : score, plage 0-10) ; le troisième est la largeur de la barre de pourcentage de disque (unité : pourcentage, plage 0-100) et en est indépendant.
 
-**Fix** : `SCORE_BAR_WIDTH = 10` promu depuis le `_SCORE_BAR_WIDTH` privé déjà utilisé par `output.score_bar()` (introduit dans l'harmonisation des jauges de v0.4.7). `breakdown.py` et `domain_scores.py` font maintenant `from bob.output import SCORE_BAR_WIDTH as _BAR_WIDTH`. `display.py::_BAR_WIDTH` laissé seul — même valeur numérique, unité sémantique différente, coïncidemment égale.
+**Correctif** : `SCORE_BAR_WIDTH = 10` promu à partir du privé `_SCORE_BAR_WIDTH` déjà utilisé par `output.score_bar()` (introduit par l'harmonisation des jauges de v0.4.7). `breakdown.py` et `domain_scores.py` font désormais `from bob.output import SCORE_BAR_WIDTH as _BAR_WIDTH`. `display.py::_BAR_WIDTH` laissé tel quel — même valeur numérique, unité sémantique différente, coïncidence fortuite.
 
-### Hardening pyproject.toml (queué depuis v0.4.7, appliqué ici)
+### Durcissement de pyproject.toml (en attente depuis v0.4.7, appliqué ici)
 
-Pendant la prep de v0.4.7 un audit exhaustif du pyproject.toml avait identifié 6 améliorations différées pour éviter de mélanger la plumberie release avec des changements structurels. Toutes appliquées en v0.4.8 plus un bonus :
+Pendant la préparation de v0.4.7, un audit exhaustif de pyproject.toml avait identifié 6 améliorations, déférées pour ne pas mélanger la plomberie de release et les changements structurels. Toutes appliquées en v0.4.8, avec un bonus :
 
-1. **`Development Status :: 4 - Beta` → `5 - Production/Stable`**. 4499 tests, 7 distros CI, hardware production audité, 17+ releases PyPI depuis v0.1.0, contracts gelés. "Beta" suggérait "may have breaking changes within minor versions" — ce qui n'est plus vrai depuis v0.4.0.
+1. **`Development Status :: 4 - Beta` → `5 - Production/Stable`**. Le projet a 4499 tests, une CI sur 7 distros, des audits sur du matériel de production, 17+ releases PyPI depuis v0.1.0, des contrats gelés (`schema_version="1"`, codes de sortie, EXPLAIN_KEYS, clés de domaine). « Beta » suggérait « peut avoir des changements cassants au sein des versions mineures », ce qui n'est plus vrai depuis v0.4.0.
 
-2. **Champs `authors` + `maintainers` ajoutés**. PyPI affichait "Author: UNKNOWN" parce que les metadata PEP 621 n'avaient pas d'info auteur. Maintenant `pyproject.toml` porte l'attribution canonique.
+2. **Champs `authors` + `maintainers` ajoutés**. PyPI affichait « Author: UNKNOWN », parce que les métadonnées PEP 621 n'avaient aucune information d'auteur — seuls `debian/control` / `bob.spec` portaient le nom de Cédric Clauzel. Désormais `pyproject.toml` porte l'attribution canonique.
 
-3. **`[project.optional-dependencies] geoip = ["geoip2>=4.0"]`**. La feature de geolocation IP dans `bob/checks/logs.py` fait `try: import geoip2.database` avec fallback silencieux. La dépendance était auparavant installée via `pipx inject bodyguard-of-bits geoip2` — clunky. Maintenant les users peuvent `pipx install "bodyguard-of-bits[geoip]"` en une seule étape.
+3. **`[project.optional-dependencies] geoip = ["geoip2>=4.0"]`**. La fonctionnalité de géolocalisation IP de `bob/checks/logs.py` (enrichissement de la détection de force brute) fait `try: import geoip2.database` avec un repli silencieux. La dépendance s'installait jusqu'ici via `pipx inject bodyguard-of-bits geoip2` selon la documentation — peu pratique. Désormais, les utilisateurs peuvent faire `pipx install "bodyguard-of-bits[geoip]"` en une seule étape.
 
-4. **`wheel` retiré de `build-system.requires`**. Depuis setuptools 70, `setuptools.build_meta` auto-resolve wheel — le lister explicitement est redondant et ralentit légèrement la préparation de l'env de build dans les builds PEP 517 isolés.
+4. **`wheel` retiré de `build-system.requires`**. Depuis setuptools 70, `setuptools.build_meta` résout automatiquement wheel — le lister explicitement est redondant et ralentit légèrement la préparation de l'environnement de build dans les builds isolés PEP 517. Nettoyé.
 
-5. **URLs `Source` + `Documentation` ajoutées** à `[project.urls]`. PyPI affiche des icônes spéciales pour ces labels d'URL spécifiques.
+5. **URL `Source` + `Documentation` ajoutées** à `[project.urls]`. PyPI affiche des icônes spéciales pour ces libellés d'URL précis. `Source` pointe vers le dépôt GitHub (comme Homepage, mais PyPI le rend autrement) ; `Documentation` pointe vers `DOCUMENTS/README_TECH.md` (la référence technique principale).
 
-6. **`dependencies = []` explicite** avec commentaire "Zero runtime deps — preserve at all costs". PEP 621 rend `dependencies` implicite si manquant, mais l'expliciter donne du poids à la policy.
+6. **`dependencies = []` explicite**, avec un commentaire « Zero runtime deps outside stdlib — foundational architectural decision (see DOCUMENTS/SNAPSHOT.md "Kept" section). Preserve at all costs. » PEP 621 rend `dependencies` implicite s'il manque, mais l'écrire en toutes lettres donne du poids à la politique.
 
-**Bonus** : `[tool.setuptools.packages.find]::include = ["bob", "bob.checks", "bob.tui"]` (liste explicite) remplace le glob `["bob*"]` précédent. La forme glob inclurait n'importe quel futur répertoire top-level `bob_*` dans le wheel (e.g. un `bob_tmp/` accidentel d'une session de debug). L'explicite est plus défensif.
+**Bonus** : `[tool.setuptools.packages.find]::include = ["bob", "bob.checks", "bob.tui"]` (liste explicite) remplace le glob précédent `["bob*"]`. La forme glob inclurait dans la wheel tout futur répertoire de premier niveau `bob_*` (par ex. un `bob_tmp/` accidentel issu d'une session de débogage). L'explicite est plus défensif.
 
 ### Tests
 
-4499/4499 passent — net -1 vs les 4500 de v0.4.7. Le test retiré est `tests/test_secure_boot.py::TestSecureBootSnapshot::test_default_method_is_none` qui assertait juste l'existence du champ `SecureBootSnapshot.method` (qui n'existe plus). Aucun test ne dépendait des autres champs dataclass retirés au-delà des kwargs de fixture — ceux-là ont été nettoyés.
+4499/4499 au vert — net −1 par rapport aux 4500 de v0.4.7. Le test retiré est `tests/test_secure_boot.py::TestSecureBootSnapshot::test_default_method_is_none`, qui n'affirmait que l'existence du champ `SecureBootSnapshot.method` (désormais disparu). Aucun test ne dépendait des autres champs de dataclass retirés au-delà des kwargs de fixtures — ceux-ci ont été nettoyés pour retirer les arguments nommés devenus invalides.
+
+```
+$ pytest tests/ -q
+4499 passed in 5.66s
+```
 
 ---
 
@@ -12029,61 +13591,72 @@ La matrice CI multi-distros et le PKGBUILD AUR sont aussi toujours reportés —
 
 ## [v0.4.2] — 14-05-2026
 
-**Phase 3 de la roadmap distro-ready — discipline packaging.** Cette release ajoute les artefacts dont les mainteneurs distros ont besoin pour packager BOB sans patcher le source. Trois man pages, un paquet source Debian ciblant 3 paquets binaires (`bob-core` / `bob-tui` / `bob` meta), une spec RPM Fedora, un profil AppArmor, un threat model `SECURITY.md`, et une politique formelle de support Python. Un audit agent pré-release a aussi fait remonter 2 critiques + 5 importants + 4 mineurs + 1 suggestion — tous corrigés dans la même release (section "Passe de hardening" ci-dessous). 4452/4452 tests (+3 depuis `tests/test_template_vars_migration.py`).
+**Phase 3 de la feuille de route « distro-ready » — discipline de packaging.** Cette release ajoute les artefacts dont les mainteneurs de distributions ont besoin pour empaqueter BOB sans patcher les sources. Trois pages de manuel, un paquet source Debian visant 3 paquets binaires (`bob-core` / `bob-tui` / méta-paquet `bob`), un spec RPM Fedora, un profil AppArmor, un modèle de menace `SECURITY.md` et une politique formelle de prise en charge de Python. Un audit d'avant-release par agent a aussi fait remonter 2 critiques + 5 importants + 4 mineurs + 1 suggestion — tous corrigés dans la même release (la section « Passe de hardening » ci-dessous). 4452/4452 tests (+3 issus de `tests/test_template_vars_migration.py`).
 
-L'intention stratégique : BOB a franchi le cap "est-ce assez stable ?" en Phases 1 & 2. Le dernier obstacle à l'adoption distro est l'absence des artefacts standards que chaque mainteneur distro s'attend à trouver upstream. Cette release ferme ce trou.
+L'intention stratégique : BOB a franchi le cap « est-ce assez stable ? » avec les Phases 1 et 2. L'obstacle restant à l'adoption par les distributions est l'absence des artefacts de packaging standard que tout mainteneur s'attend à trouver en amont. Cette release comble ce manque.
 
 ---
 
-### `SECURITY.md` — threat model et politique de disclosure
+### `SECURITY.md` — modèle de menace et politique de divulgation
 
 **Fichiers :** `SECURITY.md` (nouveau)
 
 #### Problème
 
-Jusqu'à v0.4.2, la posture sécurité de BOB était implicite. Un packager distro lisant le repo n'avait aucune réponse formelle à : qui est l'adversaire ? Contre quelles menaces BOB défend ? Qu'est-ce qui est hors scope ? Où signaler une vulnérabilité ? Sans ces réponses, les packagers soit devinent (dangereux), soit passent leur chemin (pire).
+Jusqu'à v0.4.2, la posture de sécurité de BOB était implicite. Un empaqueteur de distribution qui lisait le dépôt n'avait aucune réponse formelle à : qui est l'adversaire ? Contre quelles menaces BOB protège-t-il ? Qu'est-ce qui est hors périmètre ? Où signaler une vulnérabilité ? Sans ces réponses, les empaqueteurs soit devinent (dangereux), soit passent leur chemin (pire).
 
 #### Implémentation
 
 `SECURITY.md` (~150 lignes) couvre :
 
-- **Tableau des versions supportées** avec politique EOL : seul le minor courant reçoit des patches sécurité.
-- **Canal de signalement** : `cedricclauzel@mailo.com` avec préfixe `[BOB security]`. Acquittement 7 jours, fenêtre fix 30 jours pour les issues haute-sévérité.
-- **Threat model** : ce qu'est BOB (outil audit-only invoqué par utilisateur privilégié) vs ce qu'il n'est PAS (pas de daemon, pas d'agent remote, pas de défense active).
-- **Modèle d'adversaire** : trois hypothèses (utilisateur invoquant trusted, layout filesystem sain, package manager intact). BOB est post-compromission, pas pré-.
-- **Tableau frontières de confiance** : config user-contrôlée (JSON Schema + ANSI sanitization + size limits), contenu fichiers système (bounded reads, `_C_LOCALE_ENV`), sortie subprocess (timeouts partout, pas de `shell=True` hors `--fix`).
-- **Hors scope** : compromission root préalable, attaques niveau noyau, vulnérabilités applicatives.
-- **Contrat mode `--fix`** : jamais d'exécution sans confirmation `y`.
-- **Avertissement plugins** : `~/.config/bob/checks.d/*.py` ne sont PAS sandboxés.
-- **Surface réseau** : 2 appels HTTPS sortants, tous deux gatés par `--offline`. Pas de télémétrie.
-- **Manipulation de données** : permissions fichiers, comportement `chown_to_sudo_user` depuis v0.3.6.
-- **Recommandations defense-in-depth pour packagers** : profil AppArmor en mode complain par défaut ; `pipx` comme chemin d'install recommandé.
-- **Politique de disclosure** : embargo 30 jours extensible, contributeurs crédités sauf demande d'anonymat.
+- **Tableau des versions prises en charge** avec politique de fin de vie : seule la mineure courante reçoit des correctifs de sécurité ; les changements cassants font monter la mineure.
+- **Canal de signalement** : `cedricclauzel@mailo.com` avec le préfixe de sujet `[BOB security]`. Accusé de réception sous 7 jours, fenêtre de correction de 30 jours pour les problèmes de haute gravité. Les problèmes de moindre gravité sont traités sur le suivi public après accusé de réception.
+- **Section modèle de menace** qui énonce ce qu'est BOB (un outil d'audit seul, invoqué par un utilisateur privilégié) et ce que BOB n'est PAS (pas de démon, pas d'agent distant, pas de défense active, pas de forensique avec chaîne de possession).
+- **Modèle d'adversaire** : trois hypothèses que BOB fait sur son environnement d'exécution (utilisateur appelant de confiance, arborescence de fichiers saine, gestionnaire de paquets intact). BOB est un outil d'audit post-compromission, pas de détection pré-compromission.
+- **Tableau des frontières de confiance** : configuration contrôlée par l'utilisateur (JSON Schema + assainissement ANSI + limites de taille + contrôle des identifiants), contenu des fichiers système (lectures bornées avec `errors='replace'`, plafonds de lignes, `_C_LOCALE_ENV` pour les sous-processus), sortie des sous-processus (délais partout, pas de `shell=True` hors `--fix`, jamais évaluée).
+- **Hors périmètre** : compromission root préexistante, attaques au niveau du noyau, vulnérabilités au niveau applicatif.
+- **Contrat du mode `--fix`** : n'exécute jamais rien sans confirmation `y` ; aucune évaluation des messages de constat.
+- **Avertissement sur les plugins de checks** : `~/.config/bob/checks.d/*.py` ne sont PAS en bac à sable — faites confiance à vos sources de plugins comme à tout autre code exécuté en root.
+- **Surface réseau** : 2 appels HTTPS sortants (recherche de l'IP publique + webhook), tous deux soumis à `--offline`. Ni télémétrie, ni statistiques d'usage.
+- **Traitement des données** : permissions des fichiers, comportement de `chown_to_sudo_user` depuis v0.3.6, chemins de baseline / historique / configuration / logs et ce qu'ils contiennent.
+- **Recommandations de défense en profondeur pour les empaqueteurs** : livrer le profil AppArmor en mode complain par défaut ; livrer `pipx` comme chemin d'installation recommandé.
+- **Politique de divulgation** : embargo de 30 jours prolongeable d'un commun accord, signaleurs crédités sauf demande d'anonymat.
 
-#### Notes de design
+#### Notes de conception
 
-- La liste "ce que BOB n'EST PAS" est intentionnellement explicite. Les outils d'audit sont parfois mal classés comme défenses ; clarifier la frontière d'emblée évite les malentendus.
-- Le tableau frontières de confiance map chaque traversée à la mitigation côté code déjà en place — ce ne sont pas des promesses aspirationnelles mais des checks que la suite de tests valide déjà.
+- La liste « ce que BOB n'est PAS » est volontairement explicite. Les outils d'audit sont parfois classés à tort comme des défenses ; poser la frontière d'emblée évite les malentendus.
+- Le tableau des frontières de confiance associe chaque franchissement à la mitigation précise déjà en place côté code — ce ne sont pas des promesses aspirationnelles, mais des contrôles qui passent déjà la suite de tests.
 
 ---
 
-### Man pages
+### Pages de manuel
 
 **Fichiers :** `man/bob.1` (nouveau, ~280 lignes), `man/bob.conf.5` (nouveau, ~80 lignes), `man/bob-profile.5` (nouveau, ~100 lignes)
 
 #### Problème
 
-Un paquet Debian / Fedora sans man pages échoue les checks `binary-without-manpage` lintian/rpmlint et est plus dur à découvrir avec `man -k`. Jusqu'à v0.4.2 BOB livrait un `--help` mais pas de `man bob`.
+Un paquet Debian / Fedora sans page de manuel échoue au contrôle `binary-without-manpage` de lintian/rpmlint, et il est plus difficile à découvrir via `man -k`. Jusqu'à v0.4.2, BOB livrait un texte `--help` mais pas de `man bob`.
 
 #### Implémentation
 
-Trois man pages groff écrites à la main (validées avec `man -l` et `groff -man -Tutf8`) :
+Trois pages de manuel groff écrites à la main (validées avec `man -l` et `groff -man -Tutf8`) :
 
-- **`bob(1)`** — page user-facing principale. Sections : `NAME`, `SYNOPSIS`, `DESCRIPTION`, `OPTIONS` (sous-groupées par finalité), `EXIT CODES` (contrat API publique stable rappelé ici), `JSON OUTPUT`, `FILES`, `ENVIRONMENT`, `SECURITY`, `SEE ALSO`, `AUTHOR`, `COPYRIGHT`.
-- **`bob.conf(5)`** — format fichier config.
-- **`bob-profile(5)`** — format fichier profil d'audit.
+- **`bob(1)`** — page principale pour l'utilisateur. Sections : `NAME`, `SYNOPSIS`, `DESCRIPTION`, `OPTIONS` (regroupées par usage : contrôle de l'audit, formats de sortie, configuration, comparaison/historique, remédiation, réseau, audits périodiques, filtres, divers), `EXIT CODES` (le contrat d'API publique stable, rappelé ici), `JSON OUTPUT` (renvoi vers `DOCUMENTS/README_TECH.md` pour le schéma complet), `FILES` (tous les chemins sous `~/.config/bob/` et ailleurs), `ENVIRONMENT` (`SUDO_USER`, `LC_ALL` / `LC_MESSAGES` / `LANG`), `SECURITY` (renvoi vers `SECURITY.md`), `SEE ALSO`, `AUTHOR`, `COPYRIGHT`.
+- **`bob.conf(5)`** — format du fichier de configuration. Sections : clés des ports de services personnalisés, `log_dir`, `suid_whitelist` (motifs documentés), valeurs par défaut du webhook, le fichier séparé du carnet d'adresses e-mail.
+- **`bob-profile(5)`** — format des fichiers de profil d'audit. Documente les métadonnées `[profile]`, les valeurs de gravité par clé de `[overrides]` (`info`/`warn`/`alert`/`skip`), la chaîne `extends` (profondeur plafonnée à 5 niveaux), l'ordre de découverte des fichiers de profil (le répertoire utilisateur l'emporte sur les profils intégrés), et les trois profils livrés (`server` / `desktop` / `container`).
 
-Écrites à la main plutôt que générées via `argparse-manpage` pour éviter d'ajouter une dépendance de build. Le coût : updates manuels quand la CLI change — mais la CLI fait partie de l'API publique stable depuis Phase 1, peu de changements attendus.
+Écrites à la main plutôt que générées via `argparse-manpage`, pour ne pas ajouter de dépendance de build. Le coût : des mises à jour manuelles quand la CLI change — mais la CLI fait désormais partie de l'API publique stable (Phase 1) et devrait changer rarement.
+
+#### Validation
+
+```
+$ for f in man/bob.1 man/bob.conf.5 man/bob-profile.5; do
+    groff -man -Tutf8 "$f" >/dev/null && echo "✓ $f"
+  done
+✓ man/bob.1
+✓ man/bob.conf.5
+✓ man/bob-profile.5
+```
 
 ---
 
@@ -12093,43 +13666,43 @@ Trois man pages groff écrites à la main (validées avec `man -l` et `groff -ma
 
 #### Problème
 
-La convention de packaging Debian est un dossier `debian/` à la racine du projet contenant un set strict de fichiers. Sans lui, le downstream Debian est impossible.
+La convention de packaging Debian est un dossier `debian/` à la racine du projet, contenant un ensemble strict de fichiers. Sans lui, l'empaquetage en aval chez Debian est impossible (ou exige un patch Quilt par build qu'aucun mainteneur ne veut porter).
 
 #### Implémentation
 
 **Trois paquets binaires déclarés dans `debian/control` :**
 
-| Paquet binaire | Contient | Pourquoi split |
+| Paquet binaire | Contient | Pourquoi ce découpage |
 |---|---|---|
-| `bob-core` | Pipeline audit, CLI, checks, scoring, JSON, locales, schemas, man pages, SECURITY.md | Tourne headless. Pas de dep curses. Adapté conteneurs, CI, serveurs minimaux. |
-| `bob-tui` | Sous-package `bob/tui/` (TUI curses) | Optionnel. Recommandé sur stations de travail, skip sur serveurs headless. |
-| `bob` | Meta-package dépendant des deux | `apt install bob` installe tout. |
+| `bob-core` | Pipeline d'audit, CLI, checks, scoring, sortie JSON, locales, schémas, pages de manuel, SECURITY.md | Tourne sans affichage. Pas de dépendance à curses. Adapté aux conteneurs, aux exécuteurs de CI, aux serveurs minimaux. |
+| `bob-tui` | Sous-paquet `bob/tui/` (TUI curses des assistants cron, futur sélecteur explain) | Optionnel. Tire `python3-curses` à l'exécution. Recommandé sur les postes de travail, à ignorer sur les serveurs sans affichage. |
+| `bob` | Méta-paquet dépendant de `bob-core` et de `bob-tui` | L'attente par défaut de l'utilisateur : `apt install bob` installe tout. |
 
-`Build-Depends` standard `debhelper-compat (= 13)` + `pybuild-plugin-pyproject`. `Rules-Requires-Root: no`.
+`Build-Depends` : `debhelper-compat (= 13)`, `dh-python`, `pybuild-plugin-pyproject`, `python3-all`, `python3-setuptools`, `python3-pytest <!nocheck>` — ce dernier est conditionnel, pour que les builds `nocheck` sautent la suite de tests. `Rules-Requires-Root: no` pour satisfaire la politique Debian moderne.
 
-`Recommends` / `Suggests` sur `bob-core` listent les soft dependencies avec lesquelles BOB intègre au moment de l'audit (`ufw`, `fail2ban`, `rkhunter`, `clamav`, `auditd`, `aide`, `unattended-upgrades`, `smartmontools`, `apparmor`, `fwupd`).
+Les clauses `Recommends` / `Suggests` de `bob-core` listent les dépendances souples avec lesquelles BOB s'intègre au moment de l'audit (`ufw`, `fail2ban`, `rkhunter`, `clamav`, `auditd`, `aide`, `unattended-upgrades`, `smartmontools`, `apparmor`, `fwupd`) — ce ne sont pas des exigences dures de build ou d'exécution, juste des outils que BOB sait interroger quand ils sont présents.
 
-**`debian/copyright`** au format DEP-5 avec stanzas distinctes pour le source, les données curées, les locales, les schemas. Tout MIT ; les références CIS sont notées explicitement comme mappings (pas redistribution du texte standard CIS).
+**`debian/copyright`** utilise DEP-5 (`https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/`), avec des strophes distinctes pour le code source, les fichiers de données organisés (`services.json`, profils, `cis_refs.json`), les fichiers de locale et les schémas. Tout est sous licence MIT ; les références aux CIS Critical Security Controls sont explicitement notées comme des correspondances (pas une redistribution du texte du standard CIS).
 
-**`debian/rules`** utilise pybuild. Un `override_dh_install` installe les man pages et `SECURITY.md` dans `bob-core`.
+**`debian/rules`** utilise pybuild via `dh $@ --with python3 --buildsystem=pybuild`. Un `override_dh_install` installe les pages de manuel et `SECURITY.md` dans `bob-core` (`/usr/share/man/man1`, `/usr/share/man/man5`, `/usr/share/doc/bob-core/`).
 
-**`debian/source/format`** : `3.0 (quilt)`.
+**`debian/source/format`** vaut `3.0 (quilt)` — le standard pour les paquets amont non natifs.
 
-**Fichiers split (`bob-core.install`, `bob-tui.install`)** listent les chemins explicites pour que dh_install sache quel module va où.
+**Les fichiers de découpage (`bob-core.install`, `bob-tui.install`)** listent des chemins explicites, pour que dh_install sache où va chaque module. `bob/tui/` est réservé à `bob-tui` ; tout le reste va dans `bob-core`.
 
 #### Profil AppArmor
 
-`debian/apparmor.d/bob` (~140 lignes). Livré en mode `complain` par défaut — l'utilisateur opte pour `enforce` après validation sur sa distro/version. Permet :
+`debian/apparmor.d/bob` (~140 lignes, séparé des autres artefacts debian/ parce que le packaging AppArmor est une convention Debian). Livré en mode `complain` par défaut — l'utilisateur passe à `enforce` après validation sur sa distribution/version précise. Autorise :
 
-- read sur `/etc/`, `/proc/`, `/sys/`, `/var/log/`, dirs état package manager
-- read+write sur `~/.config/bob/` et `~/.local/share/bob/`
-- exec (via `Pix`) d'une whitelist fermée de ~30 outils système
-- TCP sortant — le flag `--offline` au niveau application est la gate, pas le profil
+- la lecture sur `/etc/`, `/proc/`, `/sys/`, `/var/log/`, les répertoires d'état du gestionnaire de paquets
+- la lecture+écriture sur `~/.config/bob/` et `~/.local/share/bob/`
+- l'exécution (via `Pix`) d'une liste blanche fermée d'environ 30 outils système (`ufw`, `ss`, `iptables`, `systemctl`, `journalctl`, `openssl`, `smartctl`, `fwupdmgr`, `apt-cache`, `aa-status`, `dpkg`, `mokutil`, `bootctl`, `sysctl`, `swapon`, `timedatectl`, `chronyc`, `rkhunter`, `clamscan`, `freshclam`, `aide`, `auditctl`, `auditd`, `fail2ban-client`, `postconf`, `snap`, …)
+- le TCP sortant — c'est le drapeau applicatif `--offline` qui sert de barrière, pas le profil
 
-#### Notes de design
+#### Notes de conception
 
-- **Trois binaires plutôt qu'un.** Un paquet `bob` unique forcerait chaque image serveur / CI à tirer curses pour une TUI jamais utilisée. Split `bob-core` permet aux déploiements headless de rester légers sans désactiver de fonctionnalités.
-- **Pourquoi mode complain par défaut pour AppArmor.** BOB exec beaucoup de binaires dont les chemins varient entre distros. Enforce génèrerait de faux denials. Complain laisse l'utilisateur observer puis graduer.
+- **Trois binaires au lieu d'un.** Un paquet `bob` unique forcerait chaque image de serveur / de CI à tirer curses pour un TUI qu'elle n'utilise jamais. Découper `bob-core` permet aux déploiements conteneurisés / sans affichage de rester légers sans désactiver de fonctionnalité (le pipeline d'audit est identique entre une installation bob-core seule et bob+bob-tui).
+- **Pourquoi le mode complain par défaut pour AppArmor.** BOB exécute de nombreux binaires dont les chemins varient selon les distributions (`/sbin/sysctl` contre `/usr/sbin/sysctl`, `/usr/bin/iptables` contre `/usr/sbin/iptables` sur les dérivées de RHEL…). Livrer en enforce produirait de faux refus sur des différences mineures. Le mode complain permet à l'utilisateur d'observer ce qui est réellement invoqué et de passer à enforce une fois sa distribution/version validée.
 
 ---
 
@@ -12139,240 +13712,265 @@ La convention de packaging Debian est un dossier `debian/` à la racine du proje
 
 #### Problème
 
-Les conventions de packaging Fedora divergent de celles Debian : un seul `.spec`, `pyproject-rpm-macros`, pas de dossier `debian/`, pas de split Python core/extras typique. Sans spec, l'adoption Fedora COPR / RHEL EPEL est impossible.
+Les conventions de packaging de Fedora divergent de celles de Debian : un seul fichier `.spec`, `pyproject-rpm-macros`, pas de dossier `debian/`, des conventions de paquets binaires différentes (Fedora ne découpe généralement pas les paquets Python en cœur/extras). Sans fichier spec, l'adoption par Fedora COPR / RHEL EPEL est impossible.
 
 #### Implémentation
 
-Un paquet binaire `bob` unique sur Fedora (pas de split). La spec utilise `pyproject_wheel` / `pyproject_install` / `pyproject_save_files bob` pour déléguer au pipeline `pyproject.toml`.
+Un seul paquet binaire `bob` sur Fedora (pas de découpage). Le spec utilise `pyproject_wheel` / `pyproject_install` / `pyproject_save_files bob` pour déléguer au pipeline de build standard de `pyproject.toml`.
 
-`%check` exécute le smoke test plus la suite pytest complète. Sur Fedora COPR, ça attrape toute régression induite par le packaging.
+`%check` lance le smoke test (`python -c "import bob; assert bob.__version__ == '0.4.2'"`) plus la suite pytest complète (`python -m pytest tests/ -q`). Sur Fedora COPR, cela attrape toute régression induite par le packaging.
 
-Man pages et `SECURITY.md` installés via `install -D` explicites pendant `%install`.
+Les pages de manuel et `SECURITY.md` sont installés via des appels `install -D` explicites pendant `%install`.
 
-`Recommends` et `Suggests` miroirent le control Debian avec les noms de paquets Fedora (`firewalld` vs `ufw`, `audit` vs `auditd`).
+`Recommends` et `Suggests` reprennent le fichier de contrôle Debian avec les noms de paquets Fedora (`firewalld` contre `ufw`, `audit` contre `auditd`, etc.).
 
-#### Notes de design
+#### Notes de conception
 
-- **Pourquoi un répertoire `packaging/rpm/` séparé.** La convention Debian met tout sous `debian/`. RPM n'a pas d'équivalent racine — `packaging/` garde les deux systèmes visiblement séparés tout en restant upstream.
-- **Pas de lignes `Patch:`.** La spec build upstream tel quel.
+- **Pourquoi un répertoire `packaging/rpm/` séparé.** La convention Debian met tout sous `debian/`. RPM n'a pas de convention de racine équivalente — `packaging/` garde les deux systèmes visiblement séparés tout en restant en amont.
+- **Pas de lignes `Patch:`.** Le spec construit l'amont tel quel. Si des patchs propres à Fedora deviennent nécessaires plus tard, ils vivront dans ce répertoire à côté du spec.
 
 ---
 
-### Politique de support Python
+### Politique de prise en charge de Python
 
 **Fichiers :** `DOCUMENTS/README_TECH.md` + FR — nouvelle section
 
 #### Problème
 
-Les mainteneurs distros planifiant leurs fenêtres de compatibilité Python ont besoin de savoir si BOB supportera Python 3.10 dans 2 ans. Sans politique formelle, chaque EOL Python devient une renégociation.
+Les mainteneurs de distributions qui planifient leurs fenêtres de compatibilité Python ont besoin de savoir si BOB prendra encore en charge Python 3.10 dans 2 ans. Sans politique énoncée, chaque fin de vie de Python devient une renégociation.
 
 #### Implémentation
 
-Nouvelle section "Politique de support Python" dans `README_TECH.md` (et FR) s'engage sur **N et N-2** où N est la stable upstream actuelle. À partir de v0.4.2 :
+La nouvelle section « Python support policy » de `README_TECH.md` (et FR) s'engage sur **N et N-2**, où N est la version stable amont courante. En v0.4.2 :
 
 | Python | Statut |
 |---|---|
-| 3.13 | ✅ supporté (à sortie) |
-| 3.12 | ✅ CI par défaut |
-| 3.11 | ✅ supporté |
-| 3.10 | ✅ le plus ancien |
-| 3.9 | ❌ EOL depuis v0.2.3 |
+| 3.13 | ✅ prise en charge (à sa sortie) |
+| 3.12 | ✅ défaut de la CI |
+| 3.11 | ✅ prise en charge |
+| 3.10 | ✅ la plus ancienne actuellement prise en charge |
+| 3.9 | ❌ fin de vie depuis v0.2.3 |
 
-Procédure d'abandon s'étale sur au moins 3 minor BOB releases (valider / annoncer / retirer) pour préavis minimum 6 mois. Miroir des cycles freeze Debian / Fedora.
+La procédure d'abandon s'étale sur au moins 3 releases mineures de BOB (valider / annoncer / retirer), soit un préavis minimum de 6 mois. Calquée sur les propres cycles de gel de Debian / Fedora.
 
 ---
 
 ### Tests
 
-4452/4452 — +3 vs v0.4.1, tous issus de `tests/test_template_vars_migration.py` (S1) qui rend visible la dette de migration Phase 2. La passe de hardening (C1, C2, I1-I5, M1-M5, S2, S3) a modifié 11 fichiers Python ; la suite existante couvrait tous ces fichiers et est restée verte tout du long.
+4452/4452 — +3 par rapport à v0.4.1, tous issus de `tests/test_template_vars_migration.py` (S1), qui rend visible la dette de migration de la Phase 2. La passe de hardening (C1, C2, I1-I5, M1-M5, S2, S3) a modifié 11 fichiers Python ; la suite existante les couvrait tous et est restée verte tout du long.
 
-Validation séparée :
-- `groff -man -Tutf8` et `man -l` parsent les 3 man pages sans erreur.
-- Les 3 fichiers schema JSON chargent et valident via `jsonschema`.
+Validé séparément :
+- `groff -man -Tutf8` et `man -l` analysent les 3 pages de manuel sans erreur.
+- 3 fichiers de schéma JSON se chargent et se valident via `jsonschema`.
 
 ---
 
-### Contexte roadmap
+### Contexte de la feuille de route
 
 | Phase | Statut |
 |---|---|
 | Phase 1 (contrats) | ✅ v0.4.0 |
-| Phase 2 (découplage archi) — Option B additive | ✅ v0.4.1 |
-| Phase 2 — Option A breaking | ⏳ v0.5.0+ |
-| **Phase 3 (discipline packaging)** | **✅ v0.4.2** |
-| Phase 3 finitions (CI multi-distro, PKGBUILD AUR) | ⏳ contributions communautaires v0.4.x |
+| Phase 2 (découplage d'architecture) — Option B additive | ✅ v0.4.1 |
+| Phase 2 — Option A cassante | ⏳ v0.5.0+ |
+| **Phase 3 (discipline de packaging)** | **✅ v0.4.2** |
+| Finitions de la Phase 3 (CI multi-distro, PKGBUILD AUR) | ⏳ contributions communautaires v0.4.x |
 
-Après v0.4.2, BOB est **packaging-complet** pour le chemin AUR/COPR et **prêt pour Debian unstable** sous réserve de validation lintian-clean + parrainage upstream.
+Après v0.4.2, BOB est **complet côté packaging** pour la voie AUR/COPR et **prêt pour Debian unstable**, sous réserve d'une vérification sans erreur lintian + d'un parrainage par un mainteneur amont.
 
 ---
 
-### Hardening pass — audit pré-release
+### Passe de hardening — audit d'avant-release
 
 **Fichiers :** `bob/checks/firewall.py`, `bob/checks/ssl_certs.py`, `bob/checks/virtualization.py`, `bob/_paths.py`, `bob/i18n.py`, `bob/registry.py`, `bob/watch.py`, `bob/__main__.py`, `bob/compare.py`, `bob/formatter.py`, `man/bob.1`, `debian/apparmor.d/bob`, `packaging/rpm/bob.spec`, `tests/test_template_vars_migration.py` (nouveau), `microsoft.gpg` (supprimé)
 
 #### Problème
 
-Un audit complet pré-release (agent general-purpose, ~3500 lignes source consultées) a fait remonter **2 critiques + 5 importants + 4 mineurs + 1 suggestion**. Les deux findings critiques se concentraient sur les artefacts de packaging (écrits sans cross-check mécanique vs le code), confirmant que cette catégorie d'artefact mérite la même rigueur que le source.
+Un audit complet du code avant release (agent généraliste, ~3500 lignes de source consultées) a fait remonter **2 critiques + 5 importants + 4 mineurs + 1 suggestion**. Les deux constats critiques se concentraient sur les artefacts de packaging (écrits sans vérification croisée mécanique avec le code), ce qui confirme que cette catégorie d'artefacts mérite la même rigueur que le source lui-même.
 
-#### Corrections critiques
+#### Correctifs critiques
 
-**C1 — Findings `firewall.py` sans `key=`** (`bob/checks/firewall.py:154,165,178,183`). Trois appels `result.alert()` (`prerequisites.ufw_missing`, `firewall.inactive`, `firewall.policy_open`) et un `result.add_deduction()` n'avaient pas de `key=`. Conséquence : les alertes max-criticité ne pouvaient être ni `--ignore`ées, ni profilées, ni matchées par les consommateurs JSON (qui utilisent tous `Finding.key` / `Deduction.key`). Fix : ajout de `key=` aux 4 sites + 4 autres findings de la même fonction pour cohérence. (`bob/explain.py` non étendu — ajouter ces 4 clés à `EXPLAIN_KEYS` requiert d'écrire titre/why/how/CIS complets dans `en.json` et `fr.json` pour chacune, **reporté explicitement en v0.4.3** avec un TODO inline près du groupe "Firewall Logging" ; `bob --explain firewall.policy_open` dira "not found" en v0.4.2 mais `--ignore` / profils / matching JSON fonctionnent correctement.)
+**C1 — constats de `firewall.py` sans `key=`** (`bob/checks/firewall.py:154,165,178,183`). Trois appels `result.alert()` (`prerequisites.ufw_missing`, `firewall.inactive`, `firewall.policy_open`) et un appel `result.add_deduction()` n'avaient pas d'argument `key=`. Conséquence : les alertes les plus critiques ne pouvaient être ciblées ni par `--ignore`, ni par les profils d'audit, ni par les consommateurs JSON, parce que tous utilisent `Finding.key` / `Deduction.key` pour la correspondance. Correctif : `key=` ajouté aux 4 sites, plus à 4 appels `result.ok()` / `result.warn()` de moindre priorité dans la même fonction, par cohérence. (`bob/explain.py` pas encore étendu — ajouter ces 4 clés à `EXPLAIN_KEYS` exige d'écrire le contenu complet titre/why/how/CIS dans `en.json` et `fr.json` pour chacune, **explicitement déféré à v0.4.3** avec un commentaire TODO près du groupe « Firewall Logging » ; `bob --explain firewall.policy_open` répondra « not found » en v0.4.2, mais `--ignore` / les profils / la correspondance JSON fonctionnent tous correctement.)
 
-**C2 — Profil AppArmor incomplet + mauvais chemin** (`debian/apparmor.d/bob`). 10 binaires que BOB exec étaient absents du profil (`df`, `lsblk`, `dpkg-query`, `getenforce`, `apt-get`, `find`, `ps`, `netstat`, `ntpstat`, `docker`) — en mode `enforce`, les checks disk/SUID/MAC/updates/SMTP/NTP/docker/desktop-apps retournaient tous vide. De plus, la ligne 85 déclarait `/usr/local/sbin/bob-*` rw alors que `bob/cron.py:30` écrit dans `/usr/local/bin/bob-{slug}`. Donc `--install-cron` échouerait silencieusement sous enforce. Fix : ajout des 10 binaires manquants + correction du chemin.
+**C2 — profil AppArmor incomplet + mauvais chemin** (`debian/apparmor.d/bob`). 10 binaires que BOB exécute réellement manquaient au profil (`df`, `lsblk`, `dpkg-query`, `getenforce`, `apt-get`, `find`, `ps`, `netstat`, `ntpstat`, `docker`) — en mode `enforce`, les checks disque/SUID/MAC/mises à jour/SMTP/NTP/docker/applications de bureau auraient tous renvoyé du vide. En plus, la ligne 85 déclarait `/usr/local/sbin/bob-*` en rw, alors que `bob/cron.py:30` écrit dans `/usr/local/bin/bob-{slug}` (`SCRIPT_DIR = Path("/usr/local/bin")`), si bien que `--install-cron` échouerait en silence sous enforce. Corrigé en ajoutant les 10 binaires manquants et en corrigeant le chemin.
 
-#### Corrections importantes
+#### Correctifs importants
 
-**I1+I2 — `_C_LOCALE_ENV` manquant sur 3 sites subprocess** (`bob/checks/ssl_certs.py:283`, `bob/checks/virtualization.py:166,178`). Le threat model SECURITY.md promet que tous les appels subprocess utilisent `_C_LOCALE_ENV` pour éviter le parsing dépendant de la locale. `openssl x509 -enddate` émettrait "mai 14" sur locale FR qui ferait échouer `datetime.strptime(..., "%b ...")` ; `ip link show` et `snap connections --all` avaient le même risque. Fix : passage de `env=_C_LOCALE_ENV` aux 3 appels.
+**I1+I2 — `_C_LOCALE_ENV` manquant sur trois sites de sous-processus** (`bob/checks/ssl_certs.py:283`, `bob/checks/virtualization.py:166,178`). Le modèle de menace de SECURITY.md promet que tous les appels de sous-processus utilisent `_C_LOCALE_ENV`, pour éviter une analyse dépendante de la locale. `openssl x509 -enddate` émettrait « mai 14 » en locale française, ce qui fait échouer `datetime.strptime(..., "%b ...")` ; `ip link show` et `snap connections --all` présentaient le même risque en cas de localisation partielle. Corrigé en passant `env=_C_LOCALE_ENV` aux trois appels (en important la constante là où il le fallait).
 
-**I3 — Env var legacy `UFW_AUDIT_SHARE`** (`bob/_paths.py`). Le projet s'appelait "UFW Audit" avant v0.1.0 ; la variable env share-dir avait gardé l'ancien nom. Les packagers étaient confus. Renommée en `BOB_SHARE` (le contrat documenté depuis v0.4.2). `UFW_AUDIT_SHARE` reste accepté pour la rétrocompat — quand les deux sont définis, `BOB_SHARE` gagne. Logué en INFO quand seul le nom legacy est utilisé. Documenté dans `man/bob.1` section ENVIRONMENT.
+**I3 — variable d'environnement legacy `UFW_AUDIT_SHARE`** (`bob/_paths.py`). Le projet s'appelait « UFW Audit » avant v0.1.0 ; la variable du répertoire partagé avait gardé l'ancien nom malgré le renommage en BOB. Les empaqueteurs s'y perdaient. Renommée en `BOB_SHARE` (le contrat documenté depuis v0.4.2). `UFW_AUDIT_SHARE` reste acceptée pour la rétrocompatibilité avec les scripts d'installation pas encore mis à jour — quand les deux sont définies, `BOB_SHARE` l'emporte. Consigné en INFO quand seul le nom legacy est utilisé, pour inciter les mainteneurs d'installeurs à mettre à jour. Documenté dans la section ENVIRONMENT de `man/bob.1`.
 
-**I4 — RPM `Recommends: firewalld`** (`packaging/rpm/bob.spec`). BOB lit `ufw status` exclusivement — recommander `firewalld` était un guess côté Fedora qui induirait en erreur les packagers. Corrigé en `Recommends: ufw` avec commentaire explicatif inline.
+**I4 — `Recommends: firewalld` dans le RPM** (`packaging/rpm/bob.spec`). BOB lit exclusivement `ufw status` — recommander `firewalld` était une supposition côté Fedora qui aurait induit les empaqueteurs en erreur et produit une alerte « ufw not installed » sur les installations Fedora. Corrigé en `Recommends: ufw`, avec un commentaire en ligne expliquant que BOB ne détecte pas automatiquement firewalld.
 
-**I5 — `bob/watch.py` ne thread pas `user_config`** (ligne 80-83). Le mode `--watch` perdait silencieusement la whitelist SUID de l'utilisateur car `run_checks()` était appelé sans `user_config=`. Whitelist `[]` à chaque tick → faux positifs SUID répétés. Fix : thread `user_config` à travers `run_watch()` depuis `__main__.py`.
+**I5 — `bob/watch.py` ne transmettait pas `user_config`** (lignes 80-83). Le mode `--watch` perdait en silence la liste blanche SUID de l'utilisateur, parce que `run_checks()` était appelée sans `user_config=`. La liste blanche valait `[]` à chaque tick d'audit, produisant des avertissements SUID faux positifs en boucle. Correctif : faire passer `user_config` de `__main__.py` à travers `run_watch()` jusqu'à l'appel interne de `run_checks()`.
 
-#### Corrections mineures
+#### Correctifs mineurs
 
-- **M1** — Suppression de `microsoft.gpg` untracked (résidu d'`apt-add-repository` à la racine du repo).
-- **M2** — Clarification du docstring `bob/formatter.py` : "Status: this module is a public API for external integrators. No production code path in BOB itself calls format_finding / format_deduction in v0.4.x." Lève l'ambiguïté que le formatter serait le chemin de rendu interne.
-- **M4** — Exposition de `bob.compare.BASELINE_PATH` (sans underscore) comme symbole public ; `_BASELINE_PATH` conservé comme alias transitionnel. `bob/__main__.py` mis à jour pour utiliser le nom public.
-- **M5** — Ajout `Suggests: apparmor`, `Suggests: apparmor-utils` à la spec RPM pour symétrie avec le paquet Debian.
+- **M1** — Supprimé le `microsoft.gpg` non suivi (résidu d'un `apt-add-repository` à la racine du dépôt).
+- **M2** — Clarifié la docstring de `bob/formatter.py` : « Status: this module is a public API for external integrators. No production code path in BOB itself calls format_finding / format_deduction in v0.4.x — the terminal output and report pipelines still rely on the pre-formatted message field. » Supprime l'impression trompeuse que le formateur est le chemin de rendu interne.
+- **M4** — Exposé `bob.compare.BASELINE_PATH` (sans le tiret bas initial) comme symbole public ; `_BASELINE_PATH` gardé comme alias de transition. `bob/__main__.py` mis à jour pour utiliser le nom public.
+- **M5** — Ajouté `Suggests: apparmor`, `Suggests: apparmor-utils` au spec RPM, par symétrie avec le paquet Debian (apparmor est aussi disponible sur Fedora).
 
-#### Suggestion implémentée
+#### Suggestion mise en œuvre
 
-**S1 — `tests/test_template_vars_migration.py`** (nouveau, 3 tests) : track la dette de migration Phase 2 de manière visible. Le set actuel `_MIGRATED_CHECKS_V0_4_2` est `{ssh.py, hardening.py, firewall.py}` — quand de nouveaux checks gagnent des `template_vars=`, le set est mis à jour dans le même commit. Une régression qui retirerait accidentellement `template_vars` d'un check migré échoue le CI immédiatement.
+**S1 — `tests/test_template_vars_migration.py`** (nouveau, 3 tests) : rend visible la dette de migration de la Phase 2. L'ensemble actuel `_MIGRATED_CHECKS_V0_4_2` vaut `{ssh.py, hardening.py, firewall.py}` — quand d'autres checks reçoivent des appels `template_vars=`, l'ensemble est mis à jour dans le même commit. Une régression qui retirerait par accident `template_vars` d'un check migré fait désormais échouer la CI immédiatement.
 
 #### Tests
 
-4449 → **4452** (+3 du nouveau test de migration). Tous les tests existants restent verts.
+4449 → **4452** (+3 issus du nouveau test de migration). Tous les tests existants restent verts ; les correctifs pare-feu ne cassent aucun test qui dépendait de l'absence de clés (aucun test de ce genre n'existait — l'ancien comportement était simplement inutilisé).
 
-#### Note qualité finale : 8.5/10 → 9/10
+#### Note de qualité finale : 8,5/10 → 9/10
 
-L'audit pré-release a fermé le gap entre les promesses SECURITY.md et la réalité du code, corrigé les 2 vrais bugs du chemin runtime (C1 et I5 — tous deux à conséquence utilisateur visible), et aligné les artefacts de packaging avec le source. Le travail restant vers 10/10 est la migration systématique des 37 checks non-pilotes vers `template_vars`, explicitement multi-release et tracée par le nouveau test.
+L'audit d'avant-release a comblé l'écart entre les promesses de SECURITY.md et la réalité du code, corrigé les deux seuls vrais bugs du chemin d'exécution (C1 et I5 — tous deux avec des conséquences visibles par l'utilisateur), et aligné les artefacts de packaging sur le source. Le travail restant vers 10/10 est la migration systématique des 37 checks hors pilote vers `template_vars`, explicitement étalée sur plusieurs releases et suivie par le nouveau test.
 
 ---
 
 ## [v0.4.1] — 14-05-2026
 
-**Phase 2 de la roadmap distro-ready — découplage architectural.** Trois zones traitées : finalisation `--offline`, isolation curses sous `bob/tui/`, et représentation findings/deductions indépendante de la locale via `template_vars` additif. Plus une passe de hardening post-revue sur `bob/formatter.py` (API resserrée, tests edge-case). Tous les changements sont non-breaking (additifs). 4449/4449 tests (+19).
+**Phase 2 de la feuille de route « distro-ready » — découplage d'architecture.** Trois zones traitées : finalisation de `--offline`, isolement de curses sous `bob/tui/`, et représentation des constats/déductions indépendante de la locale via des `template_vars` additifs. Plus une passe de hardening après revue sur `bob/formatter.py` (API resserrée, tests de cas limites). Tous les changements sont non cassants (additifs). 4449/4449 tests (+19).
 
-La roadmap Phase 2 vise un paquet Debian `bob-core` installable sans curses et sans texte localisé enfoui dans la sortie JSON. Cette release pose les fondations sans casser l'API existante.
+La feuille de route de la Phase 2 vise un paquet Debian `bob-core` installable sans curses et sans texte de locale figé dans la sortie JSON. Cette release pose les fondations sans casser l'API existante.
 
 ---
 
-### Zone 2.1 — Mode `--offline` strict finalisé
+### Zone 2.1 — mode strict `--offline` finalisé
 
 **Fichiers :** `tests/test_webhook.py`
 
 #### Problème
 
-Le flag `-o` / `--offline` existe depuis v0.4.0 et gatait déjà les deux sites touchant le réseau (`bob.sysinfo.get_public_ip` HTTP, `bob.webhook.send_webhook` POST). Manquait pour un vrai audit distro-ready : un inventaire bout en bout de tous les appels qui pourraient toucher le réseau, et des tests d'intégration qui figent le contrat.
+Le drapeau `-o` / `--offline` existe depuis v0.4.0 et filtrait déjà les deux sites qui touchent au réseau (HTTP de `bob.sysinfo.get_public_ip`, POST de `bob.webhook.send_webhook`). Ce qui manquait pour un véritable audit « distro-ready » :
+
+- Un inventaire de bout en bout de tous les appels de sous-processus et de bibliothèques susceptibles de toucher au réseau, avec une classification explicite « c'est local, aucun filtrage nécessaire » / « c'est filtré par `--offline` ».
+- Des tests d'intégration qui épinglent le contrat : si un futur refactor supprime par accident le filtre hors ligne, la suite de tests échoue immédiatement.
 
 #### Implémentation
 
-Audit réseau (survey only, pas de modif de code) :
+Audit réseau (aucun changement de code — inventaire seulement) :
 
 | Site | Verdict |
 |---|---|
-| `bob/sysinfo.py:158` `urllib.request.urlopen` (`get_public_ip`) | ✅ gaté par `offline=True` |
-| `bob/webhook.py:send_webhook` POST HTTP | ✅ gaté par `__main__.py:277` |
-| `bob/checks/kernel_modules.py` `apt-cache policy` | ✅ lecture cache local |
-| `bob/checks/firmware.py` `fwupdmgr get-updates` | ✅ lecture cache local |
+| `bob/sysinfo.py:158` `urllib.request.urlopen` (`get_public_ip`) | ✅ filtré par `offline=True` |
+| POST HTTP de `bob/webhook.py:send_webhook` | ✅ filtré par `__main__.py:277 if _webhook_url and not config.offline` |
+| `bob/checks/kernel_modules.py` `apt-cache policy` / `apt list --upgradable` | ✅ lectures du cache local, pas de réseau |
+| `bob/checks/firmware.py` `fwupdmgr get-updates` | ✅ lecture du cache local |
 | `bob/checks/auth_log.py` `journalctl` | ✅ local |
 | `bob/checks/ssl_certs.py` `openssl x509 -in <file>` | ✅ fichier local |
-| Autres (`ss`, `iptables`, `nft`, …) | ✅ tous locaux |
+| `bob/checks/firewall_stack.py`, `bob/checks/ports.py`, etc. | ✅ tout local (`ss`, `iptables`, `nft`, …) |
 
-Conclusion : aucun site réseau oublié, le plumbing `--offline` est complet.
+Conclusion : aucun site réseau oublié, la plomberie existante de `--offline` est complète.
 
-3 nouveaux tests dans `tests/test_webhook.py` qui figent le contrat (CLI parse OK, webhook skip, urllib short-circuit).
+Nouveaux tests dans `tests/test_webhook.py` :
 
-#### Notes de design
+- `TestCLIWebhookParsing.test_webhook_with_offline_flag_parses` — l'analyseur CLI accepte `--offline --webhook=URL` ensemble (ils ne sont pas mutuellement exclusifs à l'analyse ; le filtre hors ligne est appliqué à l'exécution).
+- `TestOfflineModeNetworkContract.test_offline_skips_webhook_send` — reproduit la branche de décision de `__main__.py:277` pour figer le comportement ; si la condition change, le test échoue.
+- `TestOfflineModeNetworkContract.test_get_public_ip_offline_skips_urllib` — patche `sysinfo.urllib` avec un bouchon qui explose ; si un `urlopen` est atteint en mode `offline=True`, le test lève une AssertionError.
 
-Pourquoi un test miroir de la branche de décision plutôt qu'un test d'intégration full `_run()` : l'orchestration pipeline tire des dizaines de dépendances (FS, subprocess, locale, ScoreEngine, …). Mirorer la condition à 2 lignes donne la même couverture pour une fraction du coût de maintenance.
+#### Notes de conception
+
+Pourquoi « reproduire la branche de décision » plutôt que tester toute l'orchestration de `_run()` : le pipeline d'audit tire des dizaines de dépendances (système de fichiers, sous-processus, locale, ScoreEngine, …) — tester l'intégration de bout en bout reviendrait à simuler la moitié de l'univers. Reproduire le filtre hors ligne de 2 lignes sous forme de smoke test donne la même couverture pour une fraction du coût de maintenance. Si la ligne `__main__.py:277` change un jour, la ligne de production ET le test seront touchés dans le même commit, ce qui rend le changement de contrat explicite.
 
 ---
 
-### Zone 2.2 — Sous-package curses `bob/tui/`
+### Zone 2.2 — sous-paquet curses `bob/tui/`
 
 **Fichiers :** nouveau `bob/tui/__init__.py`, `bob/cron_ui.py` → `bob/tui/cron.py` (git mv), `bob/cron.py` (sites d'import), `DOCUMENTS/README_DEV.md` (FR + EN)
 
 #### Problème
 
-Pour un paquet Debian `bob-core` qui tourne dans des conteneurs minimaux (sans curses), le reste de `bob.*` doit rester importable sans curses installé. Les `import curses` étaient déjà lazy (à l'intérieur des fonctions) mais `bob/cron_ui.py` vivait au top-level de `bob.*`, suggérant qu'il faisait partie du module core. Un packager lisant la structure du projet ne pouvait pas dire que `cron_ui` était optionnel.
+Pour qu'un paquet Debian `bob-core` tourne dans des conteneurs minimaux (sans curses), le reste de `bob.*` doit rester importable sans curses installé. Les appels `import curses` étaient déjà paresseux (à l'intérieur des fonctions), mais le fichier `bob/cron_ui.py` se trouvait au premier niveau de `bob.*`, ce qui laissait croire qu'il faisait partie de la liste des modules du cœur. Un empaqueteur qui lisait la structure du projet ne pouvait pas deviner que `cron_ui` était optionnel.
 
 #### Implémentation
 
-- Nouveau `bob/tui/__init__.py` documente la politique du sous-package.
+- Le nouveau `bob/tui/__init__.py` documente la politique du sous-paquet : les imports curses sont autorisés en tête de module ici (on est en territoire TUI), le reste de `bob.*` ne doit JAMAIS importer depuis `bob.tui.*` au chargement du module — seulement paresseusement, à l'intérieur des fonctions.
 - `git mv bob/cron_ui.py bob/tui/cron.py` (historique préservé).
-- `bob/cron.py` : 2 sites d'import lazy updates, docstring module ajusté.
-- `setuptools.packages.find` config (`include = ["bob*"]`) couvre déjà `bob.tui` automatiquement — pas de changement `pyproject.toml`.
-- `DOCUMENTS/README_DEV.md` + FR : arbre de structure mis à jour.
+- `bob/cron.py` mis à jour :
+  - Docstring du module `Curses TUI code lives in bob.cron_ui.` → `Curses TUI code lives in bob.tui.cron.`
+  - 2 sites d'import paresseux : `from bob.cron_ui import _run_install_cron_curses` / `_run_manage_cron_curses` → `from bob.tui.cron import ...`
+- La configuration `setuptools.packages.find` (`include = ["bob*"]`) couvre déjà `bob.tui` automatiquement — aucun changement de `pyproject.toml` nécessaire.
+- `DOCUMENTS/README_DEV.md` + FR : arbre de structure mis à jour, la ligne `cron_ui.py` remplacée par une ligne `tui/cron.py` portant une note sur l'extraction de v0.4.1.
 
-#### Notes de design
+#### Tests
 
-- **Pourquoi un sous-package plutôt qu'une distribution séparée.** Le split en `bob-core` + `bob-tui` sur PyPI est une préoccupation de packaging, pas de code. La distribution `bob` continue à tout livrer ; le layout sous-package est la fondation pour qu'un futur packager Debian puisse split sans toucher au code.
-- **`explain.py`, `manage_logs.py`, `cron.py` non déplacés.** Mélangent logique métier et bits TUI. Out of scope.
+Aucun nouveau test requis — les 4430 tests existants exercent déjà le chemin d'import. La suite complète est restée à 4430/4430 après le déplacement (avant l'ajout des tests de la Zone 2.3), ce qui prouve que le renommage est transparent.
+
+#### Notes de conception
+
+- **Pourquoi un sous-paquet plutôt qu'une distribution séparée.** Découper en distributions `bob-core` + `bob-tui` sur PyPI est une question de packaging, pas de code. La distribution `bob` actuelle livre toujours tout ; la disposition en sous-paquet est la fondation qui permet à un futur empaqueteur Debian de découper les deux sans toucher au code.
+- **`explain.py`, `manage_logs.py`, `cron.py` non déplacés.** Ces modules mélangent logique métier et morceaux de TUI, avec des imports curses déjà paresseux. Les déplacer exigerait un découpage plus important (séparer les sections curses fichier par fichier). Hors périmètre de cette release — ils restent dans `bob/` pour l'instant.
 
 ---
 
-### Zone 2.3 — Findings indépendants de la locale via `template_vars` additif
+### Zone 2.3 — constats indépendants de la locale via des `template_vars` additifs
 
 **Fichiers :** `bob/scoring.py`, `bob/json_output.py`, nouveau `bob/formatter.py`, `bob/checks/ssh.py`, `bob/checks/hardening.py`, `bob/checks/firewall.py`, nouveau `tests/test_formatter.py`, `tests/test_json_schema.py`
 
 #### Problème
 
-Jusqu'à v0.4.0, `Finding.message` et `Deduction.reason` étaient des strings déjà formatées dans la locale active. Les consommateurs externes du JSON n'avaient aucun moyen de :
-- Rendre le même finding dans une autre locale.
-- Matcher les findings par leur clé sémantique stable sans parser la chaîne localisée.
+Jusqu'à v0.4.0, les `Finding.message` et `Deduction.reason` de BOB étaient des chaînes déjà formatées dans la locale active (`message=_t("ssh.weak_ciphers", ciphers="aes128-cbc")`). Les consommateurs externes de la sortie JSON n'avaient aucun moyen de :
+- Rendre le même constat dans une autre locale.
+- Faire correspondre des constats par leur clé sémantique stable sans analyser la chaîne de message localisée.
 
-`Finding.key` (ajouté en Phase 1) donnait un nom stable, mais les variables interpolées dans le template étaient perdues. Un client voulant "la liste des ciphers signalés comme faibles" devait parser le `message` localisé.
+`Finding.key` (ajouté en Phase 1) donnait un nom stable, mais les valeurs des variables interpolées dans le gabarit i18n étaient perdues : seule la chaîne rendue survivait. Un client qui voulait « la liste des chiffrements signalés comme faibles » devait analyser le `message` localisé.
 
-L'objectif Phase 2 est `bob.core` *pur* — sans `print()`, sans `_t()`, sans curses. Cette release pose le premier pas additif : exposer `(key, template_vars)` partout en parallèle du legacy `message`/`reason`.
+L'objectif de la Phase 2 est un `bob.core` *pur* — pas de `print()`, pas de `_t()`, pas de curses. Cette release fait le premier pas additif : exposer `(key, template_vars)` partout à côté des anciens `message`/`reason`, pour que les clients externes puissent reconstruire le texte localisé à partir des parties structurées sans toucher à la chaîne formatée.
 
 #### Implémentation
 
-##### Deux nouveaux champs dataclass
+##### Deux nouveaux champs de dataclass
 
 ```python
 @dataclass
 class Deduction:
-    ...
-    template_vars: dict = field(default_factory=dict)   # NOUVEAU
+    reason:        str
+    points:        int
+    context:       str  = "local"
+    key:           str  = ""
+    template_vars: dict = field(default_factory=dict)   # NEW
 
 @dataclass
 class Finding:
-    ...
-    template_vars: dict = field(default_factory=dict)   # NOUVEAU
+    level:         FindingLevel
+    message:       str
+    detail:        str = ""
+    nature:        str = ""
+    cmd:           str = ""
+    cmd_type:      str = "fix"
+    note:          str = ""
+    key:           str = ""
+    template_vars: dict = field(default_factory=dict)   # NEW
 ```
 
-Le nom `template_vars` est délibéré : il documente que le dict contient les variables passées à `.format(**kwargs)` du template i18n. Nous avons évité `context` (déjà pris par `Deduction.context: str` signifiant le scope réseau) et `vars`/`params` (trop générique).
+Le nom `template_vars` est délibéré : il documente que le dict contient les variables passées à l'appel `.format(**kwargs)` du gabarit i18n. Nous avons évité `context` (déjà pris par `Deduction.context: str`, qui désigne la portée réseau — `"local"` / `"public"`) et `vars`/`params` (trop génériques).
 
-##### Helpers de convenance acceptent `template_vars=`
+##### Les helpers de commodité acceptent `template_vars=`
 
-`CheckResult.add_finding`, `.ok`, `.info`, `.warn`, `.alert`, `.add_deduction` gagnent tous un kwarg optionnel `template_vars=None`. Les sites d'appel legacy ne nécessitent ZÉRO changement.
+`CheckResult.add_finding`, `.ok`, `.info`, `.warn`, `.alert`, `.add_deduction` reçoivent tous un kwarg optionnel `template_vars=None`. Quand il vaut None, le champ de la dataclass vaut par défaut `{}` (dict vide). Les sites d'appel legacy n'exigent AUCUN changement ; les nouveaux sites d'appel peuvent opter pour la représentation structurée.
 
 ##### Nouveau module `bob.formatter`
 
 `format_finding(finding, lang=None) -> str` et `format_deduction(deduction, lang=None) -> str` implémentent le rendu indépendant de la locale. Ordre de résolution :
 
-1. Si `key` est défini ET `template_vars` non-vide → render `_t(key, **template_vars)`.
-2. Si `key` défini sans template_vars → render `_t(key)` si la résolution est clean.
-3. Sinon fallback sur `finding.message` / `deduction.reason` (chemin legacy).
+1. Si `key` est définie ET `template_vars` n'est pas vide → rendre `_t(key, **template_vars)`.
+2. Si `key` est définie mais sans template_vars → rendre `_t(key)` si elle se résout proprement.
+3. Sinon, se replier sur `finding.message` / `deduction.reason` (chemin legacy).
 
-Le fallback à l'étape 3 rend le formatter 100% rétrocompatible.
+Le repli de l'étape 3 rend le formateur 100 % rétrocompatible : un check pas encore migré fonctionne exactement comme avant.
 
-Le paramètre `lang` est réservé pour une future API permettant de rendre le même finding dans plusieurs locales sans flipper la locale du processus.
+Le paramètre `lang` est réservé (`_ = lang`) pour une future API où les appelants pourront rendre le même constat dans plusieurs locales sans basculer la locale de tout le processus. Aujourd'hui, c'est la locale active de `bob.i18n.init()` qui est utilisée. Définir le paramètre maintenant garde une future amélioration non cassante.
 
 ##### Trois checks pilotes migrés
 
-- **`bob/checks/ssh.py`** — `_check_host_keys` (4 sites) avec `template_vars={"name": ..., "bits": ..., "type": ...}` selon le cas.
+Pour illustrer le motif et vérifier que le champ se comporte bien avec des données réelles, trois sites d'appel dans trois fichiers de check différents ont été migrés :
+
+- **`bob/checks/ssh.py`** — `_check_host_keys` (4 sites) : `ssh.host_key_dsa` (clé hôte DSA), `ssh.host_key_dsa_reason` (déduction correspondante), `ssh.host_key_rsa_short` (RSA < 4096 bits avec `bits=hk.rsa_bits`), `ssh.host_key_ok` (algorithme correct, avec `type=hk.key_type.upper()`).
 - **`bob/checks/hardening.py`** — `tcp_syncookies_ok` avec `value=snapshot.tcp_syncookies`.
-- **`bob/checks/firewall.py`** — `firewall.logging_ok` et `logging_verbose` avec `level=level`.
+- **`bob/checks/firewall.py`** — `firewall.logging_ok` et `firewall.logging_verbose` avec `level=level`.
 
-Dans chaque cas, le `message=_t("key", **vars)` existant est préservé (compat) et `template_vars={...vars...}` ajouté en parallèle.
+Dans chaque cas, le `message=_t("key", **vars)` existant est préservé (rétrocompatibilité) et `template_vars={...vars...}` est ajouté en parallèle. Les deux chemins coexistent désormais : le `message` legacy est ce que le terminal affiche aujourd'hui, les nouveaux `template_vars` sont ce qu'utilisera un futur client indépendant de la locale (ou un `bob.core` v1.0 sans `_t()`).
 
-##### `template_vars` exposé dans la sortie JSON
+##### `template_vars` exposés dans la sortie JSON
 
-`bob/json_output.py` sérialise désormais `template_vars` sur chaque deduction et chaque finding (full mode) :
+`bob/json_output.py` sérialise désormais `template_vars` sur chaque déduction et chaque constat (mode complet) :
 
 ```json
 {
@@ -12387,84 +13985,99 @@ Dans chaque cas, le `message=_t("key", **vars)` existant est préservé (compat)
 }
 ```
 
-Le champ est toujours présent (dict vide pour les checks legacy). C'est additif.
+Le champ est toujours présent (dict vide pour les checks legacy qui ne le remplissent pas). C'est additif — le test strict de l'ensemble `SCHEMA_V1_REQUIRED_KEYS` existant a été étendu (pas réécrit) pour vérifier la présence du nouveau champ.
 
 #### Tests
 
-`tests/test_formatter.py` (nouveau, 10 tests) : ordre de résolution, roundtrip locale, rétrocompatibilité.
-`tests/test_json_schema.py` (+2) : exposition `template_vars` dans le JSON.
-`tests/test_webhook.py` (+3) : contrat offline (couvert en Zone 2.1).
+`tests/test_formatter.py` (nouveau, 10 tests) :
+
+| Classe | Couverture |
+|---|---|
+| `TestFormatFinding` | 5 tests : key + template_vars se rend via l'i18n, key seule renvoie le gabarit, sans key repli sur le message, key inconnue repli, cas limite d'une entrée vide |
+| `TestFormatDeduction` | 2 tests : key + template_vars se rend, sans key repli sur la raison |
+| `TestLocaleRoundtrip` | 1 test : le même `(key, template_vars)` donne un texte différent en `fr` et en `en` — tout l'intérêt du refactor |
+| `TestBackwardCompatibility` | 2 tests : les constats legacy (sans key, sans template_vars) passent inchangés |
+
+`tests/test_json_schema.py` (+2) : `test_each_deduction_has_template_vars_field`, `test_each_finding_has_template_vars_field`.
+
+`tests/test_webhook.py` (+3) : contrat réseau du mode hors ligne (couvert dans la Zone 2.1 ci-dessus).
 
 Total : **+15 tests** (4430 → 4445).
 
-#### Notes de design
+#### Notes de conception
 
-- **Option B vs Option A.** Option B = additive, pas de breaking, ce que cette release livre. Option A (breaking : suppression de `message`, `template_vars` obligatoire) reportée à v0.5.0+ quand les 40 checks auront été migrés et que le schéma JSON pourra livrer un v2.
-- **Pourquoi 3 pilotes, pas les 40 d'un coup.** Migration mécanique ~500 lignes — possible mais error-prone. Le pattern est documenté via les pilotes ; le reste peut venir incrémentalement (v0.4.2, v0.4.3, …).
-- **Dict vide ≠ None.** Choix de `field(default_factory=dict)` plutôt que `Optional[dict]` pour uniformité JSON.
+- **Option B contre Option A.** L'Option B est ce que livre cette release : nouveau champ additif, rétrocompatibilité totale, `message` et `template_vars` coexistent. L'Option A (entièrement cassante : supprimer `message`, seuls les `template_vars` autorisés) est déférée à v0.5.0+, quand les 40 checks auront été migrés et que le schéma JSON pourra livrer une v2. L'enveloppe de fichier de plugin de la Phase 1 (champ `schema_version`) anticipe déjà cette migration.
+- **Pourquoi trois pilotes, et pas les 40 d'un coup.** Migrer tous les checks représenterait ~500 lignes de modifications mécaniques — possible mais sujet aux erreurs, et le test de schéma JSON impose désormais que `template_vars` soit toujours présent, si bien qu'une migration ratée apparaîtrait immédiatement. Le motif est documenté par les pilotes ; le reste peut venir progressivement dans les releases ponctuelles suivantes (v0.4.2, v0.4.3, …).
+- **Dict vide ≠ None.** Nous avons choisi `field(default_factory=dict)` plutôt qu'`Optional[dict]` pour garder une sortie JSON uniforme : chaque entrée a `template_vars`, la différence entre « check legacy » et « check migré » est la taille du dict, pas sa présence ou son absence. Logique client plus simple.
 
 ---
 
-### Hardening passe — revue de `bob/formatter.py`
+### Passe de hardening — revue de `bob/formatter.py`
 
 **Fichiers :** `bob/formatter.py`, `bob/i18n.py`, `tests/test_formatter.py`
 
 #### Problème
 
-Une revue post-implémentation de `formatter.py` (analyse ChatGPT externe demandée par l'utilisateur) a relevé quatre problèmes d'API/architecture légitimes sur un module qui s'apprête à devenir un contrat public stable pour les packagers downstream :
+Une revue de `formatter.py` après implémentation (analyse externe par ChatGPT, demandée par l'utilisateur) a signalé quatre problèmes légitimes d'API/d'architecture sur un module sur le point de devenir un contrat public stable pour les empaqueteurs en aval :
 
-1. **Paramètre `lang=` mensonger.** `format_finding(finding, lang=None)` exposait un override de locale qui était un no-op silencieux (`_ = lang` — l'état global `bob.i18n.t()` gagnait toujours). Les appelants externes passant `lang="fr"` obtiendraient toujours la locale du process sans aucune indication. Piège pour les packagers distros qui piperaient les sorties dans leur propre pipeline.
-2. **Détection fragile de clé manquante via `startswith("[")`.** `_render_key` retournait `"[key]"` (sentinelle `bob.i18n.t()` pour clés absentes) et l'appelant vérifiait `startswith("[")` pour la détecter. Couple le formatter à une convention `t()` non documentée ; un changement futur de cette sentinelle casserait silencieusement le formatter.
-3. **`except (KeyError, TypeError, ValueError)` trop large.** Catcher `TypeError` et `ValueError` masque de vrais bugs Python (e.g. changement d'API `_t()`). Ne devrait swallow que ce qui est vraiment attendu (mismatch de placeholder depuis `str.format`).
-4. **Le mot "reproducible" dans la docstring sur-promet** ce que le module peut livrer alors que ~40 checks utilisent encore le chemin legacy `message=`-only.
+1. **Paramètre `lang=` mensonger.** `format_finding(finding, lang=None)` exposait un paramètre de surcharge de locale qui ne faisait rien en silence (`_ = lang` — l'état global de `bob.i18n.t()` l'emportait toujours). Des appelants externes passant `lang="fr"` obtenaient quand même la locale du processus, sans aucun indice. Un piège pour les empaqueteurs de distributions qui font passer les sorties par leur propre pipeline.
+2. **Détection fragile de clé manquante par `startswith("[")`.** `_render_key` renvoyait `"[key]"` (la sentinelle de `bob.i18n.t()` pour les clés manquantes) et l'appelant vérifiait `startswith("[")` pour la détecter. Cela couple le formateur à une convention non documentée de `t()` ; un futur changement de cette sentinelle casserait le formateur en silence.
+3. **`except (KeyError, TypeError, ValueError)` trop large.** Attraper `TypeError` et `ValueError` cache de vrais bugs Python (par ex. un changement d'API de `_t()`). Il ne faut avaler que ce qui est réellement attendu (un décalage de placeholder venant de `str.format`).
+4. **Le mot « reproductible » de la docstring promet trop** par rapport à ce que le module peut fournir tant que ~40 checks utilisent encore le chemin legacy `message=` seul.
 
 #### Implémentation
 
-1. **Paramètre `lang=` supprimé** (Option A de la revue). Le réintroduire quand `bob.i18n` deviendra pur (v0.5.x avec l'extraction complète `bob.core`) est préférable à garder une signature mensongère aujourd'hui. La signature pour v0.4.1 est désormais `format_finding(finding) -> str` et `format_deduction(deduction) -> str`.
+1. **Paramètre `lang=` retiré** (Option A de la revue). Le rajouter quand `bob.i18n` deviendra pur (en v0.5.x, avec l'extraction complète de `bob.core`) est préférable à garder aujourd'hui une signature mensongère. La signature de v0.4.1 est désormais `format_finding(finding) -> str` et `format_deduction(deduction) -> str`.
 
-2. **Nouveau `bob.i18n.try_t(key, **kwargs) -> str | None`** ajouté : détection clean de clé manquante sans parser la sentinelle `"[key]"`. Comportement :
-   - Retourne `None` pour les clés absentes (dans la locale active et le fallback EN).
-   - Retourne la string rendue en cas de succès.
-   - Propage `KeyError` depuis `str.format()` quand un placeholder requis est manquant — responsabilité de l'appelant, pas une dégradation runtime.
-   Le legacy `bob.i18n.t()` continue de retourner `"[key]"` pour le reste du codebase qui s'appuie sur ce contrat ; seul `formatter` utilise la nouvelle fonction.
+2. **Nouvelle fonction `bob.i18n.try_t(key, **kwargs) -> str | None`** ajoutée : détection propre d'une clé manquante, sans analyser la sentinelle `"[key]"`. Comportement :
+   - Renvoie `None` pour les clés manquantes (dans la locale active et dans le repli EN).
+   - Renvoie la chaîne rendue en cas de succès.
+   - Propage la `KeyError` de `str.format()` quand un placeholder requis manque — c'est la responsabilité de l'appelant, pas une dégradation à l'exécution.
+   L'ancienne `bob.i18n.t()` continue de renvoyer `"[key]"` pour le reste de la base de code, qui s'appuie sur ce contrat ; seul `formatter` utilise la nouvelle fonction.
 
-3. **Gestion des exceptions resserrée dans `_try_render`** : plus de catch-all. `try_t` retourne `None` proprement pour les clés manquantes ; `KeyError` depuis `str.format()` (placeholder manquant = bug côté check) propage afin que le bug surface immédiatement au lieu de se dégrader silencieusement vers `finding.message`.
+3. **Gestion d'exceptions resserrée dans `_try_render`** : plus d'attrape-tout. `try_t` renvoie proprement `None` pour les clés manquantes ; la `KeyError` de `str.format()` (placeholder manquant = bug côté check) se propage, pour que le bug apparaisse immédiatement au lieu de se dégrader en silence vers `finding.message`.
 
-4. **Docstrings réécrites** : "reproducible" → "progressively reconstructible" + une section "Current state (v0.4.1)" précisant exactement ce qui est reproductible aujourd'hui et ce qui ne l'est pas. Le couplage entre `Finding.key` / clé `--explain` / clé i18n / clé de matching JSON (= un ABI textuel) est désormais explicitement reconnu avec un pointeur vers la freeze policy de `bob/explain.py`.
+4. **Docstrings réécrites** : « reproductible » → « progressivement reconstructible » + une section « Current state (v0.4.1) » qui détaille exactement ce qui est reproductible aujourd'hui et ce qui ne l'est pas. Le couplage entre `Finding.key` / clé `--explain` / clé i18n / clé de correspondance JSON (= une ABI textuelle) est désormais explicitement reconnu, avec un renvoi vers la politique de gel de `bob/explain.py`.
 
 #### Tests
 
-`tests/test_formatter.py` étendu de 10 à 14 tests (+4 dans la nouvelle classe `TestFormatterEdgeCases`) :
+`tests/test_formatter.py` passe de 10 à 14 tests (+4 dans la nouvelle classe `TestFormatterEdgeCases`) :
 
 | Test | Couverture |
 |---|---|
-| `test_empty_template_vars_with_placeholder_template_returns_raw` | Edge case : `template_vars` vide + clé dont le template a des placeholders → template brut retourné avec `{placeholders}` littéraux intacts (cohérent avec `i18n.t()`, fait surface le bug visuellement) |
-| `test_partial_template_vars_raises_keyerror` | `template_vars` non-vide manquant un placeholder requis → `KeyError` propage (pas de fallback silencieux) |
-| `test_mismatched_key_vs_message_uses_key` | Le chemin key gagne quand il résout proprement, même si `message` dit autre chose (la représentation structurée fait autorité une fois populée) |
-| `test_empty_finding_message_with_no_key` | Retourne `""` (pas `None`) quand ni key ni message n'est défini — préserve le contrat documenté "retourne toujours une string" |
+| `test_empty_template_vars_with_placeholder_template_returns_raw` | Cas limite : `template_vars` vide + clé dont le gabarit a des placeholders → gabarit brut renvoyé avec les `{placeholders}` littéraux intacts (cohérent avec le comportement d'`i18n.t()`, rend le bug visible) |
+| `test_partial_template_vars_raises_keyerror` | `template_vars` non vide auquel manque un placeholder requis → la `KeyError` se propage (pas de repli silencieux) |
+| `test_mismatched_key_vs_message_uses_key` | Le chemin par la clé l'emporte quand il se résout proprement, même si `message` dit autre chose (la représentation structurée fait foi une fois remplie) |
+| `test_empty_finding_message_with_no_key` | Renvoie `""` (pas `None`) quand ni la clé ni le message ne sont définis — préserve le contrat documenté « renvoie toujours une chaîne » |
 
-Décompte total des tests v0.4.1 : **4445 → 4449** (+4 depuis la passe de hardening).
+Total des tests de v0.4.1 : **4445 → 4449** (+4 issus de la passe de hardening).
 
-#### Notes de design
+#### Notes de conception
 
-- **Pourquoi faire surface `KeyError` au lieu de fallback sur `message`.** Un placeholder manquant signifie que le check a déclaré une key dont le template a besoin d'une variable que le check n'a pas fournie. Utiliser silencieusement `finding.message` masquerait un bug côté check et laisserait les clients sans signal. Lever l'exception force le bug à être visible dans la suite de tests où il devrait être attrapé.
-- **Pourquoi `try_t` et pas refactoriser `t()`.** Le legacy `t()` retournant `"[key]"` est utilisé partout dans le codebase pour "afficher mais ne pas crasher". Changer son contrat de retour ricocherait sur 600+ sites d'appel. Ajouter `try_t` comme fonction sœur donne au formatter un signal clé-manquante clean sans perturber la sémantique existante.
-- **Pourquoi retirer `lang=` plutôt que le fixer.** Implémenter proprement le switch de locale par appel nécessite de rendre `bob.i18n` réentrant (objet instance plutôt qu'état module-level) — travail qui appartient à v0.5.x avec le refactor complet `bob.core`. Exposer un paramètre aujourd'hui qui ment sur son implémentation est pire que ne pas l'exposer.
+- **Pourquoi faire remonter la `KeyError` au lieu de se replier sur `message`.** Un placeholder manquant signifie que le check a déclaré une clé dont le gabarit a besoin d'une variable que le check n'a pas fournie. Utiliser en silence `finding.message` cacherait un bug côté check et laisserait les clients sans aucun signal. Lever l'exception force le bug à devenir visible dans la suite de tests, là où il doit être attrapé.
+- **Pourquoi `try_t` plutôt que refactorer `t()`.** L'ancienne `t()` qui renvoie `"[key]"` est utilisée dans toute la base de code pour un rendu « afficher sans planter ». Changer son contrat de retour aurait des répercussions sur 600+ sites d'appel. Ajouter `try_t` comme fonction sœur donne au formateur un signal propre de clé manquante sans perturber la sémantique existante.
+- **Pourquoi retirer `lang=` plutôt que le corriger.** Implémenter correctement un changement de locale par appel exige de rendre `bob.i18n` réentrant (un objet instance plutôt qu'un état au niveau du module) — un travail qui relève de v0.5.x, avec le refactor complet de `bob.core`. Exposer aujourd'hui un paramètre qui ment sur son implémentation est pire que de ne pas l'exposer.
 
 ---
 
-### Contexte roadmap
+### Contexte de la feuille de route
 
-Après v0.4.1, le plan Phase 2 est :
+Après v0.4.1, le plan de la Phase 2 se présente ainsi :
 
-| Item | Statut |
+| Élément | Statut |
 |---|---|
 | 2.1 `--offline` strict | ✅ fait (vérifié + testé) |
-| 2.2 isolation curses (`bob/tui/`) | ✅ fait (cron_ui déplacé) |
-| 2.3 découplage core/i18n — Option B (additive) | ✅ fait (3 pilotes + formatter + JSON) |
-| 2.3 découplage core/i18n — Option A (breaking) | ⏳ v0.5.0+ |
-| Vague 2 schéma (typed ports, `port_resolution`) | ⏳ v0.5.0+ |
-| Phase 3 (man pages, debian/, profil AppArmor, SECURITY.md) | ⏳ futur |
+| 2.2 isolement de curses (`bob/tui/`) | ✅ fait (cron_ui déplacé, imports paresseux conservés) |
+| 2.3 découplage cœur / i18n — Option B (additive) | ✅ fait (3 checks pilotes + formateur + JSON) |
+| 2.3 découplage cœur / i18n — Option A (cassante) | ⏳ v0.5.0+ |
+| Schéma Vague 2 (ports typés, `port_resolution`, etc.) | ⏳ v0.5.0+ |
+| Phase 3 (pages de manuel, debian/, profil AppArmor, SECURITY.md) | ⏳ à venir |
+
+Niveaux de préparation pour les distributions :
+
+- **Packaging communautaire AUR / COPR** — viable dès maintenant (v0.4.0 se qualifiait déjà)
+- **Debian unstable / Fedora COPR officiel** — objectif ~6 mois après v0.4.1
+- **Debian main / Fedora main** — 12 à 18 mois minimum (exige une stabilité durable des contrats + la Phase 3)
 
 ---
 
@@ -14399,15 +16012,15 @@ Chaîne i18n : `"{label} est actif en ce moment, mais ne redémarrera pas automa
 
 ## [v0.2.2] — 03-05-2026
 
-Cinq corrections ciblées du scoring, un fix de locale, une passe d'uniformisation du logging sur trois modules, une correction du check de règle UFW sans protocole, une correction du plafond de domaine (UFW inactif), des tests d'invariants scoring et une documentation de la pondération égale des domaines. 4261/4261 tests (+23).
+Cinq correctifs ciblés du scoring, un correctif de locale, une passe d'uniformisation des logs sur trois modules, un correctif des règles orphelines du pare-feu pour les règles UFW sans protocole, des tests d'invariants du scoring, et la documentation des domaines à poids égal. Aucune nouvelle fonctionnalité hors du scoring. 4261/4261 tests (+23).
 
 ---
 
-### Fix 1 — Propagation `ScoreCap.key` (`bob/scoring.py`, `bob/checks/firewall.py`)
+### Correctif 1 — propagation de `ScoreCap.key` (`bob/scoring.py`, `bob/checks/firewall.py`)
 
 #### Problème
 
-`ScoreCap` n'avait pas de champ `key`. Quand un plafond se déclenchait, `finalize()` ajoutait une `Deduction` synthétique dans `engine.breakdown` avec `key=""` :
+`ScoreCap` n'avait pas de champ `key`. Quand un plafond se déclenchait, `finalize()` ajoutait à `engine.breakdown` une `Deduction` synthétique avec `key=""` :
 
 ```python
 self.breakdown.append(
@@ -14415,11 +16028,11 @@ self.breakdown.append(
 )
 ```
 
-`compute_domain_scores()` ignore les déductions avec `key=""` (`_key_to_domain()` retourne `None` pour les clés vides). Un plafond pare-feu-inactif qui réduisait le score de plusieurs points contribuait zéro aux déductions du domaine `firewall` — le plafond était invisible au scoring par domaine.
+`compute_domain_scores()` ignore les déductions dont `key=""` (`_key_to_domain()` renvoie `None` pour une clé vide). Un plafond « pare-feu inactif » qui faisait baisser le score de plusieurs points ne contribuait en rien aux déductions du domaine `firewall` — le plafond était invisible pour le score par domaine.
 
-#### Correction
+#### Correctif
 
-`ScoreCap` gagne `key: str = ""` :
+`ScoreCap` reçoit `key: str = ""` :
 
 ```python
 @dataclass
@@ -14445,11 +16058,11 @@ result.set_cap(maximum=3, reason=_t("firewall.inactive"), key="firewall.inactive
 
 ---
 
-### Fix 2 — Les findings INFO n'inflatent plus l'ensemble des domaines actifs (`bob/domain_scores.py`)
+### Correctif 2 — les constats INFO ne gonflent plus l'ensemble des domaines actifs (`bob/domain_scores.py`)
 
 #### Problème
 
-`active_domains_from_engine()` itérait sur tous les findings sans distinction de niveau :
+`active_domains_from_engine()` parcourait tous les constats, quel que soit leur niveau :
 
 ```python
 for finding in engine.findings:
@@ -14458,11 +16071,11 @@ for finding in engine.findings:
         active.add(domain)
 ```
 
-Un domaine INFO-only — service installé sans aucun problème actionnable (ex. ClamAV installé, base fraîche, scan récent) — était inclus dans `active_domains` et donc dans la moyenne globale. Cela pouvait soit diluer les scores des domaines réellement dégradés, soit gonfler la moyenne quand un domaine INFO-only avec un score élevé était inclus.
+Un domaine ne portant que des INFO — un service installé sans problème actionnable (par ex. ClamAV installé, base fraîche, analyse récente) — était inclus dans `active_domains`, et donc dans la moyenne globale. Cela pouvait soit diluer les scores des domaines réellement dégradés, soit gonfler la moyenne quand un domaine INFO à score élevé y entrait.
 
-#### Correction
+#### Correctif
 
-`FindingLevel` importé directement depuis `bob.scoring`. Les boucles de findings filtrent maintenant à WARN et ALERT uniquement :
+`FindingLevel` importé directement depuis `bob.scoring`. Les boucles sur les constats ne retiennent désormais que WARN et ALERT :
 
 ```python
 _actionable = (FindingLevel.WARN, FindingLevel.ALERT)
@@ -14474,56 +16087,56 @@ for finding in engine.findings:
         active.add(domain)
 ```
 
-La boucle des déductions reste inchangée — un domaine avec des déductions mais sans finding WARN/ALERT (cas limite) est toujours compté comme actif via le chemin déductions.
+La boucle sur les déductions est inchangée — un domaine avec des déductions mais sans constat WARN/ALERT (cas limite) est toujours compté comme actif via le chemin des déductions.
 
 ---
 
-### Fix 3 — `clamav.db_very_outdated` 2pt → 1pt (`bob/checks/clamav.py`)
+### Correctif 3 — `clamav.db_very_outdated` 2 pts → 1 pt (`bob/checks/clamav.py`)
 
 #### Problème
 
-`check_clamav()` émettait une déduction de 2 points pour `clamav.db_very_outdated` (base de données ≥ 30 jours). L'entrée `clamav` dans `_TOOL_CAPS` plafonne la contribution de l'outil à 1 point par domaine. Le deuxième point n'affectait que `engine._raw_score` avant la moyenne par domaine, créant une asymétrie silencieuse : le score brut pénalisait ce finding deux fois plus fort que le score par domaine.
+`check_clamav()` émettait une déduction de 2 points pour `clamav.db_very_outdated` (base de données âgée de ≥ 30 jours). L'entrée `clamav` de `_TOOL_CAPS` plafonne la contribution de l'outil à 1 point par domaine. Le second point n'affectait que `engine._raw_score` avant la moyenne par domaine, créant une asymétrie silencieuse : le score brut punissait ce constat deux fois plus durement que le score de domaine.
 
-#### Correction
+#### Correctif
 
 ```python
-# avant
+# before
 result.add_deduction(
     reason=_t("clamav.db_very_outdated", days=snapshot.db_age_days),
     points=2, context="local", key="clamav.db_very_outdated",
 )
 
-# après
+# after
 result.add_deduction(
     reason=_t("clamav.db_very_outdated", days=snapshot.db_age_days),
     points=1, context="local", key="clamav.db_very_outdated",
 )
 ```
 
-Total de déductions ClamAV en pire cas : `freshclam:1 + db_very_outdated:1 + scan_very_old:1 = 3` (était 4).
+Total des déductions ClamAV dans le pire cas : `freshclam:1 + db_very_outdated:1 + scan_very_old:1 = 3` (était 4).
 
 ---
 
-### Observabilité — logging uniformisé (`bob/history.py`, `bob/ignore.py`, `bob/sysinfo.py`)
+### Observabilité — uniformisation des logs (`bob/history.py`, `bob/ignore.py`, `bob/sysinfo.py`)
 
-Six gestionnaires `except … pass` remplacés par `_log.debug()`. `import logging` et `_log = logging.getLogger(__name__)` ajoutés aux trois modules. Les échecs restent non-fatals ; visibles avec `--debug`.
+Six gestionnaires `except … pass` remplacés par `_log.debug()`. `import logging` et `_log = logging.getLogger(__name__)` ajoutés aux trois modules. Les échecs restent non fatals ; visibles avec `--debug`.
 
 #### `bob/history.py`
 
 ```python
-# save_score() — avant
+# save_score() — before
 except OSError:
     pass
 
-# save_score() — après
+# save_score() — after
 except OSError as exc:
     _log.debug("Failed to save score to history: %s", exc)
 
-# _rotate_if_needed() — avant
+# _rotate_if_needed() — before
 except OSError:
     pass
 
-# _rotate_if_needed() — après
+# _rotate_if_needed() — after
 except OSError as exc:
     _log.debug("Failed to rotate history file: %s", exc)
 ```
@@ -14531,38 +16144,38 @@ except OSError as exc:
 #### `bob/ignore.py`
 
 ```python
-# load_ignore_keys() — avant
+# load_ignore_keys() — before
 except OSError:
     pass
 
-# load_ignore_keys() — après
+# load_ignore_keys() — after
 except OSError as exc:
     _log.debug("Cannot read ignore file %s: %s", path, exc)
 ```
 
 #### `bob/sysinfo.py`
 
-`get_user_home()` : SUDO_USER défini mais absent de la base de données des mots de passe — le repli sur `Path.home()` est maintenant loggé, ce qui explique les chemins de configuration inattendus lors de l'exécution avec des configurations sudo exotiques.
+`get_user_home()` : SUDO_USER défini mais introuvable dans la base des mots de passe — le repli sur `Path.home()` est désormais consigné, ce qui explique des chemins de configuration inattendus sous des configurations sudo exotiques.
 
-`collect_system_info()` : l'échec de lecture de `/etc/os-release` est maintenant loggé.
+`collect_system_info()` : l'échec de lecture de `/etc/os-release` est désormais consigné.
 
-`detect_network_type()` : les deux échecs subprocess (`ip route` et `ip addr`) sont maintenant loggés. Auparavant, ces échecs silencieux faisaient tomber la fonction sur `get_public_ip()` sans aucune trace.
+`detect_network_type()` : les échecs des sous-processus `ip route` et `ip addr` sont désormais tous deux consignés. Avant, ils échouaient en silence et la fonction retombait sur `get_public_ip()` sans aucune trace.
 
 ```python
-# detect_network_type() — avant (deux emplacements)
+# detect_network_type() — before (both locations)
 except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
     pass
 
-# detect_network_type() — après
+# detect_network_type() — after
 except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
     _log.debug("ip route failed during network type detection: %s", exc)
-    # (et séparément pour ip addr)
+    # (and separately for ip addr)
     _log.debug("ip addr failed during network type detection: %s", exc)
 ```
 
 ---
 
-### Contrat scoring documenté (`bob/scoring.py`)
+### Contrat du scoring documenté (`bob/scoring.py`)
 
 Docstring de `ScoreEngine.finalize()` mise à jour :
 
@@ -14586,37 +16199,166 @@ The raw pre-override score remains accessible as engine._raw_score.
 
 ---
 
-### Fix 4 — Plafond de domaine non appliqué si le score brut global est déjà sous le seuil (`bob/domain_scores.py`)
+### Correctif 4 — plafond de score de domaine non appliqué quand le score brut global est déjà sous le seuil (`bob/domain_scores.py`)
 
-`compute_domain_scores()` calcule le score de chaque domaine en sommant les déductions de `engine.breakdown` qui lui correspondent. Lorsqu'un plafond se déclenche (ex. `firewall.inactive` → max 3/10), `finalize()` ajoute un delta de déduction dans `breakdown` **uniquement si** `_raw_score > cap.maximum`. Sur un système cumulant beaucoup de déductions (pare-feu + durcissement + …), le score brut global peut déjà être sous le seuil du plafond — le delta n'est jamais ajouté, le score du domaine cible reste à sa valeur brute pré-plafond (ex. 6/10 au lieu de 3/10 pour le pare-feu quand UFW est inactif). La note « Score plafonné à 3 » s'affiche quand même (elle lit `engine.cap_info` enregistré, indépendamment du déclenchement). Correction : `compute_domain_scores()` lit maintenant `engine.cap_info` et, si sa clé correspond à un domaine, applique directement le plafond sur le total de déductions de ce domaine. Le fix est idempotent. Trouvé sur une VM Ubuntu 26.04 avec UFW inactif et plusieurs problèmes de durcissement.
+#### Problème
 
-### Fix 5 — Check de règle orpheline manquant les règles UFW sans protocole (`bob/checks/firewall.py`)
+`compute_domain_scores()` dérive le score de chaque domaine en additionnant les déductions de `engine.breakdown` qui s'y rattachent. Quand un plafond se déclenche pendant `finalize()` (par ex. `firewall.inactive` → max 3/10), une `Deduction` delta synthétique est ajoutée à `breakdown` **seulement si** `_raw_score > cap.maximum` :
 
-`_check_orphan_rules()` analysait le champ « To » d'UFW avec `_PORT_PROTO_RE` qui exige un suffixe de protocole explicite (`/tcp` ou `/udp`). Une règle écrite en numéro de port nu — syntaxe UFW valide signifiant « appliquer à TCP et UDP » — produisait `m = None` et tombait dans `continue`. En pratique, `57621 ALLOW IN 192.168.1.0/24` (Spotify Connect) coexistait avec `41681/tcp ALLOW IN 192.168.1.0/24`. BOB signalait correctement `41681/tcp` comme règle orpheline mais ignorait silencieusement `57621`. Nouveau `_PORT_BARE_RE` gère ce cas de repli. Trouvé en exécutant l'outil sur une machine réelle.
+```python
+# scoring.py — ScoreEngine.finalize()
+if self._cap is not None and self._raw_score > self._cap.maximum:
+    delta = self._raw_score - self._cap.maximum
+    self.breakdown.append(
+        Deduction(reason=self._cap.reason, points=delta, key=self._cap.key)
+    )
+    self._raw_score = self._cap.maximum
+```
 
-### Fix 6 — Locale SSH : commande dupliquée dans le bloc « Que faire ? » (`bob/locales/fr.json`, `bob/locales/en.json`)
+Sur les systèmes portant de nombreuses déductions réparties entre domaines (pare-feu + durcissement + …), le `_raw_score` global peut tomber sous `cap.maximum` avant que `finalize()` ne s'exécute. Dans ce cas, la garde `if` est fausse, aucun delta n'est ajouté, et `compute_domain_scores()` ne voit jamais le plafond. Le score du domaine visé reste à sa valeur brute d'avant plafond (par ex. 6/10 pour le domaine pare-feu, avec INPUT `-3` + FORWARD `-1`) au lieu de la valeur plafonnée voulue (3/10).
 
-`ssh.not_active_detail` contenait la commande de remédiation (`"Activer avec : sudo systemctl enable --now ssh"`). Le moteur d'affichage rendant à la fois le `detail` et le `cmd` sous forme de lignes `→`, le bloc « Que faire ? » affichait deux fois la même commande. Le champ `detail` est destiné au contexte (pourquoi agir), pas à la commande (qui appartient à `cmd`). Corrigé par un texte explicatif sans commande : `"Le service est désactivé — activez-le si l'accès SSH est nécessaire."` Trouvé sur Kali Linux où SSH est installé mais intentionnellement arrêté.
+La note de plafond `"Score plafonné à 3 (pare-feu inactif)"` est toujours affichée dès que `engine.cap_info` est défini (les plafonds enregistrés sont stockés dans `engine._cap`, qu'ils se soient déclenchés ou non), si bien que l'interface se contredit : la note dit que le score a été plafonné, mais la barre du domaine affiche toujours 6/10.
 
-### Tests d'invariants scoring (`tests/test_scoring.py`, `tests/test_domain_scores.py`)
+**Trouvé en :** faisant tourner l'outil sur une VM Ubuntu 26.04 avec UFW inactif et plusieurs problèmes de durcissement (3 déductions ICMP, pas de sauvegarde, mises à jour de firmware en attente). Le score brut global (10 − 9 = 1) était déjà sous le plafond pare-feu de 3, si bien que le delta de plafond n'a jamais été ajouté et que le domaine pare-feu a gardé son score brut de 6/10.
 
-Classes `TestScoringInvariants` ajoutées aux deux fichiers de test — 12 nouveaux tests pour les propriétés structurelles devant tenir quel que soit l'input. C'est la couche de tests de propriétés du pipeline de scoring, couvrant la monotonie, les bornes et la sémantique d'activation.
+#### Correctif
+
+Après avoir cumulé les déductions par domaine à partir du détail, `compute_domain_scores()` applique désormais explicitement le plafond du moteur à son domaine cible :
+
+```python
+# domain_scores.py — compute_domain_scores()
+engine_cap = engine.cap_info
+if engine_cap and engine_cap.key:
+    cap_domain = _key_to_domain(engine_cap.key)
+    if cap_domain and cap_domain in domain_deductions:
+        raw_domain = MAX_SCORE - domain_deductions[cap_domain]
+        if raw_domain > engine_cap.maximum:
+            domain_deductions[cap_domain] += raw_domain - engine_cap.maximum
+```
+
+Le correctif est **idempotent** : si le delta de plafond avait déjà été ajouté au détail (le cas normal où `raw_global > cap`), ce delta a augmenté `domain_deductions[cap_domain]`, ramenant `raw_domain` exactement à `cap.maximum`. La garde `raw_domain > cap.maximum` est alors fausse, et rien de plus n'est ajouté. Pas de double comptage.
+
+#### Impact
+
+- Domaine pare-feu (UFW inactif, peu d'autres déductions pare-feu) : **6/10 → 3/10**
+- Score global sur la VM Ubuntu de test : inchangé (8/10 dans les deux cas — les deux chemins coïncident à cause de l'arrondi bancaire sur 8,5)
+- Tous les autres domaines : non affectés
+
+---
+
+### Correctif 5 — le contrôle des règles orphelines ratait les règles UFW sans protocole (`bob/checks/firewall.py`)
+
+#### Problème
+
+`_check_orphan_rules()` analysait le champ « To » d'UFW avec `_PORT_PROTO_RE`, qui exige un suffixe de protocole explicite (`/tcp` ou `/udp`). Une règle écrite comme un numéro de port nu — syntaxe UFW valide signifiant « s'applique à TCP et UDP » — produisait `m = None` et tombait sur `continue` :
+
+```python
+m = _PORT_PROTO_RE.search(line)  # e.g. "57621 ALLOW IN ..." → no match
+if not m:
+    continue  # ← incorrectly labelled "open-any rules"
+```
+
+En pratique, `57621 ALLOW IN 192.168.1.0/24` (Spotify Connect) figurait dans les règles UFW à côté de `41681/tcp ALLOW IN 192.168.1.0/24`. BOB signalait correctement `41681/tcp` comme règle orpheline (aucun service en écoute) mais ignorait en silence `57621`. Trouvé en faisant tourner l'outil sur une vraie machine et en comparant les deux règles Spotify Connect.
+
+#### Correctif
+
+La nouvelle constante de module `_PORT_BARE_RE = re.compile(r"^\[\s*\d+\]\s+(\d{1,5})\s", re.IGNORECASE)` correspond à un port nu en position « To » de l'état numéroté d'UFW. Quand `_PORT_PROTO_RE` ne correspond pas, `_check_orphan_rules` se rabat désormais sur `_PORT_BARE_RE` :
+
+```python
+m = _PORT_PROTO_RE.search(line)
+if not m:
+    m2 = _PORT_BARE_RE.match(line)
+    if not m2:
+        continue  # genuine open-any rule
+    port = m2.group(1)
+    if f"{port}/tcp" not in listening_ports and f"{port}/udp" not in listening_ports:
+        orphans.add(port)
+    continue
+```
+
+Une règle à port nu n'est signalée orpheline que si **ni** `port/tcp` **ni** `port/udp` n'est en écoute — cohérent avec la sémantique TCP+UDP d'UFW. La commande de suppression générée (`sudo ufw delete allow 57621`) est aussi correcte pour les règles sans protocole.
+
+### Tests d'invariants du scoring (`tests/test_scoring.py`, `tests/test_domain_scores.py`)
+
+Des classes `TestScoringInvariants` ajoutées aux deux fichiers de test — 12 nouveaux tests pour des propriétés structurelles qui doivent tenir quelle que soit l'entrée. C'est la couche de tests par propriétés du pipeline de scoring, couvrant la monotonie, les bornes et la sémantique d'activation.
 
 #### `tests/test_scoring.py` — `TestScoringInvariants` (+5)
 
-Invariants du moteur de scoring : score plancher (0), plafond (MAX), monotonie des déductions, plafond supérieur sans effet, override domaine dans la plage.
+```python
+class TestScoringInvariants:
+    def test_score_floor_is_zero_on_huge_deduction(self):
+        engine = ScoreEngine()
+        engine.deduct("flood", 999)
+        assert engine.score == 0
+
+    def test_score_ceiling_is_max_on_no_deductions(self):
+        engine = ScoreEngine()
+        engine.finalize()
+        assert engine.score == MAX_SCORE
+
+    def test_deductions_are_monotone_decreasing(self):
+        engine = ScoreEngine()
+        prev = engine.score
+        for pts in (3, 1, 2, 1, 4):
+            engine.deduct("step", pts)
+            assert engine.score <= prev
+            prev = engine.score
+
+    def test_cap_above_current_score_is_noop(self):
+        engine = ScoreEngine()
+        engine.deduct("reason", 3)   # score = 7
+        score_before = engine.score
+        engine.cap(maximum=9, reason="lenient cap")
+        engine.finalize()
+        assert engine.score == score_before
+
+    def test_score_after_domain_override_in_valid_range(self):
+        from bob.domain_scores import apply_domain_score_override
+        engine = ScoreEngine()
+        engine.deduct("reason", 5)
+        engine.finalize()
+        apply_domain_score_override(engine)
+        assert 0 <= engine.score <= MAX_SCORE
+```
 
 #### `tests/test_domain_scores.py` — `TestScoringInvariants` (+7)
 
-Points clés :
+Tests clés :
 
-- **INFO-only → domaine inactif :** un finding `level=INFO` sans déduction ne marque pas le domaine comme « actif » pour la moyenne globale.
+- **INFO seulement → domaine inactif :** un constat de `level=INFO` sans déduction ne marque pas le domaine comme « actif » pour la moyenne globale.
 - **WARN/ALERT → domaine actif :** ces niveaux activent bien le domaine, même sans déduction associée.
-- **Déduction seule active :** `add_deduction(key=...)` sans finding active quand même le domaine via le chemin déductions dans `active_domains_from_engine()`.
-- **Moyenne globale bornée :** résultat de `compute_global_from_domains` toujours `≥ min(scores_actifs)` et `≤ max(scores_actifs)`.
-- **Scores dans la plage :** `compute_domain_scores` produit toujours des valeurs dans `[0, MAX_SCORE]` pour chaque domaine.
+- **Une déduction seule active le domaine :** `add_deduction(key=...)` sans aucun constat marque quand même le domaine actif, via le chemin des déductions de `active_domains_from_engine()`.
+- **Moyenne globale bornée :** le résultat de `compute_global_from_domains` est toujours `≥ min(active_scores)` et `≤ max(active_scores)`.
+- **Scores de domaine dans la plage :** le résultat de `compute_domain_scores` est toujours dans `[0, MAX_SCORE]` pour chaque domaine.
+- **Global toujours dans la plage :** `compute_global_from_domains` renvoie toujours une valeur dans `[0, 10]`.
 
-Le test d'activation par déduction seule est particulièrement important : il confirme que `active_domains_from_engine()` vérifie à la fois le chemin findings (filtre WARN/ALERT) et le chemin déductions (sans filtre), et que cette asymétrie est intentionnelle.
+Le test d'activation par la seule déduction est particulièrement important : il confirme que `active_domains_from_engine()` vérifie à la fois le chemin des constats (filtre WARN/ALERT) et le chemin des déductions (sans filtre), et que les deux chemins sont volontairement asymétriques.
+
+---
+
+### Correctif 6 — le détail SSH « non démarré » dupliquait la commande de remédiation (`bob/locales/fr.json`, `bob/locales/en.json`)
+
+#### Problème
+
+`ssh.not_active_detail` valait `"Activer avec : sudo systemctl enable --now ssh"` (FR) / `"Enable with: sudo systemctl enable --now ssh"` (EN). La couche d'affichage rend `detail` et `cmd` comme deux lignes `→` distinctes sous le titre « Que faire ? ». Comme le champ `cmd` contient déjà `"sudo systemctl enable --now ssh"`, le bloc affichait la commande deux fois :
+
+```
+    Que faire ?
+    → Activer avec : sudo systemctl enable --now ssh   ← detail (contains command)
+    → sudo systemctl enable --now ssh                  ← cmd (same command again)
+```
+
+Le champ `detail` est censé expliquer *pourquoi* ou donner du contexte ; le champ `cmd` est la commande à copier-coller. Avoir le texte de la commande dans les deux champs est redondant.
+
+**Trouvé en :** faisant tourner l'outil sur Kali Linux, où SSH est installé par défaut mais le démon volontairement arrêté. Le double affichage de la commande était visible dans la sortie détaillée.
+
+#### Correctif
+
+`ssh.not_active_detail` passe à un texte de contexte seulement, dans les deux locales :
+- FR : `"Le service est désactivé — activez-le si l'accès SSH est nécessaire."`
+- EN : `"The service is disabled — enable it if SSH access is needed."`
+
+Le champ `cmd` (`"sudo systemctl enable --now ssh"`) est inchangé et continue d'afficher la commande actionnable.
 
 ### Tests
 
@@ -14624,17 +16366,32 @@ Le test d'activation par déduction seule est particulièrement important : il c
 
 #### `tests/test_domain_scores.py` — `TestEngineLevelDomainCap` (+6)
 
-Six nouveaux cas dans une nouvelle classe couvrant le fix du plafond de domaine : plafond appliqué avec peu de déductions · plafond appliqué quand le score brut global est déjà sous seuil (delta absent du breakdown) · pas de sur-plafonnement si déjà au cap · score ne dépasse jamais le plafond · pas de saignement vers d'autres domaines · tous scores dans la plage.
+Six nouveaux cas dans une nouvelle classe couvrant le correctif du plafond au niveau du domaine :
+
+| Test | Couverture |
+|------|----------|
+| `test_firewall_domain_capped_when_few_deductions` | INPUT −3, FORWARD −1 → domaine brut = 6, plafonné à 3 |
+| `test_firewall_domain_capped_when_many_global_deductions` | 9 points de déductions globales font passer raw_score sous le seuil du plafond (delta absent du détail) → domaine quand même plafonné à 3 |
+| `test_firewall_domain_not_overcapped_when_already_at_cap` | Domaine déjà à cap.maximum → le score reste à 3, sans descendre plus bas |
+| `test_firewall_domain_score_never_exceeds_cap` | Propriété : score ≤ 3 quel que soit le nombre de déductions pare-feu (0 à 4 de plus) |
+| `test_cap_does_not_affect_other_domains` | Un plafond sur `firewall.inactive` laisse le domaine durcissement à MAX_SCORE |
+| `test_all_domain_scores_in_valid_range_with_cap` | Les 7 domaines dans [0, MAX_SCORE] quand le plafond s'applique |
 
 #### `tests/test_firewall.py` — `TestOrphanRules` (+3)
 
-Trois nouveaux cas dans la classe `TestOrphanRules` existante : règle bare-port signalée si rien en écoute · non signalée si TCP en écoute · non signalée si UDP en écoute.
+Trois nouveaux cas dans la classe existante `TestOrphanRules` :
+
+| Test | Couverture |
+|------|----------|
+| `test_bare_port_rule_flagged_when_nothing_listening` | `57621 ALLOW IN` sans écoute TCP ni UDP → signalée orpheline avec `ufw delete allow 57621` |
+| `test_bare_port_rule_not_flagged_when_tcp_listening` | `57621/tcp` présent dans l'ensemble en écoute → non signalée |
+| `test_bare_port_rule_not_flagged_when_udp_listening` | `57621/udp` présent dans l'ensemble en écoute → non signalée |
 
 #### `tests/test_manage_logs.py` — `TestStatFallback` (+2)
 
-Régression pour le fix race condition `.stat()` de v0.2.1. Les boucles d'affichage mode texte dans `_run_manage_logs_plain()` avaient été mises à jour en v0.2.1 pour envelopper `.stat()` dans `try/except OSError` — mais aucun test ne couvrait le chemin de repli.
+Régression pour le correctif de la condition de course `.stat()` de v0.2.1. Les boucles d'affichage en texte brut de `_run_manage_logs_plain()` avaient été mises à jour en v0.2.1 pour envelopper `.stat()` dans un `try/except OSError` — mais aucun test ne couvrait le chemin de repli.
 
-Un helper `_stat_raises_for_logs` est défini au niveau module (capturé avant tout run de test) qui lève `OSError` uniquement pour les fichiers `.log`, en déléguant au vrai `Path.stat` pour les répertoires. C'est nécessaire car `Path.exists()` de Python 3.12 appelle `self.stat()` en interne — un mock global casserait `exists()` sur les répertoires et ferait échouer les tests.
+Un helper `_stat_raises_for_logs` est défini au niveau du module (capturé avant tout lancement de test) ; il lève `OSError` seulement pour les fichiers `.log` et délègue au vrai `Path.stat` pour les répertoires. C'est nécessaire, parce que le `Path.exists()` de Python 3.12 appelle `self.stat()` en interne — un mock global casserait `exists()` sur les répertoires et ferait échouer les tests.
 
 ```python
 _real_path_stat = Path.stat
@@ -14646,16 +16403,16 @@ def _stat_raises_for_logs(self, *, follow_symlinks=True):
 ```
 
 | Test | Couverture |
-|------|------------|
+|------|----------|
 | `test_cur_logs_stat_oserror_uses_fallback` | `.stat()` lève dans la boucle `cur_logs` → `"(0 "` et `"?"` dans la sortie |
 | `test_extra_logs_stat_oserror_uses_fallback` | `.stat()` lève dans la boucle `extra_sections` → idem |
 
 #### `tests/test_clamav.py` (2 mis à jour)
 
 | Test | Avant | Après |
-|------|-------|-------|
-| `test_db_very_outdated_deducts_1` (était `_deducts_2`) | vérifiait `pts == 2` | vérifie `pts == 1` |
-| `test_worst_case` | vérifiait total == 4 | vérifie total == 3 |
+|------|--------|-------|
+| `test_db_very_outdated_deducts_1` (était `_deducts_2`) | affirmait `pts == 2` | affirme `pts == 1` |
+| `test_worst_case` | affirmait total == 4 | affirme total == 3 |
 
 ---
 
@@ -14776,6 +16533,7 @@ Les patterns `re.compile()` définis dans les corps de fonctions — recompilés
 #### `bob/checks/firewall.py`
 
 ```python
+# déplacées au niveau du module
 _OPEN_ANY_RE = re.compile(
     r"Anywhere(?:/\w+)?(?:\s+\(v6\))?\s+ALLOW\s+IN\s+Anywhere(?:/\w+)?(?:\s+\(v6\))?\s*$",
     re.IGNORECASE,

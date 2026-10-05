@@ -24,6 +24,13 @@ from bob.checks._run import _command_exists, run_result
 # and ``drop`` rules deny and must not be shown as things the zone "allows".
 _RICH_PORT = re.compile(r'port port="?(?P<port>\d+(?:-\d+)?)"?\s+protocol="?(?P<proto>\w+)"?')
 _RICH_SERVICE = re.compile(r'service name="?(?P<name>[\w.+-]+)"?')
+_TARGET_LINE = re.compile(r"^\s*target:\s*(\S+)", re.MULTILINE)
+
+#: v0.24.1 — what a zone does with a packet no rule matched, in the words the
+#: rest of BOB uses for an inbound default policy. ``default`` rejects (and lets
+#: ICMP through); ``ACCEPT`` lets everything in — the ``trusted`` zone's target.
+_TARGET_POLICY = {"default": "reject", "%%REJECT%%": "reject", "REJECT": "reject",
+                  "DROP": "deny", "ACCEPT": "allow"}
 
 
 def _rich_rule_grant(rule: str) -> str | None:
@@ -58,6 +65,9 @@ class FirewalldStatus:
         rich_rules:    Raw rich-rule strings from ``--list-rich-rules`` (one per rule).
         forward_ports: Raw forward-port rules from ``--list-forward-ports``.
         sources:       Source addresses bound to the default zone (``--list-sources``).
+        target:        The default zone's runtime target (``target:`` line of
+                       ``--list-all``): "default", "%%REJECT%%", "DROP" or
+                       "ACCEPT"; "" when it could not be read.
         readable:      False when firewall-cmd is present but could not be queried
                        (a refusal is not "no firewall").
     """
@@ -68,7 +78,14 @@ class FirewalldStatus:
     rich_rules:    list[str] = field(default_factory=list)
     forward_ports: list[str] = field(default_factory=list)
     sources:       list[str] = field(default_factory=list)
+    target:        str = ""
     readable:      bool = True
+
+    @property
+    def incoming_policy(self) -> str:
+        """The default zone's inbound default as "reject"/"deny"/"allow", or
+        "unknown" when the target was not read — never guessed from the zone name."""
+        return _TARGET_POLICY.get(self.target, "unknown")
 
     def allows_summary(self) -> str:
         """Everything the default zone permits, as one human-readable line.
@@ -112,9 +129,14 @@ class FirewalldStatus:
                    run_result("firewall-cmd", "--list-forward-ports").stdout.splitlines()
                    if ln.strip()]
             sources = run_result("firewall-cmd", "--list-sources").stdout.split()
+            # Runtime target of the default zone. ``--get-target`` only answers
+            # with ``--permanent`` (the saved config, which may differ from what
+            # is loaded); ``--list-all`` describes the running zone.
+            m = _TARGET_LINE.search(run_result("firewall-cmd", "--list-all").stdout or "")
             return cls(active=True, default_zone=zone,
                        services=services, ports=ports,
                        rich_rules=rich, forward_ports=fwd, sources=sources,
+                       target=m.group(1) if m else "",
                        readable=True)
         if not text and not state.ok:
             # firewall-cmd present but said nothing and failed — refused, not off.

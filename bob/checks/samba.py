@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from bob._atomic import read_text_capped
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, path_exists
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, path_exists, sed_ci
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -61,9 +61,10 @@ def _global_directive_cmd(directive: str, *clear_params: str) -> str:
     them in any other section anyway.
     """
     params = clear_params or (directive.split("=", 1)[0].strip(),)
-    alts = "|".join(params)   # parameter names only — no regex metacharacters
-    # ``I`` (GNU sed) matches the key case-insensitively, as samba does.
-    delete = (f"sudo sed -i -E '/^[[:space:]]*({alts})[[:space:]]*=/Id' "
+    # parameter names only — no regex metacharacters. Case-insensitive as samba
+    # is, through sed_ci: BusyBox sed refuses GNU's ``/regex/I`` (v0.24.1).
+    alts = "|".join(sed_ci(p) for p in params)
+    delete = (f"sudo sed -i -E '/^[[:space:]]*({alts})[[:space:]]*=/d' "
               f"{_SMB_CONF_PATH}")
     insert = f"sudo sed -i '/^\\[global\\]/a {directive}' {_SMB_CONF_PATH}"
     return f"{delete} && {insert}"

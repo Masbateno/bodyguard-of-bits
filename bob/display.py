@@ -214,12 +214,14 @@ def display_risk_context(label: str, lang: str, t, report,
 
 def check_single_service_display(snap, network_context, t, report, verbose,
                                   quiet: bool = False, ufw_active: bool = True,
-                                  firewalld_active: bool = False):
+                                  firewalld_active: bool = False,
+                                  netfilter_active: bool = False):
     """Run check for a single service and return its CheckResult."""
     from bob.checks.services import check_services
     result = check_services([snap], network_context=network_context,
                             ufw_active=ufw_active, t=t,
-                            firewalld_active=firewalld_active)
+                            firewalld_active=firewalld_active,
+                            netfilter_active=netfilter_active)
     display_result(result, report, verbose, quiet=quiet)
     return result
 

@@ -49,19 +49,24 @@ class TestFixTargetsTheWinningFile:
         assert "/etc/ssh/sshd_config.d/00-bob-hardening.conf" in cmd
         # deletes the parameter before appending → idempotent, and beats a later
         # drop-in by lexical order
-        assert cmd.index("/Id") < cmd.index("tee -a")
+        assert cmd.index("|=)/d'") < cmd.index("tee -a")
         assert "PasswordAuthentication no" in cmd
 
     def test_no_dropin_edits_the_main_file(self):
         cmd = _sshd_directive_fix("PermitRootLogin prohibit-password", "PermitRootLogin", {})
         assert "/etc/ssh/sshd_config" in cmd
         assert "00-bob-hardening.conf" not in cmd
-        assert cmd.index("/Id") < cmd.index("tee -a")   # delete-then-append here too
+        # delete, then insert at the top (v0.24.1 — an appended line lands in a
+        # trailing Match block)
+        assert cmd.index("|=)/d'") < cmd.index("'1i PermitRootLogin prohibit-password'")
 
     def test_the_bad_line_is_deleted_not_matched_verbatim(self):
         """The old fix only matched `PermitRootLogin yes`; a value written as
         `permitrootlogin=yes` or with odd spacing slipped past. The delete regex
         is case-insensitive and accepts space or `=`."""
         cmd = _sshd_directive_fix("PermitRootLogin prohibit-password", "PermitRootLogin", {})
-        assert "PermitRootLogin([[:space:]]|=)" in cmd
-        assert "/Id" in cmd   # case-insensitive delete
+        # case-insensitive delete — letter by letter since v0.24.1, because
+        # BusyBox sed (Alpine) refuses GNU's /regex/I
+        from bob.checks._run import sed_ci
+        assert sed_ci("PermitRootLogin") + "([[:space:]]|=)/d'" in cmd
+        assert "/Id" not in cmd

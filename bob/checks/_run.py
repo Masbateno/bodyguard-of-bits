@@ -408,6 +408,19 @@ def ssh_unit() -> str:
     return _SSH_UNIT_CANDIDATES[0]
 
 
+def sed_ci(word: str) -> str:
+    """*word* as a case-insensitive sed regex, letter by letter (``X11`` →
+    ``[Xx]11``).
+
+    v0.24.1. GNU sed's ``/regex/I`` address flag is refused by BusyBox sed
+    ("sed: unsupported command I", measured on Alpine 3.24): every remediation
+    built on it stopped at its first step there. A bracket per letter means the
+    same in GNU and BusyBox. *word* must be literal text — letters, digits,
+    spaces, ``_`` and ``-`` — not a pattern.
+    """
+    return "".join(f"[{c.upper()}{c.lower()}]" if c.isalpha() else c for c in word)
+
+
 def service_restart_cmd(unit: str) -> str:
     """The command that restarts *unit*, in this host's own init system.
 

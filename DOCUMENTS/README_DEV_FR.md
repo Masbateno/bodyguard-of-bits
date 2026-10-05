@@ -37,8 +37,8 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 
 | Module | Rôle |
 |---|---|
-| `__main__.py` | Orchestrateur — parsing des arguments, collecte des snapshots, appelle `run_checks()`, affiche le résumé (~995 lignes) |
-| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (56 sections filtrables + 10 always-on), `_section_enabled()` (~1115 lignes) |
+| `__main__.py` | Orchestrateur — parsing des arguments, collecte des snapshots, appelle `run_checks()`, affiche le résumé (~1009 lignes) |
+| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (56 sections filtrables + 10 always-on), `_section_enabled()` (~1218 lignes) |
 | `cli.py` | Parsing des arguments — retourne un `AuditConfig` dataclass |
 | `config.py` | Configuration utilisateur — `UserConfig`, `EmailStore` |
 | `display.py` | Helpers d'affichage terminal — `display_result()`, `print_audit_summary()`, etc. |
@@ -66,7 +66,7 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 
 | Module | Rôle |
 |---|---|
-| `cron.py` | Gestion cron — `CronEntry`, `list_installed_crons()`, `build_script_content()`, logique wizard planification (`run_install_cron()` / `run_manage_cron()` dispatchers — flux texte brut + dispatch curses en import paresseux) |
+| `cron/` | Gestion cron — `CronEntry`, `list_installed_crons()`, `build_script_content()`, logique wizard planification (`run_install_cron()` / `run_manage_cron()` dispatchers — flux texte brut + dispatch curses en import paresseux) |
 | `tui/cron.py` | TUI curses pour l'installation et la gestion cron — `_WizardEntry`, `_draw()`, `_read_key()`, `_run_install_cron_curses()`, `_run_manage_cron_curses()`. Vit sous `bob.tui` afin que le reste de `bob.*` reste importable sur les systèmes sans curses (extraction v0.4.1). |
 | `_tty.py` | Lecteur ligne mode raw — `read_line(prompt) → str \| None` ; Échap retourne `None` ; repli `input()` en non-TTY |
 
@@ -74,12 +74,12 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 
 | Module | Ce qu'il vérifie |
 |---|---|
-| `firewall.py` | Statut UFW, politique par défaut, cohérence IPv6 ; `check_rules()` pour la détection doublons/wildcards |
+| `firewall.py` | Statut UFW, politique par défaut, cohérence IPv6 ; `check_rules()` pour la détection doublons/wildcards ; `resolve_firewall_posture()` — la réponse pare-feu unique (UFW, cible de zone firewalld, ou jeu de règles brut en DROP/REJECT) que lisent toutes les synthèses (v0.24.1) |
 | `firewall_stack.py` | Contournement iptables brut, règles nftables parallèles, détection ip_forward |
 | `iptables_nftables.py` | Audit iptables/nftables quand UFW inactif — politique INPUT/FORWARD, conntrack, détection backend (iptables-legacy vs nftables) |
-| `ipv6.py` | Cohérence ports IPv6 / règles UFW v6 ; champ `has_global_ipv6` ; link-local/ULA uniquement → INFO (pas WARN) |
+| `ipv6.py` | Cohérence ports IPv6 / règles UFW v6 ; champ `has_global_ipv6` ; link-local/ULA uniquement → INFO (pas WARN) ; sans UFW, ports attribués au filtre qui les régit (v0.24.1) |
 | `network_context.py` | Tableau d'interfaces réseau, connexions TCP établies, ports sensibles distants |
-| `services.py` | Services réseau installés, état systemd, exposition UFW |
+| `services.py` | Services réseau installés, état systemd/OpenRC (dont activé par socket et condition non remplie, v0.24.1), exposition selon le pare-feu |
 | `services_state.py` | État des services : services de sécurité activés au boot mais inactifs |
 | `ports.py` | Ports en écoute via `ss`, classification, déduplication |
 | `logs.py` | Logs UFW — tentatives bloquées, bruteforce, top IPs/ports |
@@ -95,8 +95,8 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | `kernel_hardening.py` | Durcissement noyau (sysctl) : ASLR, ptrace_scope, kptr_restrict, dmesg_restrict, suid_dumpable |
 | `kernel_modules.py` | Modules noyau risqués (cramfs, hfs, dccp, sctp, rds, tipc, usb_storage) + disponibilité mise à jour noyau apt + listing noyaux installés (filtré sur état dpkg `ii` depuis v0.4.6) |
 | `mac_policy.py` | Politique MAC (AppArmor / SELinux) : état framework, comptes de profils (enforce/complain/loaded), détection 0-profile |
-| `updates.py` | État des mises à jour système : paquets apt sécurité/réguliers en attente (via `apt-get -s dist-upgrade`), détection cache obsolète, cross-check `apt list --upgradable`, détection unattended-upgrades |
-| `ssh.py` | Audit sécurité SSH : directives sshd_config, qualité clés hôte, permissions clés user, authorized_keys, known_hosts |
+| `updates.py` | État des mises à jour système : paquets apt sécurité/réguliers en attente (via `apt-get -s dist-upgrade`), détection cache obsolète, cross-check `apt list --upgradable` (paquets différés par déploiement progressif et retenus comptés, v0.24.1), détection unattended-upgrades |
+| `ssh/` | Audit sécurité SSH (paquet : `_snapshot`, `_parsers`, `_directives`, `_subchecks`) : directives sshd_config, qualité clés hôte, permissions clés user, authorized_keys, known_hosts |
 | `file_perms.py` | Permissions fichiers sensibles : /etc/passwd, /etc/shadow, sudoers, clés hôte SSH |
 | `suid_audit.py` | Audit binaires SUID/SGID avec whitelist (`config.conf`), scan targeted-roots pour la performance |
 | `user_accounts.py` | Audit comptes utilisateurs : UID 0 non-root, mots de passe vides, comptes expirés |
@@ -130,6 +130,15 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | `faillock.py` | **v0.21.0** — verrouillage de compte PAM : absence de `pam_faillock` (ou `pam_tally2` legacy) dans la pile auth (WARN −1 sur server, INFO sur desktop/workstation) |
 | `disk_encryption.py` | **v0.21.0** — système de fichiers racine sur LUKS/dm-crypt via `/proc/mounts` + parcours de la pile dm (LVM-sur-LUKS reconnu) ; WARN sur une racine en clair desktop/workstation, INFO sur server, N/A en conteneur |
 | `polkit.py` | **v0.21.0** — règles polkit : un `.rules`/`.pkla` (ou le dossier `rules.d`) inscriptible par non-root est un chemin d'escalade (WARN + `chown`/`chmod`) ; un `.pkla` legacy accordant `ResultAny=yes` (INFO) |
+| `module_blacklist.py` | **v0.22.0** (INFO) — modules noyau rarement utiles (cramfs, udf, usb_storage, dccp, sctp…) ni chargés ni empêchés de charger par un `blacklist` / `install … /bin/true` de modprobe.d (CIS §3.4) |
+| `dev_privileged.py` | **v0.22.0** (INFO) — accès « tous » sur les nœuds `/dev` sensibles (`/dev/mem`, `/dev/kmem`, `/dev/port`, périphériques bloc bruts), par stat seulement |
+| `root_path.py` | **v0.22.0** — PATH configuré de root (`ENV_SUPATH` de `login.defs`, `secure_path` de sudoers) : composants modifiables par tous, `.` ou relatifs |
+| `package_integrity.py` | **v0.23.0** (INFO, `--exhaustive` seulement) — fichiers de paquets différant de l'empreinte enregistrée par le gestionnaire : `rpm -Va` / `debsums -c` / `apk audit` / `pacman -Qkk`, fichiers de configuration filtrés ; borné + groupe tué |
+| `file_capabilities.py` | **v0.24.0** — xattrs `security.capability` lus directement (sans dépendre de `getcap`) sur les racines du scan SUID : une capability équivalente à root hors des droits distro mesurés → WARN, toute autre → INFO |
+| `cpu_security.py` | **v0.24.0** — le verdict du noyau dans `/sys/devices/system/cpu/vulnerabilities` (« Vulnerable » → WARN), options de démarrage qui désactivent une mitigation et IOMMU (x86) → INFO |
+| `package_authenticity.py` | **v0.24.0** — options écrites qui désactivent l'authentification des paquets : apt `trusted=yes` / `AllowUnauthenticated`, dnf/zypper `gpgcheck=0` (dont `/usr/etc/zypp/zypp.conf`), pacman `SigLevel Never`/`Optional`, apk `allow-untrusted` → WARN |
+| `crypto_policy.py` | **v0.24.0** — crypto-policies, la politique *appliquée* jugée (`state/current` avant `config`) : `LEGACY` → WARN ; module affaiblissant, politique datée ou inconnue, configurée ≠ appliquée, mécanisme absent → INFO |
+| `world_writable.py` | **v0.24.0** (INFO, `--exhaustive` seulement) — `find -xdev` (GNU ou BusyBox) sur les systèmes de fichiers locaux sur disque : fichiers modifiables par tous, répertoires modifiables par tous sans sticky bit, fichiers sans propriétaire ; un chemin que les autres comptes ne peuvent pas traverser est signalé comme latent |
 
 ---
 
@@ -148,7 +157,7 @@ bob/
 ├── completion.py        # Installeur d'autocomplétion bash — `bob --install-completion`
 ├── config.py            # UserConfig, EmailStore
 ├── correlation.py       # CorrelationRule + run_correlations() — 6 règles de risque composé
-├── cron.py              # CronEntry, logique wizard planification, build_script_content()
+├── cron/                # CronEntry, logique wizard planification, build_script_content()
 ├── csv_output.py        # Formatter sortie CSV (--format csv)
 ├── display.py           # Helpers affichage terminal (display_result, print_audit_summary…)
 ├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — attribution backup→health_resilience
@@ -234,7 +243,7 @@ bob/
 │   ├── kernel_modules.py   # KernelModulesSnapshot + check_kernel_modules() — modules risqués + mise à jour noyau apt
 │   ├── mac_policy.py       # MacPolicySnapshot + check_mac_policy() — AppArmor / SELinux
 │   ├── updates.py          # UpdatesSnapshot + check_updates() — sémantique dist-upgrade + cache obsolète
-│   ├── ssh.py              # SshSnapshot + check_ssh()
+│   ├── ssh/                # SSHSnapshot + check_ssh() — package: _snapshot, _parsers, _directives, _subchecks
 │   ├── file_perms.py       # FilePermsSnapshot + check_file_perms()
 │   ├── suid_audit.py       # SuidSnapshot + check_suid_audit() — SUID/SGID avec whitelist
 │   ├── user_accounts.py    # UserAccountsSnapshot + check_user_accounts()
@@ -267,7 +276,16 @@ bob/
 │   ├── kexec_lockdown.py       # KexecLockdownSnapshot + check_kexec_lockdown() — kexec + lockdown (v0.21.0)
 │   ├── faillock.py             # FaillockSnapshot + check_faillock() — verrouillage de compte PAM (v0.21.0)
 │   ├── disk_encryption.py      # DiskEncryptionSnapshot + check_disk_encryption() — racine LUKS/dm-crypt (v0.21.0)
-│   └── polkit.py               # PolkitSnapshot + check_polkit() — règles polkit inscriptibles (v0.21.0)
+│   ├── polkit.py               # PolkitSnapshot + check_polkit() — règles polkit inscriptibles (v0.21.0)
+│   ├── module_blacklist.py     # ModuleBlacklistSnapshot + check_module_blacklist() — modprobe.d blacklist (v0.22.0)
+│   ├── dev_privileged.py       # DevPrivilegedSnapshot + check_dev_privileged() — nœuds /dev sensibles (v0.22.0)
+│   ├── root_path.py            # RootPathSnapshot + check_root_path() — PATH configuré de root (v0.22.0)
+│   ├── package_integrity.py    # PackageIntegritySnapshot + check_package_integrity() — --exhaustive (v0.23.0)
+│   ├── file_capabilities.py    # FileCapabilitiesSnapshot + check_file_capabilities() — file capabilities (v0.24.0)
+│   ├── cpu_security.py         # CpuSecuritySnapshot + check_cpu_security() — verdict noyau sur les vulnérabilités CPU (v0.24.0)
+│   ├── package_authenticity.py # PackageAuthenticitySnapshot + check_package_authenticity() — options désactivant la signature (v0.24.0)
+│   ├── crypto_policy.py        # CryptoPolicySnapshot + check_crypto_policy() — crypto-policies (v0.24.0)
+│   └── world_writable.py       # WorldWritableSnapshot + check_world_writable() — --exhaustive (v0.24.0)
 ├── data/
 │   ├── services.json            # Registre déclaratif des 38 services
 │   ├── cis_refs.json            # Références CIS — 218 entrées {ref, code}
@@ -502,8 +520,8 @@ print(f'Missing in FR: {missing if missing else \"none\"}')
 
 Résultat attendu :
 ```
-EN keys: 2816
-FR keys: 2816
+EN keys: 2833
+FR keys: 2833
 Missing in FR: none
 ```
 
@@ -519,7 +537,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Traduire toutes les valeurs
 
-Le fichier contient exactement 2816 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
+Le fichier contient exactement 2833 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
 
 Exemple :
 ```json

@@ -27,6 +27,7 @@ Doctrine:
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import signal
 import stat
@@ -49,24 +50,67 @@ _PRUNE = ("/var/lib/docker", "/var/lib/containers", "/var/lib/lxc", "/var/lib/lx
 
 _SKIP_FS = _PSEUDO_FS_TYPES | _NETWORK_FS_TYPES | {"autofs"}
 
+#: One find error line: "<argv0>: <path>: <reason>", argv0 ending in "find".
+_FIND_ERROR = re.compile(r"^(?:\S*/)?find: (.+)$")
 
-def _local_roots() -> "list[str]":
-    """Mount points of local, on-disk filesystems."""
+
+def _mounts() -> "list[tuple[str, str]]":
+    """(mount point, fstype) pairs from /proc/self/mounts; [] when unreadable."""
     try:
         text = read_text_capped(_MOUNTS, encoding="utf-8", errors="replace")
     except OSError:
-        return ["/"]
-    roots: "list[str]" = []
+        return []
+    out: "list[tuple[str, str]]" = []
     for line in text.splitlines():
         f = line.split()
-        if len(f) < 3:
-            continue
-        mp, fstype = f[1].replace("\\040", " "), f[2]
-        if fstype in _SKIP_FS or fstype.startswith("fuse."):
-            continue
-        if mp not in roots:
+        if len(f) >= 3:
+            out.append((f[1].replace("\\040", " "), f[2]))
+    return out
+
+
+def _skipped(fstype: str) -> bool:
+    return fstype in _SKIP_FS or fstype.startswith("fuse.")
+
+
+def _local_roots() -> "list[str]":
+    """Mount points of local, on-disk filesystems."""
+    roots: "list[str]" = []
+    for mp, fstype in _mounts():
+        if not _skipped(fstype) and mp not in roots:
             roots.append(mp)
     return roots or ["/"]
+
+
+def _skipped_mount_points() -> "list[str]":
+    """Mount points of the filesystems the sweep excludes (FUSE, network, pseudo)."""
+    return [mp for mp, fstype in _mounts() if _skipped(fstype)]
+
+
+def _unexplained_errors(stderr: bytes, skipped: "list[str]") -> bool:
+    """find reported an error on a path the sweep was meant to cover.
+
+    v0.24.1. find exits non-zero for *any* unreadable path, and that was read
+    as "sweep incomplete" — a ceiling on the score. On a desktop the usual
+    culprit is a FUSE mount another user owns (an AppImage under /tmp, gvfs):
+    without ``allow_other`` the kernel refuses even root, so find's look at the
+    mount point fails, although that filesystem is excluded from the sweep by
+    design. Errors at or under such a mount point are not blindness. Anything
+    else — or an exit status with no error find could name — still is.
+    """
+    lines = [ln for ln in stderr.decode("utf-8", "replace").splitlines() if ln.strip()]
+    if not lines:
+        return True
+    for line in lines:
+        # find names itself by argv[0], and BOB runs it by absolute path:
+        # "/usr/bin/find: '/home/so6/fusemnt': Permission denied" (measured on
+        # Mint 22.3; BusyBox prints "find: /path: …" without quotes).
+        m = _FIND_ERROR.match(line)
+        body = m.group(1) if m else ""
+        path = body.rsplit(": ", 1)[0].strip("'\u2018\u2019") if ": " in body else ""
+        if not path or not any(path == mp or path.startswith(mp.rstrip("/") + "/")
+                               for mp in skipped):
+            return True
+    return False
 
 
 def _is_gnu_find(find: str) -> bool:
@@ -130,13 +174,13 @@ class WorldWritableSnapshot:
         snap.unowned_assessed = gnu
         try:
             proc = subprocess.Popen(build_command(find, _local_roots(), gnu),
-                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     start_new_session=True, env=_C_LOCALE_ENV)
         except OSError:
             snap.no_find = True
             return snap
         try:
-            out, _ = proc.communicate(timeout=_TIMEOUT)
+            out, err = proc.communicate(timeout=_TIMEOUT)
         except subprocess.TimeoutExpired:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -148,7 +192,8 @@ class WorldWritableSnapshot:
                 pass
             snap.timed_out = True
             return snap
-        snap.partial = proc.returncode != 0
+        snap.partial = (proc.returncode != 0
+                        and _unexplained_errors(err or b"", _skipped_mount_points()))
         snap._parse(out, gnu)
         snap._split_unreachable()
         return snap

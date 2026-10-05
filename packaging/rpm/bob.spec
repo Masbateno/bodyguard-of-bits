@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.24.0
+Version:        0.24.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,17 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Mon Oct 05 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.24.1-1
+- Patch: summaries read the firewall actually filtering (firewalld target, raw
+  nftables/iptables default deny), also with UFW installed but inactive.
+- SSH --fix for 11 directives via drop-in (or top of sshd_config), sshd -t
+  before restart, BusyBox sed compatible; Samba fix commands likewise.
+- APT phased/kept-back updates and systemd start-condition skips are INFO;
+  FUSE mounts no longer make the world-writable sweep partial; no UFW claims
+  on a host without UFW (IPv6).
+- Score rises on hosts that carried one of the removed false deductions.
+  Field-validated on real Debian 13, Mint 22.3, Fedora 44, Alpine 3.24.
+
 * Sun Oct 04 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.24.0-1
 - Minor, BREAKING: new checks across accounts, kernel, privileges, supply chain
   and platform; scores move on hosts they flag.

@@ -6,6 +6,171 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.24.1] — 2026-10-05
+
+**A patch release: every summary reads the firewall that is actually filtering,
+SSH remediation lands where sshd reads it, and four false findings go away.**
+No scoring-formula, JSON-schema, CSV-column-order, section or `--explain`-key
+change. **The score rises** on a host that carried one of the false deductions
+removed here (§1, §4, §5, §6), and the risk level can drop on an
+nftables/iptables-only host (§1). The `--fix` command strings change for 11 SSH
+directives and the Samba directives (§2). Found by judging an external review of
+a real 0.24.0 audit point by point, then measured on the host; every fix was
+field-validated A/B (0.24.0 vs 0.24.1) on real Debian 13, Linux Mint 22.3,
+Fedora 44 and Alpine 3.24.
+
+### 1. A backend-neutral firewall posture for every summary
+
+The firewall section has credited firewalld since 0.20.2 and a raw
+nftables/iptables default-deny ruleset since 0.23.0, but the summaries built
+after it still read UFW's own state. Measured on real hosts:
+
+- **Fedora 44, firewalld active** — the attack surface said "✖ default policy is
+  ALLOW — no filtering", and the implicit-policy note spoke of "UFW's default
+  policy".
+- **Debian 13, nftables only, inbound DROP** — "No active firewall — all ports
+  unfiltered", and the risk level was floored at HIGH by the `firewall_inactive`
+  posture rule (also in the JSON/CSV `risk`), while the section above said
+  `firewall.netfilter_active`.
+- **UFW installed but inactive, with firewalld or an nft DROP ruleset doing the
+  filtering** (the Ubuntu case) — `firewall.inactive` ALERT −3 and the
+  firewall-domain cap at 3, although the host was filtered.
+
+The runner now resolves one `FirewallPosture` (`backend` ∈ ufw / firewalld /
+netfilter / none, `policy` ∈ deny / reject / allow / unknown) and every consumer
+reads it: the attack surface, the risk-level floor, the implicit-policy note,
+the SSH exposure context, and the services, ports and IPv6 sections. firewalld's
+policy is its zone **target**, read from `firewall-cmd --list-all` (the runtime
+value: `default` and `%%REJECT%%` → reject, `DROP` → deny, `ACCEPT` → allow). A
+policy BOB did not read is now "active (…) — default inbound policy not read",
+never "✖ ALLOW". The firewall check credits firewalld or a filtering raw ruleset
+even when UFW is installed but inactive.
+
+Measured A/B: Debian nft-only DROP → "✔ active (nftables/iptables) — default
+deny", risk LOW, score unchanged; UFW-inactive + nft DROP → **score 8 → 9** (the
+false −3 and the domain cap removed); Fedora → "✔ active (firewalld) — reject",
+the three zone targets each rendered as above, score unchanged.
+
+### 2. SSH remediation that applies where sshd reads it
+
+The eight table-driven SSH directives (`PermitEmptyPasswords`, `X11Forwarding`,
+`IgnoreRhosts`, `HostbasedAuthentication`, `PermitUserEnvironment`,
+`StrictModes`, `AllowTcpForwarding`, `PubkeyAuthentication`) still proposed
+`sed 's/^#*X yes/X no/'` on `/etc/ssh/sshd_config`: a no-op when a drop-in sets
+the value (OpenSSH is first-value-wins, and Fedora's `50-redhat.conf` ships
+`X11Forwarding yes`), and when the spacing, `=` or case differ. They now use the
+drop-in-aware fix the three others have had since 0.19.0. All **11** directives:
+
+- write `00-bob-hardening.conf` in the drop-in directory when sshd includes one
+  (it sorts first, so it wins), after deleting any earlier assignment there;
+- otherwise insert the directive at the **top** of `sshd_config`, not at the
+  end — an appended line lands inside a trailing `Match` block, where it applies
+  to that block only or, for `StrictModes`, is refused and sshd no longer starts
+  (measured on Debian);
+- run `sudo sshd -t` before restarting, so a configuration sshd would reject is
+  never put into service.
+
+**BusyBox sed** (Alpine) refuses the `/regex/I` address the existing drop-in fix
+used (`sed: unsupported command I`), so every SSH drop-in remediation, and the
+Samba directive fixes, failed at their first step on Alpine since 0.19.0. The
+case-insensitive match is now spelled as one bracket class per letter (`[Xx]`),
+which GNU and BusyBox sed both accept. The `--explain` "how to fix" text of 19
+SSH keys describes the drop-in.
+
+Measured: Debian (a drop-in setting X11Forwarding yes; and a main file ending in
+a `Match` block), Fedora under SELinux enforcing (0 AVC denials, file context
+`etc_t` kept) and Alpine — `sshd -T` shows the new values, sshd restarts, the
+command is idempotent, the findings disappear on re-audit.
+
+### 3. Updates: phased rollout and kept-back packages are not an inconsistency
+
+On Ubuntu and Mint, `apt-get -s dist-upgrade` defers an update until the
+machine's phase opens ("The following upgrades have been deferred due to
+phasing:"); `apt list --upgradable` still lists it. BOB read the mismatch as
+`updates.dist_upgrade_inconsistent` — WARN −2 and an "unknown" updates line in
+the attack surface. Measured on a Mint desktop: 16 upgradable, 16 deferred,
+0 to install. Deferred and kept-back packages are now counted and reported as
+INFO (`updates.phased_deferred`, `updates.kept_back`); the WARN fires only when
+more packages are upgradable than apt withholds.
+
+### 4. A unit skipped by its own start condition is not "enabled but not running"
+
+`inetutils-inetd` is enabled on Debian and Mint and skipped by its
+`ExecCondition` while `inetd.conf` is empty — the designed state. BOB reported
+`services.state.inactive_enabled` ("Telnet Server is enabled at boot but is not running",
+WARN −1). A unit whose `ConditionResult=no` or `Result=exec-condition` is now
+`CONDITION_UNMET` → INFO `services.state.condition_unmet`. The reverse polarity
+was measured too: with a telnet line in `inetd.conf`, inetd runs, port 23
+listens and is reported as before.
+
+### 5. IPv6 on a host without UFW
+
+`ipv6` read a missing `/etc/default/ufw` as "UFW IPv6 enabled", so a host
+without UFW was told "UFW IPv6 configuration matches kernel" and got
+`ipv6.port_no_v6_rule` (WARN −1 per port, capped) for every IPv6 listener. With
+neither UFW nor firewalld present, the section now names what governs the
+listeners — `ipv6.netfilter_v6` under a filtering raw ruleset,
+`ipv6.no_firewall_v6` with no filter, `ipv6.no_ufw_no_listeners` — all INFO,
+without claiming the ruleset's IPv6 coverage (its address families are not
+read). Where `ss` is absent (Alpine), `ipv6.listeners_unknown` replaces the
+false "configuration matches". The link-local wording no longer stops at "no internet exposure":
+the listeners are "reachable from the local network without UFW filtering them".
+
+### 6. `--exhaustive` world-writable sweep: FUSE mounts are not a blind spot
+
+A FUSE mount owned by a user (an AppImage's squashfuse, measured on Mint) is
+unreadable to root without `allow_other`, so `find` printed "Permission denied"
+on it and the sweep reported itself partial (`world_writable.partial`, a
+visibility limit). FUSE, network and pseudo filesystems are excluded from the
+sweep by design; find's errors on or under such a mount point are now recognised
+and no longer make the walk partial. The parser matches the real line, which
+carries find's absolute path (`/usr/bin/find: '…': Permission denied`) — a first
+version tested against an imagined `find:` line missed it on the real host.
+
+### 7. Wording
+
+- **Samba restricted to one address**: a UFW rule whose source is a single host
+  (`ALLOW IN 192.168.1.11`) was reported as "open to the local network" (WARN,
+  "restrict it further"). It is now INFO `services.exposure.open_local_host`
+  naming the host. No deduction change.
+- **Ports covered by the default policy**: "covered by a UFW rule" became
+  "filtered by UFW — by an explicit rule or by the default deny policy" under a
+  deny/reject default (`ports.all_covered`): a port with no rule was covered by
+  the policy, not by a rule.
+- **SMTP risk text** no longer says the finding "fires when that default
+  [127.0.0.1] has been changed" — shown for a server still bound to 127.0.0.1, it
+  now defers to the port verdict.
+
+### 8. Documentation
+
+- `CONVENTIONS` §10: a glossary (module, section, check, finding, domain, group…).
+- `README_TECH`: the SSH remediation mechanism; twelve check families missing
+  from the feature list; a wrong "Hardening check" description replaced.
+- `README_DEV`: nine missing check modules, and `ssh/` / `cron/` as packages.
+- The EN/FR changelogs: French sections that had been condensed are fully
+  translated, French left in English entries is translated, and PEP 416 is
+  described as *rejected* (its status), not "retracted".
+
+### Numbers
+
+- **Tests** 11778 → **12009**; mutations 350 → **387**, all killed.
+- Locale keys 2816 → **2833** per language (17 new, all INFO or summary text).
+- New guard: `README_DEV{,_FR}` must list every check module in its table and
+  tree (it found `cron.py`, a package since v0.6.0).
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+No configuration change needed. An `ignore.yml` entry for
+`services.state.inactive_enabled`, `ipv6.port_no_v6_rule` or
+`services.exposure.open_local` no longer matches on a host where §4, §5 or §7 now
+emits a different, INFO-level key.
+
+---
+
 ## [0.24.0] — 2026-10-04
 
 **A minor release of new coverage — accounts, kernel attack surface, privilege
@@ -7274,7 +7439,7 @@ The section measured 83 words against 562 in English (**15 %**), while the other
 
 The sandbox shipped in **v0.7.0**. For **seven minor releases**, the French security policy told its readers the opposite of the truth, and froze the roadmap at a line that had been EOL since v0.7.2.
 
-Everything the English version says about the threat model was absent in French: that in-process Python sandboxing **is not a security boundary** (PEP 416, retracted); that `json.dumps.__globals__["__builtins__"]["__import__"]` is reachable by any plugin and this is *expected* and pinned by `TestKnownInProcessLimitation`; that the `dict.__setitem__` unbound bypass is a known limitation; that **AppArmor is the actual boundary**; and the operational conclusion — **if you run BOB unconfined under `sudo`, code-review your plugins before installing them**.
+Everything the English version says about the threat model was absent in French: that in-process Python sandboxing **is not a security boundary** (PEP 416, rejected); that `json.dumps.__globals__["__builtins__"]["__import__"]` is reachable by any plugin and this is *expected* and pinned by `TestKnownInProcessLimitation`; that the `dict.__setitem__` unbound bypass is a known limitation; that **AppArmor is the actual boundary**; and the operational conclusion — **if you run BOB unconfined under `sudo`, code-review your plugins before installing them**.
 
 The section is now fully translated, including the spawn isolation, the rlimits, the import allowlist, the `_ImmutableBuiltins` rationale, the `open()` wrapper, the JSON-safe round-trip that defeats a malicious `__reduce__`, and the retired `BOB_SANDBOX_LEGACY` note. **15 % → 121 %**.
 
@@ -8258,7 +8423,7 @@ The v0.10.x conservative workflow (proposed in the v0.10.0 ship + memory note) a
 | D-4 Rank 3-8 | △ granular ignore.yml | zero | M | DEFER |
 | F-1 parallel checks | ✓ 30s → 5-10s perf | **zero on perf** | H | DEFER until signal |
 
-Rank 1 ships because it adds a **previously-missing detection** (client-side X11 forwarding via `~/.ssh/config ForwardX11 yes`), not just a cosmetic key rename. The other 7 ranks fail the "measurable gain" filter without user signal — they stay deferred indefinitely per the kill-dormant-features rule established by v0.8.4 ([[project_v084_shipped]] retired `compare-breakdown-diff` after zero signal across 5 majeures).
+Rank 1 ships because it adds a **previously-missing detection** (client-side X11 forwarding via `~/.ssh/config ForwardX11 yes`), not just a cosmetic key rename. The other 7 ranks fail the "measurable gain" filter without user signal — they stay deferred indefinitely per the kill-dormant-features rule established by v0.8.4 ([[project_v084_shipped]] retired `compare-breakdown-diff` after zero signal across 5 majors).
 
 ### Server-side rename
 
@@ -8331,11 +8496,11 @@ Pre-v0.10.1 `bob --explain ssh.x11_forwarding` resolves to the server-side conte
 ```python
 EXPLAIN_KEY_ALIASES: dict[str, str] = {
     "ssh.x11_forwarding": "ssh.x11.forwarding.server",  # v0.10.1 D-4 Rank 1
-    # The dict had been empty since v0.9.0 D-3 retrait emptied it...
+    # The dict had been empty since v0.9.0 D-3 removal emptied it...
 }
 ```
 
-This is the **first live alias** after the v0.9.0 D-3 retrait. The v0.9.0 D-3 ship explicitly chose to keep the dict + lookup machinery (rather than retire them entirely) so a future rename would have a one-line migration path — v0.10.1 is that future rename, and the one-line `"ssh.x11_forwarding": "ssh.x11.forwarding.server"` is all that was needed.
+This is the **first live alias** after the v0.9.0 D-3 removal. The v0.9.0 D-3 ship explicitly chose to keep the dict + lookup machinery (rather than retire them entirely) so a future rename would have a one-line migration path — v0.10.1 is that future rename, and the one-line `"ssh.x11_forwarding": "ssh.x11.forwarding.server"` is all that was needed.
 
 `normalize_key("ssh.x11_forwarding")` returns `"ssh.x11.forwarding.server"` after passing through the alias resolution.
 
@@ -8419,13 +8584,13 @@ If a user signals on the client-side detection (false positive on a legitimate f
 
 ### Deferred to future v0.10.x patches (still aligned with conservative workflow)
 
-- **D-4 Rank 2-8** — cosmetic / granular ignore.yml. No user signal → no ship. Possibly killed indefinitely if 5 majeures pass without signal (pattern v0.8.4 compare-breakdown-diff).
+- **D-4 Rank 2-8** — cosmetic / granular ignore.yml. No user signal → no ship. Possibly killed indefinitely if 5 majors pass without signal (pattern v0.8.4 compare-breakdown-diff).
 - **F-1 parallel checks** — perf 30s → 5-10s. **Zero user signal on perf**. Don't ship without measured demand. The audit-driven plan stays in the v0.10.0 CHANGELOG entry for when someone signals.
 - **SNAPSHOT.md deep refresh** — module-by-module call-outs + file sizes. The v0.10.0 surgical patches covered the load-bearing drift paragraphs; a deeper refresh is a low-priority documentation patch candidate.
 
 ### Lessons
 
-- **EXPLAIN_KEY_ALIASES kept-but-empty pays off.** The v0.9.0 D-3 retrait emptied the dict but explicitly kept the lookup machinery in `normalize_key()` so a future rename would have a one-line migration path. v0.10.1 D-4 Rank 1 is exactly that future rename — the one-line `"ssh.x11_forwarding": "ssh.x11.forwarding.server"` is all that was needed. Pattern validated: **keep deprecated infrastructure when the cost-to-keep is low and the cost-to-recreate is non-trivial**.
+- **EXPLAIN_KEY_ALIASES kept-but-empty pays off.** The v0.9.0 D-3 removal emptied the dict but explicitly kept the lookup machinery in `normalize_key()` so a future rename would have a one-line migration path. v0.10.1 D-4 Rank 1 is exactly that future rename — the one-line `"ssh.x11_forwarding": "ssh.x11.forwarding.server"` is all that was needed. Pattern validated: **keep deprecated infrastructure when the cost-to-keep is low and the cost-to-recreate is non-trivial**.
 - **Conservative workflow filter held in practice.** The v0.10.x proposal applied "gain × risque = STOP" to 9 deferred items; 1 passed the filter (D-4 Rank 1) because it adds **new detection capability** (not just rename). 8 failed because they were cosmetic or had zero user signal. Shipping the 1 + deferring the 8 is the right call when the goal is "fewer releases, higher signal-per-release".
 - **Adding new detection is qualitatively different from renaming existing detection.** The Rank 2-8 splits would have qualified as "rename" work even under aggressive scope; Rank 1 is the only one of the 9 that adds an actual new finding the operator wouldn't see otherwise. The cost-value framing surfaces this distinction.
 
@@ -8445,7 +8610,7 @@ Two sub-agent audits were run on 2026-06-08 to scope the v0.10.0 BREAKING bundle
 
 Combined effort estimate: **≈ 30 hours** for the full v0.10.0 BREAKING bundle (D-4 splits + F-1 + SNAPSHOT refresh + release surface), which exceeded a single ship session. The pragmatic call was to **stage the work**:
 
-  - **v0.10.0 (this release)** — ship the D-4 shim foundation so the eight follow-up patches can land without re-touching the shim file. Ship the SNAPSHOT.md refresh so the project-snapshot doc covers the three majeures of drift the v0.10.x branch sits on top of. Bump the version to mark the v0.10.x branch open.
+  - **v0.10.0 (this release)** — ship the D-4 shim foundation so the eight follow-up patches can land without re-touching the shim file. Ship the SNAPSHOT.md refresh so the project-snapshot doc covers the three majors of drift the v0.10.x branch sits on top of. Bump the version to mark the v0.10.x branch open.
   - **v0.10.1+** — implement the 8 D-4 splits one at a time (Rank 1 first as the canonical ssh.x11 server/client example), each with its own locale + EXPLAIN + tests. Implement F-1 Option B in a dedicated patch with the four determinism test files landing alongside the refactor.
 
 This approach mirrors the v0.7.x → v0.8.x cycle where the BREAKING bundle landed as a single ship (v0.8.0 + the v0.8.0 drift batch + v0.7.0-deferred items) and the hardening patches followed (v0.8.1 / v0.8.2 / v0.8.3 / v0.8.4).
@@ -8513,7 +8678,7 @@ Today this changes no visible behavior because no check emits the new canonical 
 
 [DOCUMENTS/SNAPSHOT.md](../DOCUMENTS/SNAPSHOT.md) was last refreshed for v0.7.4 (2026-06-02, refreshed from the v0.6.0 baseline). v0.10.0 adds two paragraphs:
 
-- **v0.7.4 → v0.9.2 drift, one paragraph** — covers the v0.8.x cycle (v0.8.0 drift batch + framing actions A1+A2 + silent-feature-gap audit closing v0.7.x, v0.8.1 deep-hardening 26 tiers across 3 sub-agent passes including the workstation alias retrait BREAKING, v0.8.2 conservative bundle + `bob/_i18n_safe.py` consolidation + `--test-webhook` + `--check=list` descriptions + D-3 deprecation warning + locale linter, v0.8.3 hotfix UnboundLocalError audit path from the v0.8.2 ship shadowing `UserConfig` module import inside `main()`, v0.8.4 cleanup `is_unit_enabled` 7-month-monitoring + new `DOCUMENTS/TUTORIAL{,_FR}.md`) and the v0.9.x cycle (v0.9.0 BREAKING bundle closing D-1/D-2/D-3/TD-1/F-2/F-3 + bash completion `cur="="` fix, v0.9.1 hotfix F-3 message UX bracketed-fallback from `i18n.t` called pre-init inside `parse_args`, v0.9.2 BaselineLoadError i18n + cross-version baseline migration shim).
+- **v0.7.4 → v0.9.2 drift, one paragraph** — covers the v0.8.x cycle (v0.8.0 drift batch + framing actions A1+A2 + silent-feature-gap audit closing v0.7.x, v0.8.1 deep-hardening 26 tiers across 3 sub-agent passes including the BREAKING workstation alias removal, v0.8.2 conservative bundle + `bob/_i18n_safe.py` consolidation + `--test-webhook` + `--check=list` descriptions + D-3 deprecation warning + locale linter, v0.8.3 hotfix UnboundLocalError audit path from the v0.8.2 ship shadowing `UserConfig` module import inside `main()`, v0.8.4 cleanup `is_unit_enabled` 7-month-monitoring + new `DOCUMENTS/TUTORIAL{,_FR}.md`) and the v0.9.x cycle (v0.9.0 BREAKING bundle closing D-1/D-2/D-3/TD-1/F-2/F-3 + bash completion `cur="="` fix, v0.9.1 hotfix F-3 message UX bracketed-fallback from `i18n.t` called pre-init inside `parse_args`, v0.9.2 BaselineLoadError i18n + cross-version baseline migration shim).
 
 - **v0.10.0 preparation paragraph** — describes the staging strategy: D-4 migration shim foundation in this release + D-4 split implementations and F-1 Option B refactor in v0.10.1+ hardening patches. Records the two sub-agent audit reports and the effort estimates that v0.10.1+ work tracks directly.
 
@@ -8709,7 +8874,7 @@ pipx upgrade bodyguard-of-bits
 
 ### The bug — reproduced 5/5 distros × 2 locales
 
-The v0.9.0 F-3 (--json-v1 retrait) ship added this raise inside ``parse_args()``:
+The v0.9.0 F-3 (--json-v1 removal) ship added this raise inside ``parse_args()``:
 
 ```python
 elif arg == "--json-v1":
@@ -8754,7 +8919,7 @@ The now-unused locale keys ``cli.error.json_v1_retired`` (EN + FR) are removed f
 - **``test_parse_args_does_not_call_i18n_t``** — AST scan over the ``parse_args()`` function body. Walks every node looking for ``Call`` nodes where the function is ``i18n.t`` (``Attribute(value=Name(id='i18n'), attr='t')``). The test fails when ANY such call exists inside ``parse_args``. A future contributor who adds another ``i18n.t()`` call in this scope fails the test before the user-facing error message degrades. The test message also points at the recommended alternative (``bob._i18n_safe.t_or_hardcoded(key, fallback)``) which falls back to the English baseline when i18n is not initialised.
 - **``test_json_v1_retired_emits_actionable_message``** — direct guard that calls ``parse_args(["--json-v1"])``, catches the ``CLIError``, and asserts:
   * The message does NOT match the bracketed-fallback pattern (``startswith("[")`` + ``endswith("]")``)
-  * The message contains ``"v0.9.0"`` (so users see the retrait window)
+  * The message contains ``"v0.9.0"`` (so users see the removal window)
   * The message contains ``"json-v1"`` or ``"schema"`` (so users see the retired flag or its replacement)
 
 Both guards run in <1 ms — cheap to keep at HEAD forever.
@@ -8811,7 +8976,7 @@ pipx upgrade bodyguard-of-bits
 
 **First v0.9.x release — BREAKING bundle that closes the v0.7.0 → v0.8.x deferred architectural cleanup.**
 
-This release ships the BREAKING items deferred since v0.7.0: section renumber + naming uniformity (D-1), `_ALL_SECTIONS`/`_ALWAYS_ON_SECTIONS` fusion (D-2), `EXPLAIN_KEY_ALIASES` retrait (D-3), `BOB_SANDBOX_LEGACY` trap door retrait (TD-1), `--json-v1` legacy schema retrait (F-3), `--diff [PATH]` cross-machine compare (F-2), plus a bash completion bug fix companion to v0.8.2.
+This release ships the BREAKING items deferred since v0.7.0: section renumber + naming uniformity (D-1), `_ALL_SECTIONS`/`_ALWAYS_ON_SECTIONS` fusion (D-2), `EXPLAIN_KEY_ALIASES` removal (D-3), `BOB_SANDBOX_LEGACY` trap door removal (TD-1), `--json-v1` legacy schema removal (F-3), `--diff [PATH]` cross-machine compare (F-2), plus a bash completion bug fix companion to v0.8.2.
 
 ### D-1 BREAKING — 7 section renames
 
@@ -8875,7 +9040,7 @@ External consumers ([bob/__main__.py](../bob/__main__.py) + 3 test files) keep r
 
 ### D-3 cleanup — `EXPLAIN_KEY_ALIASES` retired
 
-Pre-v0.9.0, `EXPLAIN_KEY_ALIASES` carried a single live entry (`services_state.service_inactive` → `services_state.enabled_inactive`, became `services_health.*` after the D-1 rename) that was a bridge over a v0.5.5 source-side drift: `services_state.py` emits `services_state.service_inactive` as its finding key, but the EXPLAIN_KEYS entry + locale block were named `enabled_inactive`. The v0.8.2 D-3 deprecation warning announced retrait for v0.9.0.
+Pre-v0.9.0, `EXPLAIN_KEY_ALIASES` carried a single live entry (`services_state.service_inactive` → `services_state.enabled_inactive`, became `services_health.*` after the D-1 rename) that was a bridge over a v0.5.5 source-side drift: `services_state.py` emits `services_state.service_inactive` as its finding key, but the EXPLAIN_KEYS entry + locale block were named `enabled_inactive`. The v0.8.2 D-3 deprecation warning announced removal for v0.9.0.
 
 v0.9.0 D-3 resolves the drift at the source instead of bridging it:
 - The EXPLAIN_KEYS entry was renamed `services_health.enabled_inactive` → `services_health.service_inactive` to match what `services_state.py` emits
@@ -8889,14 +9054,14 @@ v0.9.0 D-3 resolves the drift at the source instead of bridging it:
 
 Pre-v0.9.0, the env var bypassed the spawn'd-subprocess sandbox and ran plugins in the parent process with full builtins. A flashy stderr WARNING + CRITICAL log message fired on every audit that actually entered legacy mode, by design loud enough that nobody could run it in production unnoticed.
 
-The trap door was announced for retrait in the v0.7.0 ship + [SECURITY.md](../SECURITY.md) since v0.8.0. v0.9.0 TD-1 removes:
+The trap door was announced for removal in the v0.7.0 ship + [SECURITY.md](../SECURITY.md) since v0.8.0. v0.9.0 TD-1 removes:
 
 - `SandboxRunner._legacy_active()` static helper
 - `SandboxRunner._emit_legacy_warning()` static helper
 - `SandboxRunner._run_legacy()` method (in-process exec path)
 - The `if self._legacy_active():` branches in `__init__` and `run`
 
-Setting the env var now has no effect; plugins always execute in the spawn'd subprocess. [SECURITY.md](../SECURITY.md) + [SECURITY_FR.md](../SECURITY_FR.md) updated to strike-through the entry and mark the retrait window.
+Setting the env var now has no effect; plugins always execute in the spawn'd subprocess. [SECURITY.md](../SECURITY.md) + [SECURITY_FR.md](../SECURITY_FR.md) updated to strike-through the entry and mark the removal window.
 
 Two retirement guards in [tests/test_plugin_sandbox.py::TestLegacyTrapDoorRetired](../tests/test_plugin_sandbox.py):
 
@@ -8905,7 +9070,7 @@ Two retirement guards in [tests/test_plugin_sandbox.py::TestLegacyTrapDoorRetire
 
 ### F-3 BREAKING — `--json-v1` legacy schema retired
 
-Pre-v0.9.0, `--json-v1` opted into the v0.6.x JSON layout (`schema_version="1"`) for consumers that hadn't migrated to v2. v2 has been the default since v0.7.0 (4 majeures) and v0.6.x has been EOL since v0.7.2 (5 majeures); anyone still reading v1 has not updated their pipeline in 6+ months.
+Pre-v0.9.0, `--json-v1` opted into the v0.6.x JSON layout (`schema_version="1"`) for consumers that hadn't migrated to v2. v2 has been the default since v0.7.0 (4 majors) and v0.6.x has been EOL since v0.7.2 (5 majors); anyone still reading v1 has not updated their pipeline in 6+ months.
 
 v0.9.0 F-3 removes:
 
@@ -9006,7 +9171,7 @@ Users with scripts using `--check=<legacy_name>`, `--skip=<legacy_name>`, `--jso
 
 ### Deferred to v0.9.1
 
-- **D-4** sub-checks granulaires (e.g. `ssh.x11_forwarding` → `ssh.x11.forwarding.server` + `.client`) — requires sub-agent audit pass to identify candidates + write the migration guide. Sub-agent quota was the blocker at v0.9.0 cut.
+- **D-4** granular sub-checks (e.g. `ssh.x11_forwarding` → `ssh.x11.forwarding.server` + `.client`) — requires sub-agent audit pass to identify candidates + write the migration guide. Sub-agent quota was the blocker at v0.9.0 cut.
 - **Parallel checks** via `concurrent.futures.ThreadPoolExecutor` (target: ~30 s → 5–10 s on multi-core audits) — same sub-agent audit blocker (threading invariants + race condition discovery).
 
 ### Lessons
@@ -9063,11 +9228,11 @@ This was the ``tutorial`` item deferred from the v0.9.0 backlog. It moved into v
 [[project_future_compare_breakdown_diff]] (memory) — feature roadmap opened in v0.3.0 (2026-05-08) to add per-key deduction diff in ``bob compare``. Status at v0.8.4 ship time:
 
 - Open since v0.3.0
-- Zero user signal across 5 majeures (v0.4 / v0.5 / v0.6 / v0.7 / v0.8)
+- Zero user signal across 5 majors (v0.4 / v0.5 / v0.6 / v0.7 / v0.8)
 - The existing ``deduction_delta`` global suffices for the real-world use case (not a single user complaint of the form "I see -5 between two audits but don't know where it came from")
 - Effort estimate: baseline schema BREAKING change + diff logic + UI compare = ~6-8h. Not justified without concrete demand.
 
-Pattern: if a feature stays dormant 5 majeures without signal, the market has spoken — kill rather than keep indefinitely. The memory is marked closed; reopening requires explicit user signal.
+Pattern: if a feature stays dormant 5 majors without signal, the market has spoken — kill rather than keep indefinitely. The memory is marked closed; reopening requires explicit user signal.
 
 ### Numbers
 
@@ -9092,8 +9257,8 @@ v0.8.x is **closed** — further v0.8.x patches will only ship for security regr
 
 - **D-1** sections renumber + ``emit_section()`` naming uniformity
 - **D-2** fusion ``_ALL_SECTIONS`` + ``_ALWAYS_ON_SECTIONS`` into a single tuple with an ``is_always_on`` flag
-- **D-4** sub-checks granulaires (rename keys — breaks ``~/.config/bob/ignore.yml`` entries on systems with custom suppression lists)
-- ``BOB_SANDBOX_LEGACY=1`` trap door **retrait** (documented in SECURITY.md as a back-compat env var for in-process plugin execution)
+- **D-4** granular sub-checks (rename keys — breaks ``~/.config/bob/ignore.yml`` entries on systems with custom suppression lists)
+- ``BOB_SANDBOX_LEGACY=1`` trap door **removal** (documented in SECURITY.md as a back-compat env var for in-process plugin execution)
 - **Parallel checks** via ``concurrent.futures.ThreadPoolExecutor`` for independent domain audits (target: ~30s → 5-10s on multi-core)
 - **``--diff <baseline.json>``** cross-machine compare (additive to the local ``~/.config/bob/baseline.json`` flow)
 
@@ -9177,7 +9342,7 @@ pipx upgrade bodyguard-of-bits
 
 **Conservative-bundle patch — 6 user-facing + DX items, no BREAKING.**
 
-Cleans up DX debt from the v0.7.x / v0.8.0-v0.8.1 i18n + bash-completion + helper-text migrations. Closes the ``--test-webhook`` UX gap (the v0.7.0 webhook story shipped without a standalone smoke command). Sets up the v0.9.0 architectural cleanup (D-1 / D-2 / D-4 + ``BOB_SANDBOX_LEGACY`` retrait + parallel check execution + ``--diff <baseline.json>``) via the D-3 deprecation warning + the locale linter that catches the drift classes audit passes 7 + 8 surfaced.
+Cleans up DX debt from the v0.7.x / v0.8.0-v0.8.1 i18n + bash-completion + helper-text migrations. Closes the ``--test-webhook`` UX gap (the v0.7.0 webhook story shipped without a standalone smoke command). Sets up the v0.9.0 architectural cleanup (D-1 / D-2 / D-4 + ``BOB_SANDBOX_LEGACY`` removal + parallel check execution + ``--diff <baseline.json>``) via the D-3 deprecation warning + the locale linter that catches the drift classes audit passes 7 + 8 surfaced.
 
 6198 → **6244 tests** (+46 net). 0 regression.
 
@@ -9188,7 +9353,7 @@ Cleans up DX debt from the v0.7.x / v0.8.0-v0.8.1 i18n + bash-completion + helpe
 - **Sync ``_SECTIONS`` + ``_EXPLAIN_KEYS`` with runtime**. The hand-curated section list was already in sync at ship time; the explain-keys list (168 entries) was inserted fresh from ``bob.explain.EXPLAIN_KEYS`` via the regenerate scaffold so subsequent drift surfaces in CI.
 - **``--unignore=KEY`` / ``--ignore=KEY`` / ``--explain KEY`` value completions**. v0.8.1 T57 added ``--unignore`` but didn't extend the completion script. v0.8.2 adds dedicated handlers for both the space and ``=`` forms, sourced from the canonical 168-key EXPLAIN_KEYS catalogue.
 - **``--json-v1`` + ``--test-webhook`` in ``long_opts``**. The first was a v0.7.0 Phase 2 ship; the second is new this cycle.
-- **Stale ``workstation`` alias comment retired**. Pre-v0.8.2 the ``--profile`` completion comment claimed *"workstation is a backward-compat alias loading desktop"*; the v0.8.1 retrait made that a lie. Now reads *"workstation is now a FIRST-CLASS profile distinct from desktop"*.
+- **Stale ``workstation`` alias comment retired**. Pre-v0.8.2 the ``--profile`` completion comment claimed *"workstation is a backward-compat alias loading desktop"*; the v0.8.1 removal made that a lie. Now reads *"workstation is now a FIRST-CLASS profile distinct from desktop"*.
 - **Sudo-dispatcher ``=`` fix** (commit ``2a62bf3``). User-reported regression: ``sudo bob --check=s<TAB>`` returned zero candidates while ``bob --check=s<TAB>`` (no sudo) worked. Root cause: bash-completion's sudo dispatcher (``_command_offset``) invokes ``_bob`` with ``$prev`` set to the literal ``=`` instead of the option name when ``=`` remains in COMP_WORDBREAKS — not all bash + bash-completion combinations strip it via ``_init_completion -s``. None of the per-option ``prev == "--check"`` / ``--ignore`` / ``--unignore`` / ``--explain`` branches matched, so the function fell through to the long_opts default which can't apply to a partial value like ``"s"``. Fix: defensive 3-line guard at the top of ``_bob`` that detects ``prev == "="`` and recovers the real option name by walking back two positions in COMP_WORDS. Restores value-narrowing behaviour for every ``--<option>=<partial>`` completion under both ``sudo`` and non-``sudo`` invocations.
 
 [tests/test_v082_bash_completion.py](../tests/test_v082_bash_completion.py) ships 21 tests across 6 classes:
@@ -9283,11 +9448,11 @@ Significantly better onboarding for ``--check=`` / ``--skip=`` flag users.
 
 [bob/explain.py:368-432](../bob/explain.py#L368) — ``normalize_key()`` now emits a one-shot ``logger.warning`` when it resolves an alias.
 
-The warning carries the alias name, the canonical name, and the v0.9.0 retrait timeline:
+The warning carries the alias name, the canonical name, and the v0.9.0 removal timeline:
 
 ```
 DEPRECATION: explain key 'services_state.service_inactive' is a legacy alias for
-'services_state.enabled_inactive' — the alias is scheduled for retrait in v0.9.0.
+'services_state.enabled_inactive' — the alias is scheduled for removal in v0.9.0.
 Migrate scripts, saved profiles, and ignore.yml entries to the canonical name.
 ```
 
@@ -9299,7 +9464,7 @@ Emitted via ``logger.warning`` (the Python ``logging`` module) so it surfaces in
 
 A per-process ``_WARNED_ALIASES`` set ensures each alias warns at most once per process. A ``--watch`` mode session that resolves the same alias every iteration sees one warning, not 10/min. Tests pin the one-shot contract.
 
-This is the **bridge** to the v0.9.0 alias retrait that ``project_v08x_deferred.md`` (memory) describes — pre-v0.8.2 the alias was silent, so we had no signal to know how many users still relied on the legacy name. v0.8.2 starts the deprecation clock; v0.9.0 will retire the entry per the contract in ``SECURITY.md``.
+This is the **bridge** to the v0.9.0 alias removal that ``project_v08x_deferred.md`` (memory) describes — pre-v0.8.2 the alias was silent, so we had no signal to know how many users still relied on the legacy name. v0.8.2 starts the deprecation clock; v0.9.0 will retire the entry per the contract in ``SECURITY.md``.
 
 ### Locale linter
 
@@ -9324,8 +9489,8 @@ Four lint classes:
 
 For semver-honest tracking — the following stay open for v0.9.0:
 
-- **D-1 / D-2 / D-4** from ``project_v08x_deferred`` — sections renumber + ``_ALL_SECTIONS`` / ``_ALWAYS_ON_SECTIONS`` fusion + granular sub-checks (the alias retrait + the section-naming uniformisation are BREAKING because they affect ``bob --check=ssh,firewall`` script syntax).
-- **``BOB_SANDBOX_LEGACY=1`` trap door retrait** — BREAKING for any user who set the env var; deferred to bundle with the other architectural cleanups.
+- **D-1 / D-2 / D-4** from ``project_v08x_deferred`` — sections renumber + ``_ALL_SECTIONS`` / ``_ALWAYS_ON_SECTIONS`` fusion + granular sub-checks (the alias removal + the section-naming uniformisation are BREAKING because they affect ``bob --check=ssh,firewall`` script syntax).
+- **``BOB_SANDBOX_LEGACY=1`` trap door removal** — BREAKING for any user who set the env var; deferred to bundle with the other architectural cleanups.
 - **Parallel check execution** — ``concurrent.futures.ThreadPoolExecutor`` over the I/O-bound sections; touches threading invariants + error handling, deserves its own scoped beta.
 - **``--diff <baseline.json>``** — cross-machine baseline diff, additive feature, deferred to bundle with the renamed-key migration support from D-4.
 - **Tutorial / getting-started guide** — ``DOCUMENTS/TUTORIAL.md`` — substantive doc work, deferred to bundle with the v0.9.0 README refresh.
@@ -9346,7 +9511,7 @@ User-facing wins:
 - ``bob --check=list`` is now self-documenting (44 section descriptions).
 - ``bob --test-webhook`` works (smoke without full audit).
 - Bash completion of ``--unignore`` + ``--ignore`` + ``--explain`` keys suggests canonical EXPLAIN_KEYS entries (was generic / missing).
-- ``EXPLAIN_KEY_ALIASES`` use surfaces a deprecation warning in the log stream pointing at the v0.9.0 retrait timeline.
+- ``EXPLAIN_KEY_ALIASES`` use surfaces a deprecation warning in the log stream pointing at the v0.9.0 removal timeline.
 
 **v0.7.x remains EOL** (formal declaration in [SECURITY.md](../SECURITY.md) since v0.8.1). **v0.6.x remains EOL** (declared in v0.7.2).
 
@@ -9358,211 +9523,211 @@ User-facing wins:
 
 Closes **26 gap tiers** across 3 sub-agent audit passes (6/7/8) plus an initial drift / framing / silent-feature-gap sweep. 5521 → **6198 tests**, +677 net, 0 regression. ~190 dedicated v0.8.1 tests.
 
-### Cycle initial (12 tiers)
+### Initial cycle (12 tiers)
 
 #### T6 — profile severity coverage audit
 
-`bob/data/profiles/desktop.conf` +24 overrides → 36 total ; `workstation.conf` +28 overrides → 31 distinct from desktop. Couverture ~30% des 107 actionable warn/alert keys. Domains couverts : clamav (5 keys), rootkit.db_outdated, auditd.* (3), secure_boot.*, file_integrity.*, log_rotation.*, backup.no_backup, mac_policy.apparmor_no_enforce, password_policy.weak_minlen, firewall_stack.ip_forward_enabled, services.exposure.open_local, ssh.* secondary (login_grace_time / x11_use_localhost — ce dernier retiré pass 6 M-1 quand T32 a chopé l'orphan).
+`bob/data/profiles/desktop.conf` +24 overrides → 36 total; `workstation.conf` +28 overrides → 31 distinct from desktop. Covers ~30% of the 107 actionable warn/alert keys. Domains covered: clamav (5 keys), rootkit.db_outdated, auditd.* (3), secure_boot.*, file_integrity.*, log_rotation.*, backup.no_backup, mac_policy.apparmor_no_enforce, password_policy.weak_minlen, firewall_stack.ip_forward_enabled, services.exposure.open_local, secondary ssh.* (login_grace_time / x11_use_localhost — the latter removed in pass 6 M-1 when T32 caught the orphan).
 
-#### T10 — i18n exception messages webhook + config + __main__
+#### T10 — i18n of webhook + config + __main__ exception messages
 
-14 nouvelles locale keys EN+FR sous `webhook.error.*` × 6 / `config.error.*` × 4 / `cli.error.*` × 4. Pattern fallback dict mirror v0.7.2 M-4 : `_FALLBACK_LABELS` + `_fallback_t` dans chaque module ; `send_webhook(..., t=None)` + `UserConfig.set(...t=None)` + EmailStore.add(..., t=None) acceptent un t optionnel ; production caller (`bob/__main__.py`) passe le t bound de l'audit pour locale-matched error messages. Pre-fix : 9 exception messages EN hardcoded (5 dans webhook.py + 4 dans config.py), users FR voyaient mixed-language sur `bob --webhook HTTPS://...` invalide etc.
+14 new locale keys EN+FR under `webhook.error.*` × 6 / `config.error.*` × 4 / `cli.error.*` × 4. Fallback-dict pattern mirrors v0.7.2 M-4: `_FALLBACK_LABELS` + `_fallback_t` in each module; `send_webhook(..., t=None)` + `UserConfig.set(...t=None)` + `EmailStore.add(..., t=None)` accept an optional `t`; the production caller (`bob/__main__.py`) passes the audit's bound `t` for locale-matched error messages. Pre-fix: 9 exception messages hardcoded in EN (5 in webhook.py + 4 in config.py); FR users saw mixed-language output on an invalid `bob --webhook HTTPS://...`, etc.
 
-#### workstation alias retrait (BREAKING)
+#### workstation alias removal (BREAKING)
 
-`bob/profiles.py:123-124` — l'alias v0.1.0 qui silencieusement redirigeait `bob -p workstation` vers le profil `desktop` (donc workstation.conf était dead code depuis v0.1.0) a été retiré. workstation.conf est maintenant un profile **first-class** avec ses propres overrides business-context. **BREAKING** pour les ~6 semaines de users sur l'alias : leur audit aura des sévérités différentes pour `backup.no_backup` / `auditd.*` / `mac_policy.apparmor_no_enforce` (restent à WARN sur workstation alors que desktop les relâche à INFO).
+`bob/profiles.py:123-124` — the v0.1.0 alias that silently redirected `bob -p workstation` to the `desktop` profile (so workstation.conf had been dead code since v0.1.0) has been removed. workstation.conf is now a **first-class** profile with its own business-context overrides. **BREAKING** for the ~6 weeks of users on the alias: their audit will show different severities for `backup.no_backup` / `auditd.*` / `mac_policy.apparmor_no_enforce` (they stay at WARN on workstation whereas desktop relaxes them to INFO).
 
-**Migration** : copier `bob/data/profiles/desktop.conf` vers `~/.config/bob/profiles/workstation.conf` pour restaurer la sémantique v0.8.0.
+**Migration**: copy `bob/data/profiles/desktop.conf` to `~/.config/bob/profiles/workstation.conf` to restore the v0.8.0 semantics.
 
-Test `tests/test_profiles.py::test_workstation_is_now_distinct_from_desktop` pin la BREAKING change avec 3 assertions explicit (backup / auditd / mac_policy restent à None = WARN sur workstation).
+Test `tests/test_profiles.py::test_workstation_is_now_distinct_from_desktop` pins the BREAKING change with 3 explicit assertions (backup / auditd / mac_policy stay at None = WARN on workstation).
 
 #### T11 — Finding.detail field parity (CSV + JSON v1/v2)
 
-`bob/csv_output.py:25-44` nouvelle column `detail` inserted entre `message` et `fix_cmd` (position pinned par test). `bob/json_output.py:240-251 + 448-460` field `detail` ajouté dans le finding dict v1 + v2. Additif (consumers field-by-name unaffected). Closes le format-parity gap qui restait après v0.8.0 T9 (MD/HTML) pour les 3 machine-readable sinks restants.
+`bob/csv_output.py:25-44` new `detail` column inserted between `message` and `fix_cmd` (position pinned by a test). `bob/json_output.py:240-251 + 448-460` `detail` field added to the v1 + v2 finding dict. Additive (field-by-name consumers unaffected). Closes the format-parity gap that remained after v0.8.0 T9 (MD/HTML) for the 3 remaining machine-readable sinks.
 
-#### T26 — explain dispatch services.exposed.<id>
+#### T26 — explain dispatch for services.exposed.<id>
 
-`bob/explain.py:433-510` nouveau helper `_render_dynamic_service_explain()` qui route le lookup via `ServiceRegistry.get(svc_id)` + `service_risk.<subkey>.{level,exposure,threat}` (contenu déjà présent depuis v0.8.0 T4). Injecté dans `run_explain` avant le `unknown_key` fallback. 38 services auto-explainables avec UI cohérente (`risk_context.exposure` + `risk_context.threat` labels). Live UX : `bob --explain services.exposed.ssh` produit le contenu CRITICAL/EXPOSURE/THREAT du SSH Server, idem pour samba/ollama/tailscale/etc.
+`bob/explain.py:433-510` new helper `_render_dynamic_service_explain()` that routes the lookup through `ServiceRegistry.get(svc_id)` + `service_risk.<subkey>.{level,exposure,threat}` (content already present since v0.8.0 T4). Injected into `run_explain` before the `unknown_key` fallback. 38 services auto-explainable with a consistent UI (`risk_context.exposure` + `risk_context.threat` labels). Live UX: `bob --explain services.exposed.ssh` renders the CRITICAL/EXPOSURE/THREAT content of SSH Server, likewise for samba/ollama/tailscale/etc.
 
 #### T27 — webhook payload detail + note
 
-`bob/webhook.py:150-170` (generic) — chaque finding dict embarque maintenant `detail` + `note` (vides string `""` quand absents). `bob/webhook.py:185-200` (Slack inline) — les `finding_lines` concatènent le `detail` après ` — ` séparateur pour que Slack readers voient le contexte explicatif. Ferme le format-parity pattern qui couvrait déjà text/MD/HTML/CSV/JSON v1/v2.
+`bob/webhook.py:150-170` (generic) — each finding dict now carries `detail` + `note` (empty string `""` when absent). `bob/webhook.py:185-200` (Slack inline) — the `finding_lines` append the `detail` after a ` — ` separator so Slack readers see the explanatory context. Closes the format-parity pattern that already covered text/MD/HTML/CSV/JSON v1/v2.
 
-#### T31/T37 — nature backfill 90 sites + reverts align tests existants
+#### T31/T37 — nature backfill on 90 sites + reverts to align existing tests
 
-`bob/checks/*.py` — 90 sites `warn/alert(_with_deduction)` sans `nature=` kwarg sont maintenant classifiés : **69 action + 59 improvement + 1 structural**. Pre-fix `bob/fixes.py:32-34` filtre `if f.nature == "action" and f.cmd` donc 88% des findings actionnables étaient silencieusement skipped par `--fix --apply`. Post-fix 100% couverture.
+`bob/checks/*.py` — 90 `warn/alert(_with_deduction)` sites without a `nature=` kwarg are now classified: **69 action + 59 improvement + 1 structural**. Pre-fix, `bob/fixes.py:32-34` filters `if f.nature == "action" and f.cmd`, so 88% of actionable findings were silently skipped by `--fix --apply`. Post-fix: 100% coverage.
 
-Edge case : `bob/checks/ssh/_directives.py::_apply_bad_directive` refactoré pour propager `nature` via kwargs dict explicit (était implicit `**kwargs` → conflictait avec test_t31 visibility regex). Le rule-level `nature` (depuis dataclass) gagne, sinon default par severity : alert → action / warn → improvement.
+Edge case: `bob/checks/ssh/_directives.py::_apply_bad_directive` refactored to propagate `nature` through an explicit kwargs dict (it was an implicit `**kwargs` → conflicted with the test_t31 visibility regex). The rule-level `nature` (from the dataclass) wins; otherwise the default follows severity: alert → action / warn → improvement.
 
-5 reverts pour aligner avec tests existants pre-v0.8.1 qui pinnaient `improvement` : kernel_modules.risky_fs + risky_net, ntp.not_synchronized + not_enabled, smtp.exposed, rules.duplicate_found, rules.ipv6_missing.
+5 reverts to align with pre-v0.8.1 tests that pinned `improvement`: kernel_modules.risky_fs + risky_net, ntp.not_synchronized + not_enabled, smtp.exposed, rules.duplicate_found, rules.ipv6_missing.
 
 #### T32 — profile typo validation
 
-`bob/profiles.py::_recognised_override_keys` build une catalogue (lru_cache(maxsize=1)) des keys reconnues : EXPLAIN_KEYS ∪ `services.exposed.<id>` ∪ literal `key="..."` harvest depuis `bob/checks/*.py`. À la load de chaque profile.conf, `[overrides]` keys absentes du catalogue émettent `logger.warning("override key %r is not recognised...")`. Compat-preserving : override est encore loadé (les legacy profiles avec keys removed checks ne cassent pas le load).
+`bob/profiles.py::_recognised_override_keys` builds a catalogue (lru_cache(maxsize=1)) of recognised keys: EXPLAIN_KEYS ∪ `services.exposed.<id>` ∪ literal `key="..."` harvested from `bob/checks/*.py`. When each profile.conf is loaded, `[overrides]` keys missing from the catalogue emit `logger.warning("override key %r is not recognised...")`. Compat-preserving: the override is still loaded (legacy profiles carrying keys of removed checks do not break the load).
 
-**Self-catch notable** : T32 a chopé `ssh.x11_use_localhost` que J'AI moi-même ajouté en T6 desktop+workstation comme override. La key n'est émise par aucun check — j'avais introduit un orphan en pensant overrider un finding réel. Le mécanisme fait son boulot, sur le premier coup, sur mes propres erreurs.
+**Notable self-catch**: T32 caught `ssh.x11_use_localhost`, which I had added myself in T6 desktop+workstation as an override. The key is emitted by no check — I had introduced an orphan while thinking I was overriding a real finding. The mechanism does its job, first time out, on my own mistakes.
 
 #### T39 — orphan service_risk.ollama_llm_server cleanup
 
-`bob/locales/{en,fr}.json:545-549` block `service_risk.ollama_llm_server.{level,exposure,threat}` retiré. Le service Ollama réel a label "Ollama (local LLM)" qui transforme en `ollama_local_llm` — entry valide depuis v0.8.0 T2. Orphan était un leftover du renaming pendant T2 cycle.
+`bob/locales/{en,fr}.json:545-549` block `service_risk.ollama_llm_server.{level,exposure,threat}` removed. The real Ollama service has the label "Ollama (local LLM)", which transforms to `ollama_local_llm` — a valid entry since v0.8.0 T2. The orphan was a leftover of the renaming during the T2 cycle.
 
 #### T57 — --unignore CLI path
 
-`bob/ignore.py:127-184` nouveau `remove_ignore_key()` helper. `bob/cli.py:134-145, 185` + `bob/__main__.py:172-192` wire le path CLI. 2 nouvelles locale keys `cli.ignore.removed` / `cli.ignore.not_present`. Mutual-exclusion guard avec `--ignore` ajouté en pass 6 M-4. Atomic write contract préservé (mirror `add_ignore_key`).
+`bob/ignore.py:127-184` new `remove_ignore_key()` helper. `bob/cli.py:134-145, 185` + `bob/__main__.py:172-192` wire the CLI path. 2 new locale keys `cli.ignore.removed` / `cli.ignore.not_present`. Mutual-exclusion guard with `--ignore` added in pass 6 M-4. Atomic-write contract preserved (mirrors `add_ignore_key`).
 
-Pre-T57, users pouvaient `bob --ignore=KEY` pour ajouter mais devaient éditer `~/.config/bob/ignore.yml` à la main pour retirer — feature symmetry gap.
+Pre-T57, users could `bob --ignore=KEY` to add but had to edit `~/.config/bob/ignore.yml` by hand to remove — a feature-symmetry gap.
 
 #### T60 — _t_or_hardcoded helper
 
-`bob/__main__.py:67-83` nouveau `_t_or_hardcoded(key, fallback)` helper qui returne `i18n.t(key)` si initialisé, sinon `fallback`. Wired sur 3 sites pre/post-init : `parse_args` CLIError (L90, pre-init), `main()` catch-all (L530-543, post-init en happy path mais peut être pre-init si crash très tôt). Pre-T60 : `Fatal error: …` + `Set BOB_DEBUG=1 for full traceback.` hardcoded EN même en audit FR.
+`bob/__main__.py:67-83` new `_t_or_hardcoded(key, fallback)` helper that returns `i18n.t(key)` if initialised, otherwise `fallback`. Wired on 3 pre/post-init sites: `parse_args` CLIError (L90, pre-init), `main()` catch-all (L530-543, post-init on the happy path but possibly pre-init on a very early crash). Pre-T60: `Fatal error: …` + `Set BOB_DEBUG=1 for full traceback.` hardcoded in EN even in a FR audit.
 
 #### T74 — webhook URL credential redaction
 
-`bob/webhook.py:60-66` regex `_URL_USERINFO_RE` ancré sur `://` boundary + `bob/webhook.py:79-103` public helper `redact_url_credentials(url) -> str` qui replace `user:pass@host` par `[REDACTED]@host`. Wire dans `send_webhook` les 2 sites WebhookError construction (lignes 282-286) + dans `bob/__main__.py:386-392` le success path `output.print_info(f"Webhook: POST → {url}")`. Original URL reste utilisé pour le POST réel — seul l'affichage opérateur est sanitisé.
+`bob/webhook.py:60-66` regex `_URL_USERINFO_RE` anchored on the `://` boundary + `bob/webhook.py:79-103` public helper `redact_url_credentials(url) -> str` that replaces `user:pass@host` with `[REDACTED]@host`. Wired into `send_webhook` at the 2 WebhookError construction sites (lines 282-286) + into `bob/__main__.py:386-392` on the success path `output.print_info(f"Webhook: POST → {url}")`. The original URL is still used for the actual POST — only the operator-facing display is sanitised.
 
-Pré-fix : credentials embarqués (pattern courant Slack/Discord/Mattermost) leak en cleartext sur stdout + .log + stderr + cron output + monitoring pipes.
+Pre-fix: embedded credentials (a common Slack/Discord/Mattermost pattern) leaked in cleartext to stdout + .log + stderr + cron output + monitoring pipes.
 
 ### Audit pass 6 (5 findings shipped)
 
 #### I-1 — ignore.yml comment preservation
 
-`bob/ignore.py::remove_ignore_key` re-écrivait le fichier en canonical form `ignore:\n  - key: X\n`. Tout commentaire opérateur (`# Per ticket SECOPS-1234`, etc.) silencieusement détruit au premier `--unignore`. Pre-T57 (qui shippait avec ce comportement) les users éditaient le YAML à la main pour retirer, donc avaient naturellement annoté.
+`bob/ignore.py::remove_ignore_key` rewrote the file in canonical form `ignore:\n  - key: X\n`. Every operator comment (`# Per ticket SECOPS-1234`, etc.) was silently destroyed on the first `--unignore`. Pre-T57 (which shipped with this behaviour), users edited the YAML by hand to remove entries, so they had naturally annotated it.
 
-Fix : line-walk in-place. Drop seulement les lignes `- key: <removed>`, préserver tout le reste verbatim. Strip-comment-on-match pour avoid prefix collisions (`ssh.password_auth` ≠ `ssh.password_auth_v2`).
+Fix: in-place line walk. Drop only the `- key: <removed>` lines, preserve everything else verbatim. Strip-comment-on-match to avoid prefix collisions (`ssh.password_auth` ≠ `ssh.password_auth_v2`).
 
 #### M-1 — T32 regex digits + file_perms.*
 
-`bob/profiles.py:192` regex `[a-z_]+` rejetait segments avec chiffres → `fail2ban.ssh_jail_active`, `ipv6.ufw_disabled_no_listeners`, `ipv6.port_no_v6_rule` (real runtime emissions) déclenchaient spurious "not recognised" warnings.
+`bob/profiles.py:192` regex `[a-z_]+` rejected segments containing digits → `fail2ban.ssh_jail_active`, `ipv6.ufw_disabled_no_listeners`, `ipv6.port_no_v6_rule` (real runtime emissions) triggered spurious "not recognised" warnings.
 
-Fix : regex → `[a-z][a-z0-9_]*` (aligned avec `_CANONICAL_KEY_RE` v0.7.1 M-5) + `file_perms.*` permissive prefix pour les f-string emissions (`file_perms.passwd.world_writable`, etc.) qui ne sont pas literal harvest-able.
+Fix: regex → `[a-z][a-z0-9_]*` (aligned with `_CANONICAL_KEY_RE` v0.7.1 M-5) + permissive `file_perms.*` prefix for the f-string emissions (`file_perms.passwd.world_writable`, etc.) that cannot be harvested as literals.
 
 #### M-2 — services.exposure canonical set
 
-`bob/profiles.py:175` (now removed) — pre-fix le catalogue registrait `services.exposure.{svc.id}` pour CHAQUE service (e.g. `services.exposure.ollama`, `services.exposure.nginx`). Mais le runtime n'émet PAS ces keys — il émet `services.exposure.{exposure.value}` où exposure.value est dans `{open_world, open_local, deny, no_rule, loopback, loopback_no_rule, not_listening}` (depuis bob/checks/services.py:353-355,390-403).
+`bob/profiles.py:175` (now removed) — pre-fix, the catalogue registered `services.exposure.{svc.id}` for EVERY service (e.g. `services.exposure.ollama`, `services.exposure.nginx`). But the runtime does NOT emit those keys — it emits `services.exposure.{exposure.value}` where exposure.value is in `{open_world, open_local, deny, no_rule, loopback, loopback_no_rule, not_listening}` (from bob/checks/services.py:353-355,390-403).
 
-Donc `services.exposure.ollama = info` dans un profile était silencieusement accepté comme "valide" mais 0 effet runtime. Symmetric false-negative à M-1 false-positives.
+So `services.exposure.ollama = info` in a profile was silently accepted as "valid" but had zero runtime effect. The symmetric false negative to the M-1 false positives.
 
-Fix : retrait ligne 175 + ajout du canonical set de 7 base values × 2 (avec `_ufw_inactive` variant — narrowed pass 8 M-2 plus tard).
+Fix: removed line 175 + added the canonical set of 7 base values × 2 (with the `_ufw_inactive` variant — narrowed later in pass 8 M-2).
 
 #### M-3 — service_label_to_subkey transform consolidation
 
-T26 docstring (`bob/explain.py:412-425`) claimait : *"Mirrors the transform used by `bob/display.py::display_risk_context` (single source of truth for service_risk locale lookups)"*. Mais `display.py` avait **2 copies inline** du transform (lignes 152-154 + 630-632), zéro déléguait au helper.
+The T26 docstring (`bob/explain.py:412-425`) claimed: *"Mirrors the transform used by `bob/display.py::display_risk_context` (single source of truth for service_risk locale lookups)"*. But `display.py` had **2 inline copies** of the transform (lines 152-154 + 630-632), and neither delegated to the helper.
 
-Fix : `service_label_to_subkey()` extrait dans `bob/registry.py:60-92` (vit naturellement avec `ServiceRegistry` qui owns label semantics). Les 2 inline sites de display.py + l'helper d'explain.py délèguent via import. Docstring T26 désormais véridique. Closes drift risk si transform change (ex. nouveau label avec `&` ou `+`).
+Fix: `service_label_to_subkey()` extracted into `bob/registry.py:60-92` (it naturally lives with `ServiceRegistry`, which owns label semantics). The 2 inline sites in display.py + the explain.py helper delegate via import. The T26 docstring is now truthful. Closes the drift risk if the transform changes (e.g. a new label with `&` or `+`).
 
-#### M-4 — --unignore documentation + mutual-exclusion
+#### M-4 — --unignore documentation + mutual exclusion
 
-`man/bob.1:300-310` nouvelle entrée `--unignore=KEY` mirror de `--ignore=KEY` (préserve comments + custom YAML). `bob/cli.py:613-620` CLIError "--ignore and --unignore are mutually exclusive" guard ajouté (mirror pattern v0.7.x mutual-exclusion guards comme `--check + --skip overlap`).
+`man/bob.1:300-310` new `--unignore=KEY` entry mirroring `--ignore=KEY` (preserves comments + custom YAML). `bob/cli.py:613-620` CLIError guard "--ignore and --unignore are mutually exclusive" added (mirrors the v0.7.x mutual-exclusion guards such as `--check + --skip overlap`).
 
 ### Audit pass 7 (3 findings shipped)
 
-#### I-1 — remove_ignore_key regex match loader grammar
+#### I-1 — remove_ignore_key regex to match the loader grammar
 
-`bob/ignore.py:167` (pass 6) utilisait `stripped.startswith("- key:")` (un espace exact) mais le loader regex (L29) `_KEY_LINE_RE = r"^\s*-\s+key:\s+(\S+)\s*$"` accepte `\s+`. Donc :
+`bob/ignore.py:167` (pass 6) used `stripped.startswith("- key:")` (exactly one space) but the loader regex (L29) `_KEY_LINE_RE = r"^\s*-\s+key:\s+(\S+)\s*$"` accepts `\s+`. So:
 
 ```yaml
 ignore:
   -  key: ssh.permit_root_login    # 2 spaces, yamllint-friendly
 ```
 
-→ loader voit `ssh.permit_root_login` (présente)
-→ `remove_ignore_key('ssh.permit_root_login')` → False (le walk ne match pas)
-→ defensive bail-out à L180-184 swallow le mismatch
-→ user voit le misleading **`"Key not present in the ignore list"`**
+→ the loader sees `ssh.permit_root_login` (present)
+→ `remove_ignore_key('ssh.permit_root_login')` → False (the walk does not match)
+→ the defensive bail-out at L180-184 swallows the mismatch
+→ the user sees the misleading **`"Key not present in the ignore list"`**
 
-Fix : nouveau regex sibling `_KEY_LINE_MATCH_RE` (sans `\s*$` anchor) utilisé dans le walk. Loader + remover share la même grammar `\s+`. Cf. pass 8 I-1 plus tard pour unification définitive.
+Fix: new sibling regex `_KEY_LINE_MATCH_RE` (without the `\s*$` anchor) used in the walk. Loader + remover share the same `\s+` grammar. See pass 8 I-1 below for the definitive unification.
 
 #### I-2 — French colon typography drift
 
-T10 + T60 ont i18n'd les error prefixes mais laissé un `:` ASCII hardcodé après le `t()` :
-- `bob/__main__.py:90, 235, 396, 530` : `f"{t('cli.error.prefix')}: {exc}"` etc.
+T10 + T60 i18n'd the error prefixes but left an ASCII `:` hardcoded after the `t()`:
+- `bob/__main__.py:90, 235, 396, 530`: `f"{t('cli.error.prefix')}: {exc}"` etc.
 
-Convention FR = ` : ` (espace avant ET après). Plus particulièrement, `cli.error.webhook_failed_prefix` contenait déjà ` : ` dans sa valeur FR (`"Avertissement : échec du webhook"`) → résultat `"Avertissement : échec du webhook: connection refused"` (double-colon mixed style).
+FR convention = ` : ` (space before AND after). More specifically, `cli.error.webhook_failed_prefix` already contained ` : ` in its FR value (`"Avertissement : échec du webhook"`) → result `"Avertissement : échec du webhook: connection refused"` (double colon, mixed style).
 
-Fix : Option A consistent — colon-space embarqué dans valeurs locale. EN `"Error: "` / FR `"Erreur : "` / `"Fatal error: "` / `"Erreur fatale : "` / `"Warning: webhook failed: "` / `"Avertissement : échec du webhook : "`. 4 sites print drop le `: ` hardcodé.
+Fix: consistent Option A — colon-space embedded in the locale values. EN `"Error: "` / FR `"Erreur : "` / `"Fatal error: "` / `"Erreur fatale : "` / `"Warning: webhook failed: "` / `"Avertissement : échec du webhook : "`. The 4 print sites drop the hardcoded `: `.
 
-Drift introduit par mon propre T10. Sub-agent l'a chopé.
+Drift introduced by my own T10. The sub-agent caught it.
 
 #### M-1 — --show-ignored man description rewrite
 
-`man/bob.1:311-314` claimait : *"List the persistently-ignored finding keys (contents of ~/.config/bob/ignore.yml) and exit. Useful to audit what has been muted before a security review."*
+`man/bob.1:311-314` claimed: *"List the persistently-ignored finding keys (contents of ~/.config/bob/ignore.yml) and exit. Useful to audit what has been muted before a security review."*
 
-Mais le code (`bob/__main__.py:433` + `bob/cli.py:718` help text + `DOCUMENTS/SNAPSHOT.md:558` description) fait l'**opposé** : run l'audit complet et display les findings ignorés en dim, ne dump pas le YAML + n'exit pas. Man page était l'outlier.
+But the code (`bob/__main__.py:433` + `bob/cli.py:718` help text + `DOCUMENTS/SNAPSHOT.md:558` description) does the **opposite**: it runs the full audit and displays the ignored findings dimmed; it does not dump the YAML and does not exit. The man page was the outlier.
 
-Fix : réécriture du paragraphe. *"During the audit, display previously-ignored findings as dimmed lines instead of suppressing them silently. … The audit still runs end-to-end — this flag does NOT exit early or dump the ignore file's contents."*
+Fix: paragraph rewritten. *"During the audit, display previously-ignored findings as dimmed lines instead of suppressing them silently. … The audit still runs end-to-end — this flag does NOT exit early or dump the ignore file's contents."*
 
 ### Audit pass 8 (5 findings shipped)
 
 #### I-1 — _KEY_LINE_RE unification
 
-Le pass 7 sibling regex `_KEY_LINE_MATCH_RE` (drop `\s*$` anchor pour matcher inline comments) était **unreachable**. `remove_ignore_key:165` guard `if key not in load_ignore_keys(path): return False` court-circuite AVANT le walk. Et `load_ignore_keys` utilise le STRICT `_KEY_LINE_RE` (avec `\s*$`) qui rejette lines avec inline comments. Donc :
+The pass 7 sibling regex `_KEY_LINE_MATCH_RE` (dropping the `\s*$` anchor to match inline comments) was **unreachable**. The `remove_ignore_key:165` guard `if key not in load_ignore_keys(path): return False` short-circuits BEFORE the walk. And `load_ignore_keys` uses the STRICT `_KEY_LINE_RE` (with `\s*$`), which rejects lines carrying inline comments. So:
 
-1. User a `- key: ssh.x  # comment` dans ignore.yml → loader NE la voit PAS comme ignorée
-2. `bob --unignore=ssh.x` → defensive guard bail-out → user voit "Key not present"
-3. La promesse docstring du sibling regex est inatteignable
+1. The user has `- key: ssh.x  # comment` in ignore.yml → the loader does NOT see it as ignored
+2. `bob --unignore=ssh.x` → defensive guard bail-out → the user sees "Key not present"
+3. The sibling regex's docstring promise is unreachable
 
-Méta-régression dans mon fix pass 7. Sub-agent l'a chopé.
+Meta-regression in my pass 7 fix. The sub-agent caught it.
 
-Fix : drop `\s*$` anchor de `_KEY_LINE_RE` itself, retirer `_KEY_LINE_MATCH_RE`. Loader + remover share single relaxed regex. Inline-commented entries enfin loadées ET removable.
+Fix: drop the `\s*$` anchor from `_KEY_LINE_RE` itself, remove `_KEY_LINE_MATCH_RE`. Loader + remover share a single relaxed regex. Inline-commented entries are finally loaded AND removable.
 
-#### I-2 — runner.py 3 Warning sites un-i18n'd
+#### I-2 — 3 un-i18n'd Warning sites in runner.py
 
-`bob/runner.py:143, 157, 161` : 3 sites print `Warning: --check '...' matches no known section` / `Warning: --skip '...' has no effect (always-on section)` / `Warning: --skip '...' matches no known section`. T10 a i18n'd les error prefixes dans `__main__.py` mais loupé ces 3 sites runner.
+`bob/runner.py:143, 157, 161`: 3 sites print `Warning: --check '...' matches no known section` / `Warning: --skip '...' has no effect (always-on section)` / `Warning: --skip '...' matches no known section`. T10 i18n'd the error prefixes in `__main__.py` but missed these 3 runner sites.
 
-Fix : nouvelle locale key `cli.error.warning_prefix` (EN `"Warning: "` / FR `"Avertissement : "`) + namespace `cli.runner.*` (check_no_match, check_no_match_fatal, skip_no_effect, skip_no_match, suggest_did_you_mean, suggest_run_list — 6 nouvelles keys × 2 langues = 12). Wire dans `validate_check_filters` et `_suggest` via `from bob import i18n` (in-function import pour éviter top-level circular ref).
+Fix: new locale key `cli.error.warning_prefix` (EN `"Warning: "` / FR `"Avertissement : "`) + namespace `cli.runner.*` (check_no_match, check_no_match_fatal, skip_no_effect, skip_no_match, suggest_did_you_mean, suggest_run_list — 6 new keys × 2 languages = 12). Wired into `validate_check_filters` and `_suggest` via `from bob import i18n` (in-function import to avoid a top-level circular ref).
 
 #### M-1 — --webhook-secret phantom
 
-`bob/cli.py:193` listait `"--webhook-secret"` dans `_VALUE_TAKING_OPTS` mais aucun `elif arg.startswith("--webhook-secret")` n'existait + pas de field `webhook_secret` dans `AuditConfig`. Résultat inconsistent :
+`bob/cli.py:193` listed `"--webhook-secret"` in `_VALUE_TAKING_OPTS` but no `elif arg.startswith("--webhook-secret")` existed + no `webhook_secret` field in `AuditConfig`. Inconsistent result:
 - `bob --webhook-secret foo` → CLIError "--webhook-secret requires a value" (misleading)
 - `bob --webhook-secret=foo` → CLIError "Unknown option: '--webhook-secret=foo'" (correct)
 
-Fix : retrait 1-line de l'entry phantom. Cohérent : les deux formes maintenant "Unknown option".
+Fix: 1-line removal of the phantom entry. Consistent: both forms now give "Unknown option".
 
 #### M-2 — _ufw_inactive variants narrowed
 
-Mon M-2 pass 6 registrait `services.exposure.{value}_ufw_inactive` pour LES 7 exposures. Mais `bob/checks/services.py:352-355` émet `_ufw_inactive` SEULEMENT pour `(NO_RULE, LOOPBACK_NO_RULE)`. Donc `services.exposure.open_world_ufw_inactive = info` accepté silencieusement comme valide → 0 effet runtime. Même UX failure que M-2 pass 6 was supposé fermer.
+My pass 6 M-2 registered `services.exposure.{value}_ufw_inactive` for ALL 7 exposures. But `bob/checks/services.py:352-355` emits `_ufw_inactive` ONLY for `(NO_RULE, LOOPBACK_NO_RULE)`. So `services.exposure.open_world_ufw_inactive = info` was silently accepted as valid → zero runtime effect. The same UX failure that pass 6 M-2 was supposed to close.
 
-Méta-régression dans mon fix pass 6. Sub-agent l'a chopé.
+Meta-regression in my pass 6 fix. The sub-agent caught it.
 
-Fix : narrow `_ufw_inactive` registration à `(no_rule, loopback_no_rule)` seulement. Variantes restantes (`open_world_ufw_inactive`, `deny_ufw_inactive`, etc.) maintenant warne correctement.
+Fix: narrow the `_ufw_inactive` registration to `(no_rule, loopback_no_rule)` only. The remaining variants (`open_world_ufw_inactive`, `deny_ufw_inactive`, etc.) now warn correctly.
 
-#### M-3 — t() trailing whitespace contract test pin
+#### M-3 — t() trailing-whitespace contract test pin
 
-L'I-2 pass 7 dépend critiquement de `cli.error.prefix` keeping trailing space (`"Error: "`, `"Erreur : "`). Aucun test ne pinnait que `t()` ne strip pas trailing whitespace. Future JSON normaliser script qui call `.strip()` sur values, ou un i18n change qui strip trailing whitespace, casserait silencieusement la fix pass 7. La régression se manifesterait `"Erreurmessage…"` (no space) — visible mais hard to attribute.
+Pass 7 I-2 depends critically on `cli.error.prefix` keeping its trailing space (`"Error: "`, `"Erreur : "`). No test pinned that `t()` does not strip trailing whitespace. A future JSON-normaliser script calling `.strip()` on values, or an i18n change stripping trailing whitespace, would silently break the pass 7 fix. The regression would show up as `"Erreurmessage…"` (no space) — visible but hard to attribute.
 
-Fix : 8 tests `test_X_t_preserves_trailing_space[key]` parametrized sur les 4 `cli.error.*_prefix` keys × {EN, FR}. Defend le contract pour future contributors.
+Fix: 8 tests `test_X_t_preserves_trailing_space[key]` parametrized over the 4 `cli.error.*_prefix` keys × {EN, FR}. Defends the contract for future contributors.
 
 ### Plus — tests/conftest.py autouse i18n init fixture
 
-L'I-2 pass 8 a rendu `bob/runner.py::validate_check_filters` dépendante de `i18n.init()` (sinon `i18n.t()` returne `[key]` bracketed-fallback). Production caller (`bob/__main__.py:184`) init i18n avant. Mais les unit tests qui appellent runner.py directement (tests/test_cli.py::TestValidateCheckFilters etc.) ne le faisaient pas.
+Pass 8 I-2 made `bob/runner.py::validate_check_filters` depend on `i18n.init()` (otherwise `i18n.t()` returns the `[key]` bracketed fallback). The production caller (`bob/__main__.py:184`) initialises i18n beforehand. But the unit tests calling runner.py directly (tests/test_cli.py::TestValidateCheckFilters etc.) did not.
 
-Solution : autouse fixture `_ensure_i18n_initialised_for_tests` dans `tests/conftest.py` qui mirror la production invariant. **Opt-out** pour `test_i18n.py` via `request.module.__name__.endswith("test_i18n")` parce que ce file exerce délibérément le pre-init bracketed-fallback contract (`test_before_init_returns_bracketed_key` etc.) et a son propre `reset_i18n` teardown.
+Solution: autouse fixture `_ensure_i18n_initialised_for_tests` in `tests/conftest.py` that mirrors the production invariant. **Opt-out** for `test_i18n.py` via `request.module.__name__.endswith("test_i18n")`, because that file deliberately exercises the pre-init bracketed-fallback contract (`test_before_init_returns_bracketed_key` etc.) and has its own `reset_i18n` teardown.
 
 ### Numbers
 
-- **6198 tests** (5521 → 6198, +677 net). 0 régression.
-- ~190 tests dédiés v0.8.1 sur 8 fichiers
-- 26 tiers de gaps fermés sur 3 cycles d'audit
-- 14 nouvelles locale keys T10 + 2 T57 + 6 audit pass 8 = 22 nouvelles locale keys EN+FR
-- 38 services explainable via T26 dispatch
-- 90 sites nature backfill T31
-- workstation maintenant first-class profile distinct de desktop
+- **6198 tests** (5521 → 6198, +677 net). 0 regression.
+- ~190 dedicated v0.8.1 tests across 8 files
+- 26 gap tiers closed over 3 audit cycles
+- 14 new locale keys from T10 + 2 from T57 + 6 from audit pass 8 = 22 new locale keys EN+FR
+- 38 services explainable via the T26 dispatch
+- 90 `nature`-backfill sites from T31
+- workstation is now a first-class profile distinct from desktop
 
 ### Upgrade
 
 `pipx upgrade bodyguard-of-bits`.
 
-Shifts comportementaux user-facing :
-- **workstation profile distinct de desktop** (BREAKING — drop copy desktop.conf vers `~/.config/bob/profiles/workstation.conf` pour preserve v0.8.0 semantics)
-- **4 findings peuvent maintenant déduire des points** (T3 v0.8.0 + T31 v0.8.1) — host avec services inactive critical / services active disabled / firewall policy unknown / snap network virt voit son score baisser de 1-3pts
-- **`bob --fix --apply`** couvre 100% des actionable findings (était 12% pre-v0.8.1)
-- **`bob --explain services.exposed.<svc>`** produit du contenu pour les 38 services (était "No explanation available")
-- **`bob --unignore=KEY`** existe maintenant (CLI symmetry avec `--ignore`)
-- **Webhook URLs avec credentials embarqués** display redacted form `https://[REDACTED]@host/path`
-- **FR audits cohérents** sur typographie colon (espace-deux-points-espace partout)
-- **Profile overrides avec typos** émettent `logger.warning` au lieu de silencieusement no-op
-- **`--show-ignored`** rendering inline correctement documenté en man page (n'exit pas, ne dump pas le YAML)
+User-facing behavioural shifts:
+- **workstation profile distinct from desktop** (BREAKING — drop a copy of desktop.conf at `~/.config/bob/profiles/workstation.conf` to preserve v0.8.0 semantics)
+- **4 findings can now deduct points** (T3 v0.8.0 + T31 v0.8.1) — a host with critical inactive services / active disabled services / unknown firewall policy / snap network virt sees its score drop by 1-3 pts
+- **`bob --fix --apply`** covers 100% of actionable findings (was 12% pre-v0.8.1)
+- **`bob --explain services.exposed.<svc>`** renders content for all 38 services (was "No explanation available")
+- **`bob --unignore=KEY`** now exists (CLI symmetry with `--ignore`)
+- **Webhook URLs with embedded credentials** are displayed in redacted form `https://[REDACTED]@host/path`
+- **FR audits consistent** on colon typography (space-colon-space everywhere)
+- **Profile overrides with typos** emit `logger.warning` instead of silently doing nothing
+- **`--show-ignored`** inline rendering correctly documented in the man page (does not exit, does not dump the YAML)
 
 **v0.7.x is now end-of-life as of 2026-06-05** — formal declaration in [SECURITY.md](../SECURITY.md), mirroring the pattern that retired v0.6.x in v0.7.2. No security fixes will be backported to v0.7.x; users must `pipx upgrade bodyguard-of-bits` to v0.8.x for security patches. The v0.8.x line is largely backwards-compatible with v0.7.x via `__init__.py` re-exports + `--json-v1` for legacy JSON consumers, except for the workstation profile BREAKING shift described above (drop a copy of `desktop.conf` at `~/.config/bob/profiles/workstation.conf` to restore v0.7.x semantics on that profile).
 
@@ -10204,7 +10369,7 @@ The flagship deliverable. Pre-v0.7.0, `~/.config/bob/checks.d/*.py` plugins ran 
 
 What the sandbox stops: accidents (buggy plugin calls `os.unlink` by mistake, infinite loop, 2 GiB allocation), naïve attacks (`import subprocess; subprocess.run(...)` at module level), confused-deputy reads (accidental `open("/etc/shadow")` because the user forgot BOB runs as root).
 
-What the sandbox does NOT stop: a determined attacker with the Python escape playbook (`json.dumps.__globals__["__builtins__"]["__import__"]` reachable in 5 lines because allowlisted stdlib modules carry their own unrestricted builtins reference — PEP 416 retracted in 2012 over exactly this), `dict.__setitem__(bins, "eval", real_eval)` unbound bypass of the restricted-builtins subclass (the irreducible limit — every fully-immutable alternative breaks CPython's C-level dict fast paths that `exec()` requires).
+What the sandbox does NOT stop: a determined attacker with the Python escape playbook (`json.dumps.__globals__["__builtins__"]["__import__"]` reachable in 5 lines because allowlisted stdlib modules carry their own unrestricted builtins reference — PEP 416 rejected in 2012 over exactly this), `dict.__setitem__(bins, "eval", real_eval)` unbound bypass of the restricted-builtins subclass (the irreducible limit — every fully-immutable alternative breaks CPython's C-level dict fast paths that `exec()` requires).
 
 Both architectural escapes are pinned as INTENTIONALLY out of scope by `TestKnownInProcessLimitation::test_real_builtins_reachable_via_stdlib_globals` and `::test_i1_known_limitation_unbound_dict_setitem_bypass` — future contributors see these as expected, not regression candidates.
 
@@ -10503,8 +10668,8 @@ Per `project_v08x_deferred.md`:
 
   - **D-1** — sections renumber: uniformisation `emit_section()` names (44 sections, some incohérent vs `_ALL_SECTIONS`). Reported because rename breaks scripts using `--check=ssh,firewall`.
   - **D-2** — fusion `_ALL_SECTIONS` + `_ALWAYS_ON_SECTIONS` into one tuple with `is_always_on` flag. Cosmetic; depends on D-1.
-  - **D-3** — retrait `EXPLAIN_KEY_ALIASES` obsolètes — minimum 1 release notice per alias retirement.
-  - **D-4** — sub-checks granulaires (e.g. `ssh.x11_forwarding` split into server/client) — on demand.
+  - **D-3** — removal of obsolete `EXPLAIN_KEY_ALIASES` — minimum 1 release notice per alias retirement.
+  - **D-4** — granular sub-checks (e.g. `ssh.x11_forwarding` split into server/client) — on demand.
 
 ### What's NOT in this beta (yet)
 

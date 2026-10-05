@@ -489,11 +489,15 @@ class TestEdgeCases:
         item = _item(items, "firewall")
         assert item.color == "alert"
 
-    def test_unknown_policy_is_alert(self):
+    def test_unknown_policy_is_unread_not_allow_all(self):
+        # v0.24.1: an unread default is not an ALLOW default. Printing "default
+        # policy is ALLOW — no filtering" for it lied on every firewalld host.
         items = _call(fw_active=True, fw_policy="unknown")
         item = _item(items, "firewall")
-        assert item.color == "alert"
-        assert item.icon == "✖"
+        assert item.color == "warn"
+        assert item.icon == "⚠"
+        assert "firewall_policy_unread" in item.detail
+        assert "firewall_allow_all" not in item.detail
 
     def test_network_context_unknown_is_ok(self):
         items = _call(network_context="weird_value")

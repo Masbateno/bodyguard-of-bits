@@ -185,7 +185,7 @@
   },
   "firewall": {
     "active": "Le pare-feu UFW est actif",
-    "netfilter_active": "Aucun front-end pare-feu géré (UFW/firewalld), mais la couche netfilter filtre le trafic entrant — audité dans la section iptables/nftables",
+    "netfilter_active": "Aucun front-end pare-feu actif (UFW/firewalld), mais la couche netfilter filtre le trafic entrant — audité dans la section iptables/nftables",
     "firewalld_active": "firewalld est le pare-feu actif — la zone par défaut '{zone}' autorise : {services}",
     "inactive": "Le pare-feu UFW est désactivé. Votre machine n'est actuellement pas protégée.",
     "policy_ok": "Politique par défaut : connexions entrantes bloquées (recommandé)",
@@ -228,6 +228,8 @@
       "inactive_enabled": "{label} est activé au démarrage mais ne tourne pas",
       "socket_activated": "{label} est activé et démarré à la demande par {trigger} — son socket est à l'écoute",
       "socket_activated_detail": "Le service lui-même ne tourne pas, mais une unité socket, path ou timer active le démarrera dès qu'un client se connecte. C'est un état normal et sain — pas un service arrêté. Le socket à l'écoute est analysé pour son exposition comme n'importe quel autre.",
+      "condition_unmet": "{label} est activé, mais systemd ne l'a pas démarré — sa propre condition de démarrage n'est pas remplie (typiquement : rien n'est configuré à servir)",
+      "condition_unmet_detail": "L'unité déclare une vérification (Condition…= ou ExecCondition=) que systemd fait avant de la démarrer ; elle n'est pas remplie, donc systemd l'a sautée. C'est la conception de l'unité, pas un plantage ni un démarrage échoué — aucun service ne tourne et rien n'écoute. Pour voir quelle condition : systemctl status <unité>",
       "inactive_enabled_detail": "La machine a été configurée pour lancer ce service et il n'est pas lancé. Rien ici ne dit pourquoi : un plantage, un démarrage échoué sur une configuration fautive, un arrêt manuel que personne n'a défait, ou une dépendance qui n'est jamais montée. Vus de l'extérieur ces cas se ressemblent tous, et tous signifient que le service manquera jusqu'à ce que quelqu'un regarde. Demandez au gestionnaire de services ce qu'il en dit : systemctl status <unité> — ou, sur un hôte OpenRC, rc-service <nom> status",
       "installed_inactive_critical": "{label} est installé mais ne tourne pas et n'est pas activé au démarrage — rien n'écoute pour lui",
       "unknown": "Service installé, état indéterminé"
@@ -235,25 +237,30 @@
     "exposure": {
       "open_world": "exposé sur internet — règle UFW autorise depuis toutes les adresses (Anywhere)",
       "open_local": "restreint au réseau local par règle UFW",
+      "open_local_host": "restreint au seul hôte {source} par règle UFW",
       "deny": "bloqué explicitement par règle UFW",
       "no_rule": "couvert par la politique deny par défaut",
       "no_rule_ufw_inactive": "aucune protection pare-feu active",
       "no_rule_firewalld": "pare-feu géré par firewalld (pas UFW) — joignable seulement si sa zone autorise ce port",
+      "no_rule_netfilter": "filtré par le jeu de règles nftables/iptables de l'hôte (ni UFW ni firewalld) — joignable seulement si ce jeu de règles autorise ce port",
       "loopback": "lié uniquement sur localhost — la règle UFW n'a aucun effet sur l'accès externe",
       "loopback_no_rule": "lié uniquement sur localhost — aucune règle UFW requise (couvert par refus par défaut)",
       "loopback_no_rule_ufw_inactive": "lié uniquement sur localhost — pas d'exposition externe",
       "loopback_no_rule_firewalld": "lié uniquement sur localhost — pas d'exposition externe (pare-feu géré par firewalld)",
+      "loopback_no_rule_netfilter": "lié uniquement sur localhost — pas d'exposition externe (filtré par le jeu de règles nftables/iptables)",
       "not_listening": "n'écoute pas activement — port présent dans le registre mais non détecté sur ce système"
     },
     "port_exposure": "Port {port} — {exposure}"
   },
   "ports": {
     "all_covered": "Tous les ports en écoute sur 0.0.0.0 sont couverts par une règle UFW",
+    "all_covered_policy": "Tous les ports en écoute sur toutes les interfaces sont filtrés par UFW — par une règle explicite ou par la politique deny par défaut",
     "uncovered": "Port {port} en écoute sur toutes les interfaces sans règle UFW explicite",
     "uncovered_local": "Port {port} — lié uniquement à localhost — pas d'exposition externe",
     "uncovered_bound_address": "Port {port} — lié uniquement à {address}, sans règle de pare-feu — joignable depuis le réseau de cette adresse",
     "uncovered_bound_address_deny": "Port {port} — lié uniquement à {address}, aucune règle UFW explicite, mais couvert par la politique de refus par défaut",
     "uncovered_bound_address_firewalld": "Port {port} — lié uniquement à {address} — régi par la zone par défaut de firewalld, pas par une règle UFW",
+    "uncovered_bound_address_netfilter": "Port {port} — lié uniquement à {address} — régi par le jeu de règles nftables/iptables (entrée refusée par défaut), pas par une règle UFW",
     "system_port": "Port système interne — aucun danger (service OS légitime, pas de règle UFW nécessaire) : {port} ({service})",
     "unreadable": "Les ports en \u00e9coute n'ont pas pu \u00eatre d\u00e9termin\u00e9s",
     "unreadable_detail": "`ss -tulnp` n'a pas pu \u00eatre ex\u00e9cut\u00e9 \u2014 le binaire est absent (iproute2 n'est pas install\u00e9 sur les images minimales ni dans beaucoup de conteneurs) ou il a \u00e9chou\u00e9. Sa sortie est vide dans les deux cas, ce qui est indiscernable d'une machine sans rien en \u00e9coute : BOB signale donc la lacune au lieu d'annoncer z\u00e9ro port ouvert. V\u00e9rifier avec : ss -tulnp",
@@ -263,7 +270,8 @@
     "process_disclaimer": "Ce port appartient à {process} — le bloquer peut interrompre l'application. N'exécutez la commande ci-dessus que si vous savez précisément ce que vous faites.",
     "uncovered_default_deny": "Port {port} en écoute sur toutes les interfaces — aucune règle UFW explicite, mais couvert par la politique de refus par défaut",
     "uncovered_ufw_inactive": "Port {port} en écoute sur toutes les interfaces — aucun pare-feu actif pour le filtrer",
-    "uncovered_firewalld": "Port {port} en écoute sur toutes les interfaces — régi par la zone par défaut de firewalld, pas par une règle UFW"
+    "uncovered_firewalld": "Port {port} en écoute sur toutes les interfaces — régi par la zone par défaut de firewalld, pas par une règle UFW",
+    "uncovered_netfilter": "Port {port} en écoute sur toutes les interfaces — régi par le jeu de règles nftables/iptables (entrée refusée par défaut), pas par une règle UFW"
   },
   "logs": {
     "no_logfile": "Fichier de log UFW introuvable (/var/log/ufw.log) et aucune entrée UFW dans journald — journalisation désactivée ?",
@@ -361,7 +369,7 @@
     "block_action": "À corriger",
     "block_improve": "Améliorations possibles",
     "block_improve_disclaimer": "Les commandes affichées sont des suggestions — vérifiez et adaptez à votre réseau avant d'exécuter",
-    "implicit_policy": "Service(s) à risque élevé s'appuient sur la politique par défaut UFW plutôt que des règles explicites. C'est correct si la politique est deny, mais une règle explicite est plus robuste.",
+    "implicit_policy": "Service(s) à risque élevé s'appuient sur la politique par défaut du pare-feu plutôt que des règles explicites. C'est correct si la politique est deny, mais une règle explicite est plus robuste.",
     "implicit_svcs": "Service(s) concerné(s)",
     "visibility_sections": "Sections non entièrement lues (le score reste un plafond tant qu'elles ne le sont pas) : {sections}",
     "scope_line1": "Ce score couvre le pare-feu, les services, SSH, le contrôle d'accès, les mises à jour, le durcissement système et les outils de détection.",
@@ -794,7 +802,7 @@
     },
     "smtp_server_postfix_exim": {
       "level": "ÉLEVÉ",
-      "exposure": "Listener TCP/25 acceptant les soumissions de mail. Un SMTP exposé sur internet attire des tentatives constantes de relais spam, du bruteforce de credentials SASL, et du scanning par réputation. Les configs postfix par défaut sur Debian/Ubuntu bindent typiquement sur 127.0.0.1 uniquement — ce finding se déclenche quand ce défaut a été changé.",
+      "exposure": "Listener TCP/25 acceptant les soumissions de mail. Un SMTP exposé sur internet attire des tentatives constantes de relais spam, du bruteforce de credentials SASL, et du scanning par réputation. Les configs postfix par défaut sur Debian/Ubuntu bindent typiquement sur 127.0.0.1 uniquement — le verdict de port ci-dessous dit si ce défaut tient encore sur cet hôte.",
       "threat": "L'abus en relais ouvert blocklist votre IP en quelques heures, cassant le mail sortant pour les utilisateurs légitimes. L'auth SASL sans rate limiting est une cible de spray de credentials au ralenti. Les MTA mal configurés ont historiquement été utilisés pour des campagnes de spam à grande échelle et des canaux d'exfiltration."
     },
     "nfs_server": {
@@ -1156,7 +1164,10 @@
     "port_no_v6_rule": "Port {port} à l'écoute en IPv6 (::) sans règle UFW (v6) correspondante",
     "all_ports_covered": "Les {count} service(s) IPv6 sont couverts par des règles UFW (v6)",
     "firewalld_v6": "Les services IPv6 sont filtrés par firewalld (mêmes règles de zone qu'en IPv4) — aucune règle UFW v6 requise",
-    "ufw_disabled_listeners_link_local": "{count} service(s) en écoute sur IPv6 (::) mais UFW IPv6 est désactivé — adresses link-local uniquement, aucune exposition internet",
+    "netfilter_v6": "{count} service(s) en écoute sur IPv6 ({ports}) — régis par le jeu de règles nftables/iptables, pas par UFW (non installé) ; une table inet ou ip6 filtre l'IPv6, une table ip non",
+    "no_firewall_v6": "{count} service(s) en écoute sur IPv6 ({ports}) — pas d'UFW sur cet hôte ni d'autre pare-feu filtrant l'entrant",
+    "no_ufw_no_listeners": "UFW n'est pas installé et aucun service n'écoute sur IPv6",
+    "ufw_disabled_listeners_link_local": "{count} service(s) en écoute sur IPv6 (::) mais UFW IPv6 est désactivé — adresses link-local uniquement : pas joignable depuis internet, mais joignable depuis le réseau local sans filtrage par UFW",
     "kernel_state_unknown": "Impossible de lire l'état IPv6 du noyau",
     "kernel_state_unknown_detail": "/proc/sys/net/ipv6 existe mais conf/all/disable_ipv6 n'a pas pu être lu : BOB ne peut pas dire si la pile IPv6 est active. Il ne tranche pas. Les constats ci-dessous sont calculés comme si IPv6 était activé, la lecture la plus prudente. Vérifier avec : sysctl net.ipv6.conf.all.disable_ipv6"
   },
@@ -1197,14 +1208,14 @@
     "not_active_detail": "Le service est désactivé — activez-le si l'accès SSH est nécessaire.",
     "active": "Le serveur SSH est actif",
     "permit_root_login": "La connexion root via SSH est autorisée (PermitRootLogin = {value})",
-    "permit_root_login_detail": "Définir PermitRootLogin no dans /etc/ssh/sshd_config, puis : sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service",
+    "permit_root_login_detail": "Définir PermitRootLogin no là où sshd le lit en premier — /etc/ssh/sshd_config.d/00-hardening.conf, ou en tête de /etc/ssh/sshd_config s'il n'y a pas de sshd_config.d — puis : sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service",
     "permit_root_login_disabled": "Connexion root désactivée (PermitRootLogin = no)",
     "permit_root_login_restricted": "Connexion root restreinte à l'authentification par clé (PermitRootLogin = {value})",
     "password_auth": "L'authentification par mot de passe est activée (PasswordAuthentication = yes)",
-    "password_auth_detail": "Risque de force brute. Préférer les clés : définir PasswordAuthentication no dans sshd_config",
+    "password_auth_detail": "Risque de force brute. Préférer les clés : définir PasswordAuthentication no (la commande ci-dessous l'écrit là où sshd le lit en premier)",
     "password_auth_local": "PasswordAuthentication activée — risque faible (SSH non accessible publiquement sur ce réseau)",
-    "password_auth_local_detail": "SSH n'est pas joignable depuis l'extérieur (UFW deny par défaut + réseau local). L'authentification par mot de passe est acceptable dans ce contexte, bien que les clés restent la meilleure pratique.",
-    "local_context_note": "Contexte : SSH n'est pas accessible publiquement (UFW deny par défaut + réseau local) — les notices ci-dessus ont un risque réel réduit dans cette configuration.",
+    "password_auth_local_detail": "SSH n'est pas joignable depuis l'extérieur (pare-feu en refus par défaut + réseau local). L'authentification par mot de passe est acceptable dans ce contexte, bien que les clés restent la meilleure pratique.",
+    "local_context_note": "Contexte : SSH n'est pas accessible publiquement (pare-feu en refus par défaut + réseau local) — les notices ci-dessus ont un risque réel réduit dans cette configuration.",
     "permit_empty_passwords": "Les mots de passe vides sont autorisés (PermitEmptyPasswords = yes)",
     "max_auth_tries": "MaxAuthTries = {value} — valeur recommandée : 3 ou moins",
     "login_grace_time": "LoginGraceTime = {value}s — valeur recommandée : 60s ou moins",
@@ -1217,9 +1228,9 @@
     "weak_kex": "Algorithmes d'échange de clés dépréciés : {kex}",
     "no_allow_users": "Aucune restriction AllowUsers/AllowGroups — tout utilisateur valide peut tenter une connexion SSH",
     "allow_tcp_forwarding": "AllowTcpForwarding est activé — le tunneling TCP peut exposer des services internes",
-    "allow_tcp_forwarding_detail": "Définir AllowTcpForwarding no dans /etc/ssh/sshd_config pour empêcher le tunneling de ports.",
+    "allow_tcp_forwarding_detail": "Définir AllowTcpForwarding no pour empêcher le tunneling de ports (la commande ci-dessous l'écrit là où sshd le lit en premier).",
     "pubkey_auth_disabled": "PubkeyAuthentication est désactivé — seule l'authentification par mot de passe est possible",
-    "pubkey_auth_disabled_detail": "Activer l'authentification par clé : définir PubkeyAuthentication yes dans /etc/ssh/sshd_config.",
+    "pubkey_auth_disabled_detail": "Activer l'authentification par clé : définir PubkeyAuthentication yes (la commande ci-dessous l'écrit là où sshd le lit en premier).",
     "config_ok": "Configuration sshd : aucun problème critique détecté",
     "dir_not_found": "Aucun répertoire ~/.ssh trouvé pour l'utilisateur {user}",
     "dir_perms": "Les permissions de ~/.ssh sont {perms} — attendu 700",
@@ -1314,6 +1325,10 @@
     "apt_cache_age_detail": "BOB rapporte les mises à jour en attente depuis le cache APT local (read-only par conception — pas d'appel réseau). Des annonces de sécurité peuvent être publiées en amont depuis le dernier rafraîchissement. Rafraîchir le cache régulièrement (ou via unattended-upgrades) pour maintenir le rapport aligné avec le dépôt amont.",
     "dist_upgrade_inconsistent": "{count} paquet(s) signalés upgradables par apt mais la simulation dist-upgrade retourne zéro — état incohérent",
     "dist_upgrade_inconsistent_detail": "apt list --upgradable signale des paquets en attente alors que apt-get -s dist-upgrade retourne zéro. Cela indique généralement que la base APT est dans un état transitoire (dépendances cassées, paquet bloqué) ou qu'un autre gestionnaire de paquets détient le verrou. Lancer apt update puis apt list --upgradable pour investiguer.",
+    "phased_deferred": "{count} mise(s) à jour différée(s) par le déploiement progressif d'Ubuntu (phased updates) — apt les installe quand la phase de cette machine s'ouvre ; ce n'est pas une incohérence",
+    "phased_deferred_detail": "Ubuntu publie la plupart des mises à jour hors sécurité sur une part croissante des machines pendant plusieurs jours, pour qu'une régression en touche peu. apt list --upgradable les montre, apt-get dist-upgrade les retient jusqu'au tour de cette machine. Les mises à jour de sécurité ne sont pas progressives.",
+    "kept_back": "{count} paquet(s) retenu(s) par apt — non mis à jour tant qu'ils ne sont pas libérés (apt-mark showhold liste les paquets bloqués)",
+    "kept_back_detail": "apt retient un paquet quand il est bloqué (apt-mark hold) ou quand sa mise à jour supprimerait autre chose. Un paquet bloqué ne reçoit plus de correctifs, de sécurité compris, tant que personne ne le libère.",
     "ok": "Les paquets système sont à jour"
   },
   "kernel_hardening": {
@@ -1543,27 +1558,27 @@
       "password_auth": {
         "title": "Authentification par mot de passe activée (PasswordAuthentication yes)",
         "why": "N'importe qui peut tenter de deviner le mot de passe par force brute. Des millions de robots scannent Internet 24h/24 pour tester des mots de passe courants sur le port SSH 22. Un mot de passe faible ou réutilisé suffit pour compromettre le serveur.",
-        "how": "1. Générez une paire de clés si vous n'en avez pas :\n   ssh-keygen -t ed25519\n2. Copiez votre clé publique sur le serveur :\n   ssh-copy-id utilisateur@serveur\n3. Désactivez l'authentification par mot de passe :\n   sudo nano /etc/ssh/sshd_config  →  PasswordAuthentication no\n4. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+        "how": "1. Générez une paire de clés si vous n'en avez pas :\n   ssh-keygen -t ed25519\n2. Copiez votre clé publique sur le serveur :\n   ssh-copy-id utilisateur@serveur\n3. Désactivez l'authentification par mot de passe :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  PasswordAuthentication no\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i passwordauthentication)\n4. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "permit_root_login": {
         "title": "Connexion SSH root autorisée (PermitRootLogin)",
         "why": "La connexion root directe contourne les journaux d'audit et donne un accès total au système dès la première connexion. Si un attaquant devine ou vole le mot de passe root, aucune escalade de privilèges supplémentaire n'est nécessaire — le serveur est immédiatement et totalement compromis.",
-        "how": "1. Assurez-vous qu'un utilisateur standard avec droits sudo existe\n2. Désactivez la connexion root :\n   sudo nano /etc/ssh/sshd_config  →  PermitRootLogin no\n3. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+        "how": "1. Assurez-vous qu'un utilisateur standard avec droits sudo existe\n2. Désactivez la connexion root :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  PermitRootLogin no\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i permitrootlogin)\n3. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "permit_empty_passwords": {
         "title": "Mots de passe vides autorisés (PermitEmptyPasswords yes)",
         "why": "Tout compte sans mot de passe est directement accessible via SSH avec un mot de passe vide. Il s'agit d'une vulnérabilité d'accès immédiat ne nécessitant aucun effort de la part de l'attaquant.",
-        "how": "1. Désactivez les mots de passe vides :\n   sudo nano /etc/ssh/sshd_config  →  PermitEmptyPasswords no\n2. Verrouillez les comptes sans mot de passe :\n   sudo passwd -l <nom_utilisateur>\n3. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+        "how": "1. Désactivez les mots de passe vides :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  PermitEmptyPasswords no\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i permitemptypasswords)\n2. Verrouillez les comptes sans mot de passe :\n   sudo passwd -l <nom_utilisateur>\n3. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "allow_tcp_forwarding": {
         "title": "Transfert TCP activé (AllowTcpForwarding yes)",
         "why": "Le transfert TCP permet à tout utilisateur authentifié de tunneliser du trafic TCP arbitraire via SSH. Un attaquant disposant d'un compte valide peut accéder à des services internes non directement accessibles depuis Internet.",
-        "how": "1. Désactivez le transfert TCP :\n   sudo nano /etc/ssh/sshd_config  →  AllowTcpForwarding no\n2. Si certains utilisateurs ont besoin du transfert de port, utilisez :\n   AllowTcpForwarding local\n3. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+        "how": "1. Désactivez le transfert TCP :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  AllowTcpForwarding no\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i allowtcpforwarding)\n2. Si certains utilisateurs ont besoin du transfert de port, utilisez :\n   AllowTcpForwarding local\n3. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "pubkey_auth_disabled": {
         "title": "Authentification par clé publique désactivée (PubkeyAuthentication no)",
         "why": "Désactiver l'authentification par clé publique force tous les utilisateurs à utiliser un mot de passe. Cela supprime le mécanisme d'authentification le plus robuste et rend le serveur entièrement dépendant de la solidité des mots de passe.",
-        "how": "1. Activez l'authentification par clé :\n   sudo nano /etc/ssh/sshd_config  →  PubkeyAuthentication yes\n2. Générez une paire de clés :\n   ssh-keygen -t ed25519\n3. Copiez la clé sur le serveur :\n   ssh-copy-id utilisateur@serveur\n4. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+        "how": "1. Activez l'authentification par clé :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  PubkeyAuthentication yes\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i pubkeyauthentication)\n2. Générez une paire de clés :\n   ssh-keygen -t ed25519\n3. Copiez la clé sur le serveur :\n   ssh-copy-id utilisateur@serveur\n4. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "dsa_key": {
         "title": "Clé hôte DSA en cours d'utilisation",
@@ -1583,42 +1598,42 @@
       "ignore_rhosts_disabled": {
         "title": "IgnoreRhosts désactivé — fichiers .rhosts acceptés",
         "why": "Les fichiers .rhosts permettent une connexion sans mot de passe basée uniquement sur le nom d'hôte. Les noms d'hôtes pouvant être usurpés, il s'agit d'un contournement d'authentification trivial, obsolète depuis des décennies.",
-        "how": "1. Activez IgnoreRhosts (valeur par défaut) :\n   sudo nano /etc/ssh/sshd_config  →  IgnoreRhosts yes\n2. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+        "how": "1. Activez IgnoreRhosts (valeur par défaut) :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  IgnoreRhosts yes\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i ignorerhosts)\n2. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "host_based_auth": {
         "title": "Authentification basée sur l'hôte activée",
         "why": "L'authentification basée sur l'hôte fait confiance à l'identité d'une machine distante plutôt qu'à un justificatif d'identité utilisateur. Si l'hôte de confiance est compromis, les attaquants accèdent automatiquement à ce serveur sans authentification supplémentaire.",
-        "how": "1. Désactivez l'authentification basée sur l'hôte (valeur par défaut) :\n   sudo nano /etc/ssh/sshd_config  →  HostbasedAuthentication no\n2. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+        "how": "1. Désactivez l'authentification basée sur l'hôte (valeur par défaut) :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  HostbasedAuthentication no\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i hostbasedauthentication)\n2. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "strict_modes_disabled": {
         "title": "SSH StrictModes désactivé",
         "why": "Sans StrictModes, sshd ne vérifie pas les permissions de ~/.ssh et des fichiers de clés. Les clés privées lisibles par tous ou les répertoires home accessibles en groupe sont silencieusement acceptés, rendant les permissions de fichiers inefficaces.",
-        "how": "1. Activez StrictModes (valeur par défaut) :\n   sudo nano /etc/ssh/sshd_config  →  StrictModes yes\n2. Corrigez les permissions :\n   chmod 700 ~/.ssh\n   chmod 600 ~/.ssh/authorized_keys\n3. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+        "how": "1. Activez StrictModes (valeur par défaut) :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  StrictModes yes\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i strictmodes)\n2. Corrigez les permissions :\n   chmod 700 ~/.ssh\n   chmod 600 ~/.ssh/authorized_keys\n3. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "max_auth_tries": {
         "title": "Trop de tentatives d'authentification autorisées (MaxAuthTries > 3)",
         "why": "Chaque tentative SSH échouée permet de sonder des noms d'utilisateurs valides et de tester des identifiants. Avec la valeur par défaut de 6 tentatives, une attaque automatisée peut tester de nombreux mots de passe par connexion avant d'être déconnectée. Réduire à 3 limite la surface d'attaque par connexion et ralentit considérablement les campagnes de force brute.",
-        "how": "1. Réduisez MaxAuthTries :\n   sudo nano /etc/ssh/sshd_config  →  MaxAuthTries 3\n2. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+        "how": "1. Réduisez MaxAuthTries :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  MaxAuthTries 3\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i maxauthtries)\n2. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "permit_user_env": {
         "title": "Variables d'environnement utilisateur autorisées (PermitUserEnvironment yes)",
         "why": "Autoriser les utilisateurs à définir des variables d'environnement via ~/.ssh/environment ou les options authorized_keys permet une escalade de privilèges : les substitutions LD_PRELOAD, PATH ou PYTHONPATH peuvent rediriger l'exécution vers du code contrôlé par un attaquant, même si le binaire cible est de confiance.",
-        "how": "1. Désactivez les variables d'environnement utilisateur :\n   sudo nano /etc/ssh/sshd_config  →  PermitUserEnvironment no\n2. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+        "how": "1. Désactivez les variables d'environnement utilisateur :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  PermitUserEnvironment no\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i permituserenvironment)\n2. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "weak_ciphers": {
         "title": "Suites de chiffrement SSH faibles en usage",
         "why": "Les algorithmes anciens (3DES-CBC, arcfour/RC4, blowfish-CBC, AES en mode CBC) sont cryptographiquement faibles ou cassés. Les chiffrements en mode CBC sont vulnérables aux attaques BEAST et Lucky13. RC4 présente des biais statistiques exploitables avec suffisamment de trafic. Un attaquant enregistrant les sessions pourrait les déchiffrer ultérieurement.",
-        "how": "1. Restreignez aux chiffrements forts :\n   sudo nano /etc/ssh/sshd_config\n   Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr\n2. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service\n3. Vérifiez la compatibilité du client :\n   ssh -Q cipher  # liste les chiffrements supportés"
+        "how": "1. Restreignez aux chiffrements forts :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf\n   (pas de répertoire sshd_config.d : éditer /etc/ssh/sshd_config — sshd garde la première valeur lue)\n   Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr\n2. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service\n3. Vérifiez la compatibilité du client :\n   ssh -Q cipher  # liste les chiffrements supportés"
       },
       "weak_macs": {
         "title": "Algorithmes MAC SSH faibles en usage",
         "why": "Les MACs faibles (hmac-md5, hmac-sha1, umac-64) sont vulnérables aux attaques par collision. Un MAC compromis signifie que l'intégrité des messages ne peut pas être garantie — un attaquant en homme-du-milieu pourrait altérer les données de session en transit sans être détecté. MD5 et SHA-1 ne sont plus résistants aux collisions.",
-        "how": "1. Restreignez aux MACs forts :\n   sudo nano /etc/ssh/sshd_config\n   MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com\n2. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+        "how": "1. Restreignez aux MACs forts :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf\n   (pas de répertoire sshd_config.d : éditer /etc/ssh/sshd_config — sshd garde la première valeur lue)\n   MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com\n2. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "weak_kex": {
         "title": "Algorithmes d'échange de clés SSH faibles en usage",
         "why": "Les algorithmes KEX faibles (diffie-hellman-group1-sha1 utilise un groupe 1024 bits ; diffie-hellman-group14-sha1 utilise SHA-1 déprécié) offrent une confidentialité persistante insuffisante. Des acteurs étatiques ont démontré des attaques de précalcul contre les groupes DH 1024 bits standards (attaque Logjam). Un KEX compromis permet de récupérer la clé de session après coup.",
-        "how": "1. Restreignez aux algorithmes KEX forts :\n   sudo nano /etc/ssh/sshd_config\n   KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512\n2. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+        "how": "1. Restreignez aux algorithmes KEX forts :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf\n   (pas de répertoire sshd_config.d : éditer /etc/ssh/sshd_config — sshd garde la première valeur lue)\n   KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512\n2. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "rsa_weak": {
         "title": "Clé hôte RSA trop courte (< 4096 bits)",
@@ -1628,12 +1643,12 @@
       "login_grace_time": {
         "title": "LoginGraceTime trop long (> 60s)",
         "why": "Un délai de grâce élevé maintient ouvertes les connexions TCP non authentifiées plus longtemps que nécessaire. Un attaquant peut maintenir de nombreuses connexions SSH parallèles sans compléter l'authentification, épuisant potentiellement les limites de connexion et dégradant le service pour les utilisateurs légitimes.",
-        "how": "1. Réduisez LoginGraceTime :\n   sudo nano /etc/ssh/sshd_config  →  LoginGraceTime 30\n2. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+        "how": "1. Réduisez LoginGraceTime :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  LoginGraceTime 30\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i logingracetime)\n2. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "no_allow_users": {
         "title": "Aucune restriction AllowUsers / AllowGroups dans la configuration SSH",
         "why": "Sans AllowUsers ou AllowGroups, tout compte système disposant d'un identifiant valide peut tenter une connexion SSH — y compris les comptes de service, les démons et les comptes legacy non destinés à l'accès distant. Restreindre SSH à des utilisateurs spécifiques réduit drastiquement la surface d'attaque.",
-        "how": "1. Identifiez les utilisateurs qui ont besoin d'un accès SSH\n2. Ajoutez une directive AllowUsers :\n   sudo nano /etc/ssh/sshd_config  →  AllowUsers alice bob deploy\n3. Ou restreignez par groupe :\n   AllowGroups sshusers\n   sudo addgroup sshusers && sudo adduser alice sshusers\n4. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+        "how": "1. Identifiez les utilisateurs qui ont besoin d'un accès SSH\n2. Ajoutez une directive AllowUsers :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  AllowUsers alice bob deploy\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i allowusers)\n3. Ou restreignez par groupe :\n   AllowGroups sshusers\n   sudo addgroup sshusers && sudo adduser alice sshusers\n4. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "private_key_perms": {
         "title": "Permissions du fichier de clé privée SSH trop ouvertes",
@@ -1643,7 +1658,7 @@
       "authorized_keys_perms": {
         "title": "Permissions du fichier authorized_keys trop ouvertes",
         "why": "Un fichier authorized_keys modifiable par d'autres permet à quiconque pouvant y écrire d'injecter sa propre clé publique et d'obtenir un accès SSH à ce compte. Un accès en lecture par d'autres révèle quelles identités sont autorisées et depuis quels hôtes.",
-        "how": "1. Restreignez les permissions :\n   chmod 600 ~/.ssh/authorized_keys\n2. Vérifiez que la propriété correspond au compte :\n   ls -la ~/.ssh/authorized_keys\n3. Activez StrictModes dans sshd_config pour forcer ces vérifications automatiquement :\n   sudo nano /etc/ssh/sshd_config  →  StrictModes yes"
+        "how": "1. Restreignez les permissions :\n   chmod 600 ~/.ssh/authorized_keys\n2. Vérifiez que la propriété correspond au compte :\n   ls -la ~/.ssh/authorized_keys\n3. Activez StrictModes dans sshd_config pour forcer ces vérifications automatiquement :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  StrictModes yes\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i strictmodes)"
       },
       "authorized_keys_dsa": {
         "title": "Clé DSA dans authorized_keys",
@@ -1723,7 +1738,7 @@
           "server": {
             "title": "Transfert X11 activé (X11Forwarding yes)",
             "why": "Le transfert X11 expose votre affichage X11 local à un serveur distant. Un serveur distant malveillant ou compromis pourrait capturer vos frappes clavier et le contenu de votre écran.",
-            "how": "1. Désactivez le transfert X11 :\n   sudo nano /etc/ssh/sshd_config  →  X11Forwarding no\n2. Si nécessaire, assurez-vous que X11UseLocalhost yes est également défini\n3. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+            "how": "1. Désactivez le transfert X11 :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  X11Forwarding no\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i x11forwarding)\n2. Si nécessaire, assurez-vous que X11UseLocalhost yes est également défini\n3. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
           },
           "client": {
             "title": "Transfert X11 client activé (ForwardX11 yes)",
@@ -2928,12 +2943,12 @@
       "brute_force": {
         "title": "Attaques par force brute détectées dans les journaux d'authentification",
         "why": "Des échecs de connexion répétés indiquent des attaques automatisées actives contre cette machine. Si l'authentification par mot de passe ou des identifiants faibles sont utilisés, une campagne de force brute persistante finira par réussir. Même avec des mots de passe forts, les attaques par inondation consomment du CPU et bloquent les utilisateurs légitimes.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installer et configurer fail2ban :\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n2. Vérifier que la jail SSH est active :\n   sudo fail2ban-client status sshd\n3. Désactiver l'authentification par mot de passe (clés uniquement) :\n   sudo nano /etc/ssh/sshd_config  →  PasswordAuthentication no\n4. Réduire MaxAuthTries :\n   MaxAuthTries 3\n5. Redémarrer SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installer et configurer fail2ban :\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n2. Vérifier que la jail SSH est active :\n   sudo fail2ban-client status sshd\n3. Désactiver l'authentification par mot de passe (clés uniquement) :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  PasswordAuthentication no\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i passwordauthentication)\n4. Réduire MaxAuthTries :\n   MaxAuthTries 3\n5. Redémarrer SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "public_login": {
         "title": "Connexions réussies depuis des adresses IP publiques détectées",
         "why": "Des connexions distantes depuis des IP publiques dans les journaux d'auth confirment que la machine est accessible depuis internet et activement utilisée. Toute compromission d'identifiant — force brute, clé volée, mot de passe divulgué — donnerait immédiatement un shell à un attaquant.",
-        "how": "1. Restreindre l'accès SSH aux IP connues via UFW :\n   sudo ufw allow from <votre-ip> to any port 22\n   sudo ufw delete allow 22\n2. Utiliser uniquement l'authentification par clé :\n   sudo nano /etc/ssh/sshd_config  →  PasswordAuthentication no\n3. Vérifier qui se connecte :\n   sudo last | head -20\n4. Envisager un VPN ou du port-knocking si l'accès distant doit être maintenu"
+        "how": "1. Restreindre l'accès SSH aux IP connues via UFW :\n   sudo ufw allow from <votre-ip> to any port 22\n   sudo ufw delete allow 22\n2. Utiliser uniquement l'authentification par clé :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  PasswordAuthentication no\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i passwordauthentication)\n3. Vérifier qui se connecte :\n   sudo last | head -20\n4. Envisager un VPN ou du port-knocking si l'accès distant doit être maintenu"
       }
     },
     "umask": {
@@ -3116,7 +3131,7 @@
       "escalated_posture": {
         "title": "Niveau de risque majoré par la posture (faille structurelle pare-feu)",
         "why": "BOB dérive le niveau de risque affiché du score global combiné à l'état de la posture. Avant v0.7.0 le niveau était dérivé du seul score — un hôte UFW inactif mais par ailleurs propre (score 8/10) affichait 'risque FAIBLE', trompant les opérateurs sur l'exposition réelle. v0.7.0 introduit un plancher posture : quand le pare-feu est structurellement cassé (inactif, INPUT ACCEPT, ou domaine pare-feu ≤ 3/10), le niveau est sorti de FAIBLE pour refléter que l'hôte est joignable sur tout port indépendamment de la propreté du reste. Le score de base continue de piloter la valeur ; la posture ne fait qu'élever le plancher.",
-        "how": "1. Identifier le déclencheur posture qui a fait remonter le niveau (cf. annotation entre parenthèses à côté du niveau de risque) :\n   - 'pare-feu inactif' → activer UFW : sudo ufw enable\n   - 'iptables INPUT ACCEPT' → politique deny par défaut : sudo iptables -P INPUT DROP (ou migrer vers UFW)\n   - 'domaine pare-feu faible' → relire les findings de la section pare-feu (règles, journalisation, politique par défaut)\n2. Relancer l'audit :\n   sudo bob\n3. Le niveau de risque revient à sa valeur dérivée du score quand le déclencheur posture ne fire plus."
+        "how": "1. Identifier le déclencheur posture qui a fait remonter le niveau (cf. annotation entre parenthèses à côté du niveau de risque) :\n   - 'pare-feu inactif' → ni UFW, ni firewalld, ni jeu de règles nftables/iptables refusant l'entrant n'a été trouvé : en activer un (sudo ufw enable, ou sudo systemctl enable --now firewalld)\n   - 'iptables INPUT ACCEPT' → politique deny par défaut : sudo iptables -P INPUT DROP (ou utiliser UFW / firewalld)\n   - 'domaine pare-feu faible' → relire les findings de la section pare-feu (règles, journalisation, politique par défaut)\n2. Relancer l'audit :\n   sudo bob\n3. Le niveau de risque revient à sa valeur dérivée du score quand le déclencheur posture ne fire plus."
       }
     },
     "cron": {
@@ -3969,6 +3984,8 @@
     "firewall_inactive": "Aucun pare-feu actif — tous les ports non filtrés",
     "firewall_allow_all": "politique par défaut ALLOW — aucun filtrage",
     "firewall_policy": "actif — politique par défaut {policy} en entrée",
+    "firewall_policy_backend": "actif ({backend}) — politique par défaut {policy} en entrée",
+    "firewall_policy_unread": "actif ({backend}) — politique d'entrée par défaut non lue",
     "open_ports": "Ports en écoute",
     "open_ports_unknown": "inconnu \u2014 `ss` n'a pas pu \u00eatre ex\u00e9cut\u00e9",
     "no_open_ports": "aucun sur toutes interfaces",

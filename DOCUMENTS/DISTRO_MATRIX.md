@@ -573,5 +573,26 @@ checks plus, where it applies, `su_unrestricted` (root with a usable password).*
 | `package_integrity` timeout is a hang-guard, not a slowness cap | decision | §10 | `debsums -c` / `rpm -Va` re-hash **every** packaged file — O(installed files) — so a full install legitimately takes minutes: measured **556 s** (Pi Zero W) and **511 s** (Mint 22.3 desktop, x86 4-core). A 60 s then 300 s wall-clock kill destroyed those valid scans (honest "result not established", group-killed, never a false "clean" — but no result). The timeout's real job is to stop a *wedged* process, not to cap a slow-but-progressing one, and the check is opt-in (`--exhaustive`), so it is a generous **hang-guard**: `_VERIFY_TIMEOUT` raised 60 → **1800 s** (30 min) in 0.23.0 — any real scan finishes well under it (Pi 556 s, Mint 511 s), a true hang stays bounded, and an operator can Ctrl-C. Parser validated against real output (podman Debian/Fedora/Arch) **and the full tamper round-trip on real hardware** (Mint, 1800 s: a clean scan completes and lists 21 genuinely-changed non-config files; tampering `/usr/bin/base64` raises it to 22 with base64 first). |
 | ~~SUID `find` skips under CPU starvation~~ | — | §10 | **Resolved in 0.22.1**: `_FIND_TIMEOUT` raised 15 → 30 s. |
 
+
+### 0.24.1 field pass — firewall posture, SSH remediation, false findings
+
+*A/B of the 0.24.1 WIP against published 0.24.0 (2026-10-04) on four real
+machines, each fix measured in both polarities, every forged state restored.
+On a host without the targeted condition the two versions are identical (score,
+findings, deductions) apart from the SSH `--fix` command strings.*
+
+| Host | Measured | Result |
+|------|----------|--------|
+| Debian 13 | nftables-only DROP; UFW installed-inactive + nft DROP; X11Forwarding in a drop-in; main file ending in a `Match` block; inetutils-inetd with an empty `inetd.conf` | 0.24.0 "No active firewall" + HIGH → 0.24.1 "active (nftables/iptables) — default deny", LOW; UFW-inactive + nft **score 8 → 9** (false `firewall.inactive` −3 gone); 0.24.0 SSH fix a no-op behind the drop-in, appending `StrictModes` inside `Match` made `sshd -t` refuse → 0.24.1 drop-in / top-of-file insertion applied, idempotent, findings gone; inetd `Result=exec-condition` → INFO `condition_unmet` (reverse polarity: a telnet line → inetd runs, :23 reported). **Found a pre-existing defect**: a host without UFW was told "UFW IPv6 configuration matches kernel" — fixed (§5 of the changelog) |
+| Linux Mint 22.3 | a user's squashfuse mount (the AppImage mechanism) under `--exhaustive` | 0.24.0 `world_writable.partial` → 0.24.1 clean; without the mount both clean, so FUSE was the only cause. **The parser first missed the real line** (`/usr/bin/find: '…': Permission denied`, absolute argv0) — caught here, fixed, tested on the verbatim line |
+| Fedora 44 (SELinux enforcing, firewalld) | `firewall-cmd --list-all` zone target `default` / `DROP` / `ACCEPT`; `50-redhat.conf` ships `X11Forwarding yes` | 0.24.0 "✖ default policy is ALLOW — no filtering" → 0.24.1 "✔ active (firewalld) — reject"; DROP → deny, ACCEPT → ALLOW (true); SSH drop-in fix applied, file context `etc_t`, **0 AVC** |
+| Alpine 3.24 (BusyBox) | SSH drop-in and main-file fixes with BusyBox sed; no `ss` | **Found a pre-existing defect (since 0.19.0)**: BusyBox sed refuses `/regex/I` — every SSH drop-in fix and the Samba fixes failed at step one; fixed with per-letter classes, replayed OK (`sshd -t && rc-service sshd restart`); IPv6 "config_ok (UFW)" with neither UFW nor `ss` → `ipv6.listeners_unknown` |
+
+**Still open:**
+
+| Gap | Sev. | § | Note |
+|-----|------|---|------|
+| firewalld zone target `ACCEPT` (trusted) | soft | §4 | The attack surface now says "default policy is ALLOW — no filtering" (true), but the firewall section still reports firewalld as an active firewall (OK) and nothing deducts — UFW's `policy_open` equivalent is not applied to firewalld. Candidate for 0.25.0. |
+
 ---
 © 2026 Cédric Clauzel

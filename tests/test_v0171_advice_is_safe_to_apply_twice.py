@@ -129,9 +129,13 @@ class TestTheGeneratedCommandsAreIdempotent:
         on a real Pi). See _global_directive_cmd."""
         cmd = _global_directive_cmd("min protocol = SMB2",
                                     "min protocol", "server min protocol")
-        assert " -E '/^[[:space:]]*(min protocol|server min protocol)[[:space:]]*=/Id'" in cmd
+        # v0.24.1: case-insensitive letter by letter, not GNU's /I flag, which
+        # BusyBox sed refuses.
+        from bob.checks._run import sed_ci
+        alts = f"{sed_ci('min protocol')}|{sed_ci('server min protocol')}"
+        assert f" -E '/^[[:space:]]*({alts})[[:space:]]*=/d'" in cmd
         # delete precedes insert, so the offending line cannot survive below it
-        assert cmd.index("/Id'") < cmd.index("/a min protocol = SMB2")
+        assert cmd.index("=/d'") < cmd.index("/a min protocol = SMB2")
 
     def test_the_sysctl_fix_still_applies_it_live(self):
         cmd = sysctl_fix_cmd("net.ipv4.conf.all.rp_filter=1")

@@ -7,9 +7,10 @@ no dependencies on other ssh submodules — safe to import from
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 
-from bob.checks._run import service_restart_cmd, ssh_unit
+from bob.checks._run import sed_ci, service_restart_cmd, ssh_unit
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -63,6 +64,50 @@ _WEAK_KEX: frozenset[str] = frozenset({
 #   - LoginGraceTime, AllowUsers/AllowGroups, _match_block (INFO-only paths)
 #   - Weak ciphers/macs/kex (handled by _check_weak_algo with intersection logic)
 
+def _sshd_directive_fix(directive: str, param: str, cfg: dict) -> str:
+    """A command that makes *directive* the *effective* sshd setting.
+
+    v0.19.0. Modern OpenSSH reads ``Include /etc/ssh/sshd_config.d/*.conf`` at
+    the top of sshd_config and resolves first-value-wins, so a directive set in
+    a drop-in (cloud-init's ``50-cloud-init.conf``, say) is read first and beats
+    the main file. Editing only the main file — as the three earlier fixes did —
+    is then a silent no-op; field-tested on a real Raspberry Pi where
+    ``50-cloud-init.conf`` carried ``PasswordAuthentication yes`` and the fix
+    changed nothing.
+
+    When the parser saw such a drop-in Include, write ``00-bob-hardening.conf``
+    in that directory: it sorts before ``50-cloud-init.conf`` and, first-wins,
+    overrides it. Otherwise edit the main file. Either way the parameter is
+    deleted from the target first (case-insensitive, ``=`` or space separator),
+    so the directive is the sole assignment and the command is idempotent.
+
+    v0.24.1: the eight table-driven directives (X11Forwarding,
+    AllowTcpForwarding, …) still used ``sed 's/^#*X yes/X no/'`` on the main
+    file — a no-op behind a drop-in, or on ``X  yes`` / ``X=yes`` — and now come
+    through here too. In the main file the line is inserted at the *top*, not
+    appended: an appended line lands inside a trailing ``Match`` block, where it
+    either applies to that block only or (``StrictModes``…) is refused and sshd
+    no longer starts. ``sshd -t`` gates the restart, so a configuration sshd
+    would reject is never put into service.
+    """
+    restart = service_restart_cmd(ssh_unit())
+    # ``param`` is a fixed directive name (no regex metacharacters). sshd
+    # keywords are case-insensitive; sed_ci says so without GNU's ``I`` flag,
+    # which BusyBox sed refuses (Alpine).
+    kill = f"/^[[:space:]]*#?[[:space:]]*{sed_ci(param)}([[:space:]]|=)/d"
+    dropin = cfg.get("_dropin_dir")
+    if dropin:
+        f = shlex.quote(f"{dropin}/00-bob-hardening.conf")
+        return (f"sudo touch {f} && "
+                f"sudo sed -i -E {shlex.quote(kill)} {f} && "
+                f"echo {shlex.quote(directive)} | sudo tee -a {f} >/dev/null && "
+                f"sudo sshd -t && {restart}")
+    conf = "/etc/ssh/sshd_config"
+    return (f"sudo sed -i -E {shlex.quote(kill)} {conf} && "
+            f"sudo sed -i {shlex.quote('1i ' + directive)} {conf} && "
+            f"sudo sshd -t && {restart}")
+
+
 @dataclass(frozen=True)
 class _BadDirective:
     """Declarative rule for one sshd_config directive."""
@@ -79,7 +124,9 @@ class _BadDirective:
     # actionable call. Empty string means "no auto-fix" — the finding is
     # then surfaced manually and ``tests/test_fix_coverage.py`` requires
     # the key to be on the manual-by-design whitelist.
-    cmd_template: str = ""
+    # v0.24.1: the directive line to make effective (e.g. "X11Forwarding no"),
+    # rendered by ``_sshd_directive_fix`` — it was a literal ``sed`` template.
+    fix: str = ""
 
     def __post_init__(self) -> None:
         if bool(self.bad_values) == bool(self.safe_values):
@@ -102,7 +149,7 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
         bad_values=("yes",),
         level="alert", key="ssh.permit_empty_passwords",
         points=5, nature="improvement",
-        cmd_template="sudo sed -i 's/^#*PermitEmptyPasswords yes/PermitEmptyPasswords no/' /etc/ssh/sshd_config && @SSH_RESTART@",
+        fix="PermitEmptyPasswords no",
     ),
     _BadDirective(
         name="x11forwarding", default="no",
@@ -116,35 +163,35 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
         # ``.client`` via the ``ssh.x11.forwarding.*`` glob).
         level="warn", key="ssh.x11.forwarding.server",
         points=1,
-        cmd_template="sudo sed -i 's/^#*X11Forwarding yes/X11Forwarding no/' /etc/ssh/sshd_config && @SSH_RESTART@",
+        fix="X11Forwarding no",
     ),
     _BadDirective(
         name="ignorerhosts", default="yes",
         bad_values=("no",),
         level="warn", key="ssh.ignore_rhosts_disabled",
         points=2,
-        cmd_template="sudo sed -i 's/^#*IgnoreRhosts no/IgnoreRhosts yes/' /etc/ssh/sshd_config && @SSH_RESTART@",
+        fix="IgnoreRhosts yes",
     ),
     _BadDirective(
         name="hostbasedauthentication", default="no",
         bad_values=("yes",),
         level="alert", key="ssh.host_based_auth",
         points=3, nature="improvement",
-        cmd_template="sudo sed -i 's/^#*HostbasedAuthentication yes/HostbasedAuthentication no/' /etc/ssh/sshd_config && @SSH_RESTART@",
+        fix="HostbasedAuthentication no",
     ),
     _BadDirective(
         name="permituserenvironment", default="no",
         bad_values=("yes",),
         level="warn", key="ssh.permit_user_env",
         points=1,
-        cmd_template="sudo sed -i 's/^#*PermitUserEnvironment yes/PermitUserEnvironment no/' /etc/ssh/sshd_config && @SSH_RESTART@",
+        fix="PermitUserEnvironment no",
     ),
     _BadDirective(
         name="strictmodes", default="yes",
         bad_values=("no",),
         level="warn", key="ssh.strict_modes_disabled",
         points=2,
-        cmd_template="sudo sed -i 's/^#*StrictModes no/StrictModes yes/' /etc/ssh/sshd_config && @SSH_RESTART@",
+        fix="StrictModes yes",
     ),
     _BadDirective(
         # "local" is acceptable (more restrictive than "yes", documented in
@@ -153,7 +200,7 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
         safe_values=("no", "local"),
         level="warn", key="ssh.allow_tcp_forwarding",
         points=1, detail_key="ssh.allow_tcp_forwarding_detail",
-        cmd_template="sudo sed -i 's/^#*AllowTcpForwarding yes/AllowTcpForwarding no/' /etc/ssh/sshd_config && @SSH_RESTART@",
+        fix="AllowTcpForwarding no",
     ),
     _BadDirective(
         name="pubkeyauthentication", default="yes",
@@ -161,7 +208,7 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
         level="alert", key="ssh.pubkey_auth_disabled",
         points=3, nature="improvement",
         detail_key="ssh.pubkey_auth_disabled_detail",
-        cmd_template="sudo sed -i 's/^#*PubkeyAuthentication no/PubkeyAuthentication yes/' /etc/ssh/sshd_config && @SSH_RESTART@",
+        fix="PubkeyAuthentication yes",
     ),
 )
 
@@ -194,12 +241,8 @@ def _apply_bad_directive(rule: _BadDirective, cfg: dict, result: CheckResult, _t
     # v0.8.0 drift batch: ship cmd= so ``bob --fix --apply`` actually
     # has something to run for the 8 sshd_config directives covered by
     # this table. Empty cmd_template intentionally omits cmd=.
-    if rule.cmd_template:
-        # v0.17.1: the unit is spelled `ssh` on Debian and `sshd` on Arch,
-        # openSUSE, Fedora and RHEL. A literal token rather than a format
-        # placeholder because these templates carry sed expressions.
-        kwargs["cmd"] = rule.cmd_template.replace(
-            "@SSH_RESTART@", service_restart_cmd(ssh_unit()))
+    if rule.fix:
+        kwargs["cmd"] = _sshd_directive_fix(rule.fix, rule.fix.split()[0], cfg)
     if rule.level == "alert":
         result.alert_with_deduction(**kwargs, nature=nature)
     else:

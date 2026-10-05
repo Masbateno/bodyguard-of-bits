@@ -3,7 +3,8 @@ System hardening check for BOB.
 
 Detects common hardening gaps via kernel network parameters:
 rp_filter, ICMP redirects, log_martians, tcp_syncookies,
-accept_source_route, send_redirects, protected_hardlinks/symlinks.
+accept_source_route, send_redirects, protected_hardlinks/symlinks/fifos/regular
+(fifos/regular since v0.24.0).
 
 AppArmor is covered by checks/mac_policy.py (CHECK 34).
 

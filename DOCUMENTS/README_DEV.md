@@ -37,8 +37,8 @@ This separation allows the entire business logic to be tested by instantiating s
 
 | Module | Role |
 |---|---|
-| `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~995 lines) |
-| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (56 filterable + 10 always-on sections), `_section_enabled()` (~1115 lines) |
+| `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~1009 lines) |
+| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (56 filterable + 10 always-on sections), `_section_enabled()` (~1218 lines) |
 | `cli.py` | Argument parsing — returns an `AuditConfig` dataclass |
 | `config.py` | User configuration — `~/.config/bob/config.conf`, `EmailStore` |
 | `display.py` | Terminal output helpers — `display_result()`, `print_audit_summary()`, etc. |
@@ -66,7 +66,7 @@ This separation allows the entire business logic to be tested by instantiating s
 
 | Module | Role |
 |---|---|
-| `cron.py` | Cron management — `CronEntry`, `list_installed_crons()`, `build_script_content()`, schedule wizard logic (`run_install_cron()` / `run_manage_cron()` dispatchers — plain-text flows + lazy-import curses dispatch) |
+| `cron/` | Cron management — `CronEntry`, `list_installed_crons()`, `build_script_content()`, schedule wizard logic (`run_install_cron()` / `run_manage_cron()` dispatchers — plain-text flows + lazy-import curses dispatch) |
 | `tui/cron.py` | Curses TUI for cron install and management — `_WizardEntry`, `_draw()`, `_read_key()`, `_run_install_cron_curses()`, `_run_manage_cron_curses()`. Lives under `bob.tui` so the rest of `bob.*` remains importable on systems without curses (v0.4.1 extraction). |
 | `_tty.py` | Raw-mode line reader — `read_line(prompt) → str \| None`; Esc returns `None`; TTY fallback to `input()` |
 
@@ -74,12 +74,12 @@ This separation allows the entire business logic to be tested by instantiating s
 
 | Module | What it checks |
 |---|---|
-| `firewall.py` | UFW status, default policy, IPv6 consistency; `check_rules()` for duplicate/open-any detection |
+| `firewall.py` | UFW status, default policy, IPv6 consistency; `check_rules()` for duplicate/open-any detection; `resolve_firewall_posture()` — the one firewall answer (UFW, firewalld zone target, or a raw DROP/REJECT ruleset) every summary reads (v0.24.1) |
 | `firewall_stack.py` | Raw iptables bypass, nftables parallel rules, ip_forward detection |
 | `iptables_nftables.py` | iptables/nftables audit when UFW inactive — INPUT/FORWARD policy, conntrack, backend detection (iptables-legacy vs nftables) |
-| `ipv6.py` | IPv6 listener/UFW-rule consistency; `has_global_ipv6` field; link-local/ULA-only → INFO (not WARN) |
+| `ipv6.py` | IPv6 listener/UFW-rule consistency; `has_global_ipv6` field; link-local/ULA-only → INFO (not WARN); without UFW, listeners attributed to the governing filter (v0.24.1) |
 | `network_context.py` | Network interfaces table, established TCP connections, sensitive remote ports |
-| `services.py` | Installed network services, systemd state, UFW exposure |
+| `services.py` | Installed network services, systemd/OpenRC state (incl. socket-activated and condition-unmet, v0.24.1), exposure per firewall backend |
 | `services_state.py` | Service state: security services enabled at boot but currently inactive |
 | `ports.py` | Listening ports via `ss`, classification, deduplication |
 | `logs.py` | UFW logs — blocked attempts, bruteforce, top IPs/ports |
@@ -95,8 +95,8 @@ This separation allows the entire business logic to be tested by instantiating s
 | `kernel_hardening.py` | Kernel hardening (sysctl): ASLR, ptrace_scope, kptr_restrict, dmesg_restrict, suid_dumpable |
 | `kernel_modules.py` | Risky kernel modules (cramfs, hfs, dccp, sctp, rds, tipc, usb_storage) + apt kernel update availability + installed kernel listing (filtered on dpkg `ii` state since v0.4.6) |
 | `mac_policy.py` | MAC policy (AppArmor / SELinux): framework state, profile counts (enforce/complain/loaded), 0-profile detection |
-| `updates.py` | System update status: apt pending security/regular packages (via `apt-get -s dist-upgrade`), stale-cache detection, `apt list --upgradable` cross-check, unattended-upgrades detection |
-| `ssh.py` | SSH security audit: sshd_config directives, host key strength, user key permissions, authorized_keys, known_hosts |
+| `updates.py` | System update status: apt pending security/regular packages (via `apt-get -s dist-upgrade`), stale-cache detection, `apt list --upgradable` cross-check (phased-rollout and kept-back packages counted, v0.24.1), unattended-upgrades detection |
+| `ssh/` | SSH security audit (package: `_snapshot`, `_parsers`, `_directives`, `_subchecks`): sshd_config directives, host key strength, user key permissions, authorized_keys, known_hosts |
 | `file_perms.py` | Sensitive file permissions: /etc/passwd, /etc/shadow, sudoers, SSH host keys |
 | `suid_audit.py` | SUID/SGID binary audit with whitelist (`config.conf`), targeted-roots scan for performance |
 | `user_accounts.py` | User account audit: UID 0 non-root, empty passwords, expired accounts |
@@ -130,6 +130,15 @@ This separation allows the entire business logic to be tested by instantiating s
 | `faillock.py` | **v0.21.0** — PAM account lockout: no `pam_faillock` (or legacy `pam_tally2`) in the auth stack (WARN −1 on server, INFO on desktop/workstation) |
 | `disk_encryption.py` | **v0.21.0** — root filesystem on LUKS/dm-crypt via `/proc/mounts` + dm-stack walk (LVM-on-LUKS recognised); WARN on a desktop/workstation plain root, INFO on server, N/A in a container |
 | `polkit.py` | **v0.21.0** — polkit rules: a non-root-writable `.rules`/`.pkla` (or `rules.d` dir) is a privesc path (WARN + `chown`/`chmod`); legacy `.pkla` granting `ResultAny=yes` (INFO) |
+| `module_blacklist.py` | **v0.22.0** (INFO) — rarely-needed kernel modules (cramfs, udf, usb_storage, dccp, sctp…) neither loaded nor kept from loading by a modprobe.d `blacklist` / `install … /bin/true` (CIS §3.4) |
+| `dev_privileged.py` | **v0.22.0** (INFO) — world access on sensitive `/dev` nodes (`/dev/mem`, `/dev/kmem`, `/dev/port`, raw block devices), stat-only |
+| `root_path.py` | **v0.22.0** — root's configured PATH (`login.defs` `ENV_SUPATH`, sudoers `secure_path`): world-writable, `.` or relative components |
+| `package_integrity.py` | **v0.23.0** (INFO, `--exhaustive` only) — packaged files differing from the manager's recorded digest: `rpm -Va` / `debsums -c` / `apk audit` / `pacman -Qkk`, config files filtered; bounded + group-killed |
+| `file_capabilities.py` | **v0.24.0** — `security.capability` xattrs read directly (no `getcap` dependency) on the SUID scan roots: a root-equivalent capability outside the measured distro grants → WARN, any other → INFO |
+| `cpu_security.py` | **v0.24.0** — the kernel's own verdict in `/sys/devices/system/cpu/vulnerabilities` ("Vulnerable" → WARN), mitigation-disabling boot switches and IOMMU (x86) → INFO |
+| `package_authenticity.py` | **v0.24.0** — written-down switches that disable package authentication: apt `trusted=yes` / `AllowUnauthenticated`, dnf/zypper `gpgcheck=0` (incl. `/usr/etc/zypp/zypp.conf`), pacman `SigLevel Never`/`Optional`, apk `allow-untrusted` → WARN |
+| `crypto_policy.py` | **v0.24.0** — crypto-policies, the *applied* policy judged (`state/current` over `config`): `LEGACY` → WARN; weakening module, dated or unknown policy, configured ≠ applied, mechanism absent → INFO |
+| `world_writable.py` | **v0.24.0** (INFO, `--exhaustive` only) — `find -xdev` (GNU or BusyBox) over local on-disk filesystems: world-writable files, non-sticky world-writable directories, unowned files; a path other accounts cannot traverse is reported as latent |
 
 ---
 
@@ -148,7 +157,7 @@ bob/
 ├── completion.py        # bash completion installer — `bob --install-completion`
 ├── config.py            # UserConfig, EmailStore
 ├── correlation.py       # CorrelationRule + run_correlations() — 6 compound-risk rules
-├── cron.py              # CronEntry, schedule wizard logic, build_script_content()
+├── cron/                # CronEntry, schedule wizard logic, build_script_content()
 ├── csv_output.py        # CSV output formatter (--format csv)
 ├── display.py           # Terminal output helpers (display_result, print_audit_summary…)
 ├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — backup→health_resilience attribution
@@ -234,7 +243,7 @@ bob/
 │   ├── kernel_modules.py   # KernelModulesSnapshot + check_kernel_modules() — risky modules + apt kernel update
 │   ├── mac_policy.py       # MacPolicySnapshot + check_mac_policy() — AppArmor / SELinux
 │   ├── updates.py          # UpdatesSnapshot + check_updates() — dist-upgrade semantics + stale cache
-│   ├── ssh.py              # SshSnapshot + check_ssh()
+│   ├── ssh/                # SSHSnapshot + check_ssh() — package: _snapshot, _parsers, _directives, _subchecks
 │   ├── file_perms.py       # FilePermsSnapshot + check_file_perms()
 │   ├── suid_audit.py       # SuidSnapshot + check_suid_audit() — SUID/SGID with whitelist
 │   ├── user_accounts.py    # UserAccountsSnapshot + check_user_accounts()
@@ -267,7 +276,16 @@ bob/
 │   ├── kexec_lockdown.py       # KexecLockdownSnapshot + check_kexec_lockdown() — kexec + lockdown (v0.21.0)
 │   ├── faillock.py             # FaillockSnapshot + check_faillock() — PAM account lockout (v0.21.0)
 │   ├── disk_encryption.py      # DiskEncryptionSnapshot + check_disk_encryption() — LUKS/dm-crypt root (v0.21.0)
-│   └── polkit.py               # PolkitSnapshot + check_polkit() — writable polkit rules (v0.21.0)
+│   ├── polkit.py               # PolkitSnapshot + check_polkit() — writable polkit rules (v0.21.0)
+│   ├── module_blacklist.py     # ModuleBlacklistSnapshot + check_module_blacklist() — modprobe.d blacklist (v0.22.0)
+│   ├── dev_privileged.py       # DevPrivilegedSnapshot + check_dev_privileged() — sensitive /dev nodes (v0.22.0)
+│   ├── root_path.py            # RootPathSnapshot + check_root_path() — root's configured PATH (v0.22.0)
+│   ├── package_integrity.py    # PackageIntegritySnapshot + check_package_integrity() — --exhaustive (v0.23.0)
+│   ├── file_capabilities.py    # FileCapabilitiesSnapshot + check_file_capabilities() — file capabilities (v0.24.0)
+│   ├── cpu_security.py         # CpuSecuritySnapshot + check_cpu_security() — kernel CPU-vulnerability verdict (v0.24.0)
+│   ├── package_authenticity.py # PackageAuthenticitySnapshot + check_package_authenticity() — signature switches (v0.24.0)
+│   ├── crypto_policy.py        # CryptoPolicySnapshot + check_crypto_policy() — crypto-policies (v0.24.0)
+│   └── world_writable.py       # WorldWritableSnapshot + check_world_writable() — --exhaustive (v0.24.0)
 ├── data/
 │   ├── services.json            # Declarative registry of the 38 services
 │   ├── cis_refs.json            # CIS benchmark references — 218 entries {ref, code}
@@ -502,8 +520,8 @@ print(f'Missing in FR: {missing if missing else \"none\"}')
 
 Expected output:
 ```
-EN keys: 2816
-FR keys: 2816
+EN keys: 2833
+FR keys: 2833
 Missing in FR: none
 ```
 
@@ -519,7 +537,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Translate all values
 
-The file contains exactly 2816 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
+The file contains exactly 2833 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
 
 Example:
 ```json
