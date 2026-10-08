@@ -17,7 +17,7 @@ carry the same actual day in both languages, whatever the format.
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -139,4 +139,22 @@ class TestDatesAreRealAndOrdered:
     @pytest.mark.parametrize("rel", ENGLISH + FRENCH)
     def test_newest_entry_is_not_in_the_future(self, rel):
         newest = max(as_day(d) for d in structural_dates(rel).values())
-        assert newest <= date.today(), f"{rel}: newest entry dated {newest}"
+        latest = latest_calendar_day(datetime.now(timezone.utc))
+        assert newest <= latest, f"{rel}: newest entry dated {newest}, later than {latest}"
+
+    def test_a_release_dated_in_local_time_is_not_the_future(self):
+        """0.24.2: dated 2026-10-09 in Paris; the CI runner ran at 22:13 UTC on
+        2026-10-08 and ``date.today()`` there failed all four changelogs."""
+        runner = datetime(2026, 10, 8, 22, 13, tzinfo=timezone.utc)
+        assert latest_calendar_day(runner) >= date(2026, 10, 9)
+        assert latest_calendar_day(runner) < date(2026, 10, 10)
+
+
+def latest_calendar_day(now_utc: datetime) -> date:
+    """The latest date the calendar shows anywhere on Earth at *now_utc*.
+
+    A changelog is dated in the maintainer's local time; the CI runner's clock
+    is UTC. The furthest-ahead time zone is UTC+14, so a date up to that far
+    ahead of UTC is today somewhere — and nothing later is.
+    """
+    return (now_utc + timedelta(hours=14)).date()

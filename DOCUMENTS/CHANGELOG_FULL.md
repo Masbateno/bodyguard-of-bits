@@ -130,13 +130,17 @@ zypper, pacman and apk. All four now name every backend they judge (EN + FR).
 - `test_v0153_changelog_dates.py` now compares each summary table with its
   detailed changelog and reads the betas; `test_v0181…` requires a TESTING row for
   every released version.
+- The "newest entry is not in the future" date check compared a release dated in
+  local time with the CI runner's UTC day: this release, dated 2026-10-09 in Paris,
+  failed CI at 22:13 UTC on 2026-10-08. The bound is now the latest calendar day
+  anywhere on Earth (UTC+14), pinned by a test that replays that instant.
 - A 0.20.2 guard (`firewalld/ipv6-gap-warned-though-firewalld-filters-v6`) had
   become inert behind the new IPv6 branch; the full mutation run caught it, and it
   now tests the case it still covers (UFW and firewalld both active).
 
 ### Numbers
 
-- **Tests** 12009 → **12165**; mutations 387 → **408**, all killed.
+- **Tests** 12009 → **12170**; mutations 387 → **409**, all killed.
 - Locale keys 2833 → **2840** per language; `--explain` keys and CIS references
   218 → **219** (95 best-practice).
 

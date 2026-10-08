@@ -142,6 +142,11 @@ chaque backend qu'elles jugent (EN + FR).
 - `test_v0153_changelog_dates.py` compare désormais chaque table de synthèse à son
   changelog détaillé et lit les bêtas ; `test_v0181…` exige une ligne TESTING pour
   chaque version publiée.
+- Le contrôle « l'entrée la plus récente n'est pas dans le futur » comparait une
+  release datée en heure locale au jour UTC du runner de CI : cette release, datée
+  du 2026-10-09 à Paris, a échoué en CI à 22:13 UTC le 2026-10-08. La borne est
+  désormais le jour calendaire le plus tardif sur Terre (UTC+14), épinglée par un
+  test qui rejoue cet instant.
 - Une garde de 0.20.2 (`firewalld/ipv6-gap-warned-though-firewalld-filters-v6`)
   était devenue inerte derrière la nouvelle branche IPv6 ; le run complet de
   mutations l'a attrapée, et elle teste désormais le cas qu'elle couvre encore (UFW
@@ -149,7 +154,7 @@ chaque backend qu'elles jugent (EN + FR).
 
 ### Chiffres
 
-- **Tests** 12009 → **12165** ; mutations 387 → **408**, toutes tuées.
+- **Tests** 12009 → **12170** ; mutations 387 → **409**, toutes tuées.
 - Clés de locale 2833 → **2840** par langue ; clés `--explain` et références CIS
   218 → **219** (95 bonnes pratiques).
 

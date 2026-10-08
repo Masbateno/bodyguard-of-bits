@@ -4178,4 +4178,12 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         kills=('tests/test_v0242_ufw_ipv6_off.py::TestPolicyRead::test_read_only_when_ufw_ipv6_is_off',),
         reason='the extra ip6tables call is only needed, and only meaningful, when UFW is set to IPV6=no',
     ),
+    Mutation(
+        id='changelog-dates/future-judged-in-utc',
+        file='tests/test_v0153_changelog_dates.py',
+        old='    return (now_utc + timedelta(hours=14)).date()',
+        new='    return now_utc.date()',
+        kills=('tests/test_v0153_changelog_dates.py::TestDatesAreRealAndOrdered::test_a_release_dated_in_local_time_is_not_the_future',),
+        reason='the 0.24.2 release, dated in Paris after midnight, failed CI where the runner was still on the previous UTC day',
+    ),
 )
