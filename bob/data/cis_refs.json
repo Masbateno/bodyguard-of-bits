@@ -329,6 +329,11 @@
     "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.7 — Ensure ufw firewall rules exist and logging is enabled",
     "code": "CIS:3.5.1.7"
   },
+  "firewall.firewalld_policy_open": {
+    "ref": "Best practice — Keep the firewalld default zone target at default/%%REJECT%% or DROP, never ACCEPT; allow services explicitly",
+    "ref_fr": "Bonne pratique — Garder la cible de la zone par défaut firewalld à default/%%REJECT%% ou DROP, jamais ACCEPT ; autoriser les services explicitement",
+    "code": null
+  },
   "firewall.policy_open": {
     "ref": "CIS Ubuntu 22.04 L1 — 4.1.7 — Ensure ufw default deny firewall policy (Automated)",
     "code": "CIS:4.1.7",

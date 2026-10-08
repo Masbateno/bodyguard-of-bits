@@ -8,7 +8,7 @@ Ce tutoriel te guide à travers ton premier audit BOB, de l'installation jusqu'�
 
 ## Ce que fait BOB (en une phrase)
 
-BOB lit la configuration hardening de ton système (SSH, firewall, services, paramètres kernel, …) et affiche un score avec les findings priorisés + des suggestions de correctifs.
+BOB lit la configuration hardening de ton système (SSH, firewall, services, paramètres kernel, …) et affiche un score avec les constats priorisés + des suggestions de correctifs.
 
 Ce que BOB **n'est pas** : ce n'est pas un moteur de threat-modeling, pas un scanner de vulnérabilités actif, pas un système de verdict autonome. Le score est conditionné par le profil que tu choisis + le contexte réseau que BOB détecte — interprète-le comme tel. Voir `## Ce que BOB est / n'est PAS` dans [`../SECURITY_FR.md`](../SECURITY_FR.md) pour le cadrage complet.
 
@@ -62,7 +62,7 @@ sudo bob
 
 BOB prend de quelques secondes à deux ou trois minutes — environ 9 s sur un desktop à SSD rapide, mais ~40 s à plus de 2 minutes sur un disque lent (mécanique) ou une petite carte comme un Raspberry Pi Zero. Ça dépend du disque, du CPU et du nombre de services installés, pas seulement de l'architecture. Tu verras :
 
-1. **Des headers de section** au fur et à mesure que chaque domaine est checké (`SSH`, `Firewall`, `Services`, …) avec `✔` / `⚠` / `✖` par finding
+1. **Des headers de section** au fur et à mesure que chaque domaine est checké (`SSH`, `Firewall`, `Services`, …) avec `✔` / `⚠` / `✖` par constat
 2. **Une box résumé** à la fin avec le score (`/10`), le verdict (`hardening`, `acceptable`, `at risk`, `warning`, `critical`), le profil utilisé, et le contexte réseau détecté par BOB
 3. **Une ligne footer "Hypothèses"** qui rend explicite quel profil + contexte ont produit ce score
 
@@ -70,7 +70,7 @@ Si `sudo bob` se plaint que le firewall n'est pas détectable, installe `ufw` (B
 
 ### Lire le score
 
-Le score commence à 10/10 et déduit selon les findings. Chaque finding a :
+Le score commence à 10/10 et déduit selon les constats. Chaque constat a :
 
 - Un **niveau** : OK (✔, vert) / WARN (⚠, jaune) / ALERT (✖, rouge)
 - Une **clé** (ex. `ssh.password_auth`) — identifiant stable pour scripter + lookups `--explain`
@@ -80,9 +80,9 @@ Le verdict est conditionné par ton profil (`server` par défaut) — les profil
 
 ---
 
-## Étape 3 — comprendre n'importe quel finding
+## Étape 3 — comprendre n'importe quel constat
 
-Si un finding n'a pas de sens pour toi, demande à BOB d'expliquer :
+Si un constat n'a pas de sens pour toi, demande à BOB d'expliquer :
 
 ```bash
 bob --explain ssh.password_auth
@@ -92,12 +92,12 @@ Pas de `sudo` requis — `--explain` est un lookup standalone, profile-aware. La
 
 - **Pourquoi c'est un risque** — impact concret + hypothèses threat model
 - **Comment fixer** — commandes exactes (si connues) ou étapes manuelles
-- **Scoring** — domain + tool cap (le pire que ton score peut déduire de ce finding)
+- **Scoring** — domain + tool cap (le pire que ton score peut déduire de ce constat)
 
 Tu peux lister chaque clé explainable :
 
 ```bash
-bob --explain list                          # 218 clés en v0.24.x, groupées par famille CIS
+bob --explain list                          # 219 clés en v0.24.x, groupées par famille CIS
 bob --explain                               # picker interactif (↑↓/jk, PgUp/PgDn, g/G, Entrée, l langue, q quitter)
 ```
 
@@ -105,15 +105,15 @@ La tab-completion sur `bob --explain <TAB>` suggère les clés canoniques.
 
 ---
 
-## Étape 4 — appliquer les fixes sans risque
+## Étape 4 — appliquer les correctifs sans risque
 
-BOB peut prévisualiser et appliquer les fixes pour les findings qui portent un template `cmd=`. Toujours prévisualiser d'abord :
+BOB peut prévisualiser et appliquer les correctifs des constats qui portent un template `cmd=`. Toujours prévisualiser d'abord :
 
 ```bash
 sudo bob --fix                              # dry-run — montre ce qui serait appliqué
 ```
 
-Chaque ligne est soit ✓ (sera appliqué) soit ✗ (manuel — BOB refuse l'auto-fix). Le dry-run ne modifie jamais ton système.
+Chaque ligne est soit ✓ (sera appliqué) soit ✗ (manuel — BOB refuse de l'appliquer automatiquement). Le dry-run ne modifie jamais ton système.
 
 Quand tu es prêt :
 
@@ -133,7 +133,7 @@ pas un correctif qui a échoué.
 
 ## Étape 5 — choisir le bon profil
 
-BOB ship 4 profils :
+BOB livre 4 profils :
 
 | Profil | Quand utiliser | Déduit sur |
 |---|---|---|
@@ -162,23 +162,23 @@ sans toucher à ton vrai profil.
 
 ---
 
-## Étape 6 — silencer les findings bruyants
+## Étape 6 — silencer les constats bruyants
 
-Si un finding ne s'applique pas à ton environnement, supprime-le au lieu d'ignorer le warning :
+Si un constat ne s'applique pas à ton environnement, supprime-le au lieu d'ignorer le warning :
 
 ```bash
 bob --ignore ssh.x11_forwarding             # ajoute à ~/.config/bob/ignore.yml
 bob --unignore ssh.x11_forwarding           # retire
-sudo bob --show-ignored                     # voir les findings mutés en gris à côté de la sortie normale
+sudo bob --show-ignored                     # voir les constats masqués en gris à côté de la sortie normale
 ```
 
-Un finding ignoré déduit zéro point **et disparaît de la sortie** — c'est
-l'objet même de l'option. Passe `--show-ignored` pour lister les findings mutés
+Un constat ignoré déduit zéro point **et disparaît de la sortie** — c'est
+l'objet même de l'option. Passe `--show-ignored` pour lister les constats masqués
 en gris à côté de la sortie normale. Préférable à `--skip=`, qui retire l'audit
-de la section entière plutôt qu'un seul finding.
+de la section entière plutôt qu'un seul constat.
 
 (Avant la v0.14.1, le score et les compteurs JSON honoraient `--ignore` mais le
-finding continuait de s'afficher intégralement ; si tu l'avais constaté, c'est
+constat continuait de s'afficher intégralement ; si tu l'avais constaté, c'est
 corrigé.)
 
 ---
@@ -310,7 +310,7 @@ sudo bob --format=json | jq -r '.degraded_sections'  # [] sur une exécution sai
 
 `degraded_sections` liste les sections dont le check a échoué et qui ont été
 écartées au lieu d'interrompre tout l'audit. Le code de sortie reste piloté par
-les findings réels : c'est donc le seul endroit où un pipeline peut voir que
+les constats réels : c'est donc le seul endroit où un pipeline peut voir que
 l'audit était **incomplet**.
 
 ---
@@ -324,7 +324,7 @@ sudo bob -q                                 # silencieux — le code de sortie d
 echo $?                                     # 0=OK / 1=WARN / 2=ALERT / 3=erreur / 4=sous --target
 ```
 
-Wire `-q` dans un cron job + check du code de sortie pour l'alerting le plus simple possible.
+Branche `-q` dans une tâche cron + teste le code de sortie : c'est l'alerte la plus simple possible.
 
 ### « Je veux verrouiller un score minimum »
 
@@ -342,7 +342,7 @@ sudo bob --french                           # raccourci pour --lang=fr
 sudo bob --lang=fr                          # explicite
 ```
 
-Toute la sortie (terminal, `--help`, .log, messages detail JSON, payloads webhook, entries explain) est localisée — 2833 clés × 2 locales en v0.24.1 — **à une exception que vous verrez à l'écran : les 27 libellés de services porteurs de prose anglaise** (`Samba (Windows file sharing)`, `Apache Web Server`, …) restent en anglais à dessein, comme expliqué ci-dessous. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
+Toute la sortie (terminal, `--help`, .log, messages detail JSON, payloads webhook, entries explain) est localisée — 2840 clés × 2 locales en v0.24.2 — **à une exception que vous verrez à l'écran : les 27 libellés de services porteurs de prose anglaise** (`Samba (Windows file sharing)`, `Apache Web Server`, …) restent en anglais à dessein, comme expliqué ci-dessous. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
 
 Trois choses restent anglaises à dessein, et un diff bilingue de la sortie d'audit en v0.15.4 a confirmé que ce sont les seules : les **commandes shell** des lignes de remédiation (une commande n'est pas de la prose), les **références CIS** portant un code numéroté (décision v0.11.2 — les 87 non codées, elles, *sont* traduites), et les **38 libellés de services** — dont 27 portent de la prose anglaise descriptive, comme `Samba (Windows file sharing)` ou `Apache Web Server` — traités comme des noms de produits. Ces libellés servent aussi de clé aux entrées `service_risk.*` et entrent dans la ligne de base d'audit : les traduire à la source renommerait 114 entrées de locale et ferait apparaître des changements fantômes dans `--diff` au changement de langue.
 
@@ -354,9 +354,9 @@ Trois choses restent anglaises à dessein, et un diff bilingue de la sortie d'au
 - [`AUTOMATION_FR.md`](AUTOMATION_FR.md) — deep-dive cron + webhook + notification email
 - [`../SECURITY_FR.md`](../SECURITY_FR.md) — threat model, ce que BOB est / n'est PAS, env vars trap-door
 - [`../CHANGELOG_FR.md`](../CHANGELOG_FR.md) — historique des releases avec highlights par-version
-- `bob --explain list` — chaque finding que BOB sait expliquer, groupé par famille de benchmark CIS (CIS Ubuntu, CIS Docker, Bonne pratique, …) ; browsable dans le picker curses
+- `bob --explain list` — chaque constat que BOB sait expliquer, groupé par famille de benchmark CIS (CIS Ubuntu, CIS Docker, Bonne pratique, …) ; browsable dans le picker curses
 
-Si tu rencontres un bug ou veux qu'un finding soit ajouté, ouvre une issue sur [https://github.com/Masbateno/bodyguard-of-bits](https://github.com/Masbateno/bodyguard-of-bits).
+Si tu rencontres un bug ou veux qu'un constat soit ajouté, ouvre une issue sur [https://github.com/Masbateno/bodyguard-of-bits](https://github.com/Masbateno/bodyguard-of-bits).
 
 ---
 

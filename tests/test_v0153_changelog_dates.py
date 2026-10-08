@@ -30,8 +30,8 @@ DMY = re.compile(r"^\d{2}-\d{2}-\d{4}$")
 ENGLISH = ("CHANGELOG.md", "DOCUMENTS/CHANGELOG_FULL.md")
 FRENCH = ("CHANGELOG_FR.md", "DOCUMENTS/CHANGELOG_FULL_FR.md")
 
-ROW = re.compile(r"^\| \[(v?[0-9.]+)\]\(#v[0-9]+\) \| ([0-9-]+) \|")
-HEAD = re.compile(r"^## \[(v?[0-9.]+)\] — ([0-9-]+)\s*$")
+ROW = re.compile(r"^\| \[(v?[0-9.]+(?:[ab][0-9]+)?)\]\(#v[0-9a-z]+\) \| ([0-9-]+) \|")
+HEAD = re.compile(r"^## \[(v?[0-9.]+(?:[ab][0-9]+)?)\] — ([0-9-]+)\s*$")
 
 
 def structural_dates(rel: str) -> dict[str, str]:
@@ -83,6 +83,47 @@ class TestBothLanguagesAgreeOnTheDay:
             v: (en[v], fr[v]) for v in shared if as_day(en[v]) != as_day(fr[v])
         }
         assert not mismatched, f"same version, different day: {mismatched}"
+
+
+class TestSummaryAndFullAgreeOnTheDay:
+    """The table row and the detailed section of one version name one day.
+
+    The language pairs above cannot see an error copied into both languages:
+    0.2.2 was dated 02-05 in both summary tables and 03-05 in both detailed
+    changelogs (every commit of the release, and the tag, are from 03-05).
+    Betas are included — the patterns used to skip ``0.7.0b1``…``b4``.
+    """
+
+    @pytest.mark.parametrize(
+        "summary_rel, full_rel",
+        [("CHANGELOG.md", "DOCUMENTS/CHANGELOG_FULL.md"),
+         ("CHANGELOG_FR.md", "DOCUMENTS/CHANGELOG_FULL_FR.md")],
+    )
+    def test_same_version_same_day(self, summary_rel, full_rel):
+        summary = {v.lstrip("v"): d for v, d in structural_dates(summary_rel).items()}
+        full = {v.lstrip("v"): d for v, d in structural_dates(full_rel).items()}
+        mismatched = {
+            v: (summary[v], full[v])
+            for v in sorted(set(summary) & set(full))
+            if as_day(summary[v]) != as_day(full[v])
+        }
+        assert not mismatched, f"{summary_rel} vs {full_rel}: {mismatched}"
+
+    def test_all_four_list_the_same_versions(self):
+        sets = {
+            rel: {v.lstrip("v") for v in structural_dates(rel)}
+            for rel in ENGLISH + FRENCH
+        }
+        reference = sets["CHANGELOG.md"]
+        gaps = {
+            rel: (sorted(reference - got), sorted(got - reference))
+            for rel, got in sets.items() if got != reference
+        }
+        assert not gaps, f"(missing, extra) versus CHANGELOG.md: {gaps}"
+
+    def test_betas_are_read(self):
+        assert "v0.7.0b1" in structural_dates("CHANGELOG.md")
+        assert "v0.7.0b1" in structural_dates("DOCUMENTS/CHANGELOG_FULL_FR.md")
 
 
 class TestDatesAreRealAndOrdered:

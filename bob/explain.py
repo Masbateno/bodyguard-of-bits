@@ -326,6 +326,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "firewall.inactive",
         "firewall.policy_open",
         "firewall.policy_unknown",
+        "firewall.firewalld_policy_open",
         "firewall.logging_off",
     ]),
     ("TLS / SSL Certificates", [

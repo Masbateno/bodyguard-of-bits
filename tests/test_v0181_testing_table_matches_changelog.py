@@ -62,3 +62,23 @@ def test_the_current_release_has_its_row():
         # SemVer no-"v" from 0.21.0 on; historical rows keep their v.
         assert version in rows or f"v{version}" in rows, (
             f"{table} has no {version} row")
+
+
+@pytest.mark.parametrize("table,changelog", [
+    ("DOCUMENTS/TESTING.md", "DOCUMENTS/CHANGELOG_FULL.md"),
+    ("DOCUMENTS/TESTING_FR.md", "DOCUMENTS/CHANGELOG_FULL_FR.md"),
+])
+def test_every_released_version_has_a_row(table, changelog):
+    """The table had no row for 0.2.1 or for the four 0.7.0 betas.
+
+    The row-matching test above only checks rows that exist, so a release
+    with no row at all was invisible to it. The 0.1.0 row was written
+    ``| v0.1.0  | 4200  |`` and matched no pattern either.
+    """
+    released = {v.lstrip("v") for v in re.findall(
+        r"^## \[(v?[\d.]+[a-z0-9]*)\]",
+        (_ROOT / changelog).read_text(encoding="utf-8"), re.M)}
+    rows = {v.lstrip("v") for v, _ in _table_rows(table)}
+    assert len(released) >= 100, f"only {len(released)} versions parsed"
+    missing = sorted(released - rows)
+    assert not missing, f"{table} has no row for: {missing}"

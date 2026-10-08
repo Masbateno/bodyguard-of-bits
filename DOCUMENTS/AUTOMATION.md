@@ -342,14 +342,12 @@ Compares the current audit against the previous one and prints only the delta:
 sudo bob --diff
 ```
 
-Output shape:
+After the score and count lines, one line per ALERT/WARN key that appeared or was resolved:
 
 ```
-✔  Resolved since last audit (2):
-   - hardening.send_redirects
-   - ssh.x11_forwarding
-✖  New findings since last audit (1):
-   - clamav.scan_old
+⚠ [WARNING] New finding: clamav.scan_old
+✔ [OK] Resolved: hardening.send_redirects_enabled
+✔ [OK] Resolved: ssh.x11.forwarding.server
 ```
 
 The baseline file lives at `~/.config/bob/last_baseline.json` (mode `0600`) and is rewritten at the end of every full audit run. A file passed to `--diff` that carries no `timestamp` and `score` is refused as *not a BOB baseline* (exit 3) rather than compared against as a baseline of zero. To wipe the baseline and start fresh:

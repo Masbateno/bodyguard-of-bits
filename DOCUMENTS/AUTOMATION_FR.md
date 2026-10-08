@@ -260,7 +260,7 @@ Le message Slack inclut :
 
 - Une ligne d'en-tête avec l'hôte, le score et le niveau de risque
 - Les sous-scores par domaine
-- La liste des findings ALERT et WARN (tronquée à 10 au-delà)
+- La liste des constats ALERT et WARN (tronquée à 10 au-delà)
 - Des attachments color-coded (rouge / orange / vert selon le score)
 
 ### Enveloppe JSON générique
@@ -289,12 +289,12 @@ Le payload générique est volontairement minimal et stable :
 }
 ```
 
-Cette enveloppe générique a son **propre** contrat plat (distinct du schéma d'audit `bob --json`) : clés top-level `source`/`max_score`/`timestamp` et une map plate `domain_scores` de `{domaine: score}`. `alerts` et `warnings` sont des **compteurs (entiers)** ; le tableau `findings` énumère toujours les findings de niveau ALERT et WARN (chacun avec `level`/`key`/`message`/`detail`/`note`). `risk` est le niveau **effectif** (avec escalade de posture), en minuscules (`"low"` / `"medium"` / `"high"` / `"critical"`). Note : le webhook garde les noms `alerts`/`warnings` — seul le schéma d'audit `bob --json` les a renommés en `alert_count`/`warning_count` en v0.12.0 (F9).
+Cette enveloppe générique a son **propre** contrat plat (distinct du schéma d'audit `bob --json`) : clés top-level `source`/`max_score`/`timestamp` et une map plate `domain_scores` de `{domaine: score}`. `alerts` et `warnings` sont des **compteurs (entiers)** ; le tableau `findings` énumère toujours les constats de niveau ALERT et WARN (chacun avec `level`/`key`/`message`/`detail`/`note`). `risk` est le niveau **effectif** (avec escalade de posture), en minuscules (`"low"` / `"medium"` / `"high"` / `"critical"`). Note : le webhook garde les noms `alerts`/`warnings` — seul le schéma d'audit `bob --json` les a renommés en `alert_count`/`warning_count` en v0.12.0 (F9).
 
 **Deux champs ajoutés en v0.14.1**, tous deux additifs — les récepteurs existants ne sont pas affectés :
 
-  - **`profile`** — le profil d'audit qui a produit ces chiffres. Depuis la v0.14.0 le profil change les sévérités des findings, `warnings` et donc le code de sortie : deux payloads du même hôte peuvent légitimement diverger, et sans ce champ rien ne l'explique. À utiliser pour regrouper ou comparer des hôtes.
-  - **`degraded_sections`** — les sections dont le check a levé une exception et qui ont été dégradées sur place au lieu d'interrompre l'audit (liste vide sur une exécution saine). **C'est le champ sur lequel alerter.** Un récepteur voyant `score: 9, alerts: 0` ne peut pas distinguer autrement un hôte sain d'un hôte où deux sections n'ont jamais tourné ; le code de sortie reste délibérément piloté par les findings réels, donc l'incomplétude n'est visible qu'ici (et via les findings INFO `<section>.unavailable`, que l'enveloppe générique n'énumère pas — elle ne porte que les ALERT et WARN).
+  - **`profile`** — le profil d'audit qui a produit ces chiffres. Depuis la v0.14.0 le profil change les sévérités des constats, `warnings` et donc le code de sortie : deux payloads du même hôte peuvent légitimement diverger, et sans ce champ rien ne l'explique. À utiliser pour regrouper ou comparer des hôtes.
+  - **`degraded_sections`** — les sections dont le check a levé une exception et qui ont été dégradées sur place au lieu d'interrompre l'audit (liste vide sur une exécution saine). **C'est le champ sur lequel alerter.** Un récepteur voyant `score: 9, alerts: 0` ne peut pas distinguer autrement un hôte sain d'un hôte où deux sections n'ont jamais tourné ; le code de sortie reste délibérément piloté par les constats réels, donc l'incomplétude n'est visible qu'ici (et via les constats INFO `<section>.unavailable`, que l'enveloppe générique n'énumère pas — elle ne porte que les ALERT et WARN).
   - **`score_is_upper_bound`** — vrai quand un check n'a pas pu lire son entrée. Les déductions qu'il n'a pas faites sont **inconnues, pas nulles**, donc `score` est un plafond. Un audit lancé sans les privilèges nécessaires affiche un score *plus élevé* qu'un audit complet : une règle de supervision portant sur `score` seul peut donc passer au vert sur une exécution plus aveugle. **`unverified`** liste les clés de constat qui l'expliquent. Depuis la v0.16.0, `--target N` échoue aussi fermé sur un score borné : un portail ne peut pas être satisfait par un plafond.
 
 Une règle de supervision raisonnable est donc « alerter sur `alerts > 0`, et avertir séparément dès que `degraded_sections` est non vide » — la seconde condition signifie que c'est l'audit lui-même qui est en mauvaise santé, pas l'hôte.
@@ -346,14 +346,12 @@ Compare l'audit courant au précédent et n'affiche que le delta :
 sudo bob --diff
 ```
 
-Forme de la sortie :
+Après les lignes de score et de compteurs, une ligne par clé ALERT/WARN apparue ou résolue :
 
 ```
-✔  Résolus depuis le dernier audit (2) :
-   - hardening.send_redirects
-   - ssh.x11_forwarding
-✖  Nouveaux findings depuis le dernier audit (1) :
-   - clamav.scan_old
+⚠ [ATTENTION] Nouveau constat : clamav.scan_old
+✔ [OK] Résolu : hardening.send_redirects_enabled
+✔ [OK] Résolu : ssh.x11.forwarding.server
 ```
 
 Le fichier baseline vit à `~/.config/bob/last_baseline.json` (mode `0600`) et est réécrit à la fin de chaque audit complet. Un fichier passé à `--diff` qui ne porte ni `timestamp` ni `score` est refusé comme *n'étant pas une baseline BOB* (code 3) au lieu d'être comparé comme une baseline à zéro. Pour effacer la baseline et repartir à zéro :
@@ -470,7 +468,7 @@ pas :
 | Touche | Action |
 |--------|--------|
 | `↑` / `↓` / `j` / `k` / `PgUp` / `PgDn` / `g` / `G` | Faire défiler (le socle commun) |
-| `s` | Basculer entre log complet et vue résumé (score + findings ALERT/WARN uniquement) |
+| `s` | Basculer entre log complet et vue résumé (score + constats ALERT/WARN uniquement) |
 | `Échap` | Revenir à la liste des rapports |
 
 ### Mode texte de repli (non-TTY)

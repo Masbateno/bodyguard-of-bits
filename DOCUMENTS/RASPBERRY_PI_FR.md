@@ -83,7 +83,7 @@ Gérer tout ça, sans compilateur et sans root :
 ```bash
 pipx upgrade bodyguard-of-bits     # sur place, garde le même venv + lanceur
 pipx list                          # montre le venv, sa version et son Python
-pipx reinstall bodyguard-of-bits   # reconstruit le venv (ex. après un bump du Python de l'OS)
+pipx reinstall bodyguard-of-bits   # reconstruit le venv (ex. après une mise à jour du Python de l'OS)
 ```
 
 `sudo bob` exécute le même code : l'étape `--install-completion` ci-dessus crée

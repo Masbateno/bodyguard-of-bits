@@ -275,7 +275,8 @@ class TestExplainAuditInvariants:
         # → 215: file_capabilities.root_equivalent, user_accounts.su_unrestricted,
         # home_unsafe, netrc_exposed; → 216: cpu_security.vulnerable;
         # → 218: package_authenticity.disabled, crypto_policy.legacy.
-        assert len(EXPLAIN_KEYS) == 218, (
+        # → 219: firewall.firewalld_policy_open (v0.24.2).
+        assert len(EXPLAIN_KEYS) == 219, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."

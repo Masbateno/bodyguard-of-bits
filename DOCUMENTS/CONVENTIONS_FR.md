@@ -164,7 +164,7 @@ d'un constat** — c'est le goulot, et c'est pourquoi un nom de processus lu dan
 `ss` ne peut pas porter une séquence d'échappement jusqu'à la sortie d'un audit
 lancé en root.
 
-Une donnée qui atteint le terminal *hors* d'un Finding — un nom d'hôte, un
+Une donnée qui atteint le terminal *hors* d'un `Finding` — un nom d'hôte, un
 domaine, un nom de conteneur — passe par `output.sanitize()` au point où elle est
 lue. Il y a plusieurs endroits de ce genre et ce sont les fragiles : un nouveau
 ajouté sans l'appel serait un vecteur d'échappement que rien ne verrait.
@@ -229,14 +229,14 @@ def check_xxx(snapshot: XxxSnapshot, t=None) -> CheckResult:
    `read_text()` nu dans un bloc `except OSError` est rejeté par un garde AST
    qui balaie tout le paquet.
 
-3. **Ne pas assainir soi-même le texte des findings.** `Finding.__post_init__()`
+3. **Ne pas assainir soi-même le texte des constats.** `Finding.__post_init__()`
    retire les séquences ANSI et les caractères de contrôle de `message` /
    `detail` / `note` (et de `cmd`, en préservant les sauts de ligne), au point
-   unique par lequel passe chaque finding. Interpole directement les valeurs
+   unique par lequel passe chaque constat. Interpole directement les valeurs
    venues du système.
 
 Un check qui lève n'est plus fatal, mais il n'est pas gratuit pour autant : la
-section est rapportée comme un finding INFO `<section>.unavailable` et listée
+section est rapportée comme un constat INFO `<section>.unavailable` et listée
 dans le `degraded_sections` du JSON. Dégrader proprement dans le check reste
 préférable à s'en remettre à la barrière.
 
@@ -245,11 +245,11 @@ préférable à s'en remettre à la barrière.
 ```python
 result = CheckResult()
 
-result.ok(message=_t("clé"))                          # ✔ finding
-result.warn(message=_t("clé"), nature="improvement")  # ⚠ finding
-result.alert(message=_t("clé"), nature="action",      # ✖ finding
+result.ok(message=_t("clé"))                          # ✔ constat
+result.warn(message=_t("clé"), nature="improvement")  # ⚠ constat
+result.alert(message=_t("clé"), nature="action",      # ✖ constat
              cmd="sudo ufw ...")
-result.info(message=_t("clé"))                        # ℹ finding
+result.info(message=_t("clé"))                        # ℹ constat
 
 result.add_deduction(
     reason=_t("clé"),
@@ -258,7 +258,7 @@ result.add_deduction(
 )
 ```
 
-### Natures des findings
+### Natures des constats
 
 | Nature | Signification | Bloc résumé |
 |---|---|---|
@@ -346,7 +346,7 @@ est une surface d'affichage, pas une partie du contrat de compatibilité de BOB.
 Elle a changé exactement une fois — le `v` a été retiré en 0.21.0 — et est
 désormais figée sur le cœur SemVer nu. Le contrat CLI stable, c'est : les codes de
 sortie, le schéma JSON (`schema_version` et ses clés), les noms d'options et les
-clés de constat — ceux-là ne changent pas sans bump MAJEUR/MINEUR et note de
+clés de constat — ceux-là ne changent pas sans incrément MAJEUR/MINEUR et note de
 changelog. Un script qui parsait `bob --version` en codant en dur le `v` (ou
 `sed 's/^v//'`) doit lire la forme nue à partir de 0.21.0 ; un script qui a besoin
 d'une version stable machine doit lire `--format json` (`schema_version`) plutôt
@@ -376,7 +376,7 @@ typiquement trois endroits dans chaque fichier :
   suffixes `.key` que le check émet (`xxx.something`).
 
 Un constat WARN/ALERT demande aussi une entrée **explain** (ci-dessous). Le total de
-clés est documenté dans SNAPSHOT et épinglé au live — le bumper quand on ajoute des
+clés est documenté dans SNAPSHOT et épinglé au live — le mettre à jour quand on ajoute des
 clés.
 
 Interpoler avec des placeholders `{name}`, jamais des f-strings dans le JSON. Ne pas
@@ -432,7 +432,7 @@ d'appel, pas omise du registre.
 ### Garde + mutation + compteurs
 
 Enfin : une garde (`tests/test_vXXXX_<check>.py`), sa mutation dans
-`tests/mutations.py` (DOCTRINE principe 13), et les compteurs documentés bumpés
+`tests/mutations.py` (DOCTRINE principe 13), et les compteurs documentés mis à jour
 (sections, check modules, `_PREFIX_TO_DOMAIN`, total locale, explain/CIS si touchés,
 compte de fichiers tests dans SNAPSHOT). Le sweep donne les valeurs live exactes ; un
 nombre coïncident à côté d'un nom non surveillé va dans le `_COINCIDENCES` du sweep.

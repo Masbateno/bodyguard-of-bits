@@ -26,7 +26,7 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 | 0.6.x          | ❌ fin de vie       |
 | ≤ 0.5.x        | ❌ fin de vie       |
 
-Les correctifs sortent en `0.24.x+1`. Un breaking change bump le minor (`0.25.0`).
+Les correctifs sortent en `0.24.x+1`. Un changement cassant incrémente la version mineure (`0.25.0`).
 
 **v0.23.x est en fin de vie le jour où 0.24.0 sort**, selon la politique
 « ligne minor la plus récente uniquement » ci-dessus. Aucun correctif de
@@ -54,7 +54,7 @@ l'erreur. `score` reste un entier en JSON ; `score_is_upper_bound`,
 réévaluée, ni un écart de score comme une amélioration ou une dégradation quand
 l'exécution a lu moins que la précédente.
 
-**v0.14.x est en fin de vie depuis le 31-08-2026** (jour du ship de v0.15.0,
+**v0.14.x est en fin de vie depuis le 31-08-2026** (jour de la sortie de v0.15.0,
 selon la politique « ligne minor la plus récente uniquement » ci-dessus). Aucun
 correctif de sécurité ne sera backporté. Les utilisateurs sur v0.14.x doivent
 `pipx upgrade bodyguard-of-bits` vers v0.15.x.
@@ -80,7 +80,7 @@ voir : un check qui n'a pas pu lire son entrée le dit désormais au lieu de
 substituer un défaut. Cette direction ne fait jamais que **retirer** des
 déductions.
 
-**v0.13.x est en fin de vie depuis le 29-08-2026** (jour du ship de v0.14.0,
+**v0.13.x est en fin de vie depuis le 29-08-2026** (jour de la sortie de v0.14.0,
 selon la politique « ligne minor la plus récente uniquement » ci-dessus). Aucun
 correctif de sécurité ne sera backporté. Les utilisateurs sur v0.13.x doivent
 `pipx upgrade bodyguard-of-bits` vers v0.14.x. La mise à jour comporte deux
@@ -91,13 +91,13 @@ jamais retourner exit 0), et la sortie redirigée vers un fichier ou un pipe ne
 contient plus de codes couleur ANSI — posez `FORCE_COLOR=1` pour retrouver le
 comportement précédent.
 
-**v0.12.x est en fin de vie depuis le 20-06-2026** (jour du ship v0.13.0 où l'EOL est formellement déclarée, selon la politique « ligne minor la plus récente uniquement » ci-dessus). Aucun correctif de sécurité ne sera backporté en v0.12.x. Les utilisateurs sur v0.12.x doivent `pipx upgrade bodyguard-of-bits` vers v0.13.x pour recevoir les patchs — l'upgrade est entièrement rétro-compatible (v0.13.0 *ajoute* seulement deux checks INFO-only ; aucun champ de sortie ni code de sortie existant ne change). Les lignes v0.8.x – v0.11.x sont également en fin de vie, chacune remplacée par le minor suivant ; v0.13.x est la seule ligne supportée.
+**v0.12.x est en fin de vie depuis le 20-06-2026** (jour de la sortie de v0.13.0, où l'EOL est formellement déclarée, selon la politique « ligne minor la plus récente uniquement » ci-dessus). Aucun correctif de sécurité ne sera backporté en v0.12.x. Les utilisateurs sur v0.12.x doivent `pipx upgrade bodyguard-of-bits` vers v0.13.x pour recevoir les patchs — l'upgrade est entièrement rétro-compatible (v0.13.0 *ajoute* seulement deux checks INFO-only ; aucun champ de sortie ni code de sortie existant ne change). Les lignes v0.8.x – v0.11.x sont également en fin de vie, chacune remplacée par le minor suivant ; v0.13.x est la seule ligne supportée.
 
-**v0.7.x est en fin de vie depuis le 05-06-2026** (jour du ship v0.8.1 où la déclaration EOL est formalisée, miroir du pattern qui avait retiré v0.6.x en v0.7.2). Aucun correctif de sécurité ne sera backporté en v0.7.x. Les utilisateurs sur v0.7.x doivent `pipx upgrade bodyguard-of-bits` vers v0.8.x pour recevoir les patchs sécurité. La ligne v0.8.x est largement rétro-compatible avec v0.7.x via les re-exports `__init__.py` (le flag JSON legacy `--json-v1` a été retiré plus tard en v0.9.0), mais **un BREAKING comportemental** atterrit en v0.8.1 : le profil d'audit `workstation` n'est plus un alias silencieux de `desktop` — c'est un profil first-class business-tier qui conserve `backup.no_backup` / `auditd.*` / `mac_policy.apparmor_no_enforce` à WARN tout en relâchant la même ergonomie SSH / clamav / rootkit / file_integrity / log_rotation / secure_boot que `desktop`. Les utilisateurs de `bob -p workstation` qui veulent la sémantique pre-v0.8.1 peuvent copier `bob/data/profiles/desktop.conf` vers `~/.config/bob/profiles/workstation.conf`.
+**v0.7.x est en fin de vie depuis le 05-06-2026** (jour de la sortie de v0.8.1, où la déclaration EOL est formalisée, miroir du pattern qui avait retiré v0.6.x en v0.7.2). Aucun correctif de sécurité ne sera backporté en v0.7.x. Les utilisateurs sur v0.7.x doivent `pipx upgrade bodyguard-of-bits` vers v0.8.x pour recevoir les patchs sécurité. La ligne v0.8.x est largement rétro-compatible avec v0.7.x via les re-exports `__init__.py` (le flag JSON legacy `--json-v1` a été retiré plus tard en v0.9.0), mais **un BREAKING comportemental** atterrit en v0.8.1 : le profil d'audit `workstation` n'est plus un alias silencieux de `desktop` — c'est un profil first-class business-tier qui conserve `backup.no_backup` / `auditd.*` / `mac_policy.apparmor_no_enforce` à WARN tout en relâchant la même ergonomie SSH / clamav / rootkit / file_integrity / log_rotation / secure_boot que `desktop`. Les utilisateurs de `bob -p workstation` qui veulent la sémantique pre-v0.8.1 peuvent copier `bob/data/profiles/desktop.conf` vers `~/.config/bob/profiles/workstation.conf`.
 
-**v0.6.x est en fin de vie depuis le 01-06-2026** (jour même du ship v0.7.0). Aucun correctif de sécurité ne sera backporté en v0.6.x. Les utilisateurs sur v0.6.x doivent `pipx upgrade bodyguard-of-bits` vers v0.8.x pour recevoir les patchs sécurité. La chaîne d'upgrade v0.7.x → v0.8.x est rétro-compatible avec l'API publique v0.6.x via les re-exports `__init__.py` (le flag JSON legacy `--json-v1` a été retiré plus tard en v0.9.0).
+**v0.6.x est en fin de vie depuis le 01-06-2026** (jour même de la sortie de v0.7.0). Aucun correctif de sécurité ne sera backporté en v0.6.x. Les utilisateurs sur v0.6.x doivent `pipx upgrade bodyguard-of-bits` vers v0.8.x pour recevoir les patchs sécurité. La chaîne d'upgrade v0.7.x → v0.8.x est rétro-compatible avec l'API publique v0.6.x via les re-exports `__init__.py` (le flag JSON legacy `--json-v1` a été retiré plus tard en v0.9.0).
 
-v0.5.x a été déclarée EOL le jour même où v0.6.0 a été shippée (25-05-2026). La release v0.6.0 est rétro-compatible avec l'intégralité de l'API publique v0.5.x via les re-exports `__init__.py` — l'upgrade est un `pipx upgrade bodyguard-of-bits` sans changement de code requis côté utilisateur.
+v0.5.x a été déclarée EOL le jour même de la sortie de v0.6.0 (25-05-2026). La release v0.6.0 est rétro-compatible avec l'intégralité de l'API publique v0.5.x via les re-exports `__init__.py` — l'upgrade est un `pipx upgrade bodyguard-of-bits` sans changement de code requis côté utilisateur.
 
 ## Signaler une vulnérabilité
 
@@ -126,7 +126,7 @@ Cette section est la source faisant autorité pour « ce contre quoi BOB défend
 
 ### Ce qu'est BOB
 
-BOB est un outil **en lecture seule (audit-only)**. Il inspecte l'état du système Linux local et reporte les findings vers le terminal, un fichier de log, et optionnellement une sortie JSON ou un webhook sortant. Il est invoqué par un utilisateur privilégié (`sudo bob`) sur un système que l'utilisateur contrôle déjà.
+BOB est un outil **en lecture seule (audit-only)**. Il inspecte l'état du système Linux local et reporte les constats vers le terminal, un fichier de log, et optionnellement une sortie JSON ou un webhook sortant. Il est invoqué par un utilisateur privilégié (`sudo bob`) sur un système que l'utilisateur contrôle déjà.
 
 BOB **n'est pas** :
 
@@ -143,7 +143,7 @@ BOB **n'est pas** :
 BOB pose trois hypothèses sur son environnement d'exécution :
 
   1. **L'utilisateur invocant est de confiance.** `sudo bob` tourne en tant que root par conception. Un utilisateur avec accès sudo a déjà le contrôle complet du système ; BOB n'est pas un pare-feu de privilèges contre lui.
-  2. **La disposition du système de fichiers local est saine.** BOB lit `/etc/`, `/proc/`, `/var/log/`, `~/.ssh/`, etc. Si ces chemins ont été falsifiés par un attaquant qui a déjà root, les findings de BOB peuvent être trompeurs. BOB fait partie de la chaîne d'outils d'audit post-compromission, pas de détection pré-compromission.
+  2. **La disposition du système de fichiers local est saine.** BOB lit `/etc/`, `/proc/`, `/var/log/`, `~/.ssh/`, etc. Si ces chemins ont été falsifiés par un attaquant qui a déjà root, les constats de BOB peuvent être trompeurs. BOB fait partie de la chaîne d'outils d'audit post-compromission, pas de détection pré-compromission.
   3. **Le gestionnaire de paquets de l'hôte est intact.** Les checks comme `apt-cache policy`, `fwupdmgr get-updates`, `systemctl is-active` reposent sur des binaires système légitimes. Un gestionnaire de paquets compromis qui ment trompera BOB.
 
 ### Frontières de confiance
@@ -164,7 +164,7 @@ BOB traverse trois frontières de confiance pendant une exécution :
 
 ### Mode `--fix`
 
-Le mode `--fix` affiche les commandes de remédiation et ne les exécute qu'après que l'utilisateur tape `y`. BOB **n'écrit jamais** vers des fichiers système en dehors de `~/.config/bob/` et du répertoire de log choisi par l'utilisateur sans confirmation explicite. Même en mode `--apply` (auto-fix), seules les commandes listées dans le texte de remédiation propre à BOB sont éligibles — il n'y a pas d'eval de messages de findings ni d'expansion shell de données dynamiques.
+Le mode `--fix` affiche les commandes de remédiation et ne les exécute qu'après que l'utilisateur tape `y`. BOB **n'écrit jamais** vers des fichiers système en dehors de `~/.config/bob/` et du répertoire de log choisi par l'utilisateur sans confirmation explicite. Même en mode `--apply` (correction automatique), seules les commandes listées dans le texte de remédiation propre à BOB sont éligibles — il n'y a pas d'eval de messages de constats ni d'expansion shell de données dynamiques.
 
 Depuis la **v0.16.4**, l'ensemble éligible est plus étroit encore, et resserré
 là où les commandes sont *classées* et non là où elles sont exécutées. Une
@@ -265,7 +265,7 @@ les plugins s'exécutent toujours dans le processus enfant sandboxé.
 
 ## Rendu de texte non fiable
 
-Les messages de findings interpolent des valeurs que BOB lit sur le système —
+Les messages de constats interpolent des valeurs que BOB lit sur le système —
 noms de fichiers, d'unités, de processus, commandes cron, noms de paquets,
 sujets de certificats. Un attaquant capable de nommer un processus ou d'écrire
 une entrée cron sur la machine auditée peut donc placer du texte arbitraire dans
@@ -273,9 +273,9 @@ le rapport. Deux défenses distinctes s'appliquent, et elles sont distinctes à
 dessein.
 
 **Couche 1 — les caractères de contrôle, à la construction.** Depuis la
-**v0.14.1**, les champs `message`, `detail` et `note` de chaque finding sont
+**v0.14.1**, les champs `message`, `detail` et `note` de chaque constat sont
 débarrassés des séquences ANSI et des caractères de contrôle dans
-`Finding.__post_init__()`, le point unique par lequel tous les findings sont
+`Finding.__post_init__()`, le point unique par lequel tous les constats sont
 construits. Cette garantie-là atteint toutes les sorties. (`cmd` conserve ses
 sauts de ligne — un bloc de remédiation est légitimement multiligne — et perd
 tout le reste.)
@@ -285,7 +285,7 @@ Ce n'est pas cosmétique. Un script world-writable dans `/etc/cron.daily` dont l
 dans le terminal de l'opérateur : elle réécrivait le titre de la fenêtre et
 corrompait l'encadré de synthèse. Avec des séquences de déplacement du curseur,
 le même vecteur peut écraser des lignes d'audit déjà imprimées — c'est-à-dire
-faire mentir le rapport sur *d'autres* findings, ce qui compte davantage dans un
+faire mentir le rapport sur *d'autres* constats, ce qui compte davantage dans un
 auditeur de sécurité que dans la plupart des outils.
 
 **Couche 2 — le balisage, au rendu, format par format.** La couche 1 retire les
@@ -344,7 +344,7 @@ Pas de télémétrie, pas d'analytics, pas de vérification de mise à jour auto
   - **Rapports** : Les rapports détaillés `-d` sont écrits vers le répertoire de log configuré par l'utilisateur (par défaut : `~/.local/share/bob/logs/`). Les permissions de fichier sont `0600` (propriétaire uniquement ; chownés de retour vers `$SUDO_USER` quand l'invocation passe par sudo). Le nom du rapport est entièrement prédictible (`bob_%Y%m%d_%H%M%S.log`) et le fichier est créé en root sous sudo : depuis la **v0.14.1** il est donc ouvert avec `O_NOFOLLOW` et chowné via le descripteur déjà détenu (`os.fchown`) plutôt que par son nom. Sans cela, quiconque peut écrire dans le répertoire cible — cas atteignable dès qu'un opérateur pointe `--output-dir` vers un emplacement partagé — pourrait pré-planter un lien symbolique et faire tronquer par root, puis lui céder la propriété d', un fichier arbitraire.
   - **Les écritures de rapport sont best-effort** (v0.14.1). Le rapport est un artefact secondaire et ne doit jamais entraîner l'audit dans sa chute : à la première erreur d'E/S il se désactive, le signale une fois sur stderr, et l'audit se termine normalement. Avant la v0.14.1, un système de fichiers plein coûtait l'exécution entière — exit 3 et aucun audit.
   - **Config** : `~/.config/bob/config.conf` est `0600` (propriétaire uniquement).
-  - **Baseline** : `~/.config/bob/last_baseline.json` est `0600`. Contient uniquement des clés de findings, scores, et listes de ports — pas de secrets, pas de contenus de fichiers, pas de PII autre que le nom d'hôte.
+  - **Baseline** : `~/.config/bob/last_baseline.json` est `0600`. Contient uniquement des clés de constats, scores, et listes de ports — pas de secrets, pas de contenus de fichiers, pas de PII autre que le nom d'hôte.
   - **Historique** : `~/.config/bob/history.jsonl` est `0600`. Une ligne par audit : timestamp + score + niveau. Rotation à 1000 entrées.
   - **Toutes les lectures d'état sont bornées** (v0.14.1). Chaque fichier d'état, ainsi que le `--diff=CHEMIN` fourni par l'opérateur, passe par `bob._atomic.read_text_capped()`, qui refuse tout ce qui n'est pas un fichier régulier et borne la lecture. Auparavant, un chemin pointant vers un périphérique caractère (`--diff=/dev/zero`, ou `ignore.yml` lié vers lui) épuisait la mémoire, et un FIFO bloquait le processus **indéfiniment** — un cron qui reste suspendu au lieu d'échouer, et à chaque exécution suivante.
 

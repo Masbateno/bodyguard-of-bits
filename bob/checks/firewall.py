@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -192,6 +193,22 @@ def _firewall_install_fix(_t):
     return install_fix(_t, None, "ufw", then="sudo ufw enable")
 
 
+def _firewalld_close_cmd(zone: str) -> str:
+    """Stop the default zone accepting every unmatched packet, keeping SSH.
+
+    ``trusted`` exists to accept everything, so the fix is to stop using it as
+    the default, not to rewrite it: ``public`` ships with ssh allowed. Any other
+    zone gets the stock target back (reject what no rule allows), with ssh
+    added first so a remote operator does not lock themself out.
+    """
+    if not zone or zone == "trusted":
+        return "sudo firewall-cmd --set-default-zone=public"
+    z = shlex.quote(zone)
+    return (f"sudo firewall-cmd --permanent --zone={z} --add-service=ssh && "
+            f"sudo firewall-cmd --permanent --zone={z} --set-target=default && "
+            f"sudo firewall-cmd --reload")
+
+
 def check_firewall(
     status: FirewallStatus,
     firewalld=None,
@@ -232,6 +249,21 @@ def check_firewall(
                            zone=firewalld.default_zone or "?", services=svc),
                 key="firewall.firewalld_active",
             )
+            # v0.24.2: a zone whose target is ACCEPT (the `trusted` zone, or a
+            # zone set that way) lets every unmatched packet in — UFW's
+            # `policy_open`, which costs 3 points there. Here it was an OK and
+            # nothing deducted, while the attack surface already said "default
+            # policy is ALLOW — no filtering" (measured on Fedora 44).
+            if firewalld.incoming_policy == "allow":
+                result.alert_with_deduction(
+                    key="firewall.firewalld_policy_open",
+                    message=_t("firewall.firewalld_policy_open",
+                               zone=firewalld.default_zone or "?"),
+                    points=3,
+                    cmd=_firewalld_close_cmd(firewalld.default_zone),
+                    nature="action",
+                    template_vars={"zone": firewalld.default_zone or "?"},
+                )
             return result
         # No managed front-end (UFW/firewalld). Before demanding one, consult
         # the raw netfilter layer the runner measured: an nftables/iptables

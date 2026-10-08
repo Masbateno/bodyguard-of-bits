@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.24.1
+Version:        0.24.2
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,16 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Oct 09 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.24.2-1
+- Patch, BREAKING (scores): -3 on a firewalld host whose default zone target is
+  ACCEPT (false OK corrected); up to +2 on a UFW IPV6=no host with global IPv6.
+- firewalld: ALERT firewall.firewalld_policy_open, SSH-safe fix; IPv6 wording
+  under firewalld corrected (ACCEPT, and hosts without UFW).
+- UFW IPV6=no blocks IPv6 (ufw-init DROP): listeners reported blocked, not
+  exposed; BOB reads the IPv6 INPUT policy.
+- French says "constat"; --check list descriptions name every backend;
+  changelog coherence. Field-validated on Fedora 44 and Linux Mint 22.3.
+
 * Mon Oct 05 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.24.1-1
 - Patch: summaries read the firewall actually filtering (firewalld target, raw
   nftables/iptables default deny), also with UFW installed but inactive.

@@ -1,3 +1,21 @@
+bodyguard-of-bits (0.24.2-1) unstable; urgency=medium
+
+  * Patch, BREAKING (scores): the score drops by 3 on a firewalld host whose
+    default zone target is ACCEPT (a false OK corrected) and rises by up to 2
+    on a UFW host set to IPV6=no with a global IPv6 address.
+  * firewalld: new ALERT firewall.firewalld_policy_open; its fix keeps SSH
+    reachable (adds ssh before restoring the zone target, or leaves trusted
+    for public). IPv6 no longer says "filtered" under ACCEPT, nor speaks of
+    UFW on a host without it.
+  * UFW IPV6=no: ufw-init drops all IPv6, so the listeners are reported
+    blocked (INFO), not exposed (was WARN -2); BOB reads the IPv6 INPUT policy.
+  * French interface and documentation say "constat" for a finding.
+  * --check list names every backend a section judges; changelog coherence
+    (dates, TESTING rows, French translations).
+  * Field-validated on real Fedora 44 and Linux Mint 22.3.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 09 Oct 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.24.1-1) unstable; urgency=medium
 
   * Patch: the summaries read the firewall that is actually filtering, SSH

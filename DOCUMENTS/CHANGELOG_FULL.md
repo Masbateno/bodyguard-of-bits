@@ -6,6 +6,153 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.24.2] — 2026-10-09
+
+**A patch release: a firewalld zone that accepts everything is no longer an OK,
+UFW with IPV6=no reads as blocked rather than exposed, and the French interface
+says one word for a finding.** No scoring-formula, JSON-schema, CSV-column-order
+or section change. **BREAKING (scores):** the score **drops** by 3 on a firewalld
+host whose default zone target is ACCEPT (§1) — the correction of a false OK — and
+**rises** by up to 2 on a UFW host set to IPV6=no with a global IPv6 address
+(§2). Three INFO/ALERT keys are new; one `--explain` key is added (219). Both
+score changes were measured on real hardware: Fedora 44 for §1, Linux Mint 22.3
+for §2.
+
+### 1. firewalld: a default zone with target ACCEPT is alerted
+
+A zone's target decides what happens to a packet that no rule matches;
+`ACCEPT` — the `trusted` zone, or any zone set that way — lets everything in.
+Measured on Fedora 44 with 0.24.1: the attack surface rightly said "default policy
+is ALLOW — no filtering", while the firewall section reported "firewalld is the
+active firewall" as an OK and nothing was deducted. UFW's ALLOW default has always
+cost 3 points (`firewall.policy_open`).
+
+The new key `firewall.firewalld_policy_open` is an ALERT −3. It is not
+`firewall.policy_open` reused, because that key's CIS reference — "Ensure ufw
+default deny firewall policy" — would be wrong on a firewalld host; its reference
+is a best-practice note (the CIS benchmarks BOB cites are Ubuntu's and Debian's,
+which have no firewalld control). The fix it proposes does not lock a remote
+operator out: on a named zone it adds the `ssh` service **before** restoring the
+stock target (`--set-target=default`, then `--reload`); on `trusted`, which exists
+to accept everything, it moves the default zone to `public` instead of rewriting
+`trusted`. `--explain` and bash completion know the key.
+
+Measured A/B (0.24.1 vs 0.24.2) on Fedora 44, SELinux enforcing: targets
+`default` and `DROP` identical (score 7, no firewall deduction); `ACCEPT` 7 → **6**.
+Both fixes applied for real: `trusted` → `public`, and FedoraServer set to ACCEPT
+*without* ssh → ssh added, target restored, a new SSH connection succeeds, the
+finding is gone, and a second run of the command still exits 0.
+
+The same run found two false IPv6 lines on that host, both fixed:
+
+- under target ACCEPT the IPv6 section said "IPv6 listeners are filtered by
+  firewalld" — now the INFO `ipv6.firewalld_v6_open` ("not filtered");
+- **present since before 0.24.1:** on a firewalld host with no ufw package it said
+  "UFW IPv6 configuration matches kernel". When firewalld filters and UFW is not
+  running, the IPv6 section now speaks of firewalld alone (the 0.24.1 fix covered
+  only "neither UFW nor firewalld").
+
+Known limit, unchanged: BOB judges firewalld's **default** zone. On the measured
+host the interface follows the default zone; an interface bound explicitly to
+another zone is still judged by the default zone's target.
+
+### 2. UFW with IPV6=no blocks IPv6; it does not leave it open
+
+BOB read `IPV6=no` as "UFW does not manage IPv6" and reported the IPv6 listeners
+as exposed: `ipv6.ufw_disabled_listeners_present`, a WARN −2, on a host with a
+global IPv6 address, and — the 0.24.1 wording — "reachable from the local network
+without UFW filtering" on a link-local-only one. Measured on Linux Mint 22.3
+(ufw 0.36.2), with a link-local neighbour in a network namespace joined to the host
+by a veth pair: UFW active + IPV6=no → the IPv6 INPUT policy is DROP and sshd on
+`[::]:22` does not answer; UFW inactive, same settings → ACCEPT, and sshd answers.
+The cause is in ufw itself: with IPV6=no and a working ip6tables, `ufw-init`
+installs DROP on the IPv6 INPUT, FORWARD and OUTPUT chains, loopback excepted.
+
+BOB does not infer that from IPV6=no: it reads the IPv6 INPUT policy (only when
+UFW is set to IPV6=no). UFW active + DROP → INFO `ipv6.ufw_v6_off_blocked`
+("UFW drops all IPv6 — the listeners are unreachable, and IPv6 is unusable on
+this host"), no deduction. A policy read as ACCEPT, or not read, keeps the
+previous verdict; a DROP while UFW is inactive is not credited to UFW. The
+`--explain` text of `ipv6.ufw_disabled_listeners_present`, which said no ip6tables
+rule is loaded, is rewritten.
+
+A first attempt at this measurement — connecting from another machine — was
+invalid: that machine also had UFW with IPV6=no, so its own DROP broke neighbour
+discovery in both directions. The namespace method keeps both ends on the host
+under test.
+
+### 3. One French word for a finding: « constat »
+
+The French interface said "finding" 40 times, "constat" 23 times and "découverte"
+7 times for the same thing, and the French documentation followed it. Everything
+now says « constat », as the CONVENTIONS glossary (§10) fixes it: 39 locale values
+(`Nouveau constat : …` in `--diff`, `{count} constat(s)` in the HTML report, the
+`--explain` texts) and the current French documents. "Découverte" remains only
+where it means discovery (IoT/mDNS, Avahi, CUPS printer discovery, newly
+discovered flaws). Finding keys are unchanged. Clear anglicisms in those documents
+("jour du ship", "bump", "fixes", "auto-fix") are translated too.
+
+### 4. `--check list` describes what each section covers
+
+The `firewall` section was described as "UFW firewall — installed, active, default
+policy" three releases after it learnt firewalld and raw rulesets; `ipv6` and
+`ports` named UFW alone; `updates` named APT alone though it reads apt, dnf,
+zypper, pacman and apk. All four now name every backend they judge (EN + FR).
+
+### 5. Documentation
+
+- The `--diff` example in AUTOMATION (EN + FR) showed headed blocks
+  ("Resolved since last audit (2):") that BOB has never printed; it now shows the
+  real lines, one per key.
+- Changelog coherence: 0.2.2 was dated 02-05 in both summary tables and 03-05 in
+  both detailed changelogs and its tag — 03-05 is right. TESTING had no row for
+  0.2.1 or the four 0.7.0 betas; they are added, with counts collected at each tag
+  (`git archive` + `pytest --collect-only`; 0.7.0b2 = 5411 was written nowhere).
+  The approximate `~6008` / `~6198` / `~6244` rows of 0.8.x are now exact (same
+  figures, measured at the tags).
+- French changelog sections and rows that had been condensed are translated in
+  full: 0.7.0, 0.7.0b3, 0.7.0b4 (17–24 % of the English length — missed by an
+  earlier parity check whose version pattern read every beta as 0.7.0) and the
+  summary rows of 0.7.0b3, 0.7.0b4, 0.6.2, 0.5.2 and 0.2.1. French left in English
+  entries is translated, and PEP 416 is described as *rejected* everywhere.
+
+### Guards
+
+- `tests/test_v0242_firewalld_policy_open.py` — both polarities of the zone
+  target, the rendered message in EN and FR, the lock-out-safe fix, the IPv6
+  wording under firewalld, the runner wiring, the section descriptions.
+- `tests/test_v0242_ufw_ipv6_off.py` — DROP vs ACCEPT vs unread, UFW active vs
+  inactive, the policy read and when it happens.
+- `tests/test_fr_constat_terminology.py` — no "finding" in the French locale or
+  the current French documents; "découverte" only in its discovery sense.
+- `tests/test_changelog_fr_parity.py` — both languages list the same versions and
+  no French entry is under 0.9 × the English length; pre-releases are read.
+- `test_v0153_changelog_dates.py` now compares each summary table with its
+  detailed changelog and reads the betas; `test_v0181…` requires a TESTING row for
+  every released version.
+- A 0.20.2 guard (`firewalld/ipv6-gap-warned-though-firewalld-filters-v6`) had
+  become inert behind the new IPv6 branch; the full mutation run caught it, and it
+  now tests the case it still covers (UFW and firewalld both active).
+
+### Numbers
+
+- **Tests** 12009 → **12165**; mutations 387 → **408**, all killed.
+- Locale keys 2833 → **2840** per language; `--explain` keys and CIS references
+  218 → **219** (95 best-practice).
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+No configuration change needed. An `ignore.yml` entry for
+`ipv6.ufw_disabled_listeners_present` or `ipv6.ufw_disabled_listeners_link_local`
+no longer matches on a UFW host where IPv6 is blocked (§2): the finding is now
+`ipv6.ufw_v6_off_blocked`, an INFO.
+
+---
+
 ## [0.24.1] — 2026-10-05
 
 **A patch release: every summary reads the firewall that is actually filtering,
@@ -10363,7 +10510,7 @@ The flagship deliverable. Pre-v0.7.0, `~/.config/bob/checks.d/*.py` plugins ran 
 
 **Parent process never exec's plugin code** — `bob/plugin_checks._load_one()` is now AST read-only (size check + `compile()` for syntax + AST FunctionDef walk for `run_check` presence + AST extraction of `CHECK_NAME`). The pre-v0.7.0 `importlib.exec_module` path is removed. A plugin with `import subprocess; subprocess.run(...)` at module level no longer compromises the audit during plugin discovery — the malicious import is deferred to the sandboxed child where it gets caught by the import allowlist.
 
-**Threat model recadré honest** in `SECURITY.md` "Plugin checks" section. The header line:
+**Threat model honestly reframed** in the `SECURITY.md` "Plugin checks" section. The header line:
 
 > **In-process Python sandboxing is not a security boundary.** This is a defence-in-depth layer.
 
@@ -10506,7 +10653,7 @@ Same as b3: monitor 24h of real-world smoke output across the 4 VMs + so6desktop
     The b2 worker pushed the plugin's CheckResult directly onto a `multiprocessing.Queue`; the parent's `q.get()` un-pickled it. A plugin can construct a `type("Evil", (object,), {"__reduce__": evil_reduce})` (the `type` metaclass call bypasses the `__build_class__` strip), reach a real `eval` reference via `json.dumps.__globals__["__builtins__"]` (any allowlisted stdlib module leaks the real builtins this way), and attach an Evil instance to `findings[0].template_vars`. When the parent un-pickles the result, the Evil reduce executes `eval("__import__('os').system('touch /tmp/bob_c2_parent_pwned')")` **in the parent process**. The PoC created the sentinel file from a `sudo bob` run.
 
   - **Architectural escape — real `__import__` reachable in 5 lines.**
-    `real_import = json.dumps.__globals__["__builtins__"]["__import__"]` returns the unrestricted `builtins.__import__` because Python's stdlib modules carry their own un-restricted builtins reference via their module `__globals__`. The hook installed in the plugin's `__builtins__` is bypassed because external modules don't look up imports through the plugin's namespace. The plugin then calls `real_import("subprocess")` and runs whatever it wants. This is the same fundamental limitation that retired PEP 416 (sandbox proposal) back in 2012. **No Python-only mitigation can close it without breaking the stdlib allowlist itself.**
+    `real_import = json.dumps.__globals__["__builtins__"]["__import__"]` returns the unrestricted `builtins.__import__` because Python's stdlib modules carry their own un-restricted builtins reference via their module `__globals__`. The hook installed in the plugin's `__builtins__` is bypassed because external modules don't look up imports through the plugin's namespace. The plugin then calls `real_import("subprocess")` and runs whatever it wants. This is the same fundamental limitation cited in the rejection of PEP 416 (frozendict) in 2012: a sandbox written in Python cannot be proven secure. **No Python-only mitigation can close it without breaking the stdlib allowlist itself.**
 
 ### Strategic decision — Option B, defence-in-depth honest
 

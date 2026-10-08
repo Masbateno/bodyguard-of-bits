@@ -136,6 +136,16 @@ class TestIPv6Coverage:
         assert "ipv6.port_no_v6_rule" not in _keys(result)
         assert result.deductions == []
 
+    def test_both_front_ends_active_no_v6_gap_warning(self):
+        """v0.24.2: with UFW inactive the firewalld case is answered earlier (no
+        claim about UFW's IPv6 setting at all); this branch now only serves a
+        host running both front-ends, and must still not warn the v6 gap."""
+        result = check_ipv6(self._snap(), ufw_active=True,
+                            firewalld_active=True, t=_t)
+        assert "ipv6.firewalld_v6" in _keys(result)
+        assert "ipv6.port_no_v6_rule" not in _keys(result)
+        assert result.deductions == []
+
     def test_without_firewalld_the_v6_gap_is_reported(self):
         result = check_ipv6(self._snap(), ufw_active=True,
                             firewalld_active=False, t=_t)

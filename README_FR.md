@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.24.1-brightgreen)
+![Release](https://img.shields.io/badge/version-0.24.2-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -55,7 +55,7 @@ Si vous utilisez déjà Lynis, BOB n'est pas un remplacement — c'est un autre 
 **Conséquences concrètes :**
 
 - Un score 10/10 sur un poste de travail en LAN ne signifie **pas** un 10/10 sur le même hôte déplacé sur un cloud public — re-auditer avec le profil approprié.
-- Un finding marqué `improvement` au lieu de `action` reflète le contexte réseau (ex. l'authentification SSH par mot de passe est une hygiène acceptable sur un hôte LAN-only, mais à durcir avant d'exposer l'hôte directement sur internet).
+- Un constat marqué `improvement` au lieu de `action` reflète le contexte réseau (ex. l'authentification SSH par mot de passe est une hygiène acceptable sur un hôte LAN-only, mais à durcir avant d'exposer l'hôte directement sur internet).
 - Le profil d'audit (`server` / `desktop` / `workstation` / `container`) encode le modèle de menace. Changer de profil change le verdict — c'est par design.
 - La détection de contexte réseau (NAT / IP publique / état des interfaces) est **heuristique**, pas un probing actif de joignabilité. Elle indique ce que BOB infère depuis le système local, pas ce qu'un attaquant observerait de l'extérieur.
 
@@ -133,7 +133,7 @@ $ sudo bob -d
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.24.1  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.24.2  │  Auditeur de durcissement Linux                              ║
 ║  Système       : Linux Mint 22.3                                             ║
 ║  Noyau         : 6.17.0-23-generic                                           ║
 ║  UFW           : 0.36.2                                                      ║
@@ -181,7 +181,7 @@ Chaque WARN/ALERT affiche une référence CIS (quand applicable), une commande d
 
 ## Mapping des benchmarks CIS
 
-218 entrées : **116 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 1 CIS Red Hat 8/9 · 94 bonnes pratiques**, plus **189 citations inter-benchmarks** sur 67 clés (CIS Debian 12/13 et CIS Ubuntu 24.04), sourcées depuis [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) pour que chaque numéro de contrôle soit vérifiable et non inventé.
+219 entrées : **116 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 1 CIS Red Hat 8/9 · 95 bonnes pratiques**, plus **189 citations inter-benchmarks** sur 67 clés (CIS Debian 12/13 et CIS Ubuntu 24.04), sourcées depuis [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) pour que chaque numéro de contrôle soit vérifiable et non inventé.
 
 Chaque résultat avec un code CIS formel affiche `[CIS:X.Y.Z]` en ligne dans la boîte de synthèse.  
 Le texte de référence complet est montré en mode `--verbose`.  
@@ -300,7 +300,7 @@ Les patterns sont appliqués sur le basename du binaire via `fnmatch`. Les binai
 
 > **API publique stable** — ces codes ne changeront pas au sein d'une version majeure.
 
-Le code reflète les *findings*, pas le score :
+Le code reflète les *constats*, pas le score :
 
 | Code | Constante | Signification |
 |------|-----------|---------------|
@@ -337,7 +337,7 @@ Optionnel : `geoip2` pour la géolocalisation IP (`pipx inject bodyguard-of-bits
 
 Sur les distributions non-apt (Fedora, RHEL, openSUSE, Arch, Alpine), les checks qui s'appuient sur les métadonnées `apt` (ex. mises à jour de sécurité en attente) émettent INFO au lieu de WARN — BOB ne consomme pas les métadonnées de mise à jour de `dnf`/`zypper`/`pacman`. Les références CIS Ubuntu 22.04 restent émises quand le contrôle sous-jacent (flags sysctl, config SSH, permissions de fichiers) est indépendant de l'OS.
 
-**Les commandes de remédiation sont choisies pour votre gestionnaire de paquets** depuis la v0.17.0. Auparavant, chaque finding « installez ceci » affichait `sudo apt install …` sur tous les hôtes, avec les noms de paquets de Debian — or `sudo dnf install auditd` n'installe rien, Fedora l'appelant `audit`. Les noms ont été mesurés en conteneur, pas récités ; et là où BOB n'a pas de nom mesuré pour votre gestionnaire, il le dit au lieu d'inventer une commande : une instruction qui n'installe rien est pire qu'un aveu, puisque vous n'avez aucune raison d'en douter.
+**Les commandes de remédiation sont choisies pour votre gestionnaire de paquets** depuis la v0.17.0. Auparavant, chaque constat « installez ceci » affichait `sudo apt install …` sur tous les hôtes, avec les noms de paquets de Debian — or `sudo dnf install auditd` n'installe rien, Fedora l'appelant `audit`. Les noms ont été mesurés en conteneur, pas récités ; et là où BOB n'a pas de nom mesuré pour votre gestionnaire, il le dit au lieu d'inventer une commande : une instruction qui n'installe rien est pire qu'un aveu, puisque vous n'avez aucune raison d'en douter.
 
 La même version corrige une interrogation qui répondait oui à tout sur toute la famille RPM. `rpm -q paquet-inexistant` écrit « package paquet-inexistant is not installed » sur **stdout** et sort en 1 ; BOB comptait toute sortie comme preuve d'installation, si bien que sur Fedora, RHEL et openSUSE tout paquet était réputé installé — y compris des noms qui n'existent nulle part. L'effet visible : un audit qui rendait compte de services absents, et un verdict microcode « OK » qui n'avait rien vérifié. **Si vous faites tourner BOB sur une distribution RPM, la v0.17.0 n'est pas optionnelle.**
 

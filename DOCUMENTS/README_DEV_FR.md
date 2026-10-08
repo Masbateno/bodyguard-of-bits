@@ -38,11 +38,11 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | Module | Rôle |
 |---|---|
 | `__main__.py` | Orchestrateur — parsing des arguments, collecte des snapshots, appelle `run_checks()`, affiche le résumé (~1009 lignes) |
-| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (56 sections filtrables + 10 always-on), `_section_enabled()` (~1218 lignes) |
+| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (56 sections filtrables + 10 always-on), `_section_enabled()` (~1219 lignes) |
 | `cli.py` | Parsing des arguments — retourne un `AuditConfig` dataclass |
 | `config.py` | Configuration utilisateur — `UserConfig`, `EmailStore` |
 | `display.py` | Helpers d'affichage terminal — `display_result()`, `print_audit_summary()`, etc. |
-| `fixes.py` | Interface mode fix — interactif et auto-fix (`-f`/`-y`) |
+| `fixes.py` | Interface du mode fix — interactif et correction automatique (`-f`/`-y`) |
 | `i18n.py` | Internationalisation — `t("clé.sous_clé")` avec notation pointée |
 | `manage_logs.py` | Interface `--manage-logs` — `run_manage_logs()`, `get_or_prompt_log_dir()` |
 | `output.py` | Primitives terminal bas niveau — `print_ok/warn/alert/info/section/banner` |
@@ -54,13 +54,13 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | `sysinfo.py` | Info système — `collect_system_info()`, `detect_network_context()`, `get_user_home()` |
 | `compare.py` | Rapport comparatif — `AuditBaseline` (avec `finding_keys`), `AuditDelta` (avec `new_finding_keys`/`resolved_finding_keys`), `build_baseline()`, `save_baseline()`, `load_baseline()`, `compute_delta()`, `display_delta()` |
 | `plugin_checks.py` | Chargeur de plugins — `PluginCheck`, `load_plugin_checks()`, sanitisation ANSI |
-| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 218 clés canoniques dans 61 préfixes, variantes par profil (71 clés × 3 profils), lookup référence CIS via `cis_refs.py` |
-| `cis_refs.py` | Lookup référence CIS — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` avec `lru_cache` ; données dans `data/cis_refs.json` (218 entrées : 117 CIS formels, 89 best-practice, 7 Docker) |
+| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 219 clés canoniques dans 61 préfixes, variantes par profil (71 clés × 3 profils), lookup référence CIS via `cis_refs.py` |
+| `cis_refs.py` | Lookup référence CIS — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` avec `lru_cache` ; données dans `data/cis_refs.json` (219 entrées : 117 CIS formels, 89 best-practice, 7 Docker) |
 | `domain_scores.py` | Sous-scores par domaine — `compute_domain_scores()`, `render_domain_scores()`, attribution 6 domaines (`backup` → `health_resilience`) |
 | `webhook.py` | Envoi webhook — `build_generic_payload()`, `build_slack_payload()`, `send_webhook()`, auto-détection format |
 | `correlation.py` | Moteur de corrélation — `CorrelationRule` (frozensets all_of/any_of), `CorrelatedFinding`, `run_correlations()`, 6 règles de risque composé intégrées |
 | `exposure.py` | Analyse d'exposition des ports — regroupe par portée d'interface et niveau de risque ; allowlist fw_policy |
-| `recurrence.py` | Suivi findings récurrents — `load_recurrence()`, `save_recurrence()`, `update_recurrence()` ; compteurs consécutifs dans `~/.config/bob/recurrence.json` |
+| `recurrence.py` | Suivi constats récurrents — `load_recurrence()`, `save_recurrence()`, `update_recurrence()` ; compteurs consécutifs dans `~/.config/bob/recurrence.json` |
 
 ### Module cron
 
@@ -161,14 +161,14 @@ bob/
 ├── csv_output.py        # Formatter sortie CSV (--format csv)
 ├── display.py           # Helpers affichage terminal (display_result, print_audit_summary…)
 ├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — attribution backup→health_resilience
-├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 218 clés dans 61 préfixes
+├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 219 clés dans 61 préfixes
 ├── exposure.py          # Regroupement exposition ports — portée d'interface + niveau de risque
-├── fixes.py             # Interface mode fix (interactif + auto-fix)
+├── fixes.py             # Interface du mode fix (interactif + correction automatique)
 ├── formatter.py         # bob.formatter — rendu indépendant de la locale via Finding.template_vars (v0.4.1)
 ├── history.py           # Suivi historique de score — affichage sparkline pour --history
 ├── html_output.py       # build_html_output() — export HTML autonome (--html)
 ├── i18n.py              # t(key) avec notation pointée
-├── ignore.py            # Liste d'ignore persistante par finding-key (~/.config/bob/ignore.yml)
+├── ignore.py            # Liste d'ignore persistante par clé de constat (~/.config/bob/ignore.yml)
 ├── json_output.py       # Formatter sortie JSON (--json / --json-full) avec schema_version=3
 ├── manage_logs.py       # Interface --manage-logs, get_or_prompt_log_dir()
 ├── markdown_output.py   # Formatter sortie Markdown (--format markdown)
@@ -176,7 +176,7 @@ bob/
 ├── panorama.py          # build_panorama_rows()
 ├── plugin_checks.py     # PluginCheck + load_plugin_checks()
 ├── profiles.py          # Chargeur de profil d'audit (server/workstation/desktop/container + profils utilisateur)
-├── recurrence.py        # Suivi findings récurrents — compteurs consécutifs
+├── recurrence.py        # Suivi des constats récurrents — compteurs consécutifs
 ├── registry.py          # ServiceRegistry.load()
 ├── report.py            # AuditReport + NullReport
 ├── report_markdown.py   # MarkdownReport, email HTML
@@ -288,7 +288,7 @@ bob/
 │   └── world_writable.py       # WorldWritableSnapshot + check_world_writable() — --exhaustive (v0.24.0)
 ├── data/
 │   ├── services.json            # Registre déclaratif des 38 services
-│   ├── cis_refs.json            # Références CIS — 218 entrées {ref, code}
+│   ├── cis_refs.json            # Références CIS — 219 entrées {ref, code}
 │   └── bob.bash-completion  # Script d'autocomplétion bash
 └── locales/
     ├── en.json          # Clés de traduction anglais
@@ -520,8 +520,8 @@ print(f'Missing in FR: {missing if missing else \"none\"}')
 
 Résultat attendu :
 ```
-EN keys: 2833
-FR keys: 2833
+EN keys: 2840
+FR keys: 2840
 Missing in FR: none
 ```
 
@@ -537,7 +537,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Traduire toutes les valeurs
 
-Le fichier contient exactement 2833 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
+Le fichier contient exactement 2840 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
 
 Exemple :
 ```json
@@ -647,7 +647,7 @@ Le score démarre à 10/10. Chaque `Deduction` soustrait des points. Après l'ex
 
 ```python
 engine = ScoreEngine(profile=active_profile)   # v0.14.0 : l'engine porte le profil
-engine.apply(check_result)              # applique les overrides du profil, puis findings + déductions
+engine.apply(check_result)              # applique les overrides du profil, puis constats + déductions
 engine.cap(maximum=3, key="firewall.inactive")  # plafonne si pare-feu inactif
 engine.finalize()                       # applique le plafond, clamp à [0, 10]
 apply_domain_score_override(engine)     # score global = moyenne des domaines actifs
@@ -660,7 +660,7 @@ raw   = engine._raw_score    # score brut pré-override (débogage uniquement)
 
 **Contrat orchestrateur :** `apply_domain_score_override(engine)` depuis `bob.domain_scores` doit être appelé après `engine.finalize()`. Avant cet appel, `engine.score` retourne le score brut basé sur les déductions. Ne pas appeler `engine.set_global_score()` directement.
 
-**Ensemble des domaines actifs :** un domaine compte comme « actif » dans la moyenne globale dès qu'un check de ce domaine émet un finding `OK`, `WARN` ou `ALERT` (ou une déduction avec une clé). Les findings `INFO` seuls (observations purement consultatives) ne promeuvent pas un domaine à eux seuls — ils sont explicitement exclus pour que les domaines avec uniquement des notices informatives restent cachés. L'inclusion du `OK` est le fix v0.4.6 (Bug 2) : avant lui, un domaine qui passait clean après remédiation (seul `updates.ok` subsistant après `apt upgrade`) sortait du set actif et le score global *baissait* malgré un système strictement plus sécurisé.
+**Ensemble des domaines actifs :** un domaine compte comme « actif » dans la moyenne globale dès qu'un check de ce domaine émet un constat `OK`, `WARN` ou `ALERT` (ou une déduction avec une clé). Les constats `INFO` seuls (observations purement consultatives) ne promeuvent pas un domaine à eux seuls — ils sont explicitement exclus pour que les domaines avec uniquement des notices informatives restent cachés. L'inclusion du `OK` est le correctif v0.4.6 (Bug 2) : avant lui, un domaine qui passait clean après remédiation (seul `updates.ok` subsistant après `apt upgrade`) sortait du set actif et le score global *baissait* malgré un système strictement plus sécurisé.
 
 **Pondération égale des domaines :** tous les domaines actifs contribuent également à la moyenne globale — il n'y a pas de pondération par domaine. Une machine où seul SSH est dégradé et tous les autres domaines sont à 10/10 bénéficie de la dilution ; une machine avec les six domaines actifs accorde le même poids au pare-feu qu'à la santé & résilience. C'est un choix de conception intentionnel maintenu à travers la v0.4.x.
 

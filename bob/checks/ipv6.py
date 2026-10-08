@@ -72,6 +72,13 @@ class IPv6Snapshot:
     #: with nftables, Alpine, Arch) BOB said "UFW IPv6 configuration matches
     #: kernel IPv6 state" and "Port 22/tcp … without a UFW (v6) rule".
     ufw_present:         bool       = True
+    #: v0.24.2 — the kernel's IPv6 INPUT policy ("DROP", "ACCEPT"), read only
+    #: when UFW is set to IPV6=no; None when not read or unreadable. ufw-init
+    #: does not leave IPv6 unmanaged there: it installs DROP on INPUT, FORWARD
+    #: and OUTPUT (loopback excepted) whenever ip6tables works. Measured on Mint
+    #: 22.3, ufw 0.36.2: UFW active + IPV6=no → a link-local neighbour cannot
+    #: reach sshd on [::]:22; UFW inactive → it can.
+    ip6_input_policy:    "str | None" = None
 
     @classmethod
     def from_system(cls) -> "IPv6Snapshot":
@@ -87,6 +94,7 @@ class IPv6Snapshot:
         ufw_present         = (shutil.which("ufw") is not None
                                or path_exists(Path("/etc/default/ufw")))
         has_global_ipv6     = _read_global_ipv6()
+        ip6_input_policy    = _read_ip6_input_policy() if ufw_ipv6_enabled is False else None
 
         ss = run_result("ss", "-tulnp")
         ipv6_listeners = sorted(_extract_ipv6_listeners(ss.stdout))
@@ -105,7 +113,17 @@ class IPv6Snapshot:
             ufw_v6_covered=ufw_v6_covered,
             has_global_ipv6=has_global_ipv6,
             ufw_present=ufw_present,
+            ip6_input_policy=ip6_input_policy,
         )
+
+
+def _read_ip6_input_policy() -> "str | None":
+    """The IPv6 INPUT chain's default policy, or None when it could not be read."""
+    res = run_result("ip6tables", "-S", "INPUT")
+    if not res.ok:
+        return None
+    m = re.search(r"^-P INPUT (\w+)", res.stdout, re.M)
+    return m.group(1) if m else None
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +133,7 @@ class IPv6Snapshot:
 _MAX_PORT_DEDUCTIONS = 3   # cap per-port deductions to avoid score collapse
 
 
-def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None, firewalld_active: bool = False, netfilter_active: bool = False) -> CheckResult:
+def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None, firewalld_active: bool = False, netfilter_active: bool = False, firewalld_policy: str = "") -> CheckResult:
     """
     Check IPv6 firewall consistency.
 
@@ -137,6 +155,19 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
             detail=_t("ipv6.kernel_state_unknown_detail"),
             key="ipv6.kernel_state_unknown",
         )
+
+    # v0.24.2: firewalld is the filter and UFW is not running — UFW's IPv6
+    # setting describes nothing here (measured on Fedora 44, no ufw package:
+    # "UFW IPv6 configuration matches kernel"). firewalld filters IPv6 through
+    # the same zone as IPv4, so the zone's default decides both — and a zone
+    # whose target is ACCEPT filters neither, which "filtered by firewalld"
+    # used to claim anyway.
+    if firewalld_active and not ufw_active:
+        if firewalld_policy == "allow":
+            result.info(message=_t("ipv6.firewalld_v6_open"), key="ipv6.firewalld_v6_open")
+        else:
+            result.ok(message=_t("ipv6.firewalld_v6"), key="ipv6.firewalld_v6")
+        return result
 
     # v0.24.1: no UFW at all, and firewalld not running — UFW's IPv6 setting
     # describes nothing here, so neither "matches kernel" nor "no UFW (v6) rule"
@@ -177,7 +208,19 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
     elif snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled is False:
         if snapshot.ipv6_listeners:
             listeners_str = ", ".join(snapshot.ipv6_listeners)
-            if snapshot.has_global_ipv6:
+            if ufw_active and snapshot.ip6_input_policy == "DROP":
+                # v0.24.2: UFW with IPV6=no drops every IPv6 packet — the
+                # listeners are unreachable, not exposed. This used to be a
+                # WARN −2 for "services exposed without UFW IPv6 rules" (global
+                # address) or "reachable from the local network without UFW
+                # filtering" (link-local); both are the opposite of measured.
+                result.info(
+                    message=_t("ipv6.ufw_v6_off_blocked",
+                               count=len(snapshot.ipv6_listeners)),
+                    detail=_t("ipv6.ufw_v6_off_blocked_detail", ports=listeners_str),
+                    key="ipv6.ufw_v6_off_blocked",
+                )
+            elif snapshot.has_global_ipv6:
                 # Real gap: globally-routable IPv6 + listeners + no UFW IPv6 rules.
                 # When UFW is completely inactive, downgrade: main issue is UFW being off.
                 if ufw_active:

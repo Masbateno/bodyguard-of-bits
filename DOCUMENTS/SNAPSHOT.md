@@ -123,8 +123,8 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  bob 0.24.1     ~49.5 kLoC Python · 0 runtime deps outside stdlib        │
-│                 12009 unit tests · 24 doc files · 7+ distros field-tested │
+│  bob 0.24.2     ~49.5 kLoC Python · 0 runtime deps outside stdlib        │
+│                 12165 unit tests · 24 doc files · 7+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -132,7 +132,7 @@ LAYER (top→bottom = imports flow down)
     bob/__main__.py  ← orchestrator (1009 L)
         │
         ├──► bob/cli.py             ← AuditConfig + parse_args() (984 L)
-        ├──► bob/runner.py          ← run_checks(), _sec closure (1218 L)
+        ├──► bob/runner.py          ← run_checks(), _sec closure (1219 L)
         ├──► bob/scoring.py         ← ScoreEngine + Finding + Deduction + posture API + v0.10.0 D-4 legacy-ignore shim + v0.10.2 I-1 firewall_iptables literal fix (1038 L)
         ├──► bob/domain_scores.py   ← per-domain averaging, 6 domains
         │                              (called AFTER run_checks via
@@ -172,13 +172,13 @@ LAYER (top→bottom = imports flow down)
     bob/json_output.py + html_output.py + csv_output.py + markdown_output.py + report_markdown.py
         ← export formatters
     bob/formatter.py + bob/i18n.py + bob/_i18n_safe.py + bob/locales/{en,fr}.json
-        ← locale-independent reconstruction + i18n (2833 keys per language;
+        ← locale-independent reconstruction + i18n (2840 keys per language;
           _i18n_safe.py since v0.8.2 = shared make_fallback_t + t_or_hardcoded)
 
 DATA (read-only at runtime, shipped in the package)
 
     bob/data/services.json        ← 38 services (id+ports+risk+detection)
-    bob/data/cis_refs.json        ← 218 CIS references
+    bob/data/cis_refs.json        ← 219 CIS references
     bob/data/profiles/*.conf      ← server/desktop/container/workstation
     bob/data/schemas/*.json       ← service / services-list / plugin-file (Draft 2020-12)
     bob/data/bob.bash-completion  ← shipped, installed via --install-completion
@@ -219,7 +219,7 @@ bodyguard-of-bits/
 ├── bob/                       ← Python package (the tool)
 │   ├── __init__.py            ← __version__ + NullHandler / BOB_DEBUG logging setup (v0.13.3, 31 L)
 │   ├── __main__.py            ← orchestrator, 1009 L, 30 outgoing bob.* imports
-│   ├── runner.py              ← run_checks(), 1218 L, _sec closure (51 filterable + 10 always-on sections via unified `_SECTIONS` tuple, v0.9.0 D-2)
+│   ├── runner.py              ← run_checks(), 1219 L, _sec closure (51 filterable + 10 always-on sections via unified `_SECTIONS` tuple, v0.9.0 D-2)
 │   ├── cli.py                 ← parse_args() + AuditConfig + _VALUE_TAKING_OPTS (v0.7.4) + --diff/--reset-baseline wiring (v0.9.0 F-2); --json-v1 retired (v0.9.0 F-3 — now hits CLIError with hardcoded EN fallback per v0.9.1) — 984 L
 │   ├── config.py              ← UserConfig, EmailStore, ~/.config/bob/
 │   ├── profiles.py            ← audit profile loader (**4 built-in** + user); v0.8.1 BREAKING retired the *alias* — workstation is now first-class
@@ -261,13 +261,13 @@ bodyguard-of-bits/
 │   ├── breakdown.py           ← --breakdown score computation transparency
 │   ├── exposure.py            ← attack-surface table (compute_exposure)
 │   ├── formatter.py           ← locale-independent reconstruction (v0.4.1)
-│   ├── i18n.py                ← t(key, **vars), 2833 keys per locale (strict parity)
+│   ├── i18n.py                ← t(key, **vars), 2840 keys per locale (strict parity)
 │   ├── locales/
 │   │   ├── en.json            ← English translation keys
 │   │   └── fr.json            ← French translation keys (strict parity)
 │   ├── data/
 │   │   ├── services.json      ← 38 known services (declarative registry)
-│   │   ├── cis_refs.json      ← 218 CIS references
+│   │   ├── cis_refs.json      ← 219 CIS references
 │   │   ├── profiles/          ← server.conf, desktop.conf, workstation.conf, container.conf
 │   │   ├── schemas/           ← 3 JSON Schemas (Draft 2020-12)
 │   │   └── bob.bash-completion ← bash completion script
@@ -296,7 +296,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 345 test files, ~6907 functions, 12009 collected (0.24.1)
+├── tests/                     ← 349 test files, ~6942 functions, 12165 collected (0.24.2)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -316,7 +316,7 @@ bodyguard-of-bits/
 | Module | LoC | Role |
 |---|---:|---|
 | `__main__.py` | 1009 | Orchestrator: argv → AuditConfig → snapshots → run_checks() → display |
-| `runner.py` | 1218 | Audit engine: `run_checks()`, `_sec` closure factory (51 filterable + 10 always-on sections via unified `_SECTIONS: tuple[_Section, ...]` since v0.9.0 D-2; `_ALL_SECTIONS` + `_ALWAYS_ON_SECTIONS` kept as back-compat derived views), `_section_enabled()`, `validate_check_filters()` (v0.7.0 M-7 recognises always-on tokens; v0.9.0 D-1 raises fatal migration error via `_RENAMED_SECTIONS_V090 = SECTION_RENAMES_V090` re-import from `bob/_v090_renames.py`) |
+| `runner.py` | 1219 | Audit engine: `run_checks()`, `_sec` closure factory (51 filterable + 10 always-on sections via unified `_SECTIONS: tuple[_Section, ...]` since v0.9.0 D-2; `_ALL_SECTIONS` + `_ALWAYS_ON_SECTIONS` kept as back-compat derived views), `_section_enabled()`, `validate_check_filters()` (v0.7.0 M-7 recognises always-on tokens; v0.9.0 D-1 raises fatal migration error via `_RENAMED_SECTIONS_V090 = SECTION_RENAMES_V090` re-import from `bob/_v090_renames.py`) |
 | `cli.py` | 984 | `parse_args()`, `AuditConfig` dataclass, `--help` text, CLIError, `_VALUE_TAKING_OPTS` frozenset (v0.7.4 M); `--diff [PATH]` flag (v0.9.0 F-2); `--json-v1` retired (v0.9.0 F-3) — typing the flag now hits a hardcoded EN CLIError (`v0.9.1 hotfix`: inline string instead of pre-init `t()` to dodge bracketed-fallback `[cli.error.json_v1_retired]`); test guards `test_v091_cli_i18n_safety.py` pin both AST and emitted content |
 | `config.py` | 479 | `UserConfig` (key/value config store) + `EmailStore` (email book) + `get_suid_whitelist()` accessor. `bob.config._EMAIL_RE` single source of truth (v0.5.x). Uses `_i18n_safe.make_fallback_t` since v0.8.2. Interactive prompts live in `manage_logs.py`, not here. |
 | `profiles.py` | 483 | Profile loader: server/desktop/**workstation**/container + ~/.config/bob/profiles/*.conf. v0.8.1 BREAKING retired the `workstation → desktop` *alias*; `workstation.conf` is a first-class profile with its own overrides. A valid `-p NAME` is persisted as the operator's default (v0.12.1). |
@@ -330,7 +330,7 @@ bodyguard-of-bits/
 | `_v0160_renames.py` | 59 | **v0.16.0** cross-version shim for the one whole-key rename that release made: `logs.brute_found` → `logs.blocked_repeat_public`. `FINDING_RENAMES_V0160`, `remap_finding_key()` applied at baseline load (composed after the v0.9.0 prefix remap, in that order), and `legacy_ignore_matches()` so an `ignore.yml` written before the rename keeps suppressing what it was written to suppress. Each back-compat surface fails differently when forgotten, so each has its own test |
 | `_sysctl_apply.py` | 137 | **NEW v0.18.0** native apply path for sysctl fixes: `apply_sysctl()` sets, persists idempotently via `atomic_write`, and reads back — `SysctlResult` distinguishes *applied*, *live but not persisted* and *refused*. Dispatched from `fixes._apply_native()` through `Finding.fix_action`, which bypasses the shell-operator barrier because no shell is run |
 | `_fs.py` | 65 | **NEW v0.18.0** version-proof path predicates. Python 3.14 made `Path.is_file()`/`exists()`/`is_symlink()` return False on a denial (3.13 raised), silently turning *off-limits* into *absent* at every call site that caught the raise. Used by `profiles.lookup_profile_file`, `services._is_safe_service_config`, `log_rotation._count_logrotate_rules`, `plugin_checks._load_one` |
-| `explain.py` | 1559 | `--explain` TUI + `EXPLAIN_KEYS` (218 keys, 61 prefixes) + `EXPLAIN_KEY_ALIASES` map (emptied v0.9.0 D-3; **first live entry v0.10.1** mapping the old `ssh.x11_forwarding` umbrella to the D-4 Rank 1 server/client split). v0.8.0 drift batch added 51 entries to cover WARN/ALERT findings previously emitted without --explain content; v0.10.1 added `ssh.x11.forwarding.client`. |
+| `explain.py` | 1560 | `--explain` TUI + `EXPLAIN_KEYS` (218 keys, 61 prefixes) + `EXPLAIN_KEY_ALIASES` map (emptied v0.9.0 D-3; **first live entry v0.10.1** mapping the old `ssh.x11_forwarding` umbrella to the D-4 Rank 1 server/client split). v0.8.0 drift batch added 51 entries to cover WARN/ALERT findings previously emitted without --explain content; v0.10.1 added `ssh.x11.forwarding.client`. |
 | `cis_refs.py` | 167 | CIS lookup with `lru_cache(maxsize=1)`, reads `data/cis_refs.json` (206 entries); **v0.18.1** `cis_family()` (distro-level) + `split_benchmark()` + `benchmark_labels()` + `benchmark_refs()` + `cis_family_sort_key()` drive the three-level `--explain` tree (distro → benchmark version → type) and the per-key **Also cited in** block; `CIS_BENCHMARK_URLS` + `cis_benchmark_url()` link each CIS family to its online benchmark page — all derived from the canonical English ref so grouping is locale-stable |
 | `display.py` | 1147 | Terminal output: section boxes, finding emission, summary box, score bar; `_LEVEL_DISPATCH` table + `print_audit_summary` split into 3 helpers (v0.5.x); `_compute_posture_annotation` single helper (v0.7.2 M-10); A1 hypotheses footer in summary box (v0.8.0) |
 | `output.py` | 751 | Low-level primitives: `print_ok/warn/alert/info/section/banner` |
@@ -338,7 +338,7 @@ bodyguard-of-bits/
 | `breakdown.py` | 187 | `--breakdown` / `-B` score computation transparency display |
 | `exposure.py` | 269 | `compute_exposure()` — attack-surface table for the audit summary (synthesises firewall state + ports + network context + finding keys) |
 | `formatter.py` | 119 | `format_finding()`, `format_deduction()` — locale-independent via `template_vars` |
-| `i18n.py` | 306 | `t(key, **vars)`, locale auto-detect (POSIX), 2833 keys EN/FR |
+| `i18n.py` | 306 | `t(key, **vars)`, locale auto-detect (POSIX), 2840 keys EN/FR |
 | `compare.py` | 645 | `AuditBaseline`, `AuditDelta`, `build_baseline()`, `compute_delta()`, `display_delta()`. **v0.9.0 F-2**: `AuditBaseline.hostname` field + `BaselineLoadError` + strict-mode `load_baseline(path, strict=True)` for `--diff [PATH]` cross-machine compare. **v0.9.2**: `load_baseline` calls `bob._v090_renames.remap_finding_key` per entry to remap legacy section prefixes at load + `BaselineLoadError` raise sites use `_i18n_safe.t_or_hardcoded` for 4 new `compare.baseline_load.*` keys. |
 | `correlation.py` | 161 | 6 compound-risk rules (`CorrelationRule` with frozensets) |
 | `recurrence.py` | 102 | Recurring finding tracker: consecutive-audit counters |
@@ -374,10 +374,10 @@ bodyguard-of-bits/
 
 | Check | LoC | Domain (scoring) | Notes |
 |---|---:|---|---|
-| `firewall.py` | 640 | firewall | UFW state, `check_rules()` for duplicates / open-any (section name `firewall_rules` since v0.9.0 D-1; file still `firewall.py`); `FirewallPosture` / `resolve_firewall_posture()` — the one answer every summary reads: UFW, firewalld (zone target) or a raw DROP/REJECT ruleset (v0.24.1) |
+| `firewall.py` | 672 | firewall | UFW state, `check_rules()` for duplicates / open-any (section name `firewall_rules` since v0.9.0 D-1; file still `firewall.py`); `FirewallPosture` / `resolve_firewall_posture()` — the one answer every summary reads: UFW, firewalld (zone target) or a raw DROP/REJECT ruleset (v0.24.1) |
 | `firewall_stack.py` | 288 | firewall | Docker iptables bypass, nftables parallel rules (section name `firewall_drivers` since v0.9.0 D-1) |
 | `iptables_nftables.py` | 354 | firewall | Fallback audit when UFW inactive (INPUT/FORWARD policy) (section name `firewall_iptables` since v0.9.0 D-1) |
-| `ipv6.py` | 438 | firewall | IPv6 listener vs UFW v6 rule consistency; on a host without UFW, listeners attributed to the governing filter, no address-family claim (v0.24.1) |
+| `ipv6.py` | 481 | firewall | IPv6 listener vs UFW v6 rule consistency; on a host without UFW, listeners attributed to the governing filter, no address-family claim (v0.24.1) |
 | `network_context.py` | 355 | firewall | Interface table, established TCP, sensitive remote ports |
 | `services.py` | 1277 | firewall | 38 known services, risk context, exposure classification; `_PRIVATE_ADDR` constant retired (v0.7.4 M) — now delegates to `sysinfo._is_private_or_loopback_ipv4`; +6 modern services in v0.8.0 T2 (32 → 38); states include socket-activated (v0.18.1) and condition-unmet — skipped by its own Condition…/ExecCondition (v0.24.1); a single-host UFW source named as such (v0.24.1) |
 | `services_state.py` | 243 | hardening | Boot-enabled but currently inactive security services (section name `services_health` since v0.9.0 D-1) |
@@ -491,12 +491,12 @@ These are the **integration points**. They're the entry/orchestration layer.
 
 | LoC | File | Hotspot reason |
 |---:|---|---|
-| 1559 | `bob/explain.py` | EXPLAIN_KEYS (218 keys / 61 prefixes after v0.8.0 backfill + v0.10.1 client x11 + later check-section growth) + alias map (emptied v0.9.0 D-3, first live entry v0.10.1) + interactive TUI |
+| 1560 | `bob/explain.py` | EXPLAIN_KEYS (218 keys / 61 prefixes after v0.8.0 backfill + v0.10.1 client x11 + later check-section growth) + alias map (emptied v0.9.0 D-3, first live entry v0.10.1) + interactive TUI |
 | 1284 | `bob/tui/cron.py` | Curses TUI for cron wizards (extracted v0.4.1) |
 | 1305 | `bob/checks/_run.py` | Per-section `_sec()`/`_Section` wiring for every check + the ordered `_ALL_SECTIONS` tuple, grown with each new check section |
 | 1277 | `bob/checks/services.py` | 38 services × detection paths × risk classification (32 → 38 via v0.8.0 T2) |
 | 1147 | `bob/display.py` | Renders all sections + risk context blocks + summary box + posture annotation helper (v0.7.2 M-10) + A1 hypotheses footer (v0.8.0) |
-| 1218 | `bob/runner.py` | `_sec()` closure + unified `_SECTIONS` tuple (v0.9.0 D-2) + v0.9.0 D-1 fatal migration error path via `SECTION_RENAMES_V090` |
+| 1219 | `bob/runner.py` | `_sec()` closure + unified `_SECTIONS` tuple (v0.9.0 D-2) + v0.9.0 D-1 fatal migration error path via `SECTION_RENAMES_V090` |
 | 1118 | `bob/manage_logs.py` | Full curses TUI: folder picker (tracked dirs) → per-directory list + preview + score chart |
 | 1038 | `bob/scoring.py` | ScoreEngine + Finding + Deduction + posture API (v0.7.0 T1) + v0.10.0 D-4 legacy-ignore shim wiring + v0.10.2 I-1 firewall_iptables literal fix |
 | 1009 | `bob/__main__.py` | Orchestrator: argv → AuditConfig → snapshots → run_checks() → display |
@@ -661,7 +661,7 @@ Top-level always-present keys (v3): `schema_version`, `version`, `host`, `timest
 
 Codes only added, never removed/renamed within a major. Exposed in `bob.__main__`.
 
-### 3. EXPLAIN_KEYS (218 keys, 61 prefixes)
+### 3. EXPLAIN_KEYS (219 keys, 61 prefixes)
 
 `bob.explain.EXPLAIN_KEYS` is a frozen canonical list. Adding a new key = additive (no breaking change). Renaming a key = breaking, must go through the alias map (`EXPLAIN_KEY_ALIASES`). Removing a key = major bump. Audited against the locale namespace + canonical naming convention in `tests/test_explain.py` and `tests/test_explain_naming_convention.py` (v0.7.0 T2 Sub-scope C).
 
@@ -679,7 +679,7 @@ The `--explain KEY` interactive TUI shows: **title**, **WHY** it matters, **HOW*
 
 `bob/data/schemas/service.schema.json` + `services-list.schema.json` + `plugin-file.schema.json` (Draft 2020-12). User plugins at `~/.config/bob/services.d/*.json` are validated at load time. Schema bumps from v1 to v2 = breaking change with explicit migration path via the `plugin-file.schema.json` `schema_version` wrapper.
 
-### 7. CIS references (218 entries)
+### 7. CIS references (219 entries)
 
 `bob/data/cis_refs.json`: stable mapping from finding key → `{ref, code}`. Adding new refs = additive. Removing/renaming = breaking (clients matching on `code` would break).
 
@@ -791,7 +791,7 @@ v0.7.0 T3 introduced `SandboxRunner` (Tier 2 restrictions) as the **single execu
 
 ---
 
-## Tests-to-source mapping (345 test files cover ~120 non-`__init__` modules)
+## Tests-to-source mapping (349 test files cover ~120 non-`__init__` modules)
 
 Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` or `bob/checks/<module>.py`. Some shared tests:
 
@@ -811,7 +811,7 @@ Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` o
 | `test_recurrence.py` | Consecutive-audit counter |
 | `test_exit_codes.py` | Exit code public API |
 | `test_explain.py` | EXPLAIN_KEYS, alias map, freeze policy |
-| `test_cis_refs.py` | 218 CIS references mapping |
+| `test_cis_refs.py` | 219 CIS references mapping |
 | `test_degraded.py` | Graceful behavior when `ss` / `iptables` / `journalctl` absent |
 | `test_html_output.py`, `test_csv_output.py`, `test_markdown_output.py` | Output formatters |
 | `test_webhook.py` | Generic + Slack payload, `--offline` strict mode |
@@ -922,13 +922,13 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 45,798 LoC across 123 files | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 345 test files, ~6907 functions, **12009 collected** (0.24.1) | `pytest --collect-only -q` |
+| Tests | 349 test files, ~6942 functions, **12165 collected** (0.24.2) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distros | `.github/workflows/integration.yml` |
 | Python versions tested | 3.10, 3.11, 3.12, 3.13, 3.14 | `.github/workflows/tests.yml` + `pyproject.toml` classifiers |
-| Locale keys | 2833 EN ↔ 2833 FR (strict parity) | `bob/locales/{en,fr}.json` |
-| EXPLAIN_KEYS | 218 (in 61 prefixes) | `bob.explain.EXPLAIN_KEYS` |
+| Locale keys | 2840 EN ↔ 2840 FR (strict parity) | `bob/locales/{en,fr}.json` |
+| EXPLAIN_KEYS | 219 (in 61 prefixes) | `bob.explain.EXPLAIN_KEYS` |
 | CIS references | 206 primary (110 CIS Ubuntu 22.04 + 7 CIS Docker 1.6 + **1 CIS Red Hat 8/9** + 88 BOB-authored best-practice) + **163 cross-benchmark citations** on 58 keys (54 CIS Debian 12 + 55 CIS Debian 13 + 54 CIS Ubuntu 24.04, sourced from ComplianceAsCode/content by `scripts/gen_cis_benchmarks.py`, which also re-bases the primary Ubuntu 22.04 numbering onto CAC v2.0.0 from the rule anchor) | `bob/data/cis_refs.json` |
 | Known services | 38 | `bob/data/services.json` |
 | Score domains | 6 | `bob.domain_scores.DOMAINS` |
@@ -940,7 +940,7 @@ Each job asserts: exit code ≤ 3, no locale sentinel keys `[xxx.yyy]`, no Pytho
 | Doc files | 23 public markdown (17 in `DOCUMENTS/` + 6 at the repo root) + 3 man pages | `DOCUMENTS/` + `man/` |
 | JSON schema_version | `"3"` only (v1 retired v0.9.0 F-3, v2 retired v0.12.0 F9) | `bob.json_output.DEFAULT_SCHEMA_VERSION` |
 | Release-engineering CI guards | 5 — 3 workflow-level (integration-first / smoke-after-commit / smoke-plugin) + 2 pytest guards (`tests/test_version_consistency.py`, `tests/test_doc_version_consistency.py`) **plus the ruff correctness gate** (v0.13.3, `bob/` only, nothing ignored since v0.14.0) | `.github/workflows/*.yml` |
-| Version | 0.24.1, released 2026-10-05 (bare SemVer, no `v` prefix since 0.21.0) | `pyproject.toml::version` |
+| Version | 0.24.2, released 2026-10-09 (bare SemVer, no `v` prefix since 0.21.0) | `pyproject.toml::version` |
 | Supported branch | v0.21.x (everything ≤ v0.20.x is EOL — latest-minor-only policy) | `SECURITY.md` |
 | First release | v0.1.0 (2026-04-26) | `CHANGELOG.md` |
 

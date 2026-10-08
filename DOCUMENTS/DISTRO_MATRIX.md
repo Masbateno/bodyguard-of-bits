@@ -592,7 +592,24 @@ findings, deductions) apart from the SSH `--fix` command strings.*
 
 | Gap | Sev. | § | Note |
 |-----|------|---|------|
-| firewalld zone target `ACCEPT` (trusted) | soft | §4 | The attack surface now says "default policy is ALLOW — no filtering" (true), but the firewall section still reports firewalld as an active firewall (OK) and nothing deducts — UFW's `policy_open` equivalent is not applied to firewalld. Candidate for 0.25.0. |
+| ~~firewalld zone target `ACCEPT` (trusted)~~ | — | §4 | **Resolved in 0.24.2**: ALERT −3 `firewall.firewalld_policy_open`, field-validated on Fedora 44 (below). |
+
+
+### 0.24.2 field pass — firewalld ACCEPT, UFW IPV6=no
+
+*A/B of the 0.24.2 WIP against published 0.24.1 (2026-10-08) on two real machines,
+each fix in both polarities, every forged state restored.*
+
+| Host | Measured | Result |
+|------|----------|--------|
+| Fedora 44 (SELinux enforcing, firewalld) | default zone target `default` / `DROP` / `ACCEPT`; the proposed fix applied for `trusted` and for FedoraServer set to ACCEPT **without** ssh (automatic rollback armed, then cancelled) | `default`/`DROP`: identical (score 7); `ACCEPT`: 7 → **6**, ALERT −3 `firewall.firewalld_policy_open`. `trusted` → `--set-default-zone=public`; named zone → ssh added before `--set-target=default`; a new SSH connection succeeds both times, the finding is gone, a second run exits 0. **Found two false IPv6 lines**: "filtered by firewalld" under ACCEPT, and "UFW IPv6 configuration matches kernel" with no ufw package — fixed. Changing the default zone moved `enp3s0` with it (NetworkManager binds no zone) |
+| Linux Mint 22.3 (ufw 0.36.2) | UFW active + IPV6=no, link-local only (global addresses flushed, RA off); a link-local neighbour in a network namespace joined by a veth pair | UFW active: IPv6 INPUT policy DROP, sshd on `[::]:22` unreachable; UFW inactive (control): ACCEPT, sshd answers. Source: `/lib/ufw/ufw-init-functions` installs DROP on INPUT/FORWARD/OUTPUT when IPV6=no. **The 0.24.1 link-local wording and the WARN −2 `ipv6.ufw_disabled_listeners_present` were both wrong** — now INFO `ipv6.ufw_v6_off_blocked`. A cross-machine test was invalid (the other machine's own IPV6=no DROP broke neighbour discovery) |
+
+**Still open:**
+
+| Gap | Sev. | § | Note |
+|-----|------|---|------|
+| firewalld judged by its **default** zone only | soft | §4 | An interface bound explicitly to another zone is still judged by the default zone's target (and services). On the measured Fedora the interface follows the default zone. Reading the zone of each active interface is a 0.25.0 candidate. |
 
 ---
 © 2026 Cédric Clauzel

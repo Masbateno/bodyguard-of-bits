@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.24.1-brightgreen)
+![Release](https://img.shields.io/badge/version-0.24.2-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -25,12 +25,12 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 ### Audit principal
 
 - **Bannière ASCII** avec informations système — distro, hôte, version UFW, utilisateur, date
-- **Vérification du statut UFW** — actif/inactif, politique par défaut entrante
+- **Vérification du statut du pare-feu** — UFW, firewalld (zone par défaut et sa cible) ou jeu de règles nftables/iptables brut en refus par défaut : actif/inactif, politique par défaut entrante ; une zone par défaut firewalld dont la cible est ACCEPT est une ALERT −3, comme la politique ALLOW par défaut d'UFW (v0.24.2)
 - **Analyse des règles UFW** — règles en doublon, `allow from any` sans restriction de port, cohérence IPv6
 - **Score contextuel** — détection du contexte réseau (IP publique directe vs NAT) ; pénalités plus lourdes sur les machines exposées sur internet (un port ouvert non couvert passe de 1 à 2 points ; un service critique exposé de 2 à 3) ; pare-feu inactif plafonne le score à 3/10
-- **Score de sécurité** 0–10 avec niveau de risque : FAIBLE / MOYEN / ÉLEVÉ / CRITIQUE ; findings répartis en *Action requise* / *Améliorations possibles* / *Configuration normale*
-- **Profils d'audit** — `server` (défaut), `desktop`, `workstation`, `container` ; profil actif affiché dans la boîte de synthèse. **v0.8.1 BREAKING** : `workstation` n'est plus un alias de `desktop` et ship ses propres overrides business-tier (backup / auditd / mac_policy restent à WARN alors que desktop les relâche à INFO)
-- **Cartographie CIS inline** — chaque finding affiche son code CIS `[CIS:X.Y.Z]` dans la boîte de synthèse ; référence complète en mode `--verbose` ; 218 entrées (117 CIS formels, 94 best-practice, 7 Docker)
+- **Score de sécurité** 0–10 avec niveau de risque : FAIBLE / MOYEN / ÉLEVÉ / CRITIQUE ; constats répartis en *Action requise* / *Améliorations possibles* / *Configuration normale*
+- **Profils d'audit** — `server` (défaut), `desktop`, `workstation`, `container` ; profil actif affiché dans la boîte de synthèse. **v0.8.1 BREAKING** : `workstation` n'est plus un alias de `desktop` et livre ses propres overrides business-tier (backup / auditd / mac_policy restent à WARN alors que desktop les relâche à INFO)
+- **Cartographie CIS inline** — chaque constat affiche son code CIS `[CIS:X.Y.Z]` dans la boîte de synthèse ; référence complète en mode `--verbose` ; 219 entrées (117 CIS formels, 95 best-practice, 7 Docker)
 - **6 en-têtes de groupes thématiques** — sortie organisée en : PARE-FEU & RÉSEAU / EXPOSITION & SERVICES / CONTRÔLE D'ACCÈS / DURCISSEMENT SYSTÈME / SANTÉ & RÉSILIENCE / DÉTECTION DES MENACES
 - **`--target N`** — objectif de score (1–10) ; affiché dans la boîte de synthèse ; retourne le code de sortie 4 si score < cible, **et depuis la v0.16.2 dès que quelque chose n'a pas pu être lu** — un score que rien n'a vérifié ne peut pas satisfaire un portail (intégration CI). La v0.16.0 disait « dès que le score est une borne supérieure » ; cela ne couvrait plus le cas où l'aveuglement retire un domaine de notation entier, l'exécution la moins fiable de toutes.
 
@@ -44,7 +44,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Ports en écoute** — passe unique unifiée ; ports éphémères et système ignorés proprement ; NetBIOS géré avec avertissement contextuel
 - **Détection DDNS / exposition externe** — détecte les clients DDNS actifs (ddclient, inadyn, No-IP, DuckDNS) ; extrait le domaine configuré ; croise avec les règles UFW ALLOW sans restriction pour identifier les ports exposés sur internet
 - **Classification d'exposition** par service : `ouvert sur internet` / `réseau local uniquement` (ou `le seul hôte X` quand la règle désigne une seule adresse — v0.24.1) / `bloqué par UFW` / `pas de règle` ; sur un hôte firewalld ou nftables/iptables brut, le port est attribué à ce filtre, pas à une règle UFW manquante
-- **Cohérence IPv6** — détecte les ports IPv6 actifs sans règle UFW v6 correspondante ; IPv6 désactivé globalement mais ports en écoute présents ; adresses link-local/ULA uniquement → INFO (toujours dites joignables depuis le LAN, sans filtrage par UFW — v0.24.1) ; sur un hôte sans UFW, les ports sont attribués au filtre qui les régit, sans rien affirmer des familles d'adresses que couvre un jeu de règles brut (v0.24.1)
+- **Cohérence IPv6** — détecte les ports IPv6 actifs sans règle UFW v6 correspondante ; IPv6 désactivé globalement mais ports en écoute présents ; adresses link-local/ULA uniquement → INFO (toujours dites joignables depuis le LAN, sans filtrage par UFW — v0.24.1) ; sur un hôte sans UFW, les ports sont attribués au filtre qui les régit, sans rien affirmer des familles d'adresses que couvre un jeu de règles brut (v0.24.1) ; avec UFW réglé sur IPV6=no, BOB lit la politique IPv6 INPUT — UFW bloque alors tout l'IPv6, et les ports sont rapportés bloqués, non exposés (v0.24.2) ; sous firewalld, la cible de la zone par défaut décide pour IPv6 comme pour IPv4 (v0.24.2)
 - **Contrôle niveau de journalisation UFW** — `off` → ALERT −2 pts (aucune visibilité sur le trafic bloqué) ; `low`/`medium` → OK ; `high`/`full` → INFO
 - **Regroupement exposition des ports** — regroupe les services en écoute exposés par portée d'interface et niveau de risque ; démons OS connus sur ports système classifiés séparément des apps utilisateur
 - **Service d'impression CUPS** — signale un démon CUPS en écoute au-delà de localhost (`Listen`/`Port` sur une adresse non-loopback) → WARN −1 pt avec `cupsctl --no-remote-any` ; `Browsing On` (annonce d'imprimante réseau) → INFO ; localhost- ou socket-only lit OK ; pas de `cupsd.conf` → non audité (v0.21.0)
@@ -99,16 +99,16 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Audit sécurité Samba** — SMB1 (ALERT −2 pts) ; mots de passe nuls (ALERT −3 pts) ; signature serveur désactivée (WARN −1 pt) ; partages accessibles en écriture/lecture par l'invité ; domaine `samba` dédié
 - **Audit antivirus ClamAV** — installation, fraîcheur de la base virus via mtime (WARN/ALERT selon ancienneté), statut démon, date du dernier scan
 - **Exposition SMTP locale** — détecte les MTA (Postfix, Exim, Sendmail) en écoute sur toutes les interfaces vs localhost uniquement ; WARN −1 pt si exposition publique
-- **Moteur de corrélation de signaux** — 6 règles de risque composé (root+sans-fail2ban, auth-password+brute-force, root+password, NOPASSWD+SUID, maj-sécurité-en-attente+sans-fail2ban, logging-off+sans-fail2ban+sans-auditd) ; évalué post-audit sur les findings ALERT+WARN actifs
-- **Suivi des findings récurrents** — compteur d'apparitions consécutives par clé ALERT/WARN ; stocké dans `~/.config/bob/recurrence.json`
-- **Détection d'applications de bureau** — applis GUI connues (Steam, Discord, Zoom, Signal, VLC, Spotify, Slack, Telegram, Chrome, Firefox…) en cours d'exécution ; findings INFO, sans déduction
+- **Moteur de corrélation de signaux** — 6 règles de risque composé (root+sans-fail2ban, auth-password+brute-force, root+password, NOPASSWD+SUID, maj-sécurité-en-attente+sans-fail2ban, logging-off+sans-fail2ban+sans-auditd) ; évalué post-audit sur les constats ALERT+WARN actifs
+- **Suivi des constats récurrents** — compteur d'apparitions consécutives par clé ALERT/WARN ; stocké dans `~/.config/bob/recurrence.json`
+- **Détection d'applications de bureau** — applis GUI connues (Steam, Discord, Zoom, Signal, VLC, Spotify, Slack, Telegram, Chrome, Firefox…) en cours d'exécution ; constats INFO, sans déduction
 
 ### Sortie & UX
 
 - **Interface bilingue** — détection automatique depuis `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX) ; retombe sur l'anglais quand la locale est `C`/`POSIX` ou non supportée. Forcer avec `--french` / `--english` (ou `--lang=fr` / `--lang=en`)
 - **Gestion de la couleur** — auto-détectée depuis la v0.14.0 : l'ANSI n'est émis que si stdout est un terminal, donc rediriger vers un fichier ou un pipe est propre sans aucune option. `--no-color` (ou `NO_COLOR=1`) la force à off ; `FORCE_COLOR=1` la force à on pour `less -R` ou un log volontairement coloré
 - **Mode fix** — section interactive après le résumé ; chaque correction automatisable demande une confirmation `[y/N]` ; `--fix` seul affiche un aperçu sans exécuter ; `--fix --apply --yes` confirme tout avec journal d'audit **Seule une commande que BOB peut exécuter sans surveillance est comptée comme automatique** : `cmd_type="fix"` (un diagnostic comme `smartctl -a` n'est pas une remédiation), aucun opérateur shell, aucun éditeur interactif. Tout le reste apparaît sous son propre titre, commande affichée mais non exécutée — le compteur au-dessus de l'invite est une promesse tenable, depuis la v0.17.1. Les commandes d'installation portent `-y`, car un correctif qui s'arrête pour poser une question ne peut pas être appliqué par un mode dont tout l'objet est de ne pas en poser.. Depuis la v0.18.0, les durcissements sysctl sont appliqués **par le code de BOB, pas par un shell** : la valeur est posée, persistée avec exactement une ligne par clé, puis **relue** avant que BOB n'affirme quoi que ce soit — la commande affichée reste la même pour qui veut la coller. Deux applications sans surveillance sont refusées d'office parce qu'elles peuvent vous faire perdre une machine distante — une politique de pare-feu de refus par défaut (`iptables -P INPUT DROP` et ses variantes `ip6tables`, `-nft`, `-legacy` et `nft … policy drop`) — et un correctif qui ouvre un accès (`ufw allow`) passe toujours avant celui qui en retire (`ufw enable`)
-- **`--explain KEY`** — explication structurée par constat (POURQUOI / COMMENT CORRIGER / référence CIS) ; 218 clés sur 61 préfixes ; 117 d'entre elles rendent une section par profil — 71 avec une prose écrite pour lui, les autres avec une note dérivée du fichier de profil — et 101 s'appliquent identiquement à tous les profils ; TUI interactif ; sans droit root ; la vue par clé ajoute un bloc **Aussi référencé dans** listant le numéro du même contrôle dans chaque autre benchmark qui le couvre ; `--explain list` et le wizard groupent toutes les clés en arborescence de dossiers à trois niveaux — distribution CIS (CIS Ubuntu, CIS Debian, CIS Docker, CIS Red Hat, Bonne pratique) → version de benchmark (Ubuntu 22.04/24.04, Debian 12/13) → section de type — et chaque famille CIS affiche un lien vers sa page de benchmark CIS en ligne
+- **`--explain KEY`** — explication structurée par constat (POURQUOI / COMMENT CORRIGER / référence CIS) ; 219 clés sur 61 préfixes ; 117 d'entre elles rendent une section par profil — 71 avec une prose écrite pour lui, les autres avec une note dérivée du fichier de profil — et 102 s'appliquent identiquement à tous les profils ; TUI interactif ; sans droit root ; la vue par clé ajoute un bloc **Aussi référencé dans** listant le numéro du même contrôle dans chaque autre benchmark qui le couvre ; `--explain list` et le wizard groupent toutes les clés en arborescence de dossiers à trois niveaux — distribution CIS (CIS Ubuntu, CIS Debian, CIS Docker, CIS Red Hat, Bonne pratique) → version de benchmark (Ubuntu 22.04/24.04, Debian 12/13) → section de type — et chaque famille CIS affiche un lien vers sa page de benchmark CIS en ligne
 - **Scores par domaine** — sous-scores 0–10, un par groupe affiché (Pare-feu & Réseau / Exposition & Services / Contrôle d'accès / Durcissement système / Santé & Résilience / Détection des menaces) ; score global = moyenne des scores de domaine actifs (un domaine devient actif dès qu'un check émet `OK`, `WARN` ou `ALERT` — les domaines `INFO`-only restent cachés ; `OK` a été ajouté au set actif en v0.4.6 pour corriger une inversion de score après remédiation) ; plafonds par outil pour éviter la double pénalité (rootkit, ClamAV, intégrité fichiers plafonnés à 1 pt de déduction chacun) ; barre █/░ après l'audit ; inclus dans JSON et webhook
 - **Webhooks** — `--webhook URL` envoie le résultat en JSON ; formats générique et Slack (auto-détecté) ; `--webhook-format=auto|generic|slack`
 - **Export HTML `--html`** — fichier HTML autosuffisant (sans JS, sans ressources externes) ; cercle de score coloré ; badges ALERT/WARN/INFO/OK ; tableau déductions ; protection XSS
@@ -117,14 +117,14 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **`--output-dir PATH`** — surcharger le répertoire de sauvegarde pour l'exécution courante ; sans persistance
 - **Rapport comparatif** — baseline enregistrée après chaque audit ; au prochain lancement : delta de score, variations alertes/avertissements, ports apparus/fermés, services démarrés/arrêtés ; clés ALERT+WARN nouvelles et résolues suivies séparément. Un fichier qui n'est pas une baseline BOB (sans `timestamp` ni `score`) est refusé nommément au lieu d'être comparé comme une baseline à zéro
 - **Historique des scores** — `--history` affiche les N derniers scores en sparkline (▁▂▃▄▅▆▇█) avec dates ; rotation automatique à 1000 entrées. Une ligne dont BOB ne sait lire ni le score ni l'horodatage est ignorée, jamais réparée en un chiffre qu'il n'a pas mesuré
-- **Liste d'exceptions** — `--ignore KEY` ajoute une clé dans `ignore.yml` ; `--show-ignored` lance l'audit et affiche en gris les constats supprimés à côté de la sortie normale (ce n'est pas une commande de listing) ; les findings correspondants sont masqués sans être scorés
+- **Liste d'exceptions** — `--ignore KEY` ajoute une clé dans `ignore.yml` ; `--show-ignored` lance l'audit et affiche en gris les constats supprimés à côté de la sortie normale (ce n'est pas une commande de listing) ; les constats correspondants sont masqués sans être scorés
 - **Mode `--diff`** — lance l'audit silencieusement et affiche uniquement le delta (score, alertes, avertissements, INFO)
 - **`--breakdown` / `-B`** — lance l'audit silencieusement et affiche le chemin complet de calcul du score : toutes les déductions (clé · domaine · points · contexte), plafonds par outil, plafond moteur, score brut, scores par domaine avec barres de progression, surcharge de moyenne, score final coloré
 - **API Plugin** — déposer un fichier Python dans `~/.config/bob/checks.d/` pour ajouter une vérification personnalisée ; fail-safe (les exceptions n'interrompent jamais l'audit) ; séquences ANSI nettoyées
 
 ### Automatisation
 
-- **Rapport détaillé** — fichier log horodaté avec en-tête ASCII art, informations système, findings et recommandations ; créé avec `-d` ; nom : `bob_YYYYMMDD_HHMMSS.log`. Chaque constat porte son explication, sa commande (`→` correctif, `?` vérification) et sa clé — sans condition, et aussi sous `-q`, car une archive ne se relance pas avec `-v`
+- **Rapport détaillé** — fichier log horodaté avec en-tête ASCII art, informations système, constats et recommandations ; créé avec `-d` ; nom : `bob_YYYYMMDD_HHMMSS.log`. Chaque constat porte son explication, sa commande (`→` correctif, `?` vérification) et sa clé — sans condition, et aussi sous `-q`, car une archive ne se relance pas avec `-v`
 - **`--manage-logs`** — interface interactive pour lister, prévisualiser et supprimer les rapports ; prévisualisation scrollable avec bascule résumé/complet. S'ouvre sur un sélecteur de dossiers (📁) listant chaque répertoire de logs suivi — l'actuel et les précédents, conservés jusqu'à ce que vous en oubliiez un explicitement, pour qu'un changement de répertoire ne perde jamais de vue les anciens rapports ; choisissez un dossier pour parcourir ses rapports
 - **`--install-cron`** — wizard de planification : nom du cron, type de planning (quotidien / jours spécifiques / expression cron personnalisée), heure et email optionnel, puis fixation du profil, de la langue et des sondes sortantes de l'audit (v0.16.1 — un cron s'exécute en root : sans cela il lirait le profil enregistré de root et le `$LANG` nu de cron) ; détection automatique du MTA (Postfix, Exim, msmtp, ssmtp) — avertit si aucun `sendmail` trouvé ; aperçu en langage naturel ; ligne de commande résultante affichée avant écriture ; TUI curses avec repli texte ; crons nommés dans `/etc/cron.d/bob-{nom}`
 - **`--manage-cron`** — TUI en boucle : lister, modifier planning/email, supprimer des crons ; carnet d'adresses email accessible depuis le menu, même sans cron installé
@@ -319,7 +319,7 @@ sudo bob -r
 
 BOB supporte des checks d'audit personnalisés écrits en Python. Posez un fichier `*.py` dans `~/.config/bob/checks.d/` et BOB le picke au run suivant. Chaque plugin est exécuté dans un **sous-processus sandboxé** (introduit en v0.7.0 T3) — RLIMIT_AS 256 MiB, un timeout wall-clock de 5 s, RLIMIT_CPU 10 s, allowlist d'import restreinte, écritures filesystem refusées, lectures bloquées sur chemins sensibles (`/etc/shadow`, `~/.ssh/id_*`, `/dev/mem`, …). Un plugin défaillant **ne peut pas** interrompre l'audit, et toute sortie est ANSI-sanitisée.
 
-> **Note threat model :** le sandboxing Python in-process est de la défense en profondeur, pas une frontière de sécurité dure (consensus PEP 416). Utilisez le profil AppArmor shippé pour une vraie isolation. Voir SECURITY_FR.md → section "Plugin checks".
+> **Note threat model :** le sandboxing Python in-process est de la défense en profondeur, pas une frontière de sécurité dure (consensus PEP 416). Utilisez le profil AppArmor livré pour une vraie isolation. Voir SECURITY_FR.md → section "Plugin checks".
 
 ### Contrat
 
@@ -366,7 +366,7 @@ def run_check(t=None) -> CheckResult:
 - `result.alert(message=..., key=..., points=..., nature=...)` — alerte rouge
 - `result.warn_with_deduction(...)` / `result.alert_with_deduction(...)` — helpers combinés
 
-Utilisez `key=` pour que votre finding puisse être silencé avec `bob --ignore custom.ma_cle` si besoin. Choisissez des chaînes `key` sous un préfixe `custom.*` pour éviter les collisions avec les clés built-in (le test invariant `_KNOWN_PREFIXES` rejette les préfixes inconnus pour les EXPLAIN_KEYS built-in mais pas pour la sortie plugin).
+Utilisez `key=` pour que votre constat puisse être silencé avec `bob --ignore custom.ma_cle` si besoin. Choisissez des chaînes `key` sous un préfixe `custom.*` pour éviter les collisions avec les clés built-in (le test invariant `_KNOWN_PREFIXES` rejette les préfixes inconnus pour les EXPLAIN_KEYS built-in mais pas pour la sortie plugin).
 
 ### Ce que les plugins NE peuvent PAS faire
 
@@ -378,7 +378,7 @@ Dans le sandbox enfant :
 - Pas d'`__import__` de modules arbitraires — uniquement une allowlist (bob.scoring, pathlib, json, etc.).
 - Pas d'I/O réseau.
 
-Si un plugin tente l'une des opérations ci-dessus, il raise dans le sandbox enfant, le parent enregistre un finding WARN sous l'une des douze clés `plugin.sandbox.*` (`error`, `rejected`, `crashed`, `timeout`, `syntax_error`, `unreadable`, `bad_payload`, `bad_return`, `no_result`, `missing_run_check`, `runner_error`, `serialize_failed`) — un `--ignore plugin.sandbox.error` en masque une, pas les échecs de plugin en général, et l'audit continue intact.
+Si un plugin tente l'une des opérations ci-dessus, il raise dans le sandbox enfant, le parent enregistre un constat WARN sous l'une des douze clés `plugin.sandbox.*` (`error`, `rejected`, `crashed`, `timeout`, `syntax_error`, `unreadable`, `bad_payload`, `bad_return`, `no_result`, `missing_run_check`, `runner_error`, `serialize_failed`) — un `--ignore plugin.sandbox.error` en masque une, pas les échecs de plugin en général, et l'audit continue intact.
 
 ---
 
@@ -397,7 +397,7 @@ Exemple (tronqué pour la lisibilité) :
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.24.1  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.24.2  │  Auditeur de durcissement Linux                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -504,7 +504,7 @@ Avec `-d`, un rapport horodaté est créé dans un répertoire configurable (dem
 bob_20260517_100000.log
 ```
 
-Le rapport s'ouvre avec un en-tête ASCII art sur 62 caractères et contient : informations système, tous les findings horodatés, liste complète des ports en écoute, analyse détaillée des logs (top IPs avec géolocalisation, top ports, bruteforce, tentatives sur les ports de services installés), contexte de risque pour les services critiques et élevés, résumé du score.
+Le rapport s'ouvre avec un en-tête ASCII art sur 62 caractères et contient : informations système, tous les constats horodatés, liste complète des ports en écoute, analyse détaillée des logs (top IPs avec géolocalisation, top ports, bruteforce, tentatives sur les ports de services installés), contexte de risque pour les services critiques et élevés, résumé du score.
 
 ---
 
@@ -708,12 +708,12 @@ sudo bob --json | jq '.schema_version'   # → "3"
 | `risk` | string | Niveau de risque **effectif** (inclut l'escalation posture) : `"low"`, `"medium"`, `"high"`, `"critical"` |
 | `network_context` | object | `{ "context": "local" \| "public" \| "ddns" }` en mode court (`"ddns"` est une promotion de `"local"` appliquée quand le DDNS est actif avec un port ouvert non restreint, pour que l'exposition soit scorée au poids public) ; étendu avec `interfaces`, `connections_count`, `top_remote_ips` en `--json-full` |
 | `public_ip` | string | IP publique (vide derrière NAT) |
-| `alert_count` | int | Nombre de findings ALERT (renommé depuis `alerts` en v0.12.0) |
-| `warning_count` | int | Nombre de findings WARN (renommé depuis `warnings` en v0.12.0) |
-| `info_count` | int | Nombre de findings INFO (nouveau en v2) |
-| `profile` | string | Le profil d'audit qui a produit ce résultat (`server` / `desktop` / `workstation` / `container`). Nouveau en v0.14.1, additif dans v3. Depuis la v0.14.0 le profil change les sévérités des findings, `warning_count` et donc le code de sortie : deux payloads du même hôte peuvent légitimement diverger, et c'est ce champ qui l'explique. |
+| `alert_count` | int | Nombre de constats ALERT (renommé depuis `alerts` en v0.12.0) |
+| `warning_count` | int | Nombre de constats WARN (renommé depuis `warnings` en v0.12.0) |
+| `info_count` | int | Nombre de constats INFO (nouveau en v2) |
+| `profile` | string | Le profil d'audit qui a produit ce résultat (`server` / `desktop` / `workstation` / `container`). Nouveau en v0.14.1, additif dans v3. Depuis la v0.14.0 le profil change les sévérités des constats, `warning_count` et donc le code de sortie : deux payloads du même hôte peuvent légitimement diverger, et c'est ce champ qui l'explique. |
 | `duration_seconds` | float \| null | Durée de l'audit en secondes, arrondie à la milliseconde. Mesurée depuis le démarrage des checks — pas depuis l'entrée du processus, donc hors analyse des arguments et vérification root — avec une horloge monotone, si bien qu'un ajustement d'horloge en cours d'exécution ne peut pas la rendre négative. `null` quand l'exécution ne s'est pas chronométrée. Nouveau en v0.17.1, additif dans v3. |
-| `degraded_sections` | array | Noms des sections dont le check a levé une exception et qui ont été dégradées sur place au lieu d'interrompre l'audit (nouveau en v0.14.1, additif dans v3). Vide sur une exécution saine. Chacune apparaît aussi comme un finding INFO `<section>.unavailable`. Permet de distinguer « score 9, toutes sections évaluées » de « score 9, deux sections jamais exécutées ». |
+| `degraded_sections` | array | Noms des sections dont le check a levé une exception et qui ont été dégradées sur place au lieu d'interrompre l'audit (nouveau en v0.14.1, additif dans v3). Vide sur une exécution saine. Chacune apparaît aussi comme un constat INFO `<section>.unavailable`. Permet de distinguer « score 9, toutes sections évaluées » de « score 9, deux sections jamais exécutées ». |
 | `score_is_upper_bound` | bool | **Nouveau en v0.16.0, restreint en v0.16.2.** Vrai quand le score ne peut être que *trop haut* : un check n'a pas pu lire son entrée, donc les déductions qu'il n'a pas faites sont inconnues, pas nulles. Masquer `/etc/ssh/sshd_config` retire quatre déductions et fait passer le score de 7 à **8** — vers le haut, sur un hôte dont BOB voit moins. Depuis la v0.16.2, ce champ est **faux** quand l'aveuglement a retiré un domaine entier de la moyenne (`unscored_domains` non vide) : le dénominateur a changé, donc le score peut aussi descendre — masquer `/etc/passwd` le fait passer de 7 à 6, et appeler 6 un plafond affirmerait une borne en dessous de la vraie valeur. **La porte se lit sur `score_is_uncertain`, pas sur ce champ** : celui-là est vrai dès que quoi que ce soit n'a pas pu être lu, dans un sens comme dans l'autre. `score` reste un entier pour ne casser aucun consommateur. |
 | `target` | int \| null | La valeur `--target N` de cette exécution, ou `null` si `--target` n'a pas été utilisé. |
 | `target_met` | bool \| null | Si la cible est atteinte. `null` sans `--target`. Faux aussi quand le score n'a pas pu être vérifié — la porte lit `score_is_uncertain`, pas le score seul : une exécution non vérifiable échoue fermée. |
@@ -777,7 +777,7 @@ Le champ `key` est une **clé i18n stable en notation pointée** (`<prefix>.<fin
 
 Les clés de domaines sont stables : `firewall_network`, `exposure_services`, `access_control`, `system_hardening`, `health_resilience`, `detection` (6 au total — définies dans `bob.domain_scores.DOMAINS`). **BREAKING en v0.20.0** : les domaines de score ont été réalignés 1:1 sur les six groupes affichés ; les sept clés précédentes (`ssh`, `samba`, `file_perms`, `updates`, `hardening`, `disk`, `firewall`) ont disparu. Chaque entrée a `score` (int 0–10), `label` (nom d'affichage anglais), `deductions` (int — total des points déduits dans ce domaine, nouveau en v2), et **`active` / `reason` (nouveau en v0.12.1)**.
 
-`active` (bool) vaut `true` quand le domaine a produit un finding actionnable (OK/WARN/ALERT) — **seuls les domaines actifs sont moyennés dans le `score` global**. Quand `active` vaut `false`, `reason` (string) explique pourquoi le domaine est affiché mais non scoré :
+`active` (bool) vaut `true` quand le domaine a produit un constat actionnable (OK/WARN/ALERT) — **seuls les domaines actifs sont moyennés dans le `score` global**. Quand `active` vaut `false`, `reason` (string) explique pourquoi le domaine est affiché mais non scoré :
 
 | `reason` | Signification |
 |---|---|
@@ -792,7 +792,7 @@ Pour un domaine actif, `reason` vaut `null`. Cela permet à un consommateur de *
 
 | Clé | Type | Description |
 |---|---|---|
-| `findings` | array | Tous les findings avec `{ key, level, message, detail, nature, cmd, note, template_vars, qualified_by }`. `detail` est présent depuis la v0.8.1 et manquait à cette liste. **`qualified_by`** (nouveau en v0.15.5, additif) porte les clés des findings du même audit qui qualifient celui-ci — par exemple `ssh.config_newer_than_service`, qui indique que les constats SSH décrivent le fichier de configuration et non le service en cours. Un consommateur qui ne lit que `key` ne peut pas distinguer un constat qualifié d'un constat qui ne l'est pas ; normalement vide. |
+| `findings` | array | Tous les constats avec `{ key, level, message, detail, nature, cmd, note, template_vars, qualified_by }`. `detail` est présent depuis la v0.8.1 et manquait à cette liste. **`qualified_by`** (nouveau en v0.15.5, additif) porte les clés des constats du même audit qui qualifient celui-ci — par exemple `ssh.config_newer_than_service`, qui indique que les constats SSH décrivent le fichier de configuration et non le service en cours. Un consommateur qui ne lit que `key` ne peut pas distinguer un constat qualifié d'un constat qui ne l'est pas ; normalement vide. |
 | `services` | array | Services réseau installés avec `{ name, installed, active, risk, ports }`. **`ports` est un objet indexé par numéro de port**, pas une liste : `{ "22": { "exposure": "open_world" } }`. |
 | `open_ports` | array | Ports en écoute sur `0.0.0.0` avec `{ port, address, process }` (filtré) |
 | `open_ports_all` | array | Tous les ports en écoute, y compris bound localhost (nouveau en v2) |
@@ -843,28 +843,28 @@ sudo bob --json | jq 'if .schema_version == "3"
 ### Exemple de matching stable (indépendant de la locale)
 
 ```bash
-# Matcher un finding spécifique par clé, indépendamment de la locale et de la version schema
+# Cibler un constat précis par sa clé, indépendamment de la locale et de la version schema
 sudo bob --json | jq '.deductions[] | select(.key == "firewall.logging_off")'
 ```
 
-Les `findings[*].key` et `deductions[*].key` font partie du jeu de clés `--explain` — elles ne changeront pas sans bump majeur du schéma.
+Les `findings[*].key` et `deductions[*].key` font partie du jeu de clés `--explain` — elles ne changeront pas sans incrément majeur du schéma.
 
 ### Audit EXPLAIN_KEYS
 
-En v0.24.0, le set de clés `--explain` contient **218 clés** réparties sur **61 préfixes**. La convention de nommage canonique est appliquée par `tests/test_explain_naming_convention.py` :
+En v0.24.2, le set de clés `--explain` contient **219 clés** réparties sur **61 préfixes**. La convention de nommage canonique est appliquée par `tests/test_explain_naming_convention.py` :
 
 - **Pattern :** `<prefix>.<finding_id>` (un seul point, snake_case)
 - **Exceptions :** `file_perms.<path>.<finding_id>` (segments de chemin intermédiaires) et `services.{exposure,state}.<finding_id>` (taxonomie à deux niveaux), toutes deux résolues par `bob.explain.normalize_key`
 - **Pas de retrait :** une fois publiée, une clé reste callable pendant la durée de vie du `schema_version` majeur
 - **Aliases :** les renommages de clés passent par `EXPLAIN_KEY_ALIASES` pour la rétrocompatibilité
 - **Ajouts :** de nouvelles clés peuvent être ajoutées dans n'importe quel minor
-- **Garde de couverture :** tout finding WARN/ALERT émis par `bob/checks/*.py` doit avoir une entrée `EXPLAIN_KEYS` ou figurer dans `tests/test_explain_coverage.py::_KNOWN_GAPS` (actuellement vide — le drift batch v0.8.0 a comblé 51 entrées manquantes)
+- **Garde de couverture :** tout constat WARN/ALERT émis par `bob/checks/*.py` doit avoir une entrée `EXPLAIN_KEYS` ou figurer dans `tests/test_explain_coverage.py::_KNOWN_GAPS` (actuellement vide — le drift batch v0.8.0 a comblé 51 entrées manquantes)
 
 Vocabulaire des préfixes (61 préfixes, alphabétique) : `auditd, auth_log, backup, clamav, cloud_context, container_security, cpu_security, cron, crypto_policy, cups, ddns, disk, disk_encryption, docker, docker_hardening, fail2ban, faillock, file_capabilities, file_integrity, file_perms, firewall, firewall_drivers, firewall_iptables, firewall_rules, firmware, grub, hardening, ipv6, kernel_hardening, kernel_modules, log_rotation, logs, mac_policy, memory, mount_hardening, network_context, ntp, package_authenticity, password_policy, plugin, polkit, ports, prerequisites, raspberry_pi, risk, root_path, rootkit, samba, secure_boot, services, services_health, smtp, socket_units, ssh, ssl_certs, suid_audit, systemd_timers, umask, updates, user_accounts, virt`.
 
 Ajouter un nouveau préfixe dans une release future fait échouer `TestExplainPrefixDiscipline::test_key_prefix_is_known` jusqu'à ce que le mainteneur update explicitement `KNOWN_PREFIXES` — surfaçant l'ajout comme décision délibérée en code review.
 
-Historique de référence : audit v0.7.0 = 117 clés / 30 préfixes / 100 % de conformité de nommage. Le drift batch v0.8.0 a ajouté 51 entrées explain pour des findings WARN/ALERT jusque-là non couverts, introduisant 15 nouveaux préfixes (`backup, ddns, docker, fail2ban, firewall_stack, iptables_nft, log_rotation, logs, mac_policy, network_context, ntp, ports, rootkit, services, smtp`).
+Historique de référence : audit v0.7.0 = 117 clés / 30 préfixes / 100 % de conformité de nommage. Le lot de dérive v0.8.0 a ajouté 51 entrées explain pour des constats WARN/ALERT jusque-là non couverts, introduisant 15 nouveaux préfixes (`backup, ddns, docker, fail2ban, firewall_stack, iptables_nft, log_rotation, logs, mac_policy, network_context, ntp, ports, rootkit, services, smtp`).
 
 ---
 
@@ -886,7 +886,7 @@ BOB supporte les versions Python **N et N-2**, où **N** est la stable upstream 
 Ladder de dépréciation Python 3.10 (en cours à partir de v0.7.0) :
 - **v0.7.0 — Ladder étape 1** ✓ : 3.10 et 3.14 en CI pour valider la compatibilité avant.
 - **Prochaine release minor BOB — Ladder étape 2** : annonce de la dépréciation 3.10 dans le changelog et bannière `--help`.
-- **Release minor BOB suivante (post-2026-10) — Ladder étape 3** : retrait 3.10 de la CI, bump `requires-python` dans `pyproject.toml`.
+- **Release minor BOB suivante (post-2026-10) — Ladder étape 3** : retrait de 3.10 de la CI, relèvement de `requires-python` dans `pyproject.toml`.
 
 L'intention : au moins 6 mois de préavis avant tout abandon, miroir des gels distros (Debian stable etc.). Les packagers peuvent compter sur cette politique pour planifier leurs rebuilds.
 

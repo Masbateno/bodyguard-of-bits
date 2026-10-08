@@ -6,6 +6,166 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.24.2] — 09-10-2026
+
+**Une version de correctifs : une zone firewalld qui accepte tout n'est plus un
+OK, UFW avec IPV6=no se lit comme bloquant et non exposant, et l'interface
+française dit un seul mot pour un constat.** Aucun changement de formule de score,
+de schéma JSON, d'ordre des colonnes CSV ni de section. **BREAKING (scores) :** le
+score **baisse** de 3 sur un hôte firewalld dont la cible de la zone par défaut est
+ACCEPT (§1) — la correction d'un faux OK — et **monte** jusqu'à 2 sur un hôte UFW
+réglé sur IPV6=no avec une adresse IPv6 globale (§2). Trois clés INFO/ALERT sont
+nouvelles ; une clé `--explain` est ajoutée (219). Les deux changements de score
+ont été mesurés sur du vrai matériel : Fedora 44 pour le §1, Linux Mint 22.3
+pour le §2.
+
+### 1. firewalld : une zone par défaut de cible ACCEPT est alertée
+
+La cible d'une zone décide du sort d'un paquet qu'aucune règle ne reconnaît ;
+`ACCEPT` — la zone `trusted`, ou toute zone réglée ainsi — laisse tout entrer.
+Mesuré sur Fedora 44 avec 0.24.1 : la surface d'attaque disait à juste titre
+« politique par défaut ALLOW — aucun filtrage », tandis que la section pare-feu
+rapportait « firewalld est le pare-feu actif » en OK et que rien n'était déduit. La
+politique ALLOW par défaut d'UFW a toujours coûté 3 points (`firewall.policy_open`).
+
+La nouvelle clé `firewall.firewalld_policy_open` est une ALERT −3. Ce n'est pas
+`firewall.policy_open` réutilisée, car la référence CIS de cette clé — « Ensure ufw
+default deny firewall policy » — serait fausse sur un hôte firewalld ; sa référence
+est une note de bonne pratique (les benchmarks CIS que cite BOB sont ceux d'Ubuntu
+et de Debian, qui n'ont pas de contrôle firewalld). La correction qu'elle propose
+n'enferme pas un opérateur distant dehors : sur une zone nommée, elle ajoute le
+service `ssh` **avant** de rétablir la cible d'origine (`--set-target=default`,
+puis `--reload`) ; sur `trusted`, qui existe pour tout accepter, elle passe la zone
+par défaut à `public` au lieu de réécrire `trusted`. `--explain` et la complétion
+bash connaissent la clé.
+
+Mesuré en A/B (0.24.1 contre 0.24.2) sur Fedora 44, SELinux en mode enforcing :
+cibles `default` et `DROP` identiques (score 7, aucune déduction pare-feu) ;
+`ACCEPT` 7 → **6**. Les deux corrections appliquées pour de vrai : `trusted` →
+`public`, et FedoraServer réglée en ACCEPT *sans* ssh → ssh ajouté, cible
+rétablie, une nouvelle connexion SSH réussit, le constat disparaît, et une seconde
+exécution de la commande sort toujours en 0.
+
+Le même passage a trouvé deux lignes IPv6 fausses sur cet hôte, toutes deux
+corrigées :
+
+- sous la cible ACCEPT, la section IPv6 disait « Les services IPv6 sont filtrés
+  par firewalld » — désormais l'INFO `ipv6.firewalld_v6_open` (« non filtrés ») ;
+- **présent depuis avant 0.24.1 :** sur un hôte firewalld sans paquet ufw, elle
+  disait « La configuration IPv6 d'UFW correspond à l'état IPv6 du noyau ». Quand
+  firewalld filtre et qu'UFW ne tourne pas, la section IPv6 ne parle plus que de
+  firewalld (le correctif de 0.24.1 ne couvrait que « ni UFW ni firewalld »).
+
+Limite connue, inchangée : BOB juge la zone **par défaut** de firewalld. Sur
+l'hôte mesuré, l'interface suit la zone par défaut ; une interface liée
+explicitement à une autre zone reste jugée sur la cible de la zone par défaut.
+
+### 2. UFW avec IPV6=no bloque l'IPv6 ; il ne le laisse pas ouvert
+
+BOB lisait `IPV6=no` comme « UFW ne gère pas l'IPv6 » et rapportait les services
+IPv6 comme exposés : `ipv6.ufw_disabled_listeners_present`, un WARN −2, sur un hôte
+doté d'une adresse IPv6 globale, et — le libellé de 0.24.1 — « joignable depuis le
+réseau local sans filtrage par UFW » sur un hôte en link-local seul. Mesuré sur
+Linux Mint 22.3 (ufw 0.36.2), avec un voisin link-local dans un espace de noms
+réseau relié à l'hôte par une paire veth : UFW actif + IPV6=no → la politique IPv6
+INPUT est DROP et sshd sur `[::]:22` ne répond pas ; UFW inactif, mêmes réglages →
+ACCEPT, et sshd répond. La cause est dans ufw lui-même : avec IPV6=no et un
+ip6tables fonctionnel, `ufw-init` pose DROP sur les chaînes IPv6 INPUT, FORWARD et
+OUTPUT, loopback excepté.
+
+BOB ne le déduit pas d'IPV6=no : il lit la politique IPv6 INPUT (seulement quand
+UFW est réglé sur IPV6=no). UFW actif + DROP → INFO `ipv6.ufw_v6_off_blocked`
+(« UFW bloque tout l'IPv6 — les services sont injoignables, et l'IPv6 est
+inutilisable sur cet hôte »), sans déduction. Une politique lue ACCEPT, ou non
+lue, garde le verdict précédent ; un DROP alors qu'UFW est inactif n'est pas
+attribué à UFW. Le texte `--explain` de `ipv6.ufw_disabled_listeners_present`, qui
+disait qu'aucune règle ip6tables n'est chargée, est réécrit.
+
+Une première tentative de cette mesure — se connecter depuis une autre machine —
+n'était pas valable : cette machine avait elle aussi UFW avec IPV6=no, si bien que
+son propre DROP cassait la découverte de voisins dans les deux sens. La méthode par
+espace de noms garde les deux extrémités sur l'hôte testé.
+
+### 3. Un seul mot français pour un constat : « constat »
+
+L'interface française disait « finding » 40 fois, « constat » 23 fois et
+« découverte » 7 fois pour la même chose, et la documentation française suivait.
+Tout dit désormais « constat », comme le fixe le glossaire de CONVENTIONS (§10) :
+39 valeurs de locale (`Nouveau constat : …` dans `--diff`, `{count} constat(s)`
+dans le rapport HTML, les textes `--explain`) et les documents français actuels.
+« Découverte » ne reste que là où il signifie découverte au sens propre (IoT/mDNS,
+Avahi, découverte d'imprimantes CUPS, failles nouvellement découvertes). Les clés de
+constat ne changent pas. Les anglicismes nets de ces documents (« jour du ship »,
+« bump », « fixes », « auto-fix ») sont traduits aussi.
+
+### 4. `--check list` décrit ce que couvre chaque section
+
+La section `firewall` était décrite comme « Pare-feu UFW — installé, actif,
+politique par défaut » trois versions après avoir appris firewalld et les jeux de
+règles bruts ; `ipv6` et `ports` ne nommaient qu'UFW ; `updates` ne nommait qu'APT
+alors qu'elle lit apt, dnf, zypper, pacman et apk. Les quatre nomment désormais
+chaque backend qu'elles jugent (EN + FR).
+
+### 5. Documentation
+
+- L'exemple `--diff` d'AUTOMATION (EN + FR) montrait des blocs à en-tête
+  (« Résolus depuis le dernier audit (2) : ») que BOB n'a jamais affichés ; il
+  montre désormais les vraies lignes, une par clé.
+- Cohérence des changelogs : 0.2.2 était daté du 02-05 dans les deux tables de
+  synthèse et du 03-05 dans les deux changelogs détaillés et dans son tag — le 03-05
+  est juste. TESTING n'avait pas de ligne pour 0.2.1 ni pour les quatre bêtas de
+  0.7.0 ; elles sont ajoutées, avec des comptes collectés à chaque tag
+  (`git archive` + `pytest --collect-only` ; 0.7.0b2 = 5411 n'était écrit nulle
+  part). Les lignes approximatives `~6008` / `~6198` / `~6244` de 0.8.x sont
+  désormais exactes (mêmes chiffres, mesurés aux tags).
+- Les sections et lignes françaises de changelog qui avaient été condensées sont
+  traduites intégralement : 0.7.0, 0.7.0b3, 0.7.0b4 (17 à 24 % de la longueur
+  anglaise — manquées par un contrôle de parité antérieur dont le motif de version
+  lisait chaque bêta comme 0.7.0) et les lignes de synthèse de 0.7.0b3, 0.7.0b4,
+  0.6.2, 0.5.2 et 0.2.1. Le français resté dans les entrées anglaises est traduit,
+  et la PEP 416 est décrite partout comme *rejetée*.
+
+### Gardes
+
+- `tests/test_v0242_firewalld_policy_open.py` — les deux polarités de la cible de
+  zone, le message rendu en EN et en FR, la correction sans risque d'enfermement,
+  le libellé IPv6 sous firewalld, le câblage du runner, les descriptions de
+  sections.
+- `tests/test_v0242_ufw_ipv6_off.py` — DROP contre ACCEPT contre non lu, UFW actif
+  contre inactif, la lecture de la politique et le moment où elle a lieu.
+- `tests/test_fr_constat_terminology.py` — pas de « finding » dans la locale
+  française ni dans les documents français actuels ; « découverte » seulement dans
+  son sens propre.
+- `tests/test_changelog_fr_parity.py` — les deux langues listent les mêmes versions
+  et aucune entrée française n'est sous 0,9 × la longueur anglaise ; les
+  pré-versions sont lues.
+- `test_v0153_changelog_dates.py` compare désormais chaque table de synthèse à son
+  changelog détaillé et lit les bêtas ; `test_v0181…` exige une ligne TESTING pour
+  chaque version publiée.
+- Une garde de 0.20.2 (`firewalld/ipv6-gap-warned-though-firewalld-filters-v6`)
+  était devenue inerte derrière la nouvelle branche IPv6 ; le run complet de
+  mutations l'a attrapée, et elle teste désormais le cas qu'elle couvre encore (UFW
+  et firewalld tous deux actifs).
+
+### Chiffres
+
+- **Tests** 12009 → **12165** ; mutations 387 → **408**, toutes tuées.
+- Clés de locale 2833 → **2840** par langue ; clés `--explain` et références CIS
+  218 → **219** (95 bonnes pratiques).
+
+### Mise à jour
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+Aucun changement de configuration nécessaire. Une entrée `ignore.yml` pour
+`ipv6.ufw_disabled_listeners_present` ou `ipv6.ufw_disabled_listeners_link_local`
+ne correspond plus sur un hôte UFW où l'IPv6 est bloqué (§2) : le constat est
+désormais `ipv6.ufw_v6_off_blocked`, une INFO.
+
+---
+
 ## [0.24.1] — 05-10-2026
 
 **Une version de correctifs : chaque synthèse lit le pare-feu qui filtre
@@ -10778,78 +10938,256 @@ Quiconque utilise des webhooks avec des URL `http://` doit soit passer à `https
 
 ## [v0.7.0] — 01-06-2026
 
-**Bump majeur — ouvre la branche stable v0.7.x.**
+**Bump majeur — ouvre la branche stable v0.7.x.** Rassemble le cycle de quatre bêtas (b1 → b2 → b3 → b4) dans la version canonique v0.7.0. Le contenu cumulé se compose de trois phases thématiques (T1 Fondations + T2 schéma JSON v2 + T3 bac à sable des plugins) plus quatre gardes d'ingénierie de livraison ajoutées en cours de route, le tout au-dessus de la base v0.6.2. v0.6.x est désormais en fin de vie — les correctifs de sécurité ne seront pas rétroportés.
 
-Roll-up du cycle beta b1+b2+b3+b4 (15+ commits) avec 3 phases thématiques et 4 garde-fous release-engineering ajoutés en vol.
+### Ce qui a changé depuis v0.6.2
 
-### Phase 1 (Foundation T1)
+#### Phase 1 — Fondations (T1)
 
-Python 3.14 ajouté à la matrix CI ; nouvelle API `ScoreEngine.set_posture()` + property `effective_level` + block `posture_escalation` calculant `max(score_level, posture_floor)` ; nouvelle EXPLAIN key `risk.escalated_posture` ; box-score annote "(majoré par posture : X)" quand posture floor actif.
+  - **Python 3.14 ajouté à la matrice CI** (étape 1 de l'échelle). `requires-python>=3.10` conservé — la fin de vie amont de Python 3.10 est en 2026-10, il reste pris en charge. La matrice d'intégration par distro utilise 3.12 / 3.13 par défaut selon la distro ; la matrice pytest exerce explicitement 3.10 / 3.11 / 3.12 / 3.13 / 3.14.
+  - **Majoration par la posture** — la nouvelle API publique `ScoreEngine.set_posture(level: RiskLevel, key: str)` permet à un check de relever le plancher du niveau de risque final sans toucher au score numérique. `engine.effective_level` renvoie `max(score_level, posture_floor)`. `engine.posture_escalation` est un tuple `(applied: bool, reason_key: str, score_level: str)` adapté à la sortie JSON et au suivi des différences d'historique. Déclenchée par `firewall_inactive` (UFW désactivé), `iptables_input_accept` (politique par défaut ACCEPT sur la chaîne INPUT), ou `firewall_domain_score ≤ 3` (domaine pare-feu gravement mal configuré).
+  - **Annotation de l'encadré du score** — l'encadré de synthèse du terminal affiche désormais `Niveau de risque : ✖ ÉLEVÉ  (majoré par posture : pare-feu inactif)` quand le plancher de posture est actif. Visible sur toutes les surfaces de l'audit (terminal, rapport txt, rapport HTML, sortie JSON v2, champ level_score_only de history.jsonl).
+  - **Nouvelle clé EXPLAIN** `risk.escalated_posture`, qui documente ce qu'est la majoration par la posture et quand elle se déclenche.
+  - **M-1** — indicateur time_simple de `parse_cron_file` + normalisation du journal pour les entrées cron.
+  - **M-7** — `--check` / `--skip` reconnaissent les 10 noms de sections toujours actives (firewall_state, dns, etc.), pour que les utilisateurs puissent composer des audits ciblés.
 
-### Phase 2 (Schema v2 T2)
+#### Phase 2 — Schéma JSON v2 (T2)
 
-`build_json_data(..., schema_version="2")` est le nouveau défaut, flag `--json-v1` préserve le layout legacy v0.6.x. v2 fixe l'inconsistance type `network_context` (P1), renomme `timestamp`→`timestamp_utc`, ajoute `info_count` + block `posture_escalation` + `deductions_raw`/`open_ports_all` en mode complet + `domain_scores[d].deductions`. Nouveau fichier `tests/test_json_schema_v2.py`. **Baseline audit EXPLAIN_KEYS** = 117 keys / 30 préfixes / 100% conformance pinné par `tests/test_explain_naming_convention.py`.
+  - **`build_json_data(schema_version="2")` est le nouveau défaut.** L'option `--json-v1` préserve exactement la disposition legacy de v0.6.x pour la migration. Le schéma v2 est documenté dans la section « JSON output schema » de `DOCUMENTS/README_TECH.md`, avec une table de migration v1→v2.
+  - **Changements de v2** : corrige l'incohérence de type de `network_context` (P1 — tantôt str, tantôt objet) ; renomme `timestamp` → `timestamp_utc` (suffixe UTC explicite) ; ajoute `info_count` (nombre de constats INFO par domaine, utile pour l'analyse de tendance) ; ajoute le bloc `posture_escalation` `{applied, reason_key, score_level}` ; en mode complet, ajoute `deductions_raw` (motifs non tronqués) + `open_ports_all` (liste complète des ports, pas les N premiers) ; ajoute `domain_scores[d].deductions` (liste des déductions par domaine).
+  - **Référence d'audit des EXPLAIN_KEYS** — 117 clés / 30 préfixes / 100 % de conformité au motif canonique `<prefix>.<finding_id>` en snake_case. Épinglé par `tests/test_explain_naming_convention.py` (710 assertions paramétrées). Toute future clé qui ne suit pas le motif fait échouer la suite avant la fusion.
+  - Nouveau fichier `tests/test_json_schema_v2.py` — 30 tests écrits AVANT l'implémentation selon la règle de l'intégration d'abord ; ils ont guidé l'implémentation pour qu'elle suive la spécification.
 
-### Phase 2.1 hotfix
+#### Phase 2.1 — audit par sous-agent d'avant T3
 
-Audit sub-agent pre-T3 a surfacé 5 important + 6 minors ; 5/5 important + 4/6 minors shippés. I-1+I-4 propagation `effective_level` aux 3 sinks ratés + champ `level_score_only` dans `history.jsonl`. I-2 extraction helper `bob.scoring.unpack_posture_escalation`. I-3 `set_posture` rejette bool explicitement avec TypeError clair. M-1 `--check=list` liste les 10 sections always-on. M-3 `report.write_summary` (.txt) surface annotation posture.
+Une revue adverse par sous-agent des commits des Phases 1 + 2 + 2.1 a remonté 5 constats importants + 6 mineurs. 5/5 importants + 4/6 mineurs livrés avant T3 :
 
-### Phase 3 (Plugin Sandbox Runner T3)
+  - **I-1 + I-4** — la propagation d'`effective_level` vers HTML / Markdown / `history.jsonl` était incomplète après la Phase 1. Ajout des 3 puits oubliés + d'un nouveau champ `level_score_only` dans `history.jsonl`, pour que les outils de différence d'historique distinguent le niveau issu du score brut du niveau effectif majoré par la posture.
+  - **I-2** — extraction du helper `bob.scoring.unpack_posture_escalation(engine) → tuple`. Consolide le motif défensif `getattr` + `try/except` qui était dupliqué entre les sites display / json_output et manquait dans l'un d'eux.
+  - **I-3** — `ScoreEngine.set_posture()` rejette désormais explicitement bool, avec un TypeError qui nomme l'erreur. Jusqu'ici `set_posture(True)` était accepté en silence, car `isinstance(x, int)` renvoie True pour bool — un piège.
+  - **I-5** — l'`assert ... or True` creux de `test_v2_posture_escalation_consistent_with_top_level_risk` est réécrit pour affirmer la forme explicite de la divergence.
+  - **M-1** — la sortie de `--check=list` liste désormais les 10 noms de sections toujours actives, pour que le texte d'aide corresponde à ce que M-7 accepte en entrée.
+  - **M-3** — `report.write_summary` (rapport .txt sur disque) fait apparaître l'annotation de posture comme l'encadré du terminal.
 
-Nouveau `bob/_sandbox.py` (~900 LoC) implémente runner plugin restreint : isolation processus via `multiprocessing.get_context("spawn")`, timeout wall-clock 5s + `RLIMIT_AS=256MiB` + `RLIMIT_CPU=10s`, allowlist d'import, `__builtins__` restreints (`_ImmutableBuiltins`), wrapper `open()` rejetant write modes ET refusant reads sur `/etc/shadow` / `~/.ssh/id_*` / `/dev/mem` etc., méthodes write `pathlib.Path` monkey-patchées, strip extensif d'attributs `os` (84 attrs dangereux), CheckResult shippé via round-trip dict JSON-safe à travers la queue (pas de pickle d'objets plugin-contrôlés → pas de RCE parent via `__reduce__` malicieux). `BOB_SANDBOX_LEGACY=1` trap door déprécié avec log CRITICAL + write stderr per-run. Threat model recadré honnête dans `SECURITY.md` — **le sandboxing Python in-process N'EST PAS une frontière de sécurité** (consensus PEP 416) ; le sandbox catch les accidents + attaques naïves ; le profil AppArmor shippé est la vraie frontière.
+Deux mineurs reportés (M-2 cosmétique + M-6 doc) — sans effet sur le contrat de v0.7.0.
 
-### 4 guards release-engineering ajoutés en vol
+#### Phase 3 — Runner de plugins en bac à sable (T3)
 
-(1) **integration-first** caught Phase 1 4ed2e3b crash dict-vs-int avant la première beta ; (2) **smoke-after-commit** caught classe discovery packaging v0.6.2 ; (3) **version-consistency** test caught drift `__version__` v0.7.0b1 dans b2 ; (4) **smoke-plugin-on-CI** ajouté après ship pattern v0.7.0b3.
+La livraison phare. Avant v0.7.0, les plugins `~/.config/bob/checks.d/*.py` tournaient dans le processus parent de BOB avec tous les privilèges root. v0.7.0 introduit un runner de bac à sable en mode restreint ; les utilisateurs qui ont des plugins sont automatiquement protégés contre les accidents et les attaques naïves, ceux qui n'en ont pas ne sont pas concernés.
 
-### Numbers
+**Implémentation** (`bob/_sandbox.py`, 484 LoC) :
 
-5391 → **5466 tests** à travers le cycle v0.7.0, 0 régression. Sub-agent adversarial review pattern proven 2 fois (Phase 2.1 + T3 Step 4).
+  - **Isolation de processus** — chaque plugin tourne dans un enfant `multiprocessing.get_context("spawn")` neuf. Plantage / OOM / mutation du système de fichiers / pollution de l'environnement restent confinés.
+  - **Délai + limites de ressources** — délai de 5 s en temps réel `Process.join(timeout=5)` → `terminate()` → `kill()` si nécessaire ; le plafond `RLIMIT_AS = 256 MiB` protège contre les bombes mémoire ; le plafond `RLIMIT_CPU = 10s` protège contre les boucles infinies qui ignorent SIGTERM.
+  - **Liste d'imports autorisés** — `PLUGIN_IMPORT_ALLOWLIST` appliquée par un crochet qui remplace `builtins.__import__`, installé dans l'espace de noms restreint du plugin. Autorisés : `bob.scoring`, `re`, `json`, `pathlib`, `datetime`, `typing`, `dataclasses`, `collections`, `enum`, `math`, `string`, `hashlib`, `time`, `os.path`, `stat`.
+  - **`__builtins__` restreints** — sous-classe de dict `_ImmutableBuiltins` qui surcharge `__setitem__` / `update` / `clear` / `pop` / `popitem` / `setdefault` pour lever TypeError. Retire `eval` / `exec` / `compile` / `__import__` / `input` / `breakpoint`. `open` est remplacé par `_make_safe_open`, qui rejette les modes d'écriture ET refuse la lecture d'une liste choisie (`/etc/shadow`, `/etc/gshadow`, `/etc/sudoers.d/`, `~/.ssh/id_*`, `/.gnupg/`, `/dev/mem`, `/dev/kmem`, `/dev/port`, `/proc/kcore`, `/proc/kmem`). Les méthodes d'écriture de `pathlib.Path` (`write_text`, `write_bytes`, `touch`, `mkdir`, `rmdir`, `unlink`, `chmod`, …) sont remplacées dans le worker pour lever PermissionError.
+  - **Retrait d'attributs du module `os`** — liste `_OS_DANGEROUS_ATTRS` étendue (84 entrées réparties en six catégories : subprocess/spawn, contrôle de processus + signaux, changements de privilèges, E-S brutes sur descripteurs, écritures sur le système de fichiers, écritures d'attributs étendus, état du processus/de l'environnement, propres à Windows). La liste a fortement grandi entre b2 et b3, après qu'un plugin de preuve de concept a montré que `from pathlib import os; os.open + os.write` écrivait vers des chemins arbitraires malgré le retrait de niveau b2 — la liste livrée en v0.7.0 ferme ce chemin.
+  - **Transport par la file compatible JSON** — le worker sérialise le CheckResult du plugin en un dict de seuls types primitifs via `_sanitize_for_transport` AVANT de le pousser dans la file. Le parent reconstruit un CheckResult neuf à partir du dict via `_deserialize_check_result` — il ne dé-pickle jamais d'objets contrôlés par le plugin. Cela ferme le chemin d'exécution de code par pickle, où un `__reduce__` malveillant attaché à `template_vars` pouvait exécuter `eval` dans le parent.
+  - **Trappe `BOB_SANDBOX_LEGACY=1`** — contourne entièrement le bac à sable ; exécute les plugins dans le parent avec tous les builtins. Produit une entrée de journal CRITICAL ET une écriture directe sur stderr à chaque exécution qui entre réellement en mode legacy (réévaluée à chaque appel, pour que changer la variable d'environnement en cours de session prenne effet). Obsolète dès son introduction ; sera retirée en v0.8.0.
 
-### Déféré à v0.8.0
+**Le processus parent n'exécute jamais le code des plugins** — `bob/plugin_checks._load_one()` est désormais en lecture AST seule (contrôle de taille + `compile()` pour la syntaxe + parcours AST des FunctionDef pour la présence de `run_check` + extraction AST de `CHECK_NAME`). Le chemin `importlib.exec_module` d'avant v0.7.0 est retiré. Un plugin portant `import subprocess; subprocess.run(...)` au niveau du module ne compromet plus l'audit pendant la découverte des plugins — l'import malveillant est repoussé dans l'enfant en bac à sable, où la liste d'imports autorisés l'attrape.
 
-D-1 sections renumber, D-2 fusion `_ALL_SECTIONS`+`_ALWAYS_ON_SECTIONS`, D-3 retrait aliases EXPLAIN_KEYS obsolètes, D-4 sub-checks granulaires, retrait trap door `BOB_SANDBOX_LEGACY=1`.
+**Modèle de menace honnêtement recadré** dans la section « Plugin checks » de `SECURITY.md`. La ligne d'en-tête :
 
-### Upgrade
+> **In-process Python sandboxing is not a security boundary.** This is a defence-in-depth layer.
 
-`pipx upgrade bodyguard-of-bits`. Users avec plugins dans `~/.config/bob/checks.d/` ont le sandbox automatiquement ; users sans plugins voient la nouvelle posture escalation + sortie JSON schema v2. Branche v0.6.x officiellement EOL.
+Ce que le bac à sable arrête : les accidents (un plugin bogué appelle `os.unlink` par erreur, une boucle infinie, une allocation de 2 GiB), les attaques naïves (`import subprocess; subprocess.run(...)` au niveau du module), les lectures d'adjoint abusé (un `open("/etc/shadow")` accidentel, parce que l'utilisateur a oublié que BOB tourne en root).
+
+Ce que le bac à sable N'arrête PAS : un attaquant déterminé muni du manuel d'évasion de Python (`json.dumps.__globals__["__builtins__"]["__import__"]` atteignable en 5 lignes, parce que les modules autorisés de la bibliothèque standard portent leur propre référence non restreinte aux builtins — la PEP 416 a été rejetée en 2012 précisément sur ce point), le contournement non lié `dict.__setitem__(bins, "eval", real_eval)` de la sous-classe de builtins restreints (la limite irréductible — toute alternative entièrement immuable casse les chemins rapides de dict au niveau C dont `exec()` a besoin).
+
+Les deux évasions architecturales sont épinglées comme VOLONTAIREMENT hors périmètre par `TestKnownInProcessLimitation::test_real_builtins_reachable_via_stdlib_globals` et `::test_i1_known_limitation_unbound_dict_setitem_bypass` — les futurs contributeurs les voient comme attendues, et non comme des régressions candidates.
+
+**Une vraie isolation contre un adversaire exige une frontière au niveau du système.** BOB livre un profil AppArmor (`packaging/apparmor/bob.profile`) qui confine le processus de BOB lui-même ; c'est la vraie frontière contre les plugins malveillants. Les utilisateurs qui lancent BOB sans confinement sous `sudo` doivent relire le code de leurs plugins avant de les installer.
+
+#### Quatre gardes d'ingénierie de livraison
+
+Le cycle v0.7.0 a rencontré quatre classes distinctes de bogues d'ingénierie de livraison. Chacune a reçu une garde complémentaire :
+
+  1. **l'intégration d'abord** — plantage de la Phase 1 (4ed2e3b) découvert au moment du smoke, une fois la Phase 1 terminée côté code : `engine.domain_scores["firewall"]` est un dict, pas un int, et ce dict était passé par erreur à `set_posture()`, faisant planter l'audit juste avant l'encadré de synthèse. Fermé en écrivant le test d'intégration AVANT l'implémentation pour les Phases 2 et 3, et en ajoutant à `set_posture` une garde de type explicite qui lève un TypeError nommant l'erreur dict-contre-int.
+  2. **le smoke après commit** — découverte de packaging de v0.6.2 : chaque wheel depuis v0.6.0 manquait `bob/checks/ssh/` et `bob/cron/`, parce que la liste `[tool.setuptools.packages.find].include` était un littéral périmé. Fermé par le correctif de v0.6.2 (glob `include=["bob*"]`) + une nouvelle étape d'`integration.yml` `pip install . && python -c "import bob.checks.ssh; from bob.cron import …"`. Tenu jusqu'à v0.7.0.
+  3. **la cohérence de version** — v0.7.0b1 est sortie avec un `bob/__init__.py::__version__` non synchronisé avec `pyproject.toml` ; la bannière affichait `BOB v0.6.2` alors que la wheel était `0.7.0b1`. Fermé en b2 par `tests/test_version_consistency.py::test_init_version_matches_pyproject_version`, qui lit les deux valeurs et affirme leur égalité à chaque exécution de CI + chaque pytest local d'avant livraison.
+  4. **le smoke de plugin en CI** — v0.7.0b3 est sortie avec `types.MappingProxyType` comme `__builtins__` restreints du bac à sable des plugins, que CPython rejette avec `SystemError` sur tous les Python de la matrice sauf 3.12.3. La validation par smoke sur 5/5 VM l'a raté, car aucune VM n'avait de plugin dans `~/.config/bob/checks.d/`. Fermé en b4 + par les commits d'après b4 5e0739e + cb4108b : tests.yml dépose un plugin inoffensif dans un répertoire temporaire et invoque directement `SandboxRunner` sur chaque Python de la matrice ; integration.yml dépose un plugin dans `~/.config/bob/checks.d/` et lance le vrai binaire `bob --offline` sur chaque distro de la matrice ; le déclencheur d'integration.yml est étendu aux branches `v*.x`, pour que la garde tourne pendant les cycles de bêta et pas seulement après la fusion dans main.
+
+À partir de v0.7.0, ces gardes sont permanentes. Elles continueront de se déclencher à chaque commit / push / tag pendant v0.7.x et v0.8.x.
+
+### Tests
+
+**5391 → 5466 tests** sur le cycle v0.7.0 (+75 net). 0 régression. Détail :
+
+  - +30 dans `tests/test_json_schema_v2.py` (intégration d'abord de la Phase 2)
+  - +710 paramétrés dans `tests/test_explain_naming_convention.py` (épinglage de l'audit de la Phase 2)
+  - +12 dans `tests/test_v2_posture_escalation_*` (Phase 1 + 2.1)
+  - +5 dans `tests/test_set_posture_typeerror_on_dict` (épinglage de la régression 4ed2e3b de la Phase 1)
+  - +2 dans `tests/test_version_consistency.py` (garde de b2)
+  - +46 dans `tests/test_plugin_sandbox.py` (étapes 1-2-3 de T3 + épinglages du durcissement + épinglages des limitations connues)
+  - +32 dans `tests/test_plugin_checks.py` (contrat du chargeur AST seul, étape 3 de T3)
+  - Les suppressions de tests morts + les fusions paramétriques équilibrent le +75 net.
+
+Matrice CI validée sur 5e0739e + cb4108b + la livraison finale de v0.7.0 :
+  - **tests.yml** — Python 3.10 / 3.11 / 3.12 / 3.13 / 3.14, tout vert.
+  - **integration.yml** — Debian 12 / Debian 13 / Ubuntu 22.04 / Ubuntu 24.04 / Ubuntu 25.04 / Kali rolling / Fedora 41, tout vert.
+  - **publish.yml** — se déclenche sur le tag v0.7.0, relance la matrice pytest, construit sdist + wheel, publie sur PyPI comme version stable (`make_latest: true`, car le tag ne correspond pas à la regex de pré-version PEP 440).
+
+### Fin de vie de v0.6.x
+
+v0.6.2 (la dernière version v0.6.x) est désormais en fin de vie. Les correctifs de sécurité ne seront pas rétroportés. Les utilisateurs de v0.6.x doivent faire `pipx upgrade bodyguard-of-bits` vers v0.7.0 — il n'y a aucune rupture du contrat CLI (toutes les options de v0.6.x continuent de fonctionner), aucune rupture du contrat JSON (`--json-v1` choisit le schéma legacy), et le nouveau bac à sable est automatique et transparent pour les utilisateurs sans plugin.
+
+### Reporté à v0.8.0
+
+Éléments explicitement reportés de v0.7.0 à v0.8.0 (voir la mémoire `project_v08x_deferred`) :
+
+  - **D-1** — renumérotation des sections (cosmétique, casse la forme numérique `--check=N`, qu'aucune doc n'utilise).
+  - **D-2** — fusionner `_ALL_SECTIONS` + `_ALWAYS_ON_SECTIONS` en un seul registre.
+  - **D-3** — retirer les alias d'EXPLAIN_KEYS rendus obsolètes par l'application du motif canonique en v0.5.5.
+  - **D-4** — granularité des sous-checks (découper les fonctions de check monolithiques qui émettent dans ≥3 domaines distincts).
+  - **Retrait de la trappe `BOB_SANDBOX_LEGACY=1`** (annoncé « retiré en v0.8.0 » dans la doc de v0.7.0).
+
+### Mise à jour
+
+```bash
+pipx upgrade bodyguard-of-bits
+sudo bob --version   # should print 0.7.0
+sudo bob -v -d       # standard audit; posture escalation auto-applies if firewall is OFF
+```
+
+### Mémoire archivée
+
+  - `project_v07x_phase1` — les 6 commits de la Phase 1 + la stratégie en 7 règles pour les phases suivantes.
+  - `project_v07x_phase2` — Phase 2 + 2.1 + cycle beta1+beta2 + 3 gardes de livraison.
+  - `project_v070_t3_sandbox_threat_model` — audit complet de T3 (3C + 5I + 7M constats du sous-agent, 3 preuves de concept confirmées localement, décision stratégique Option B, leçon de la régression b3 → b4, contournement non lié I-1 irréductible à la limite du Python en processus).
+  - `project_v08x_deferred` — contrat de D-1 à D-4 pour la prochaine majeure.
 
 ---
 
 ## [v0.7.0b4] — 01-06-2026
 
-**Hotfix compatibilité CI pour v0.7.0b3.** Aucun changement threat-model ou behavior audit — mais le ship b3 utilisait `types.MappingProxyType` comme `__builtins__` restreints du sandbox, et CPython rejette les mappings non-dict comme builtins `exec()` sur toute version Python de la matrix CI SAUF 3.12.3 : chaque run plugin sur 3.10/3.11/3.13/3.14 raisait `SystemError`. Détecté par la matrix de test `publish.yml` immédiatement après le push tag b3. **Fix** : revert `_build_restricted_builtins` pour retourner le dict subclass `_ImmutableBuiltins` original shippé en b2. Bloque le path naturel-Python mais bypassable via `dict.__setitem__(bins, "eval", real_eval)` — même finding I-1 sub-agent que b3 tentait de fermer. Trade-off : I-1 unbound-bypass passe de "fermé" à "known limitation". Documenté + nouveau test pinning. **4e bug release-engineering sur la branche v0.7.x.** Nouveau guard pour v0.7.0 final : step smoke-CI loadant un plugin bénin sur chaque version Python matrix avant le tag. 5466 tests.
+**Correctif de compatibilité CI pour v0.7.0b3.** Aucun changement de modèle de menace, d'API ni de comportement d'audit par rapport à b3. Un élément précis de la passe de durcissement de b3 — le correctif I-1, qui remplaçait la sous-classe de dict `_ImmutableBuiltins` par `types.MappingProxyType` — s'est révélé incompatible avec les chemins rapides de dict au niveau C dont `exec()` a besoin pour `__builtins__`. Toutes les versions de Python de la matrice CI de BOB SAUF 3.12.3 (3.10, 3.11, 3.13, 3.14) levaient `SystemError: Objects/dictobject.c:1490: bad argument to internal function` dans le worker lancé par spawn, à chaque exécution de plugin, ce qui remontait dans le parent sous forme d'un constat WARN `"Plugin 'X.py' error: SystemError: ..."`. 16 tests ont commencé à échouer en CI juste après la poussée du tag b3.
+
+### Pourquoi la validation sur VM de b3 l'a raté
+
+La livraison de b3 était conditionnée à 5 smokes sur 5 cibles — so6desktop (Linux Mint 22.3, Py 3.12.3), VM Debian 13 (Py 3.13.5), VM Kali Rolling (Py 3.13.12), VM Ubuntu 26.04 LTS (Py 3.14.4), VM Mint+DDNS (Py 3.12.3). Trois d'entre elles auraient dû attraper la régression… sauf qu'aucune n'avait de plugin installé dans `~/.config/bob/checks.d/*.py` : la chaîne d'audit n'instanciait donc jamais le `SandboxRunner` et n'essayait jamais d'exécuter un plugin avec MappingProxyType comme builtins. Le smoke lançait TOUT l'audit mais contournait entièrement le chemin de code modifié.
+
+C'est la 4e classe de bogue d'ingénierie de livraison sur la branche v0.7.x, et elle suit le même schéma que v0.7.0b1 → v0.7.0b2 : un changement correct sur la machine principale du mainteneur, validé de bout en bout sur plusieurs cibles, alors que l'exercice de validation lui-même ne touchait pas le code modifié. Chaque lacune précédente a reçu sa garde (l'intégration d'abord / le smoke après commit / la cohérence de version) ; celle-ci apportera une étape `smoke-plugin-on-every-python-matrix-version` dans la porte d'avant-tag de publish.yml.
+
+### Correctif
+
+`bob/_sandbox.py::_build_restricted_builtins` revient à renvoyer une instance de `_ImmutableBuiltins` — la sous-classe de dict livrée en v0.7.0b2, avec `__setitem__` / `update` / `clear` / `pop` / `popitem` / `setdefault` / `__delitem__` surchargés. Cela bloque le chemin de mutation Python naturel `bins["eval"] = real_eval` (qui passe par l'aiguillage virtuel de `__setitem__` et tombe sur la surcharge). Cela ne bloque PAS le contournement non lié `dict.__setitem__(bins, "eval", real_eval)` — qui appelle directement la méthode C de base. La tentative de b3 de fermer le contournement non lié I-1 est donc annulée, et I-1 non lié repasse de « fermé » à « limitation connue ».
+
+### Pourquoi MappingProxyType ne peut pas servir ici
+
+L'interpréteur de bytecode de CPython exécute `LOAD_GLOBAL` / `LOAD_NAME` / `IMPORT_NAME` etc. en lisant `__builtins__` par des fonctions C propres aux dicts (`_PyDict_GetItemRef`, `PyDict_GetItemString`, etc.) quand ces fonctions détectent un vrai dict. Un `MappingProxyType` enveloppant un dict n'est pas lui-même un dict — c'est un type C distinct, qui implémente `tp_as_mapping` mais pas les chemins rapides `PyDict_*`. Sur Python 3.12.3 précisément, la détection du chemin rapide se rabat par hasard sur le `PyMapping_GetItemString` générique pour les proxies ; sur 3.10/3.11/3.13/3.14, le chemin rapide teste `PyDict_CheckExact()` ou `PyDict_Check()` et lève `SystemError` quand le test échoue sur un proxy.
+
+Le même `SystemError` se déclencherait pour `frozendict`, pour des classes de mapping immuables personnalisées via `collections.abc.Mapping`, ou pour tout type d'extension C qui ne sous-classe pas `dict`. Le seul moyen d'obtenir « un dict qu'exec accepte » est de sous-classer `dict` — et dès lors, `dict.__setitem__(instance, k, v)` non lié est par définition atteignable. La conception de Python ne peut pas satisfaire ici à la fois « aucune mutation possible » et « utilisable comme builtins d'exec ». La position honnête est d'accepter le contournement non lié comme limitation connue, et c'est ce que livre v0.7.0b4.
+
+### Tests
+
+`tests/test_plugin_sandbox.py::TestHardeningPins::test_i1_immutablebuiltins_no_dict_setitem_bypass` (b3) est renommé en `test_i1_virtual_dispatch_mutation_blocked` et resserré pour épingler le chemin de l'attaquant réaliste qu'utilise réellement le plugin adverse 12 (`bins["eval"] = ...` par la syntaxe d'indice → passe par l'aiguillage virtuel de `__setitem__`). Un nouveau test `tests/test_plugin_sandbox.py::TestKnownInProcessLimitation::test_i1_known_limitation_unbound_dict_setitem_bypass` épingle le contournement non lié comme VOLONTAIREMENT hors périmètre — même forme que le test de l'évasion architecturale. 5466 tests au total (5465 de b3 + 1 nouvel épinglage de limitation connue), 0 régression dans la chaîne d'audit sur le 3.12.3 principal du mainteneur.
+
+### Les autres durcissements de b3, conservés à l'identique
+
+  - C-1 `_OS_DANGEROUS_ATTRS` étendu (21 → 84 entrées) — inchangé.
+  - C-2 transport par la file en aller-retour JSON (`_serialize_check_result` / `_deserialize_check_result`) — inchangé.
+  - I-2 `q.close()` + `q.join_thread()` dans un `try/finally` — inchangé.
+  - I-3 helper AST partagé `has_run_check` — inchangé.
+  - I-5 liste de refus des chemins en lecture sur `_make_safe_open` — inchangé.
+  - M-4 `RLIMIT_CPU = 10s` ajouté — inchangé.
+  - M-6 / M-7 avertissement `BOB_SANDBOX_LEGACY=1` via `logger.critical` + écriture directe sur stderr, réémis à chaque exécution — inchangé.
+
+### Docs
+
+  - La section « Plugin checks » de `SECURITY.md` est mise à jour : la mitigation I-1 dit désormais « bloque le chemin Python naturel `bins["eval"] = ...` » + `dict.__setitem__` non lié est ajouté à l'énumération « What it does NOT stop ».
+  - La section Q3' de la docstring du module `bob/_sandbox.py` est mise à jour avec le même recadrage + la raison pour laquelle `MappingProxyType` ne peut pas fonctionner comme builtins d'exec.
+
+### Ce que doivent faire les testeurs
+
+Si tu as installé v0.7.0b3 depuis PyPI, passe à v0.7.0b4 :
+
+```bash
+pipx upgrade --pip-args="--pre" bodyguard-of-bits-beta
+sudo bob-beta --version   # should print 0.7.0b4
+```
+
+Si tu as lancé v0.7.0b3 SANS aucun plugin dans `~/.config/bob/checks.d/`, tu n'as vu AUCUN symptôme et tes résultats d'audit de b3 sont valides. Le bogue n'apparaissait que lorsqu'un vrai plugin était chargé.
+
+Si tu as lancé v0.7.0b3 AVEC des plugins sur un Python autre que 3.12, chaque exécution de plugin a produit un constat WARN portant le message SystemError au lieu de tourner normalement. Après le passage à b4, relance pour obtenir les vraies sorties des plugins.
+
+### Suite
+
+Comme pour b3 : surveiller 24 h de sorties de smoke réelles sur les 4 VM + so6desktop. S'il n'y a pas d'autre surprise, la coupe finale de v0.7.0 regroupe b1+b2+b3+b4 + les quatre commits de T3 en un seul et sort sans nouveau cycle de bêta. La porte d'avant-tag de publish.yml gagne une étape « smoke d'un plugin inoffensif sur chaque Python de la matrice ».
 
 ---
 
 ## [v0.7.0b3] — 31-05-2026
 
-**Hardening sandbox + recadrage threat-model** suite à l'audit adversarial sub-agent T3 Phase 3 (3C + 5I + 7M).
+**Passe de durcissement du bac à sable + recadrage du modèle de menace** — fait suite à l'audit adverse par sous-agent de T3 Phase 3, mené contre la base v0.7.0b2 (le bac à sable de plugins de la Phase 3, introduit par les commits 0ac6ec9 + 960ca84 + de94813). Trois constats critiques + cinq importants + sept mineurs sont remontés ; trois d'entre eux ont été confirmés localement par des plugins de preuve de concept **avant** toute tentative de correctif, si bien que le code livré porte une preuve concrète que le durcissement ferme les chaînes d'attaque pratiques, et une documentation honnête de ce qu'il ne ferme PAS.
 
-### PoCs confirmés
+### Ce que les preuves de concept ont montré contre v0.7.0b2
 
-- **C-1** : `from pathlib import os` smuggleait module `os` live au-delà de l'allowlist d'import ; strip list manquait `posix_spawn` / `open` / `write` / `chmod` / `unlink` / `environ` / `chdir`.
-- **C-2** : RCE processus parent via pickle `mp.Queue` : plugin obtenait `eval` réel via `json.dumps.__globals__["__builtins__"]`, construisait classe avec `__reduce__` malicieux, attachait à `findings[0].template_vars`, le `q.get()` parent unpicklait et lançait `os.system` sous sudo.
-- **Échappement architectural** : `real_import = json.dumps.__globals__["__builtins__"]["__import__"]` puis `real_import("subprocess")` — bypass tout hook en 5 lignes, consensus de la communauté Python depuis le rejet de la PEP 416 (2012).
+  - **C-1 — module `os` passé en contrebande au-delà de la liste d'imports autorisés via `pathlib`.**
+    `from pathlib import os` renvoyait une référence vivante et pleinement fonctionnelle au module `os`. La liste de retrait `_OS_DANGEROUS_ATTRS` livrée en b2 couvrait `system` / `popen` / `exec*` / `spawn*` / `fork` mais ratait **`posix_spawn`, `posix_spawnp`, `open`, `read`, `write`, `close`, `dup`, `pipe`, `chmod`, `chown`, `unlink`, `rename`, `mkdir`, `rmdir`, `truncate`, `chdir`, `chroot`, `umask`, `environ`, `setresuid`/`setresgid`, `nice`, `setpriority`**, etc. Le plugin de preuve a ouvert `/tmp/bob_c1_escape` via `os.open + os.write + os.close` — le fichier a été créé avec les privilèges de l'audit (root sous `sudo`). Le contrat Q4' (« méthodes d'écriture de pathlib bloquées ») était techniquement respecté mais hors sujet, puisque l'attaque contournait entièrement pathlib par des E-S brutes sur descripteurs.
 
-### Décision stratégique : Option B — défense en profondeur honnête + AppArmor real boundary
+  - **C-2 — exécution de code dans le processus parent par l'aller-retour pickle de `mp.Queue`.**
+    Le worker de b2 poussait le CheckResult du plugin directement dans une `multiprocessing.Queue` ; le `q.get()` du parent le dé-picklait. Un plugin peut construire un `type("Evil", (object,), {"__reduce__": evil_reduce})` (l'appel à la métaclasse `type` contourne le retrait de `__build_class__`), atteindre une vraie référence à `eval` via `json.dumps.__globals__["__builtins__"]` (n'importe quel module autorisé de la bibliothèque standard divulgue ainsi les vrais builtins), et attacher une instance d'Evil à `findings[0].template_vars`. Quand le parent dé-pickle le résultat, le reduce d'Evil exécute `eval("__import__('os').system('touch /tmp/bob_c2_parent_pwned')")` **dans le processus parent**. La preuve a créé le fichier sentinelle depuis une exécution `sudo bob`.
 
-### Hardening shippé
+  - **Évasion architecturale — le vrai `__import__` atteignable en 5 lignes.**
+    `real_import = json.dumps.__globals__["__builtins__"]["__import__"]` renvoie le `builtins.__import__` non restreint, parce que les modules de la bibliothèque standard de Python portent leur propre référence non restreinte aux builtins via le `__globals__` de leur module. Le crochet installé dans les `__builtins__` du plugin est contourné, car les modules externes ne résolvent pas leurs imports par l'espace de noms du plugin. Le plugin appelle alors `real_import("subprocess")` et exécute ce qu'il veut. C'est la même limitation fondamentale que cite le rejet de la PEP 416 (frozendict) en 2012 : un bac à sable écrit en Python ne peut pas être prouvé sûr. **Aucune mitigation en Python pur ne peut la fermer sans casser la liste d'autorisation de la bibliothèque standard elle-même.**
 
-- `_OS_DANGEROUS_ATTRS` étendu de 21 → 84 entries (closes C-1)
-- `_serialize_check_result` / `_deserialize_check_result` round-trip dict JSON-safe à travers la queue (closes C-2)
-- `_ImmutableBuiltins` dict subclass remplacée par `types.MappingProxyType` (closes I-1 — proxy read-only C-level)
-- `q.close()` + `q.join_thread()` dans `try/finally` (I-2)
-- deny-list read-path sur `open()` bloque `/etc/shadow` / `~/.ssh/id_*` / `/dev/mem` / `/proc/kcore` (I-5)
-- `_apply_resource_limits` set `RLIMIT_CPU = 10s` en plus de `RLIMIT_AS = 256MiB` (M-4)
-- warning `BOB_SANDBOX_LEGACY=1` via `logger.critical` + stderr write, re-émis per-run (M-6 + M-7)
-- helper AST `bob._sandbox.has_run_check(source)` partagé (I-3)
+### Décision stratégique — Option B, défense en profondeur honnête
 
-### Numbers
+Après confirmation des trois preuves de concept, le mainteneur seul a examiné trois trajectoires :
 
-5458 → 5465 tests, 0 régression. SECURITY.md réécrit avec threat model honnête : **"In-process Python sandboxing n'est pas une frontière de sécurité"**.
+  - **A.** Corriger les chaînes concrètes + affirmer que le bac à sable résiste désormais à un adversaire. *Rejetée* — chaque correctif ne fait que déplacer la barre ; l'évasion architecturale demeure.
+  - **B.** Défense en profondeur honnête — corriger les chaînes concrètes pour attraper les accidents et les attaques naïves, documenter la limitation architecturale, et orienter les utilisateurs vers l'isolation au niveau du système (le profil AppArmor livré avec BOB) comme vraie frontière. *Retenue* — conforme au consensus de la communauté Python depuis 2012.
+  - **C.** Annuler entièrement les commits de T3 ; reporter T3 à v0.8.0 avec une conception subprocess+seccomp. *Rejetée* — ferait perdre les 3 commits de fondations, et la protection contre les accidents a une valeur propre.
 
-**Quiconque tourne des plugins de sources non confiance doit enforcer le profil AppArmor BOB** — code review reste mandatoire.
+### Durcissement livré dans `bob/_sandbox.py`
+
+  - **`_OS_DANGEROUS_ATTRS` étendu de 21 à 84 entrées**, organisées en six catégories : subprocess/spawn (16 entrées dont `posix_spawn`, `posix_spawnp`, toutes les variantes `exec*`/`spawn*`/`fork*`), contrôle de processus + signaux (10 entrées dont `_exit`, `abort`, la famille `wait*`, `nice`, `setpriority`), changements de privilèges (10 entrées dont `setresuid`, `setresgid`, `initgroups`), E-S brutes sur descripteurs (13 entrées dont `open`, `read`, `write`, `close`, `lseek`, `pread`/`pwrite`, `dup*`, `pipe*`, `fdopen`, `truncate`), écritures sur le système de fichiers (16 entrées dont `unlink`, `rename`, `chmod`, `chown`, `symlink`, `link`, `mkfifo`, `mknod`, `utime`), écritures d'attributs étendus (6 entrées), mutations d'état du processus (8 entrées dont `chdir`, `chroot`, `umask`, `environ`/`environb`, `putenv`/`unsetenv`), plus une entrée propre à Windows. Ferme C-1 directement. Par effet de bord, casse aussi la chaîne d'attaque pratique par subprocess épinglée par C-2 / l'évasion architecturale, car `subprocess.Popen` a besoin en interne d'`os.pipe`, et `os.pipe` est désormais retiré.
+
+  - **Aller-retour compatible JSON `_serialize_check_result` / `_deserialize_check_result`.** Le worker aplatit désormais le CheckResult en un dict de seuls types primitifs via `_sanitize_for_transport` **avant** de mettre quoi que ce soit dans la file (str / int / float / bool / None / list / dict — tout le reste passe par `str()` dans le worker). Le `q.get()` du parent renvoie un dict simple et `_deserialize_check_result` reconstruit un CheckResult neuf à partir de lui. Aucun `__reduce__` contrôlé par le plugin n'atteint jamais le dé-picklage du parent. Ferme C-2.
+
+  - **`types.MappingProxyType` remplace la sous-classe de dict `_ImmutableBuiltins`.** La conception précédente reposait sur la surcharge de `__setitem__`/`__delitem__`/etc. dans une sous-classe de dict, mais `dict.__setitem__(unbound_instance, k, v)` appelle directement la méthode C de base, en contournant l'aiguillage virtuel. `MappingProxyType` est un proxy C en lecture seule, sans aucun `__setitem__` — tout chemin de mutation (`setitem`, `setdefault`, `update`, `pop`…) lève TypeError sans condition. Ferme I-1.
+
+  - **`q.close()` + `q.join_thread()` dans un `try/finally`.** Le code précédent créait une `mp.Queue` à chaque exécution et ne la fermait jamais. Sur de nombreuses exécutions de plugins dans une même session, cela laissait fuir des descripteurs et le thread d'alimentation de la file en arrière-plan. Désormais enveloppé dans un `finally`. Ferme I-2.
+
+  - **Liste de refus des chemins en lecture sur `_make_safe_open`.** Les lectures de `/etc/shadow`, `/etc/gshadow`, `/etc/sudoers.d/`, `~/.ssh/id_*`, `/.gnupg/`, `/dev/mem`, `/dev/kmem`, `/dev/port`, `/proc/kcore`, `/proc/kmem` lèvent désormais `PermissionError`. La liste de refus est choisie à la main plutôt qu'une liste complète de lectures autorisées, pour que les checks de durcissement légitimes qui lisent `/etc/ssh/sshd_config`, `/etc/login.defs`, `/proc/version`, etc. fonctionnent toujours. Ferme I-5 (le problème d'adjoint abusé « BOB tourne en root sous sudo »).
+
+  - **`_apply_resource_limits` fixe désormais `RLIMIT_CPU = 10 s`** en plus de `RLIMIT_AS = 256 MiB`. Protège contre les boucles infinies liées au CPU qui ignorent SIGTERM (la conception précédente reposait sur `Process.terminate()`, qui peut être ignoré). Corrige aussi une docstring périmée de b2 qui affirmait que le CPU était plafonné alors que seule la mémoire l'était. Ferme M-4.
+
+  - **Avertissement `BOB_SANDBOX_LEGACY=1` renforcé.** Réémis à chaque `.run()` qui entre réellement en mode legacy (pas seulement au `__init__` du runner), à la fois via `logger.critical(...)` (acheminé par les gestionnaires de journal normaux du projet) ET via une écriture directe `sys.stderr.write()` (pour qu'un gestionnaire de journal mal configuré par accident ne puisse pas faire taire l'événement de sécurité). L'option legacy est réévaluée à chaque appel, si bien que changer la variable d'environnement en cours de session prend effet. Ferme M-6 et M-7.
+
+  - **Nouveau helper AST `has_run_check(source)`**, partagé entre `bob.plugin_checks._load_one` et `SandboxRunner.run`. Accepte à la fois la forme `def run_check` et la forme d'affectation `run_check = ...`, et rejette les faux positifs de sous-chaîne sur un `# run_check` en commentaire. Le code précédent avait deux portes incohérentes (sous-chaîne dans le runner, FunctionDef AST seulement dans le chargeur). Ferme I-3.
+
+### Nouveaux tests
+
+  - **`tests/test_plugin_sandbox.py::TestHardeningPins`** — 5 tests qui épinglent la fermeture concrète de C-1 / C-2 / I-1 / I-2 / I-5 par des vérifications de fichiers sentinelles. Le test C-1 écrit un plugin qui tente la contrebande `os.open + os.write` et affirme qu'aucun fichier n'a été créé. Le test C-2 écrit un plugin qui tente l'attachement d'`Evil.__reduce__` et affirme qu'aucune sentinelle n'a été créée dans le parent.
+  - **`tests/test_plugin_sandbox.py::TestKnownInProcessLimitation`** — 2 tests qui **documentent l'évasion architecturale comme VOLONTAIREMENT hors périmètre**. Le premier confirme que les builtins non restreints restent atteignables via `json.dumps.__globals__["__builtins__"]` — si ce test se met un jour à échouer, soit l'évasion a été fermée (parfait, mettez la doc à jour !), soit le plugin de test est cassé. Le second confirme que la chaîne pratique `subprocess.run` est cassée par la liste de retrait. C'est le contrat que les futurs contributeurs liront au lieu de redériver de zéro le consensus de la PEP 416.
+  - Suite complète : **5458 → 5465 tests** (+7 net), 0 régression.
+
+### Docs
+
+  - **`SECURITY.md::Plugin checks` réécrit**, avec une sous-section « Threat model » qui dit explicitement : *« In-process Python sandboxing is not a security boundary. It is a defence-in-depth layer. »* + l'énumération par mitigation + la référence au profil AppArmor comme vraie frontière. Le texte précédent disait « plugins are not sandboxed » (vrai en b2 → plus vrai) et « a future major version may introduce a restricted-mode runner » (désormais fait, limitations explicitées).
+  - **Docstring du module `bob/_sandbox.py` réécrite**, avec le même modèle de menace + la justification par mitigation + la référence aux tests `TestKnownInProcessLimitation`.
+
+### Validation par smoke
+
+  - **Les trois preuves de concept retestées après durcissement** — `/tmp/bob_c1_escape`, `/tmp/bob_c2_parent_pwned`, `/tmp/bob_arch_escape` ne sont PAS créés après les correctifs ; le runner fait correctement remonter chacune comme constat WARN avec la classe d'erreur sous-jacente (ImportError / AttributeError), et aucune sortie de plugin n'atteint le parent.
+  - **5/5 cibles validées croisées** via `pipx install --pip-args="--pre"` de la wheel b3 : so6desktop (Linux Mint 22.3, Python 3.12, score 8/10 LOW propre), VM Debian 13 (Python 3.13, score 9/10 LOW propre), VM Kali Rolling (Python 3.13, score 8/10 LOW propre + constat composé), VM Ubuntu 26.04 LTS (**Python 3.14.4** — la cible de l'étape 1 de l'échelle T1, score 8/10 → **risque HIGH relevé par la posture : pare-feu inactif**, le scénario critique de majoration par la posture validé de bout en bout), VM Mint + DDNS (Python 3.12, score 7/10 MEDIUM avec le glissement `network_context = Exposition publique via DDNS`). Chaque cible rapporte « Score inchangé » dans sa section « CHANGEMENTS DEPUIS LE DERNIER AUDIT » face à la baseline b2 du matin même — zéro régression sur la chaîne d'audit.
+
+### Mémoire
+
+`project_v070_t3_sandbox_threat_model` archive l'enseignement architectural + les grandes lignes des trois preuves de concept, pour que les audits futurs n'aient pas à redériver le consensus de la PEP 416.
+
+### Qui doit mettre à jour
+
+Quiconque utilise v0.7.0b1 ou v0.7.0b2 avec des plugins `~/.config/bob/checks.d/` de sources **non fiables** doit passer à v0.7.0b3 immédiatement ET appliquer le profil AppArmor de BOB (`packaging/apparmor/bob.profile`). Les utilisateurs sans plugin ou avec des plugins relus ne sont pas concernés par les constats de sécurité, mais profitent de chemins de code internes plus propres.
+
+```bash
+pipx upgrade --pip-args="--pre" bodyguard-of-bits-beta
+sudo bob-beta --version   # should print 0.7.0b3
+```
+
+Suite : surveiller les sorties de smoke réelles sur les quatre VM pendant les 24 h à venir. S'il n'y a pas de surprise, la coupe finale de v0.7.0 regroupe les quatre commits de T3 en un seul et sort sans nouveau cycle de bêta.
 
 ---
 

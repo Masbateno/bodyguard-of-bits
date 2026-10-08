@@ -107,7 +107,7 @@
       "file_perms": "Permissions fichiers sensibles — /etc/{passwd,shadow,sudoers}, clés hôte SSH",
       "firmware": "Mises à jour firmware — fwupd disponible, paquet microcode CPU",
       "hardening": "Durcissement sysctl noyau — rp_filter, redirections, syncookies, hardlinks",
-      "ipv6": "Cohérence IPv6 — UFW IPv6 vs état noyau, règles par port",
+      "ipv6": "Cohérence IPv6 — quel pare-feu filtre les services IPv6 (règles UFW v6, zone firewalld, jeu de règles brut) vs état du noyau",
       "kernel_hardening": "Durcissement noyau — ASLR, ptrace, dumps SUID, kptr_restrict",
       "kernel_modules": "Modules noyau à risque chargés — systèmes de fichiers exotiques, protocoles réseau",
       "module_blacklist": "Modules rarement utiles empêchés de charger — directives blacklist / install (défense en profondeur)",
@@ -146,11 +146,11 @@
       "cloud_context": "Contexte cloud — exposition cloud côté hôte (IMDS, cloud-init, user-data) ; uniquement sur une instance cloud",
       "raspberry_pi": "Raspberry Pi — fichiers de provisionnement laissés sur la partition FAT de boot et compte par défaut historique ; uniquement sur un Raspberry Pi",
       "umask": "Umask système — valeur par défaut /etc/login.defs",
-      "updates": "Mises à jour de paquets — cache APT, sécurité/réguliers en attente, unattended-upgrades",
+      "updates": "Mises à jour de paquets — sécurité/réguliers en attente (apt, dnf, zypper, pacman, apk), âge du cache APT, unattended-upgrades",
       "user_accounts": "Comptes utilisateurs — collisions UID 0, mots de passe vides, comptes système",
       "ddns": "Clients DNS dynamique — exposition externe via DDNS",
       "docker": "Hôte Docker — ports exposés, contournement iptables",
-      "firewall": "Pare-feu UFW — installé, actif, politique par défaut",
+      "firewall": "Pare-feu — UFW, firewalld ou jeu de règles nftables/iptables brut : actif, politique d'entrée par défaut",
       "network_context": "Détection contexte réseau — LAN vs public vs offline",
       "services": "Analyse réseau des services — exposition par service, classification risque",
       "ufw_logging": "Logging UFW — niveau de log, résumé tentatives bloquées",
@@ -161,7 +161,7 @@
       "firewall_iptables": "Politique par défaut iptables / nftables + règles loopback",
       "firewall_drivers": "Cohérence pile pare-feu — superposition nftables/iptables/ufw",
       "firewall_rules": "Analyse règles UFW — doublons, open-any, couverture IPv6",
-      "ports": "Ports en écoute — ports non couverts, couverture règles UFW"
+      "ports": "Ports en écoute — ports non couverts par le pare-feu (règles UFW, zone firewalld, jeu de règles brut)"
     },
     "cron": "AUDIT DES TÂCHES CRON",
     "docker_hardening": "AUDIT SÉCURITÉ CONTENEURS DOCKER",
@@ -187,6 +187,7 @@
     "active": "Le pare-feu UFW est actif",
     "netfilter_active": "Aucun front-end pare-feu actif (UFW/firewalld), mais la couche netfilter filtre le trafic entrant — audité dans la section iptables/nftables",
     "firewalld_active": "firewalld est le pare-feu actif — la zone par défaut '{zone}' autorise : {services}",
+    "firewalld_policy_open": "La zone par défaut firewalld '{zone}' accepte tout le trafic entrant (cible ACCEPT) — tous les ports sont ouverts sauf si une règle les bloque",
     "inactive": "Le pare-feu UFW est désactivé. Votre machine n'est actuellement pas protégée.",
     "policy_ok": "Politique par défaut : connexions entrantes bloquées (recommandé)",
     "policy_open": "La politique entrante par défaut est ALLOW — tous les ports sont ouverts par défaut",
@@ -931,7 +932,7 @@
     "no_changes": "Aucun changement détecté depuis le dernier audit",
     "info_decreased": "{delta} notice(s) informative(s) résolu(e)(s) depuis le dernier audit",
     "info_increased": "{delta} nouvelle(s) notice(s) informative(s) depuis le dernier audit",
-    "key_appeared": "Nouveau finding : {finding}",
+    "key_appeared": "Nouveau constat : {finding}",
     "key_resolved": "Résolu : {finding}",
     "visibility_dropped": "Cette exécution a pu lire moins de l'hôte que la précédente — la comparaison ci-dessous n'est pas à périmètre égal",
     "score_up_but_blinder": "Score à +{delta}, mais cette exécution a lu moins de l'hôte — ce n'est pas une amélioration, c'est une mesure plus petite",
@@ -1164,6 +1165,9 @@
     "port_no_v6_rule": "Port {port} à l'écoute en IPv6 (::) sans règle UFW (v6) correspondante",
     "all_ports_covered": "Les {count} service(s) IPv6 sont couverts par des règles UFW (v6)",
     "firewalld_v6": "Les services IPv6 sont filtrés par firewalld (mêmes règles de zone qu'en IPv4) — aucune règle UFW v6 requise",
+    "firewalld_v6_open": "Les services IPv6 ne sont pas filtrés — la zone par défaut de firewalld accepte tout le trafic entrant (cible ACCEPT)",
+    "ufw_v6_off_blocked": "UFW IPv6 est désactivé, donc UFW bloque tout le trafic IPv6 (IPV6=no) — les {count} service(s) IPv6 sont injoignables, et l'IPv6 est inutilisable sur cet hôte",
+    "ufw_v6_off_blocked_detail": "Services IPv6 : {ports}. Avec IPV6=no, ufw-init pose DROP sur les chaînes IPv6 INPUT, FORWARD et OUTPUT (loopback excepté). Pas une exposition — mais si cet hôte doit utiliser IPv6, mettre IPV6=yes dans /etc/default/ufw puis lancer : sudo ufw reload",
     "netfilter_v6": "{count} service(s) en écoute sur IPv6 ({ports}) — régis par le jeu de règles nftables/iptables, pas par UFW (non installé) ; une table inet ou ip6 filtre l'IPv6, une table ip non",
     "no_firewall_v6": "{count} service(s) en écoute sur IPv6 ({ports}) — pas d'UFW sur cet hôte ni d'autre pare-feu filtrant l'entrant",
     "no_ufw_no_listeners": "UFW n'est pas installé et aucun service n'écoute sur IPv6",
@@ -1541,7 +1545,7 @@
       "profile_default": "Le profil {profile} applique la sévérité par défaut — le constat y compte pleinement.",
       "profile_skips": "Le profil {profile} ignore toute la section {section} : ce constat n'y est jamais levé.",
       "profile_override": "Le profil {profile} le rétrograde en {level} — signalé, mais sans déduction.",
-      "uniform_profiles_note": "Cette découverte s'applique de la même manière à tous les profils.",
+      "uniform_profiles_note": "Ce constat s'applique de la même manière à tous les profils.",
       "scoring_title": "NOTATION",
       "scoring_domain": "Domaine",
       "scoring_tool_cap": "Plafond outil",
@@ -1722,7 +1726,7 @@
       "not_active": {
         "title": "Le serveur SSH est installé mais le service sshd ne tourne pas",
         "why": "Le paquet openssh-server est installé mais sshd n'est pas actif — les opérateurs ne peuvent pas se connecter via SSH. Que cela soit un problème dépend de l'intention. Sur un serveur, SSH est typiquement le canal d'administration principal — l'avoir dormant après un reboot signifie qu'un accès console est requis pour récupérer l'accès. Sur un desktop sans gestion à distance, un sshd inactif est l'état sûr et le paquet pourrait simplement être désinstallé.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nSi SSH EST voulu (typique pour les serveurs) :\n1. Démarrer et activer le service :\n   sudo systemctl enable --now ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service\n2. Vérifier qu'il écoute :\n   ss -tlnp | grep :22\n3. Confirmer que l'authentification fonctionne depuis un client connu.\nSi SSH N'est PAS voulu (typique pour les desktops non administrés) :\n1. Arrêter et désactiver proprement :\n   sudo systemctl disable --now ssh\n2. Optionnel — supprimer entièrement le paquet :\n   sudo apt remove --purge openssh-server",
+        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nSi SSH EST voulu (typique pour les serveurs) :\n1. Démarrer et activer le service :\n   sudo systemctl enable --now ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service\n2. Vérifier qu'il écoute :\n   ss -tlnp | grep :22\n3. Confirmer que l'authentification fonctionne depuis un client connu.\nSi SSH N'est PAS voulu (typique pour les desktops non administrés) :\n1. Arrêter et désactiver proprement :\n   sudo systemctl disable --now ssh\n2. Optionnel — supprimer entièrement le paquet :\n   sudo apt remove --purge openssh-server",
         "server": {
           "why": "Sur un serveur, un sshd inactif signifie typiquement qu'une session de maintenance n'a pas été inversée. Ré-activer ; sans SSH, la prochaine intervention à distance requiert un accès console matériel."
         },
@@ -1794,7 +1798,7 @@
       "unattended_not_configured": {
         "title": "Mises à jour automatiques de sécurité non configurées",
         "why": "Sans mises à jour automatiques, les patches de sécurité s'accumulent jusqu'à ce que quelqu'un les applique manuellement. Les fenêtres d'exposition grandissent avec le temps, et les patches critiques sont souvent manqués sur les serveurs sans surveillance active.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installez le paquet :\n   sudo apt install unattended-upgrades\n2. Configurez-le de manière interactive :\n   sudo dpkg-reconfigure -plow unattended-upgrades\n3. Vérifiez que le service est actif :\n   sudo systemctl status unattended-upgrades\n4. Testez avec une simulation :\n   sudo unattended-upgrade --dry-run -d",
+        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installez le paquet :\n   sudo apt install unattended-upgrades\n2. Configurez-le de manière interactive :\n   sudo dpkg-reconfigure -plow unattended-upgrades\n3. Vérifiez que le service est actif :\n   sudo systemctl status unattended-upgrades\n4. Testez avec une simulation :\n   sudo unattended-upgrade --dry-run -d",
         "server": {
           "why": "Sur un serveur exposé, chaque jour sans correctif est une fenêtre ouverte. Les attaquants scannent activement les systèmes manquant de CVE récents. La gestion manuelle des mises à jour sur un serveur se traduit presque toujours par du retard — les mises à jour de sécurité automatiques sont incontournables sur une infrastructure publique."
         },
@@ -1803,7 +1807,7 @@
         },
         "container": {
           "why": "Dans un environnement conteneurisé, les mises à jour sont gérées au niveau de l'image — pas via unattended-upgrades. Si votre pipeline reconstruit régulièrement l'image depuis une base mise à jour, cette détection ne s'applique pas. Vérifiez que votre CI/CD inclut le rafraîchissement de l'image de base.",
-          "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nReconstruire l'image depuis une base mise à jour plutôt que de lancer apt dans le container :\n   # Mettez à jour le tag FROM dans votre Dockerfile, puis :\n   docker build --pull -t <votre-image> .\n   docker compose up -d\nPour le système hôte (si unattended-upgrades est nécessaire là) :\n   sudo apt install unattended-upgrades\n   sudo dpkg-reconfigure -plow unattended-upgrades"
+          "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nReconstruire l'image depuis une base mise à jour plutôt que de lancer apt dans le container :\n   # Mettez à jour le tag FROM dans votre Dockerfile, puis :\n   docker build --pull -t <votre-image> .\n   docker compose up -d\nPour le système hôte (si unattended-upgrades est nécessaire là) :\n   sudo apt install unattended-upgrades\n   sudo dpkg-reconfigure -plow unattended-upgrades"
         }
       },
       "apt_cache_stale": {
@@ -1853,7 +1857,7 @@
       "logrotate_missing": {
         "title": "logrotate est absent ou n'a aucune config active",
         "why": "Sans logrotate, les fichiers de logs dans /var/log/ grossissent sans limite. Sur des systèmes avec des services verbeux (serveurs web, floods de auth log depuis du bruteforce SSH, stack traces d'applications) le disque peut se remplir en quelques jours, mettant l'hôte hors ligne. La cause la plus fréquente est une install distro custom où le paquet logrotate a été exclu, ou un install récemment purgé qui a emporté la config.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installer logrotate :\n   sudo apt install logrotate\n2. Vérifier que le répertoire de rotation par défaut a des règles :\n   ls /etc/logrotate.d/\n3. (Optionnel) Re-créer les règles pour tout paquet qui aurait dû en livrer une :\n   sudo dpkg-reconfigure <paquet>\n4. Tester la rotation manuellement :\n   sudo logrotate -d /etc/logrotate.conf   # dry-run avec sortie verbeuse\n   sudo logrotate -f /etc/logrotate.conf   # forcer la rotation maintenant",
+        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installer logrotate :\n   sudo apt install logrotate\n2. Vérifier que le répertoire de rotation par défaut a des règles :\n   ls /etc/logrotate.d/\n3. (Optionnel) Re-créer les règles pour tout paquet qui aurait dû en livrer une :\n   sudo dpkg-reconfigure <paquet>\n4. Tester la rotation manuellement :\n   sudo logrotate -d /etc/logrotate.conf   # dry-run avec sortie verbeuse\n   sudo logrotate -f /etc/logrotate.conf   # forcer la rotation maintenant",
         "server": {
           "why": "Sur un serveur, l'absence de logrotate est une panne au ralenti qui attend de se déclencher — le disque se remplit, l'hôte crashe. Installer + vérifier que l'entrée cron quotidienne existe."
         },
@@ -1869,7 +1873,7 @@
       "blocked_repeat_public": {
         "title": "Tentatives de connexion bloquées répétées depuis une même source",
         "why": "UFW a journalisé plus de dix tentatives de connexion distinctes depuis une même adresse publique vers un même port en moins d'une minute, et les a toutes rejetées. C'est ce qui a été mesuré, et cela mérite d'être su : quelque chose sonde un port de cet hôte avec insistance. Ce que cela n'établit **pas**, c'est une attaque par force brute. Un UFW BLOCK est un paquet que le pare-feu a jeté — il n'a jamais atteint de service, aucun identifiant n'a donc été présenté, et une devinette répétée d'identifiants ne se lit pas dans des paquets rejetés. Ce constat disait pourtant « Bruteforce attempts », et il comptait des paquets plutôt que des tentatives, si bien qu'un seul client que le noyau réessayait pouvait franchir le seuil à lui seul. Il compte désormais les ports source distincts, ce qui sépare une retransmission d'une nouvelle tentative, et le trafic venu du réseau local ou passant par UDP est rapporté sans déduction, ni l'un ni l'autre ne pouvant être une attaque d'authentification.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nRéponse en couches :\n1. Installer fail2ban si absent et activer la jail pour le service ciblé (sshd est le plus courant) :\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n   sudo nano /etc/fail2ban/jail.local   # vérifier que la jail pertinente a enabled=true\n2. Restreindre le service aux IPs connues au niveau pare-feu :\n   sudo ufw allow from <ip-de-confiance> to any port 22\n   sudo ufw delete allow 22   # si une règle plus large existait\n3. Pour SSH spécifiquement, désactiver l'authentification par mot de passe (forcer pubkey uniquement) :\n   sudo sed -i 's/^#*PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service",
+        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nRéponse en couches :\n1. Installer fail2ban si absent et activer la jail pour le service ciblé (sshd est le plus courant) :\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n   sudo nano /etc/fail2ban/jail.local   # vérifier que la jail pertinente a enabled=true\n2. Restreindre le service aux IPs connues au niveau pare-feu :\n   sudo ufw allow from <ip-de-confiance> to any port 22\n   sudo ufw delete allow 22   # si une règle plus large existait\n3. Pour SSH spécifiquement, désactiver l'authentification par mot de passe (forcer pubkey uniquement) :\n   sudo sed -i 's/^#*PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service",
         "server": {
           "why": "Sur un serveur public, les tentatives bruteforce sont constantes. fail2ban + SSH key-only est la base. Sans l'un ou l'autre, la compromission de compte est une question de temps."
         },
@@ -1901,7 +1905,7 @@
       "no_backup": {
         "title": "Aucune solution de backup détectée (timeshift, restic, borg, etc.)",
         "why": "Sans outil de backup, la récupération depuis un ransomware, une panne matérielle, une suppression accidentelle ou une corruption de filesystem est impossible. Le coût d'une seule mauvaise journée dépasse largement le coût de toute solution de backup. Le check n'est pas 'le backup est-il récent' — BOB ne peut pas évaluer cela — mais 'un outil de backup est-il seulement installé', ce qui est une question de configuration de base.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nChoisir un outil correspondant à votre cible de stockage :\n1. Snapshots locaux (laptop, workstation unique) — timeshift est le plus simple :\n   sudo apt install timeshift\n   sudo timeshift --create --comments 'baseline initiale'\n2. Off-site / chiffré (serveur, cible NAS) — restic ou borg :\n   sudo apt install restic\n   restic init -r <emplacement-backup>\n   restic backup -r <emplacement-backup> /etc /home\n3. Quel que soit l'outil : planifier via systemd timer ou cron, et TESTER une restauration au moins une fois. Les backups non testés ne sont pas des backups.",
+        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nChoisir un outil correspondant à votre cible de stockage :\n1. Snapshots locaux (laptop, workstation unique) — timeshift est le plus simple :\n   sudo apt install timeshift\n   sudo timeshift --create --comments 'baseline initiale'\n2. Off-site / chiffré (serveur, cible NAS) — restic ou borg :\n   sudo apt install restic\n   restic init -r <emplacement-backup>\n   restic backup -r <emplacement-backup> /etc /home\n3. Quel que soit l'outil : planifier via systemd timer ou cron, et TESTER une restauration au moins une fois. Les backups non testés ne sont pas des backups.",
         "server": {
           "why": "Sur un serveur, pas de backup signifie qu'une seule panne disque ou un ransomware réussi est un incident non récupérable. Choisissez restic / borg avec cible off-site et vérifiez la restauration trimestriellement."
         },
@@ -1917,7 +1921,7 @@
       "sensitive_remote": {
         "title": "Service sensible joignable depuis l'internet public (risque criticité élevée)",
         "why": "Un service noté élevé ou critique dans le registre de services BOB (ssh, samba, telnet…) a un listener TCP ouvert ET le contexte réseau indique que l'hôte est adressable publiquement (pas de NAT, pas de pare-feu LAN-only). La combinaison signifie que le service est à un scan de bot d'être ciblé — et pour les services à haut risque comme ssh, samba ou rdp, la menace active est le bruteforcing de creds, l'exploitation de CVE connues, et le mouvement latéral après compromission.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nAppliquer par ordre d'impact :\n1. Sortir le service entièrement de l'internet public (VPN, WireGuard, jump host) :\n   sudo apt install wireguard\n   # configurer WG, puis binder le service sensible uniquement à l'interface wg\n2. Si l'exposition publique est vraiment requise, durcir le service :\n   - SSH : auth par clé uniquement, no root login, fail2ban, port knocking ou changer le port 22 (la sécurité par obscurité aide contre le bruit des bots même si ce n'est pas de la vraie protection).\n   - Samba : restreindre aux IPs source au UFW + 'hosts allow' dans smb.conf ; SMB sur internet est une CVE qui attend d'être exploitée.\n   - Telnet/RDP : ne pas exposer. Migrer vers ssh/RDP-over-VPN.\n3. Ajouter un alerting externe sur connexions inattendues.",
+        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nAppliquer par ordre d'impact :\n1. Sortir le service entièrement de l'internet public (VPN, WireGuard, jump host) :\n   sudo apt install wireguard\n   # configurer WG, puis binder le service sensible uniquement à l'interface wg\n2. Si l'exposition publique est vraiment requise, durcir le service :\n   - SSH : auth par clé uniquement, no root login, fail2ban, port knocking ou changer le port 22 (la sécurité par obscurité aide contre le bruit des bots même si ce n'est pas de la vraie protection).\n   - Samba : restreindre aux IPs source au UFW + 'hosts allow' dans smb.conf ; SMB sur internet est une CVE qui attend d'être exploitée.\n   - Telnet/RDP : ne pas exposer. Migrer vers ssh/RDP-over-VPN.\n3. Ajouter un alerting externe sur connexions inattendues.",
         "server": {
           "why": "Sur un serveur public, les services sensibles sur l'internet ouvert sont le vecteur d'entrée principal pour la plupart des compromissions. Mettre les services admin derrière un VPN et ne garder exposé que les ports publics réels de l'application."
         },
@@ -2148,7 +2152,7 @@
       "apparmor_no_profiles": {
         "title": "AppArmor actif mais aucun profil chargé",
         "why": "AppArmor sans profils n'est qu'un module noyau en sommeil — il ne fait rien. Les causes courantes sont une distro fraîchement installée qui n'a pas livré le paquet apparmor-profiles, ou une installation Kali / minimale où le set de policy a été omis. Installer le pack de profils standard ajoute des dizaines de confinements pour les services courants (cups, ntpd, mysqld, snap apps, libreoffice…) sans aucun travail personnalisé.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installer les paquets de profils AppArmor :\n   sudo apt install apparmor-profiles apparmor-profiles-extra\n2. (Optionnel) installer les profils snap / firefox supplémentaires :\n   sudo apt install snapd-confine-profiles\n3. Recharger AppArmor pour les charger :\n   sudo systemctl reload apparmor\n4. Vérifier que les profils sont chargés :\n   sudo aa-status",
+        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installer les paquets de profils AppArmor :\n   sudo apt install apparmor-profiles apparmor-profiles-extra\n2. (Optionnel) installer les profils snap / firefox supplémentaires :\n   sudo apt install snapd-confine-profiles\n3. Recharger AppArmor pour les charger :\n   sudo systemctl reload apparmor\n4. Vérifier que les profils sont chargés :\n   sudo aa-status",
         "server": {
           "why": "Un serveur AppArmor-actif avec zéro profils signifie que les daemons tournent sans restriction MAC. Installer le pack de profils standard donne immédiatement du confinement pour les services courants (nginx, mariadb, postfix…)."
         },
@@ -2157,7 +2161,7 @@
         },
         "container": {
           "why": "Les profils AppArmor des containers sont chargés par l'hôte. Adressez sur l'hôte.",
-          "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nAppliquer sur le système hôte :\n   sudo apt install apparmor-profiles apparmor-profiles-extra\n   sudo systemctl reload apparmor"
+          "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nAppliquer sur le système hôte :\n   sudo apt install apparmor-profiles apparmor-profiles-extra\n   sudo systemctl reload apparmor"
         }
       },
       "no_enforce": {
@@ -2187,7 +2191,7 @@
         },
         "container": {
           "why": "Les hôtes de containers sans MAC n'offrent aucune frontière de sécurité par-container au-delà des namespaces. Installez AppArmor sur l'hôte comme base.",
-          "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nAppliquer sur l'hôte du container :\n   sudo apt install apparmor apparmor-profiles\n   sudo systemctl enable --now apparmor"
+          "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nAppliquer sur l'hôte du container :\n   sudo apt install apparmor apparmor-profiles\n   sudo systemctl enable --now apparmor"
         }
       },
       "selinux_disabled": {
@@ -2218,7 +2222,7 @@
           "why": "Sur un desktop derrière NAT, le risque externe est atténué mais l'exposition réseau local est réelle (votre container est joignable depuis tout autre appareil du Wi-Fi). Bindez à 127.0.0.1 pour les services de développement."
         },
         "container": {
-          "why": "Ce finding concerne la configuration du daemon Docker, qui vit sur l'hôte. Adressez sur l'hôte."
+          "why": "Ce constat concerne la configuration du daemon Docker, qui vit sur l'hôte. Adressez sur l'hôte."
         }
       },
       "exposed_port": {
@@ -2254,8 +2258,8 @@
       "exposure": {
         "open_local": {
           "title": "Port de service joignable depuis le LAN (règle UFW autorise le sous-réseau local)",
-          "why": "La règle UFW pour ce port autorise le trafic depuis le réseau local (ex. `ALLOW from 192.168.1.0/24`). Le service est donc joignable depuis tout appareil de ce sous-réseau — ok quand le LAN est entièrement de confiance (bureau personnel, VLAN entreprise), risqué sur Wi-Fi partagé où des appareils non fiables coexistent (Wi-Fi public, conférences, chambres d'hôtel). Le finding est informationnel sur un LAN de confiance et une vraie préoccupation sur un LAN non fiable.",
-          "how": "Décider selon le réseau sur lequel se trouve cette machine :\n1. LAN de confiance (maison, VLAN corp) → garder la règle ; le finding est informationnel.\n2. LAN non fiable (Wi-Fi partagé, segment IoT) → resserrer la règle :\n   sudo ufw delete allow from 192.168.1.0/24 to any port <port>\n   sudo ufw allow from <ip-de-confiance> to any port <port>\n3. Service interne uniquement qui ne devrait jamais faire face à un client externe → binder le daemon à 127.0.0.1 plutôt que se reposer sur le pare-feu :\n   # dans la config du daemon (sshd_config, postgresql.conf, redis.conf…) :\n   bind 127.0.0.1\n   listen_addresses = 'localhost'",
+          "why": "La règle UFW pour ce port autorise le trafic depuis le réseau local (ex. `ALLOW from 192.168.1.0/24`). Le service est donc joignable depuis tout appareil de ce sous-réseau — ok quand le LAN est entièrement de confiance (bureau personnel, VLAN entreprise), risqué sur Wi-Fi partagé où des appareils non fiables coexistent (Wi-Fi public, conférences, chambres d'hôtel). Le constat est informationnel sur un LAN de confiance et une vraie préoccupation sur un LAN non fiable.",
+          "how": "Décider selon le réseau sur lequel se trouve cette machine :\n1. LAN de confiance (maison, VLAN corp) → garder la règle ; le constat est informationnel.\n2. LAN non fiable (Wi-Fi partagé, segment IoT) → resserrer la règle :\n   sudo ufw delete allow from 192.168.1.0/24 to any port <port>\n   sudo ufw allow from <ip-de-confiance> to any port <port>\n3. Service interne uniquement qui ne devrait jamais faire face à un client externe → binder le daemon à 127.0.0.1 plutôt que se reposer sur le pare-feu :\n   # dans la config du daemon (sshd_config, postgresql.conf, redis.conf…) :\n   bind 127.0.0.1\n   listen_addresses = 'localhost'",
           "server": {
             "why": "Sur un serveur, un port open-local exposant des outils d'admin (UIs de bases de données, dashboards de monitoring, ssh) mérite une décision explicite — le LAN est-il vraiment fiable ? Restreindre à des IPs spécifiques quand c'est possible."
           },
@@ -2279,7 +2283,7 @@
             "why": "Sur un desktop, les reboots sont plus fréquents (cycles de veille laptop, mises à jour kernel). Un service de sécurité actif maintenant mais non enabled est parti après le prochain shutdown."
           },
           "container": {
-            "why": "Les containers n'utilisent typiquement pas l'enablement au boot systemd (ils lancent une seule commande). Ce finding s'applique aux services niveau hôte — adressez là."
+            "why": "Les containers n'utilisent typiquement pas l'enablement au boot systemd (ils lancent une seule commande). Ce constat s'applique aux services niveau hôte — adressez là."
           }
         },
         "installed_inactive_critical": {
@@ -2321,9 +2325,9 @@
       "no_scan": {
         "title": "rkhunter est installé mais aucun scan complété n'a été trouvé dans les logs",
         "why": "rkhunter ne détecte les rootkits que lorsqu'il tourne effectivement. Un rkhunter installé-mais-jamais-exécuté fournit zéro protection : aucun scan n'a comparé l'état actuel du système à la base de signatures. La cause la plus fréquente est install + first-run-failure où l'utilisateur a installé le paquet mais le scan initial a crashé (répertoire /var/log/rkhunter manquant, erreur de permission, config custom rejetée). Un deuxième cas fréquent est paquet installé par un méta-paquet sans runs planifiés (pas d'entrée cron).",
-        "how": "1. Lancer un scan maintenant pour vérifier que rkhunter fonctionne sur ce système :\n   sudo rkhunter --check --skip-keypress\n2. Si le scan réussit, le log sous /var/log/rkhunter.log prouve qu'il a tourné.\n3. Planifier des scans quotidiens via cron :\n   echo '30 4 * * * root rkhunter --check --skip-keypress --quiet --rwo' | sudo tee /etc/cron.d/rkhunter-scan\n4. (Optionnel) configurer des alertes email sur findings — éditez /etc/rkhunter.conf et settez MAIL-ON-WARNING.",
+        "how": "1. Lancer un scan maintenant pour vérifier que rkhunter fonctionne sur ce système :\n   sudo rkhunter --check --skip-keypress\n2. Si le scan réussit, le log sous /var/log/rkhunter.log prouve qu'il a tourné.\n3. Planifier des scans quotidiens via cron :\n   echo '30 4 * * * root rkhunter --check --skip-keypress --quiet --rwo' | sudo tee /etc/cron.d/rkhunter-scan\n4. (Optionnel) configurer des alertes email sur les avertissements de rkhunter — éditez /etc/rkhunter.conf et settez MAIL-ON-WARNING.",
         "server": {
-          "why": "Sur un serveur, un rkhunter inactif est une documentation trompeuse — il a l'air installé mais ne produit jamais de findings. Planifiez le scan quotidien."
+          "why": "Sur un serveur, un rkhunter inactif est une documentation trompeuse — il a l'air installé mais ne produit jamais de constats. Planifiez le scan quotidien."
         },
         "desktop": {
           "why": "Sur un desktop, les scans hebdomadaires sont généralement suffisants ; quotidien convient si le bruit de log supplémentaire ne dérange pas."
@@ -2350,7 +2354,7 @@
     "ports": {
       "uncovered": {
         "title": "Port en écoute sans règle UFW et la policy par défaut le laisse passer",
-        "why": "Un service est bindé à une interface réseau et accepte des connexions sur un port spécifique, mais UFW n'a ni règle ALLOW explicite ni règle DENY explicite pour ce port. La joignabilité du port dépend entièrement de la policy default-incoming d'UFW : quand elle est ALLOW, le port est grand ouvert ; quand elle est DENY, le default deny l'attrape. Le finding se déclenche quand le default n'attrape pas le port — signifiant que le service est joignable sans que personne n'ait explicitement décidé qu'il devrait l'être.",
+        "why": "Un service est bindé à une interface réseau et accepte des connexions sur un port spécifique, mais UFW n'a ni règle ALLOW explicite ni règle DENY explicite pour ce port. La joignabilité du port dépend entièrement de la policy default-incoming d'UFW : quand elle est ALLOW, le port est grand ouvert ; quand elle est DENY, le default deny l'attrape. Le constat se déclenche quand le default n'attrape pas le port — signifiant que le service est joignable sans que personne n'ait explicitement décidé qu'il devrait l'être.",
         "how": "Deux actions possibles selon l'intention :\n1. Le port DEVRAIT être joignable (c'est un service légitime) → ajouter une règle ALLOW explicite avec la portée source la plus petite acceptable :\n   sudo ufw allow from 192.168.1.0/24 to any port <port>\n2. Le port NE devrait PAS être joignable (le service est interne uniquement) → soit binder le daemon à 127.0.0.1 (mieux), soit ajouter un DENY explicite :\n   sudo ufw deny <port>\n3. Re-vérifier :\n   sudo ufw status verbose\n   ss -tlnp | grep ':<port>'",
         "server": {
           "why": "Sur un serveur, chaque port en écoute non matché est effectivement non documenté. Rendez la décision explicite : ALLOW depuis des clients spécifiques, ou DENY, ou binding sur localhost."
@@ -2386,10 +2390,10 @@
           "why": "Sur un serveur, la dérive d'horloge casse TLS, certificats, jobs planifiés et coordination des systèmes distribués. Activer NTP n'est pas négociable en production."
         },
         "desktop": {
-          "why": "La plupart des distros desktop activent NTP par défaut ; ce finding signifie généralement une désactivation délibérée ou un conflit chrony/timesyncd. Vérifiez et ré-activez."
+          "why": "La plupart des distros desktop activent NTP par défaut ; ce constat signifie généralement une désactivation délibérée ou un conflit chrony/timesyncd. Vérifiez et ré-activez."
         },
         "container": {
-          "why": "Les containers héritent normalement de l'horloge de l'hôte. Le finding signifie généralement que l'HÔTE n'a pas de NTP configuré — corrigez sur l'hôte."
+          "why": "Les containers héritent normalement de l'horloge de l'hôte. Le constat signifie généralement que l'HÔTE n'a pas de NTP configuré — corrigez sur l'hôte."
         }
       },
       "not_synchronized": {
@@ -2441,7 +2445,7 @@
       "found": {
         "title": "Un client DDNS est installé — votre IP peut être publiée sur un nom DNS public",
         "why": "Les clients Dynamic DNS (ddclient, no-ip, inadyn…) publient périodiquement votre IP publique courante sur un nom d'hôte chez un fournisseur (yourdomain.no-ip.org, mydevice.duckdns.org…). Le nom d'hôte est ensuite résoluble depuis n'importe où sur internet — quiconque le connaît peut atteindre votre IP publique, même si elle change. DDNS en soi n'est pas une vulnérabilité, mais cela transforme 'exposition IP' en 'exposition nom persistante'. Chaque service que vous publiez devient effectivement ciblé sur internet une fois le nom DDNS connu d'un scanner.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nDécider si DDNS est intentionnel :\n1. Intentionnel (accès distant aux services maison, cible de backup off-site, etc.) → auditer chaque port joignable sur l'IP publique :\n   sudo ufw status\n   ss -tlnp\n   Traitez votre nom DDNS comme un actif public et durcissez chaque service exposé en conséquence.\n2. Non intentionnel ou résiduel (ex. d'un ancien routeur ou setup de test) → désactiver le client :\n   sudo systemctl disable --now ddclient   # ou tout client qui tourne\n   sudo apt remove --purge ddclient",
+        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nDécider si DDNS est intentionnel :\n1. Intentionnel (accès distant aux services maison, cible de backup off-site, etc.) → auditer chaque port joignable sur l'IP publique :\n   sudo ufw status\n   ss -tlnp\n   Traitez votre nom DDNS comme un actif public et durcissez chaque service exposé en conséquence.\n2. Non intentionnel ou résiduel (ex. d'un ancien routeur ou setup de test) → désactiver le client :\n   sudo systemctl disable --now ddclient   # ou tout client qui tourne\n   sudo apt remove --purge ddclient",
         "server": {
           "why": "Sur un serveur exposant intentionnellement des services à internet, DDNS est un choix de design — mais chaque port derrière lui doit être durci comme s'il était sur une IP publique statique. Documentez quels ports sont intentionnellement exposés et durcissez-les explicitement."
         },
@@ -2460,7 +2464,7 @@
           "why": "Sur un serveur, chaque port joignable via DDNS est un service public. Inventoriez-les, durcissez-les, et supprimez tout ce qui n'est pas explicitement voulu."
         },
         "desktop": {
-          "why": "Sur un desktop, ce finding est généralement la cause d'un véritable incident — un appareil maison est devenu joignable depuis internet. Fermez tout ce dont vous n'avez pas besoin."
+          "why": "Sur un desktop, ce constat est généralement la cause d'un véritable incident — un appareil maison est devenu joignable depuis internet. Fermez tout ce dont vous n'avez pas besoin."
         },
         "container": {
           "why": "Les ports container publiés via l'hôte deviennent aussi joignables via DDNS. Fermez au niveau UFW de l'hôte ou unpublish depuis le container."
@@ -2517,10 +2521,10 @@
     "ipv6": {
       "ufw_disabled_listeners_present": {
         "title": "Services en écoute sur IPv6 mais le support UFW IPv6 est désactivé",
-        "why": "Avec UFW IPv6 désactivé (IPV6=no dans /etc/default/ufw), aucune règle ip6tables n'est chargée. Tout service en écoute sur une adresse dual-stack (::) est accessible depuis le réseau en IPv6 sans aucun filtrage pare-feu, indépendamment de ce qu'UFW affiche pour IPv4.",
+        "why": "Avec IPV6=no dans /etc/default/ufw, UFW bloque normalement l'IPv6 entièrement : ufw-init pose DROP sur les chaînes IPv6 INPUT, FORWARD et OUTPUT (loopback excepté), et BOB rapporte alors les services comme injoignables, non exposés. Cet avertissement n'apparaît que si BOB a lu la politique IPv6 INPUT comme ACCEPT, ou n'a pas pu la lire — typiquement parce qu'ip6tables ne fonctionnait pas au démarrage d'UFW. Dans ce cas rien ne filtre l'IPv6, et tout service en écoute sur une adresse dual-stack (::) est joignable en IPv6, quoi qu'UFW affiche pour IPv4.",
         "how": "1. Activez le support IPv6 d'UFW :\n   sudo nano /etc/default/ufw  →  IPV6=yes\n2. Rechargez UFW pour appliquer les règles ip6tables :\n   sudo ufw reload\n3. Vérifiez que les règles ip6tables sont maintenant actives :\n   sudo ip6tables -L INPUT -n | head -20",
         "server": {
-          "why": "Si le support IPv6 d'UFW est désactivé (IPV6=no) mais que des services écoutent sur des adresses IPv6, ces ports sont complètement hors du périmètre UFW. Tout le trafic IPv6 entrant atteint le service sans filtrage. Sur un serveur, il s'agit d'une faille majeure dans le pare-feu."
+          "why": "Sur un serveur, un trafic IPv6 qu'aucun pare-feu ne filtre est une faille notable : chaque service en écoute sur (::) est joignable en IPv6 depuis le réseau, hors des règles UFW écrites pour IPv4. Activez l'IPv6 d'UFW pour que les mêmes règles s'appliquent aux deux familles."
         },
         "desktop": {
           "why": "Sur un desktop, cette détection est informative. La plupart des services écoutant en IPv6 sont liés à loopback (::1) ou aux adresses link-local (fe80::) sans accessibilité externe. Activez le support IPv6 d'UFW par bonne pratique, mais le risque immédiat est faible."
@@ -2553,7 +2557,7 @@
       "no_quality_module": {
         "title": "Aucun module de qualité des mots de passe configuré (pam_pwquality / pam_cracklib)",
         "why": "Sans module PAM de qualité, le système n'impose aucune exigence de complexité sur les mots de passe locaux. Les utilisateurs peuvent définir des mots de passe trivialement devinables (mots du dictionnaire, 'motdepasse123', un seul caractère) facilement crackables si /etc/shadow venait à fuiter.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installez pam_pwquality :\n   sudo apt install libpam-pwquality\n2. Configurez les exigences minimales dans /etc/security/pwquality.conf :\n   minlen = 12\n   dcredit = -1\n   ucredit = -1\n   lcredit = -1\n   ocredit = -1\n3. Vérifiez que PAM inclut pwquality :\n   grep pam_pwquality /etc/pam.d/common-password"
+        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installez pam_pwquality :\n   sudo apt install libpam-pwquality\n2. Configurez les exigences minimales dans /etc/security/pwquality.conf :\n   minlen = 12\n   dcredit = -1\n   ucredit = -1\n   lcredit = -1\n   ocredit = -1\n3. Vérifiez que PAM inclut pwquality :\n   grep pam_pwquality /etc/pam.d/common-password"
       },
       "weak_minlen": {
         "title": "Longueur minimale des mots de passe trop courte (< 8 caractères)",
@@ -2789,7 +2793,7 @@
       "not_installed": {
         "title": "Framework d'audit Linux non installé",
         "why": "auditd fournit une journalisation noyau des appels système, des accès fichiers, des authentifications et des commandes privilégiées. Sans lui, les attaquants peuvent agir sans laisser de trace — escalades de privilèges, accès non autorisés et lectures de fichiers sensibles passent inaperçus.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nInstaller auditd et les plugins de dispatch :\n  sudo apt install auditd audispd-plugins\n  sudo systemctl enable --now auditd\n\nCréer un jeu de règles minimal dans /etc/audit/rules.d/99-local.rules :\n  -w /etc/passwd -p wa -k identity\n  -w /etc/shadow -p wa -k identity\n  -w /etc/sudoers -p wa -k sudoers\n\nCharger les règles :\n  sudo augenrules --load"
+        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nInstaller auditd et les plugins de dispatch :\n  sudo apt install auditd audispd-plugins\n  sudo systemctl enable --now auditd\n\nCréer un jeu de règles minimal dans /etc/audit/rules.d/99-local.rules :\n  -w /etc/passwd -p wa -k identity\n  -w /etc/shadow -p wa -k identity\n  -w /etc/sudoers -p wa -k sudoers\n\nCharger les règles :\n  sudo augenrules --load"
       },
       "service_inactive": {
         "title": "auditd installé mais service arrêté",
@@ -2900,7 +2904,7 @@
       "not_installed": {
         "title": "Aucun outil de surveillance d'intégrité des fichiers installé",
         "why": "Sans outil de surveillance d'intégrité (AIDE ou Tripwire), il est impossible de détecter des modifications non autorisées des fichiers système, fichiers de configuration ou binaires. Un attaquant peut remplacer des binaires, ajouter des portes dérobées ou modifier la configuration sans être détecté.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nInstaller et initialiser AIDE :\n  sudo apt install aide\n  sudo aideinit                    # crée la base de données de référence\n  sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db\n\nPlanifier des vérifications régulières via cron :\n  echo '0 3 * * * root /usr/bin/aide --check 2>&1 | mail -s \"Vérification AIDE\" root' | sudo tee /etc/cron.d/aide-check"
+        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nInstaller et initialiser AIDE :\n  sudo apt install aide\n  sudo aideinit                    # crée la base de données de référence\n  sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db\n\nPlanifier des vérifications régulières via cron :\n  echo '0 3 * * * root /usr/bin/aide --check 2>&1 | mail -s \"Vérification AIDE\" root' | sudo tee /etc/cron.d/aide-check"
       },
       "no_db": {
         "title": "Outil d'intégrité installé mais aucune base de référence",
@@ -2935,7 +2939,7 @@
           "why": "Sur un desktop, multipass / lxd via snap est courant pour les workflows dev. Soyez juste conscient que le bridge se trouve hors de la vue d'UFW ; traitez les VMs comme des endpoints de confiance."
         },
         "container": {
-          "why": "Snap est rarement disponible dans les containers ; ce finding est un sujet hôte."
+          "why": "Snap est rarement disponible dans les containers ; ce constat est un sujet hôte."
         }
       }
     },
@@ -2943,7 +2947,7 @@
       "brute_force": {
         "title": "Attaques par force brute détectées dans les journaux d'authentification",
         "why": "Des échecs de connexion répétés indiquent des attaques automatisées actives contre cette machine. Si l'authentification par mot de passe ou des identifiants faibles sont utilisés, une campagne de force brute persistante finira par réussir. Même avec des mots de passe forts, les attaques par inondation consomment du CPU et bloquent les utilisateurs légitimes.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installer et configurer fail2ban :\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n2. Vérifier que la jail SSH est active :\n   sudo fail2ban-client status sshd\n3. Désactiver l'authentification par mot de passe (clés uniquement) :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  PasswordAuthentication no\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i passwordauthentication)\n4. Réduire MaxAuthTries :\n   MaxAuthTries 3\n5. Redémarrer SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
+        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installer et configurer fail2ban :\n   sudo apt install fail2ban\n   sudo systemctl enable --now fail2ban\n2. Vérifier que la jail SSH est active :\n   sudo fail2ban-client status sshd\n3. Désactiver l'authentification par mot de passe (clés uniquement) :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  PasswordAuthentication no\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i passwordauthentication)\n4. Réduire MaxAuthTries :\n   MaxAuthTries 3\n5. Redémarrer SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "public_login": {
         "title": "Connexions réussies depuis des adresses IP publiques détectées",
@@ -2967,7 +2971,7 @@
       "firewall_missing": {
         "title": "Aucun pare-feu actif (ni UFW, ni firewalld, ni ruleset netfilter filtrant)",
         "why": "Sans pare-feu hôte, chaque service en écoute sur la machine est exposé au réseau auquel elle est connectée. Aucune politique allow/deny par service, aucune politique deny par défaut, aucune trace d'audit des règles. Sur un hôte exposé à internet c'est une faille critique ; sur un hôte LAN-only le système reste trivialement joignable par tout pair compromis. Ce constat ne se déclenche que si BOB n'a trouvé aucun front-end géré ET que la couche netfilter brute ne filtrait pas le trafic entrant — un hôte protégé par un simple ruleset nftables en deny-par-défaut est crédité à la place, pas signalé ici.",
-        "how": "BOB audite deux front-ends et la couche netfilter brute ; choisissez celui que fournit votre distribution. Le finding lui-même porte la commande d'installation construite pour le gestionnaire de paquets de cet hôte (ufw sur les familles Debian/Arch/Alpine, firewalld sur Fedora/RHEL/openSUSE).\n\nUFW (Debian, Ubuntu, Arch, Alpine) :\n1. L'installer :\n   sudo apt install ufw\n2. Politique par défaut sûre :\n   sudo ufw default deny incoming\n   sudo ufw default allow outgoing\n3. (Si vous utilisez SSH) l'autoriser avant d'activer :\n   sudo ufw allow 22/tcp\n4. Activer :\n   sudo ufw enable\n\nfirewalld (Fedora, RHEL, openSUSE) :\n1. Installer et activer :\n   sudo dnf install firewalld   # ou : sudo zypper install firewalld\n   sudo systemctl enable --now firewalld\n2. Vérifier :\n   sudo firewall-cmd --state\n\nOu un simple ruleset nftables avec une politique entrante deny-par-défaut — BOB crédite aussi cette couche (auditée dans la section iptables/nftables)."
+        "how": "BOB audite deux front-ends et la couche netfilter brute ; choisissez celui que fournit votre distribution. Le constat lui-même porte la commande d'installation construite pour le gestionnaire de paquets de cet hôte (ufw sur les familles Debian/Arch/Alpine, firewalld sur Fedora/RHEL/openSUSE).\n\nUFW (Debian, Ubuntu, Arch, Alpine) :\n1. L'installer :\n   sudo apt install ufw\n2. Politique par défaut sûre :\n   sudo ufw default deny incoming\n   sudo ufw default allow outgoing\n3. (Si vous utilisez SSH) l'autoriser avant d'activer :\n   sudo ufw allow 22/tcp\n4. Activer :\n   sudo ufw enable\n\nfirewalld (Fedora, RHEL, openSUSE) :\n1. Installer et activer :\n   sudo dnf install firewalld   # ou : sudo zypper install firewalld\n   sudo systemctl enable --now firewalld\n2. Vérifier :\n   sudo firewall-cmd --state\n\nOu un simple ruleset nftables avec une politique entrante deny-par-défaut — BOB crédite aussi cette couche (auditée dans la section iptables/nftables)."
       }
     },
     "firewall": {
@@ -2980,6 +2984,11 @@
         "title": "Politique UFW par défaut en ALLOW (tous les ports ouverts par défaut)",
         "why": "Lorsque la politique par défaut est ALLOW, tous les ports sont joignables sauf si une règle deny explicite les bloque. Cela inverse le modèle de sécurité standard : au lieu d'ouvrir les seuls services nécessaires, il faut énumérer et fermer chaque service inutile. Les nouveaux services (démon fraîchement installé, nouveau conteneur) deviennent joignables immédiatement sans contrôle. Un seul port oublié suffit à une compromission.",
         "how": "1. Basculer en deny par défaut pour le trafic entrant :\n   sudo ufw default deny incoming\n2. Garder le sortant autorisé (ou restreindre si la politique l'exige) :\n   sudo ufw default allow outgoing\n3. Ré-autoriser les services réellement nécessaires :\n   sudo ufw allow 22/tcp           # SSH\n   sudo ufw allow from 192.168.1.0/24 to any port 445  # Samba sur LAN uniquement\n4. Vérifier :\n   sudo ufw status verbose"
+      },
+      "firewalld_policy_open": {
+        "title": "La zone par défaut firewalld accepte tout le trafic entrant (cible ACCEPT)",
+        "why": "La cible d'une zone firewalld décide du sort d'un paquet qu'aucune règle ne reconnaît : `default` et `%%REJECT%%` le rejettent, `DROP` l'abandonne, `ACCEPT` le laisse entrer. Avec ACCEPT sur la zone par défaut — la zone `trusted`, ou une zone réglée ainsi — firewalld tourne mais ne filtre rien en entrée : chaque port en écoute est joignable, et un service fraîchement installé est exposé dès son démarrage. C'est l'équivalent firewalld de la politique entrante par défaut ALLOW d'UFW.",
+        "how": "1. Vérifier la zone par défaut et sa cible :\n   sudo firewall-cmd --get-default-zone\n   sudo firewall-cmd --list-all   # la ligne target:\n2. Si la zone par défaut est trusted, passer à une zone restrictive (public autorise ssh) :\n   sudo firewall-cmd --set-default-zone=public\n3. Sinon, garder SSH joignable, puis rétablir la cible d'origine :\n   sudo firewall-cmd --permanent --zone=<zone> --add-service=ssh\n   sudo firewall-cmd --permanent --zone=<zone> --set-target=default\n   sudo firewall-cmd --reload\n4. Ré-autoriser les services nécessaires :\n   sudo firewall-cmd --permanent --zone=<zone> --add-service=<service> && sudo firewall-cmd --reload"
       },
       "policy_unknown": {
         "title": "Politique UFW par défaut indéterminée",
@@ -3035,7 +3044,7 @@
       "microcode_missing": {
         "title": "Paquet de mise à jour du microcode CPU non installé",
         "why": "Les mises à jour de microcode CPU corrigent des vulnérabilités matérielles critiques incluant Spectre, Meltdown, MDS, TAA et bien d'autres. Sans mises à jour de microcode, ces attaques par canal auxiliaire permettent à des processus non privilégiés de lire la mémoire noyau, traverser les frontières VM et extraire des clés cryptographiques.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installer le paquet microcode approprié :\n   # CPU Intel :\n   sudo apt install intel-microcode\n   # CPU AMD :\n   sudo apt install amd64-microcode\n2. Redémarrer pour appliquer :\n   sudo reboot\n3. Vérifier que le microcode est chargé :\n   grep microcode /proc/cpuinfo | head -1"
+        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installer le paquet microcode approprié :\n   # CPU Intel :\n   sudo apt install intel-microcode\n   # CPU AMD :\n   sudo apt install amd64-microcode\n2. Redémarrer pour appliquer :\n   sudo reboot\n3. Vérifier que le microcode est chargé :\n   grep microcode /proc/cpuinfo | head -1"
       }
     },
     "kernel_hardening": {
@@ -3131,7 +3140,7 @@
       "escalated_posture": {
         "title": "Niveau de risque majoré par la posture (faille structurelle pare-feu)",
         "why": "BOB dérive le niveau de risque affiché du score global combiné à l'état de la posture. Avant v0.7.0 le niveau était dérivé du seul score — un hôte UFW inactif mais par ailleurs propre (score 8/10) affichait 'risque FAIBLE', trompant les opérateurs sur l'exposition réelle. v0.7.0 introduit un plancher posture : quand le pare-feu est structurellement cassé (inactif, INPUT ACCEPT, ou domaine pare-feu ≤ 3/10), le niveau est sorti de FAIBLE pour refléter que l'hôte est joignable sur tout port indépendamment de la propreté du reste. Le score de base continue de piloter la valeur ; la posture ne fait qu'élever le plancher.",
-        "how": "1. Identifier le déclencheur posture qui a fait remonter le niveau (cf. annotation entre parenthèses à côté du niveau de risque) :\n   - 'pare-feu inactif' → ni UFW, ni firewalld, ni jeu de règles nftables/iptables refusant l'entrant n'a été trouvé : en activer un (sudo ufw enable, ou sudo systemctl enable --now firewalld)\n   - 'iptables INPUT ACCEPT' → politique deny par défaut : sudo iptables -P INPUT DROP (ou utiliser UFW / firewalld)\n   - 'domaine pare-feu faible' → relire les findings de la section pare-feu (règles, journalisation, politique par défaut)\n2. Relancer l'audit :\n   sudo bob\n3. Le niveau de risque revient à sa valeur dérivée du score quand le déclencheur posture ne fire plus."
+        "how": "1. Identifier le déclencheur posture qui a fait remonter le niveau (cf. annotation entre parenthèses à côté du niveau de risque) :\n   - 'pare-feu inactif' → ni UFW, ni firewalld, ni jeu de règles nftables/iptables refusant l'entrant n'a été trouvé : en activer un (sudo ufw enable, ou sudo systemctl enable --now firewalld)\n   - 'iptables INPUT ACCEPT' → politique deny par défaut : sudo iptables -P INPUT DROP (ou utiliser UFW / firewalld)\n   - 'domaine pare-feu faible' → relire les constats de la section pare-feu (règles, journalisation, politique par défaut)\n2. Relancer l'audit :\n   sudo bob\n3. Le niveau de risque revient à sa valeur dérivée du score quand le déclencheur posture ne fire plus."
       }
     },
     "cron": {
@@ -3188,7 +3197,7 @@
       "no_backend": {
         "title": "Aucun backend pare-feu présent (ni iptables, ni nftables)",
         "why": "Sans iptables ni nftables installé et actif, le noyau n'a aucune règle pare-feu — tous les ports joignables depuis le réseau sont entièrement exposés. UFW (ou tout autre front-end userspace) repose en dernier ressort sur l'un de ces backends pour écrire les règles dans le noyau. L'absence des deux signifie que le système tourne sans aucun filtre de paquets.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installer iptables (ou nftables) :\n   sudo apt install iptables\n2. Après installation, configurer UFW (ou un autre front-end) et l'activer :\n   sudo apt install ufw && sudo ufw enable\n3. Vérifier que les règles sont chargées :\n   sudo iptables -L -n  # ou : sudo nft list ruleset",
+        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Installer iptables (ou nftables) :\n   sudo apt install iptables\n2. Après installation, configurer UFW (ou un autre front-end) et l'activer :\n   sudo apt install ufw && sudo ufw enable\n3. Vérifier que les règles sont chargées :\n   sudo iptables -L -n  # ou : sudo nft list ruleset",
         "server": {
           "why": "Un serveur sans backend pare-feu est entièrement exposé au réseau — aucun filtrage noyau, aucun deny par défaut, aucune possibilité de restreindre un service. C'est l'une des pires postures possibles pour toute machine connectée."
         },
@@ -3196,8 +3205,8 @@
           "why": "Même derrière NAT, un desktop sans iptables/nftables n'a aucune défense contre les attaques du réseau local (autres appareils, voisins malveillants sur Wi-Fi partagé). Installer un backend + UFW est universellement recommandé."
         },
         "container": {
-          "why": "Les containers héritent généralement du filtrage de paquets de l'hôte. Ce finding suggère que l'hôte n'a pas de pare-feu — corrigez sur l'hôte.",
-          "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nInstaller sur le système hôte :\n   sudo apt install iptables ufw\n   sudo ufw enable"
+          "why": "Les containers héritent généralement du filtrage de paquets de l'hôte. Ce constat suggère que l'hôte n'a pas de pare-feu — corrigez sur l'hôte.",
+          "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\nInstaller sur le système hôte :\n   sudo apt install iptables ufw\n   sudo ufw enable"
         }
       },
       "nft_no_input_filter": {
@@ -3255,7 +3264,7 @@
           "why": "De nombreuses applications desktop (navigateurs, IDEs, dev tools, system trays) parlent à des services locaux via loopback. Sans la règle ACCEPT explicite, elles échouent silencieusement. Ajoutez la règle loopback avant de durcir INPUT."
         },
         "container": {
-          "why": "Le loopback À L'INTÉRIEUR d'un container est géré par son propre namespace réseau et n'est pas affecté par les règles iptables hôte. Ce finding s'applique à la chaîne INPUT de l'hôte — corrigez sur l'hôte.",
+          "why": "Le loopback À L'INTÉRIEUR d'un container est géré par son propre namespace réseau et n'est pas affecté par les règles iptables hôte. Ce constat s'applique à la chaîne INPUT de l'hôte — corrigez sur l'hôte.",
           "how": "Appliquer sur le système hôte :\n   sudo iptables -I INPUT 1 -i lo -j ACCEPT\n   sudo netfilter-persistent save"
         }
       },
@@ -3270,7 +3279,7 @@
           "why": "Sans la règle conntrack, chaque requête sortante (navigation web, downloads, gestion de paquets) semble bloquer et timeout parce que les réponses sont droppées silencieusement. C'est la cause la plus fréquente du \"après avoir activé le pare-feu, internet est cassé\"."
         },
         "container": {
-          "why": "Les namespaces réseau des containers ont leur propre gestion conntrack. Ce finding concerne la chaîne INPUT de l'hôte — corrigez sur l'hôte.",
+          "why": "Les namespaces réseau des containers ont leur propre gestion conntrack. Ce constat concerne la chaîne INPUT de l'hôte — corrigez sur l'hôte.",
           "how": "Appliquer sur le système hôte :\n   sudo iptables -I INPUT 2 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   sudo netfilter-persistent save"
         }
       }
@@ -3309,7 +3318,7 @@
       "nftables_parallel": {
         "title": "Ruleset nftables actif en parallèle d'UFW (backend iptables)",
         "why": "UFW écrit ses règles dans le backend iptables. Si nftables est aussi actif avec son propre ruleset, deux stacks pare-feu évaluent chaque paquet — et l'ordre d'évaluation dépend de la version du noyau, de l'ordre de chargement des modules et de la couche de compatibilité netfilter. Le résultat est un traitement non-déterministe des paquets : un port qu'`ufw allow` ouvre peut être silencieusement droppé par une règle nftables, ou inversement. Les symptômes sont des pannes de connectivité intermittentes ressemblant à des bugs réseau alors qu'il s'agit de bugs pare-feu.",
-        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le finding lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Inspecter le ruleset nftables :\n   sudo nft list ruleset\n2. Décidez quelle stack vous voulez garder :\n   - Garder UFW → flush nftables et désactiver son service :\n     sudo nft flush ruleset\n     sudo systemctl disable --now nftables\n   - Basculer sur nftables → désinstaller UFW et reconfigurer les règles nativement en nftables :\n     sudo ufw disable\n     sudo apt purge ufw\n3. Persister le choix fait (netfilter-persistent pour iptables/UFW, nftables.conf pour nft).",
+        "how": "Les noms de paquets ci-dessous sont ceux de Debian et Ubuntu et diffèrent ailleurs ; le constat lui-même porte la commande construite pour le gestionnaire de paquets de cet hôte.\n\n1. Inspecter le ruleset nftables :\n   sudo nft list ruleset\n2. Décidez quelle stack vous voulez garder :\n   - Garder UFW → flush nftables et désactiver son service :\n     sudo nft flush ruleset\n     sudo systemctl disable --now nftables\n   - Basculer sur nftables → désinstaller UFW et reconfigurer les règles nativement en nftables :\n     sudo ufw disable\n     sudo apt purge ufw\n3. Persister le choix fait (netfilter-persistent pour iptables/UFW, nftables.conf pour nft).",
         "server": {
           "why": "Sur un serveur, deux stacks pare-feu en parallèle produisent des bugs de connectivité intermittents très difficiles à diagnostiquer. Choisissez une stack et supprimez l'autre ; la cohérence est plus importante que le choix spécifique."
         },
@@ -4069,8 +4078,8 @@
     "col_reason": "Raison",
     "col_message": "Message",
     "col_fix_command": "Commande de correction",
-    "no_findings": "Aucune découverte détectée.",
-    "findings_count": "{count} découverte(s)",
+    "no_findings": "Aucun constat.",
+    "findings_count": "{count} constat(s)",
     "level_alert": "ALERTE",
     "level_warn": "ATTENTION",
     "level_info": "INFO",

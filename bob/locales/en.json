@@ -107,7 +107,7 @@
       "file_perms": "Sensitive file permissions — /etc/{passwd,shadow,sudoers}, SSH host keys",
       "firmware": "Firmware updates — fwupd available, CPU microcode package",
       "hardening": "Kernel sysctl hardening — rp_filter, redirects, syncookies, hardlinks",
-      "ipv6": "IPv6 coherence — UFW IPv6 vs kernel state, per-port rules",
+      "ipv6": "IPv6 coherence — which firewall filters IPv6 listeners (UFW v6 rules, firewalld zone, raw ruleset) vs kernel state",
       "kernel_hardening": "Kernel-level hardening — ASLR, ptrace, SUID dumps, kptr_restrict",
       "kernel_modules": "Risky kernel modules loaded — exotic filesystems, network protocols",
       "module_blacklist": "Rarely-needed modules kept from loading — blacklist / install directives (defense-in-depth)",
@@ -146,11 +146,11 @@
       "cloud_context": "Cloud context — host-side cloud exposure (IMDS, cloud-init, user-data); only on a cloud instance",
       "raspberry_pi": "Raspberry Pi — provisioning files left on the FAT boot partition and the historical default account; only on a Raspberry Pi",
       "umask": "System umask — /etc/login.defs default value",
-      "updates": "Package updates — APT cache, security/regular pending, unattended-upgrades",
+      "updates": "Package updates — security/regular pending (apt, dnf, zypper, pacman, apk), APT cache age, unattended-upgrades",
       "user_accounts": "User accounts — UID 0 collisions, empty passwords, system accounts",
       "ddns": "Dynamic-DNS clients — external exposure via DDNS",
       "docker": "Docker host — exposed ports, iptables bypass",
-      "firewall": "UFW firewall — installed, active, default policy",
+      "firewall": "Firewall — UFW, firewalld or a raw nftables/iptables ruleset: active, default inbound policy",
       "network_context": "Network context detection — LAN vs public vs offline",
       "services": "Service network analysis — exposure per service, risk classification",
       "ufw_logging": "UFW logging — log level, blocked-attempt summary",
@@ -161,7 +161,7 @@
       "firewall_iptables": "iptables / nftables default policy + loopback rules",
       "firewall_drivers": "Firewall stack coherence — nftables/iptables/ufw layering",
       "firewall_rules": "UFW rules analysis — duplicates, open-any, IPv6 coverage",
-      "ports": "Listening ports — uncovered ports, UFW rule coverage"
+      "ports": "Listening ports — ports not covered by the firewall (UFW rules, firewalld zone, raw ruleset)"
     },
     "cron": "CRON JOB AUDIT",
     "docker_hardening": "DOCKER CONTAINER SECURITY AUDIT",
@@ -187,6 +187,7 @@
     "active": "UFW firewall is active",
     "netfilter_active": "No active firewall front-end (UFW/firewalld), but the netfilter layer is filtering inbound traffic — audited in the iptables/nftables section",
     "firewalld_active": "firewalld is the active firewall — default zone '{zone}' allows: {services}",
+    "firewalld_policy_open": "firewalld default zone '{zone}' accepts all incoming traffic (target ACCEPT) — every port is open unless a rule blocks it",
     "inactive": "UFW firewall is disabled. Your machine is currently unprotected.",
     "policy_ok": "Default policy: incoming connections blocked (recommended)",
     "policy_open": "Default incoming policy is set to ALLOW — all ports are open by default",
@@ -1164,6 +1165,9 @@
     "port_no_v6_rule": "Port {port} listening on IPv6 (::) without a UFW (v6) rule",
     "all_ports_covered": "All {count} IPv6 listener(s) are covered by UFW (v6) rules",
     "firewalld_v6": "IPv6 listeners are filtered by firewalld (same zone rules as IPv4) — no UFW v6 rule required",
+    "firewalld_v6_open": "IPv6 listeners are not filtered — firewalld's default zone accepts all incoming traffic (target ACCEPT)",
+    "ufw_v6_off_blocked": "UFW IPv6 is disabled, so UFW drops all IPv6 traffic (IPV6=no) — the {count} IPv6 listener(s) are unreachable, and IPv6 is unusable on this host",
+    "ufw_v6_off_blocked_detail": "IPv6 listeners: {ports}. ufw-init installs DROP on the IPv6 INPUT, FORWARD and OUTPUT chains when IPV6=no (loopback excepted). Not an exposure — but if this host should use IPv6, set IPV6=yes in /etc/default/ufw and run: sudo ufw reload",
     "netfilter_v6": "{count} service(s) listening on IPv6 ({ports}) — governed by the nftables/iptables ruleset, not UFW (not installed); an inet or ip6 table filters IPv6, an ip table does not",
     "no_firewall_v6": "{count} service(s) listening on IPv6 ({ports}) — no UFW on this host and no other firewall filtering inbound traffic",
     "no_ufw_no_listeners": "UFW is not installed and no service listens on IPv6",
@@ -2517,10 +2521,10 @@
     "ipv6": {
       "ufw_disabled_listeners_present": {
         "title": "Services listening on IPv6 but UFW IPv6 support is disabled",
-        "why": "With UFW IPv6 disabled (IPV6=no in /etc/default/ufw), no ip6tables rules are loaded. Any service listening on a dual-stack address (::) is reachable from the network over IPv6 without any firewall filtering, regardless of what UFW shows for IPv4.",
+        "why": "With IPV6=no in /etc/default/ufw, UFW normally blocks IPv6 outright: ufw-init installs DROP on the IPv6 INPUT, FORWARD and OUTPUT chains (loopback excepted), and BOB then reports the listeners as unreachable, not exposed. This warning appears only when BOB read the IPv6 INPUT policy as ACCEPT, or could not read it — typically because ip6tables was not working when UFW started. Then nothing filters IPv6, and any service listening on a dual-stack address (::) is reachable over IPv6 whatever UFW shows for IPv4.",
         "how": "1. Enable UFW IPv6 support:\n   sudo nano /etc/default/ufw  →  IPV6=yes\n2. Reload UFW to apply ip6tables rules:\n   sudo ufw reload\n3. Verify ip6tables rules are now active:\n   sudo ip6tables -L INPUT -n | head -20",
         "server": {
-          "why": "If UFW IPv6 support is disabled (IPV6=no) but services listen on IPv6 addresses, those ports are completely unmanaged by UFW. All IPv6 inbound traffic reaches the service without any filtering. On a server, this is a significant firewall gap that must be corrected."
+          "why": "On a server, IPv6 traffic that no firewall filters is a significant gap: every service listening on (::) is reachable over IPv6 from the network, outside the UFW rules written for IPv4. Enable UFW IPv6 so the same rules apply to both families."
         },
         "desktop": {
           "why": "On a desktop, this finding is informational. Most services listening on IPv6 are bound to loopback (::1) or link-local addresses (fe80::) with no external reachability. Enable UFW IPv6 support as best practice, but the immediate risk is low."
@@ -2980,6 +2984,11 @@
         "title": "UFW default incoming policy is ALLOW (all ports open by default)",
         "why": "When the default policy is set to ALLOW, every port is reachable unless an explicit deny rule blocks it. This inverts the standard security model: instead of opening the few services you need, you must enumerate and close every service you don't. New services (a freshly installed daemon, a new container) become reachable immediately with no allowlist gate. A single forgotten port is enough for a compromise.",
         "how": "1. Switch to deny-by-default for incoming traffic:\n   sudo ufw default deny incoming\n2. Keep outgoing allowed (or restrict if your policy requires it):\n   sudo ufw default allow outgoing\n3. Re-allow the specific services you genuinely need:\n   sudo ufw allow 22/tcp           # SSH\n   sudo ufw allow from 192.168.1.0/24 to any port 445  # Samba on LAN only\n4. Verify:\n   sudo ufw status verbose"
+      },
+      "firewalld_policy_open": {
+        "title": "firewalld default zone accepts all incoming traffic (target ACCEPT)",
+        "why": "A firewalld zone's target decides what happens to a packet that no rule matches: `default` and `%%REJECT%%` reject it, `DROP` drops it, `ACCEPT` lets it in. With ACCEPT on the default zone — the `trusted` zone, or a zone set that way — firewalld is running but filters nothing inbound: every listening port is reachable, and a newly installed service is exposed the moment it starts. It is the firewalld counterpart of UFW's default incoming policy ALLOW.",
+        "how": "1. Check the default zone and its target:\n   sudo firewall-cmd --get-default-zone\n   sudo firewall-cmd --list-all   # the target: line\n2. If the default zone is trusted, switch to a restrictive zone (public allows ssh):\n   sudo firewall-cmd --set-default-zone=public\n3. Otherwise keep SSH reachable, then restore the stock target:\n   sudo firewall-cmd --permanent --zone=<zone> --add-service=ssh\n   sudo firewall-cmd --permanent --zone=<zone> --set-target=default\n   sudo firewall-cmd --reload\n4. Re-allow the services you need:\n   sudo firewall-cmd --permanent --zone=<zone> --add-service=<service> && sudo firewall-cmd --reload"
       },
       "policy_unknown": {
         "title": "UFW default incoming policy could not be determined",
