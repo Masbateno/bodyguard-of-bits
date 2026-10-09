@@ -79,6 +79,12 @@ class IPv6Snapshot:
     #: 22.3, ufw 0.36.2: UFW active + IPV6=no → a link-local neighbour cannot
     #: reach sshd on [::]:22; UFW inactive → it can.
     ip6_input_policy:    "str | None" = None
+    #: v0.24.3 — the rules of that chain (``-A INPUT …`` lines), None when not
+    #: read. A DROP policy only decides the packets no rule accepted: ufw-init
+    #: leaves just the loopback rule, and that exact shape is the only one BOB
+    #: reads as "IPv6 blocked". Any other rule (Docker, libvirt, a hand-written
+    #: ACCEPT) may admit a listener, and BOB does not resolve which.
+    ip6_input_rules:     "list[str] | None" = None
 
     @classmethod
     def from_system(cls) -> "IPv6Snapshot":
@@ -94,7 +100,8 @@ class IPv6Snapshot:
         ufw_present         = (shutil.which("ufw") is not None
                                or path_exists(Path("/etc/default/ufw")))
         has_global_ipv6     = _read_global_ipv6()
-        ip6_input_policy    = _read_ip6_input_policy() if ufw_ipv6_enabled is False else None
+        ip6_input_policy, ip6_input_rules = (
+            _read_ip6_input_chain() if ufw_ipv6_enabled is False else (None, None))
 
         ss = run_result("ss", "-tulnp")
         ipv6_listeners = sorted(_extract_ipv6_listeners(ss.stdout))
@@ -114,16 +121,32 @@ class IPv6Snapshot:
             has_global_ipv6=has_global_ipv6,
             ufw_present=ufw_present,
             ip6_input_policy=ip6_input_policy,
+            ip6_input_rules=ip6_input_rules,
         )
 
 
-def _read_ip6_input_policy() -> "str | None":
-    """The IPv6 INPUT chain's default policy, or None when it could not be read."""
+def _read_ip6_input_chain() -> "tuple[str | None, list[str] | None]":
+    """(default policy, rules) of the IPv6 INPUT chain; (None, None) if unread."""
     res = run_result("ip6tables", "-S", "INPUT")
     if not res.ok:
-        return None
+        return None, None
     m = re.search(r"^-P INPUT (\w+)", res.stdout, re.M)
-    return m.group(1) if m else None
+    if not m:
+        return None, None
+    rules = [line.strip() for line in res.stdout.splitlines() if line.startswith("-A INPUT")]
+    return m.group(1), rules
+
+
+#: The rules ufw-init leaves in the IPv6 INPUT chain when IPV6=no.
+_UFW_V6_OFF_RULES = frozenset({"-A INPUT -i lo -j ACCEPT"})
+
+
+def _ipv6_input_closed(snapshot: "IPv6Snapshot") -> bool:
+    """IPv6 INPUT drops everything but loopback — and nothing else can let a
+    packet through: no rule other than ufw-init's loopback one."""
+    return (snapshot.ip6_input_policy == "DROP"
+            and snapshot.ip6_input_rules is not None
+            and set(snapshot.ip6_input_rules) <= _UFW_V6_OFF_RULES)
 
 
 # ---------------------------------------------------------------------------
@@ -208,7 +231,7 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
     elif snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled is False:
         if snapshot.ipv6_listeners:
             listeners_str = ", ".join(snapshot.ipv6_listeners)
-            if ufw_active and snapshot.ip6_input_policy == "DROP":
+            if ufw_active and _ipv6_input_closed(snapshot):
                 # v0.24.2: UFW with IPV6=no drops every IPv6 packet — the
                 # listeners are unreachable, not exposed. This used to be a
                 # WARN −2 for "services exposed without UFW IPv6 rules" (global
@@ -240,6 +263,18 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
                         detail=_t("ipv6.listeners_list", ports=listeners_str),
                         key="ipv6.ufw_disabled_listeners_present",
                     )
+            elif ufw_active and snapshot.ip6_input_policy == "DROP":
+                # v0.24.3: UFW's DROP is in place but the chain holds other
+                # rules. Measured on Mint 22.3 (link-local neighbour): ACCEPT 22
+                # alone, or with OUTPUT, left :22 unreachable (ICMPv6 is dropped
+                # too); with ICMPv6 both ways it answered. Neither "reachable"
+                # nor "blocked" is shown — say so.
+                result.info(
+                    message=_t("ipv6.ufw_v6_off_rules_unresolved",
+                               count=len(snapshot.ipv6_listeners)),
+                    detail=_t("ipv6.listeners_list", ports=listeners_str),
+                    key="ipv6.ufw_v6_off_rules_unresolved",
+                )
             else:
                 # Link-local / ULA only — machine not reachable via IPv6 from internet.
                 result.info(

@@ -1,3 +1,24 @@
+bodyguard-of-bits (0.24.3-1) unstable; urgency=medium
+
+  * Patch, BREAKING (scores): on a firewalld host the score moves by 3 either
+    way -- down where something lets every packet in that 0.24.2 missed,
+    up where 0.24.2 alerted an ACCEPT that does not decide; up to -2 on a UFW
+    IPV6=no host whose IPv6 INPUT chain carries other rules than loopback.
+  * firewalld: judged by the zones holding a NIC-backed interface (bridge,
+    bond, VLAN followed down), by sources covering a whole address family
+    (prefixes added up, ingress-priority read), and by policies into HOST, in
+    firewalld's order; catch-all rich rules read by their selectors (log,
+    audit, limit select nothing); each address family judged on its own.
+  * firewalld fix undoes every cause in turn (target, rule, policy, source)
+    with ssh kept first; zones or policies not listed: nothing deducted, an
+    INFO counted as a visibility limit; narrower source zones shown as INFO.
+  * IPv6: "blocked" only for the ufw-init chain (DROP + loopback); otherwise
+    an INFO says BOB cannot show whether the listeners are reached.
+  * Field-validated on real Fedora 44 (every fix applied, firewalld restarted,
+    probed from the LAN) and Linux Mint 22.3.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 09 Oct 2026 20:00:00 +0000
+
 bodyguard-of-bits (0.24.2-1) unstable; urgency=medium
 
   * Patch, BREAKING (scores): the score drops by 3 on a firewalld host whose

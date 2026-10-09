@@ -188,6 +188,14 @@
     "netfilter_active": "No active firewall front-end (UFW/firewalld), but the netfilter layer is filtering inbound traffic — audited in the iptables/nftables section",
     "firewalld_active": "firewalld is the active firewall — default zone '{zone}' allows: {services}",
     "firewalld_policy_open": "firewalld default zone '{zone}' accepts all incoming traffic (target ACCEPT) — every port is open unless a rule blocks it",
+    "firewalld_policy_open_iface": "firewalld zone '{zone}' accepts all incoming traffic on {interfaces} (target ACCEPT) — every port is open unless a rule blocks it",
+    "firewalld_policy_open_host_policy": "firewalld policy '{policy}' accepts all incoming traffic to the host (target ACCEPT) and decides before zone '{zone}' does — every port is open",
+    "firewalld_policy_open_source": "firewalld zone '{zone}' is bound to {sources}, so every client of that address family goes through it, and it accepts all incoming traffic (target ACCEPT) — every port is open",
+    "firewalld_source_zone_open": "firewalld zone '{zone}' accepts all incoming traffic from {sources} — every port is open to those addresses, which take this zone before the interface's; whether they deserve that trust is not something BOB can judge",
+    "firewalld_zones_unread": "firewall-cmd would not list the active zones or policies — the inbound default could not be established, so it is neither credited nor alerted",
+    "firewalld_policy_open_sources_pooled": "firewalld zones {zones} accept all incoming traffic from {sources} — together these sources cover every client of that address family, so every port is open",
+    "firewalld_policy_open_zone_rule": "firewalld zone '{zone}' has a rich rule that accepts every {families} packet — every port is open over {families} unless an earlier rule blocks it",
+    "firewalld_policy_open_policy_rule": "firewalld policy '{policy}' has a rich rule that accepts every {families} packet to the host and decides before zone '{zone}' does — every port is open over {families}",
     "inactive": "UFW firewall is disabled. Your machine is currently unprotected.",
     "policy_ok": "Default policy: incoming connections blocked (recommended)",
     "policy_open": "Default incoming policy is set to ALLOW — all ports are open by default",
@@ -260,7 +268,7 @@
     "uncovered_local": "Port {port} — bound to localhost only — no external exposure",
     "uncovered_bound_address": "Port {port} — bound to {address} only, no firewall rule — reachable from the network that address is on",
     "uncovered_bound_address_deny": "Port {port} — bound to {address} only, no explicit UFW rule, but covered by default deny policy",
-    "uncovered_bound_address_firewalld": "Port {port} — bound to {address} only — governed by firewalld's default zone, not a UFW rule",
+    "uncovered_bound_address_firewalld": "Port {port} — bound to {address} only — governed by the firewalld zone of the interface it is reached on, not a UFW rule",
     "uncovered_bound_address_netfilter": "Port {port} — bound to {address} only — governed by the nftables/iptables ruleset (inbound default: refuse), not a UFW rule",
     "system_port": "Internal system port — no risk (legitimate OS service, no UFW rule needed): {port} ({service})",
     "unreadable": "Listening ports could not be determined",
@@ -271,7 +279,7 @@
     "process_disclaimer": "This port belongs to {process} — blocking it may interrupt the application. Only run the command above if you know exactly what you are doing.",
     "uncovered_default_deny": "Port {port} listening on all interfaces — no explicit UFW rule, but covered by default deny policy",
     "uncovered_ufw_inactive": "Port {port} listening on all interfaces — no active firewall to filter it",
-    "uncovered_firewalld": "Port {port} listening on all interfaces — governed by firewalld's default zone, not a UFW rule",
+    "uncovered_firewalld": "Port {port} listening on all interfaces — governed by the firewalld zone of the interface it is reached on, not a UFW rule",
     "uncovered_netfilter": "Port {port} listening on all interfaces — governed by the nftables/iptables ruleset (inbound default: refuse), not a UFW rule"
   },
   "logs": {
@@ -1165,12 +1173,13 @@
     "port_no_v6_rule": "Port {port} listening on IPv6 (::) without a UFW (v6) rule",
     "all_ports_covered": "All {count} IPv6 listener(s) are covered by UFW (v6) rules",
     "firewalld_v6": "IPv6 listeners are filtered by firewalld (same zone rules as IPv4) — no UFW v6 rule required",
-    "firewalld_v6_open": "IPv6 listeners are not filtered — firewalld's default zone accepts all incoming traffic (target ACCEPT)",
+    "firewalld_v6_open": "IPv6 listeners are not filtered — a firewalld zone holding an interface accepts all incoming traffic (target ACCEPT)",
     "ufw_v6_off_blocked": "UFW IPv6 is disabled, so UFW drops all IPv6 traffic (IPV6=no) — the {count} IPv6 listener(s) are unreachable, and IPv6 is unusable on this host",
     "ufw_v6_off_blocked_detail": "IPv6 listeners: {ports}. ufw-init installs DROP on the IPv6 INPUT, FORWARD and OUTPUT chains when IPV6=no (loopback excepted). Not an exposure — but if this host should use IPv6, set IPV6=yes in /etc/default/ufw and run: sudo ufw reload",
     "netfilter_v6": "{count} service(s) listening on IPv6 ({ports}) — governed by the nftables/iptables ruleset, not UFW (not installed); an inet or ip6 table filters IPv6, an ip table does not",
     "no_firewall_v6": "{count} service(s) listening on IPv6 ({ports}) — no UFW on this host and no other firewall filtering inbound traffic",
     "no_ufw_no_listeners": "UFW is not installed and no service listens on IPv6",
+    "ufw_v6_off_rules_unresolved": "{count} service(s) listening on IPv6 (::), link-local addresses only: not reachable from the internet — UFW IPv6 is disabled and its DROP is in place, but the IPv6 INPUT chain holds other rules, so BOB cannot show whether the local network reaches them",
     "ufw_disabled_listeners_link_local": "{count} service(s) listening on IPv6 (::) but UFW IPv6 is disabled — link-local addresses only: not reachable from the internet, but reachable from the local network without UFW filtering them",
     "kernel_state_unknown": "Kernel IPv6 state could not be read",
     "kernel_state_unknown_detail": "/proc/sys/net/ipv6 exists but conf/all/disable_ipv6 could not be read, so BOB cannot say whether the IPv6 stack is active. It does not assume either way. The findings below are computed as if IPv6 were enabled, which is the cautious reading. Check with: sysctl net.ipv6.conf.all.disable_ipv6"
@@ -2521,10 +2530,10 @@
     "ipv6": {
       "ufw_disabled_listeners_present": {
         "title": "Services listening on IPv6 but UFW IPv6 support is disabled",
-        "why": "With IPV6=no in /etc/default/ufw, UFW normally blocks IPv6 outright: ufw-init installs DROP on the IPv6 INPUT, FORWARD and OUTPUT chains (loopback excepted), and BOB then reports the listeners as unreachable, not exposed. This warning appears only when BOB read the IPv6 INPUT policy as ACCEPT, or could not read it — typically because ip6tables was not working when UFW started. Then nothing filters IPv6, and any service listening on a dual-stack address (::) is reachable over IPv6 whatever UFW shows for IPv4.",
+        "why": "With IPV6=no in /etc/default/ufw, UFW normally blocks IPv6 outright: ufw-init installs DROP on the IPv6 INPUT, FORWARD and OUTPUT chains (loopback excepted), and BOB then reports the listeners as unreachable, not exposed. This warning appears only when BOB read the IPv6 INPUT policy as ACCEPT, found rules in that chain besides the loopback one (Docker, libvirt or a hand-written ACCEPT may admit a listener), or could not read it — typically because ip6tables was not working when UFW started. Then BOB cannot show that IPv6 is filtered, and any service listening on a dual-stack address (::) is reachable over IPv6 whatever UFW shows for IPv4.",
         "how": "1. Enable UFW IPv6 support:\n   sudo nano /etc/default/ufw  →  IPV6=yes\n2. Reload UFW to apply ip6tables rules:\n   sudo ufw reload\n3. Verify ip6tables rules are now active:\n   sudo ip6tables -L INPUT -n | head -20",
         "server": {
-          "why": "On a server, IPv6 traffic that no firewall filters is a significant gap: every service listening on (::) is reachable over IPv6 from the network, outside the UFW rules written for IPv4. Enable UFW IPv6 so the same rules apply to both families."
+          "why": "On a server, IPv6 that BOB cannot show to be filtered is a significant gap: a service listening on (::) may be reachable over IPv6 from the network, outside the UFW rules written for IPv4. Enable UFW IPv6 so the same rules apply to both families."
         },
         "desktop": {
           "why": "On a desktop, this finding is informational. Most services listening on IPv6 are bound to loopback (::1) or link-local addresses (fe80::) with no external reachability. Enable UFW IPv6 support as best practice, but the immediate risk is low."
@@ -2987,8 +2996,8 @@
       },
       "firewalld_policy_open": {
         "title": "firewalld default zone accepts all incoming traffic (target ACCEPT)",
-        "why": "A firewalld zone's target decides what happens to a packet that no rule matches: `default` and `%%REJECT%%` reject it, `DROP` drops it, `ACCEPT` lets it in. With ACCEPT on the default zone — the `trusted` zone, or a zone set that way — firewalld is running but filters nothing inbound: every listening port is reachable, and a newly installed service is exposed the moment it starts. It is the firewalld counterpart of UFW's default incoming policy ALLOW.",
-        "how": "1. Check the default zone and its target:\n   sudo firewall-cmd --get-default-zone\n   sudo firewall-cmd --list-all   # the target: line\n2. If the default zone is trusted, switch to a restrictive zone (public allows ssh):\n   sudo firewall-cmd --set-default-zone=public\n3. Otherwise keep SSH reachable, then restore the stock target:\n   sudo firewall-cmd --permanent --zone=<zone> --add-service=ssh\n   sudo firewall-cmd --permanent --zone=<zone> --set-target=default\n   sudo firewall-cmd --reload\n4. Re-allow the services you need:\n   sudo firewall-cmd --permanent --zone=<zone> --add-service=<service> && sudo firewall-cmd --reload"
+        "why": "A firewalld zone's target decides what happens to a packet that no rule matches: `default` and `%%REJECT%%` reject it (`default` lets ICMP through), `DROP` drops it, `ACCEPT` lets it in — unless a catch-all rich rule (`rule priority=\"32767\" reject`, as in firewalld's own libvirt and nm-shared zones) rejects it first. BOB judges the zones that hold the host's physical interfaces, not just the default zone: an interface bound to `trusted` is wide open whatever the default zone says, and an ACCEPT default zone that holds no interface filters nothing here. Behind an accepting zone every listening port is reachable, and a new service is exposed the moment it starts. A rich rule that accepts every packet — even with log, audit or limit — opens the zone as much as target ACCEPT. A zone bound to sources classifies those addresses before the interface's zone unless its ingress priority is higher: one covering a whole family (0.0.0.0/0, ::/0, or prefixes that add up to it) is judged like an interface's zone, and a narrower one that accepts everything is shown without a deduction. Policies whose egress is HOST take part too, in firewalld's order: those of negative priority before the zone's rules, those of positive priority after the zone's rules but before its target; the first one that decides (ACCEPT, REJECT, DROP or a catch-all rule — CONTINUE does not) settles the packet. It is the firewalld counterpart of UFW's default incoming policy ALLOW.",
+        "how": "1. See which zone holds each interface or source, its target and rich rules, and the active policies:\n   sudo firewall-cmd --get-active-zones\n   sudo firewall-cmd --zone=<zone> --list-all\n   sudo firewall-cmd --get-active-policies\n2. First keep SSH reachable in the zone that will decide (public if the interface leaves trusted). The ssh service is port 22; if sshd listens elsewhere, use --add-port=<port>/tcp:\n   sudo firewall-cmd --permanent --zone=<zone> --add-service=ssh\n3. Then undo the cause the finding names:\n   interface in trusted:   sudo firewall-cmd --permanent --zone=public --change-interface=<interface>\n   trusted as default:     sudo firewall-cmd --set-default-zone=public\n   zone target ACCEPT:     sudo firewall-cmd --permanent --zone=<zone> --set-target=default\n   catch-all accept rule:  sudo firewall-cmd --permanent --zone=<zone> --remove-rich-rule='<rule>'   (--policy=<policy> for a policy's rule)\n   policy target ACCEPT:   sudo firewall-cmd --permanent --policy=<policy> --set-target=CONTINUE\n   zone bound to 0.0.0.0/0: sudo firewall-cmd --permanent --zone=<zone> --remove-source=0.0.0.0/0\n4. Apply, then re-allow the services you need — anything not listed is now refused:\n   sudo firewall-cmd --reload\n   sudo firewall-cmd --permanent --zone=<zone> --add-service=<service> && sudo firewall-cmd --reload\n   (if NetworkManager sets connection.zone for that interface: nmcli connection modify <name> connection.zone public)"
       },
       "policy_unknown": {
         "title": "UFW default incoming policy could not be determined",

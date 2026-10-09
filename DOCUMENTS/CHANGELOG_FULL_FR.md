@@ -6,6 +6,276 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.24.3] — 09-10-2026
+
+**Une version corrective de justesse : firewalld est jugé par les zones qui portent
+les interfaces de l'hôte et par les policies vers l'hôte, dans l'ordre où firewalld
+les applique ; « IPv6 bloqué » n'est dit que lorsque la chaîne le prouve.**
+Aucun changement de formule de score, de schéma JSON, d'ordre des colonnes CSV, de
+section ni de clé `--explain`. **BREAKING (scores) :** sur un hôte firewalld, le
+score bouge de 3 dans un sens ou dans l'autre — **à la baisse** là où quelque chose
+laisse entrer tous les paquets et que 0.24.2 ne le voyait pas : une interface dans
+une zone qui accepte tout sous une zone par défaut filtrante, une zone dont les
+sources couvrent toute une famille d'adresses et classent avant la zone de
+l'interface, une policy vers l'hôte qui accepte avant que la zone ne décide, une
+règle riche globale `accept` (faux OK corrigés) ; **à la hausse** là où 0.24.2
+alertait un ACCEPT qui ne décide pas : une zone par défaut alors qu'une autre zone
+porte l'interface, ou une zone dont la cible ACCEPT est supplantée d'abord par une
+policy ou une règle globale de rejet (fausses alertes retirées). Quand firewall-cmd
+ne liste pas les zones ou policies actives, 0.24.3 ne déduit rien parce qu'il n'a
+rien établi — une INFO le dit et compte comme une limite de visibilité, si bien que
+le score se lit comme un plafond, pas comme un satisfecit. Sur un hôte UFW réglé sur
+IPV6=no dont la chaîne IPv6 INPUT porte d'autres règles que celle du loopback, le
+score peut baisser jusqu'à 2 (§2). Mesuré sur Fedora 44 et Linux Mint 22.3 réelles.
+
+### 1. firewalld : ce qui décide pour un paquet qu'aucune règle n'a autorisé
+
+0.24.2 alertait une zone par défaut firewalld dont la cible est ACCEPT. Elle ne
+jugeait que la zone **par défaut**, ce qui est faux dans les deux sens (mesuré sur
+Fedora 44, enp3s0, testé depuis une autre machine) :
+
+- **enp3s0 liée à `trusted` sous la zone par défaut filtrante FedoraServer** : tous
+  les ports répondaient, 9090 compris, et 0.24.2 disait OK — un faux OK ;
+- **zone par défaut `trusted`, enp3s0 liée à `public`** : 9090 était refusé, et 0.24.2
+  déduisait 3 — une fausse alerte.
+
+**Quelles zones.** BOB lit `--get-active-zones` et, pour chaque zone qui porte une
+interface, sa cible et ses règles riches en vigueur (`--zone=<zone> --list-all`).
+Les zones jugées sont celles qui portent une interface **adossée à une carte
+réseau** : une interface avec `/sys/class/net/<if>/device`, ou un bridge, un bond
+ou un VLAN dont les périphériques `lower_*` y mènent — sur un poste mesuré, le lien
+montant est `br0`, qui n'a pas de lien `device` propre. Les zones dont les
+interfaces ne mènent à aucune carte (`docker0` sur des paires veth, `virbr0`)
+portent du trafic de conteneurs ou de VM et ne sont pas jugées. Quand la liste est
+lue et qu'aucune zone ne porte une telle interface, la zone par défaut décide, comme
+en 0.24.2. Quand la liste des zones ou des policies **échoue**, rien n'est conclu :
+la politique entrante par défaut est inconnue, rien n'est déduit, et l'INFO
+`firewall.firewalld_zones_unread` le dit (une limite de visibilité).
+
+**Zones liées à des sources.** firewalld classe un paquet dans une zone selon
+`ingress-priority` (la plus basse d'abord) ; à priorité égale, une zone de source
+passe avant celle d'une interface. BOB lit la ligne `ingress-priority:` de chaque
+zone (un firewalld qui n'en liste pas précède ce réglage, et toutes les zones sont
+alors égales). Mesuré sur Fedora 44 (enp3s0 dans FedoraServer, 8080 non listé,
+`trusted` en cible ACCEPT) :
+
+| `trusted` liée à | priorité d'entrée (trusted / FedoraServer) | 8080 depuis 192.168.1.10 | 0.24.2 | 0.24.3 |
+|---|---|---|---|---|
+| `192.168.1.10/32` | 0 / 0 | joignable | OK | INFO, sans déduction |
+| `192.168.1.250/32` | 0 / 0 | refusé | OK | INFO, sans déduction |
+| `0.0.0.0/0` | 0 / 0 | joignable | OK | ALERT −3 |
+| `0.0.0.0/0` | −100 / +100 | joignable | OK | ALERT −3 |
+| `0.0.0.0/0` | +100 / −100 | refusé | OK | rien |
+| `0.0.0.0/0` | +100 / 0 | refusé | OK | rien |
+| `0.0.0.0/1` + `128.0.0.0/1` | 0 / 0 | joignable | OK | ALERT −3 |
+| `128.0.0.0/1` seule | 0 / 0 | joignable | OK | INFO, sans déduction |
+| `0.0.0.0/1` seule | 0 / 0 | refusé | OK | INFO, sans déduction |
+
+0.24.2 ne lisait aucune source, si bien que son verdict est le même sur chaque ligne
+(mesuré pour `/32` et `/0`). Une zone dont les sources couvrent toute une famille
+d'adresses — `0.0.0.0/0`, `::/0`, ou des préfixes d'une même famille qui s'y
+additionnent — et qui classe avant la zone d'une interface est jugée comme la zone
+de cette interface. Il en va de même pour des zones qui acceptent tout et dont les
+sources ne couvrent une famille entière qu'**ensemble** — `0.0.0.0/1` dans l'une,
+`128.0.0.0/1` dans l'autre : une seule ALERT les nomme toutes, et la correction
+retire ces sources. Une zone liée à des sources plus étroites, qui classe d'abord et
+accepte tout, est signalée par une INFO nommant les sources, sans déduction :
+l'exposition est réelle mais limitée à ces adresses, et l'INFO précise que BOB ne
+peut pas juger si elles méritent cette confiance — un `/32` n'est pas un hôte de
+confiance du seul fait d'être un `/32`. Les sources MAC et ipset ne sont pas des
+adresses que BOB peut additionner et ne comptent jamais pour une famille entière ;
+leur exposition apparaît dans la même INFO.
+
+**Quelles règles comptent.** Une règle riche *globale* est une règle sans sélecteur
+de paquets — ni `source`, `destination`, `service`, `port`, `protocol`, ICMP,
+`masquerade`, `forward-port`, `source-port` ni `tcp-mss-clamp`. `family` ne
+sélectionne pas de paquets au sein de sa famille : il limite la règle à l'IPv4 ou à
+l'IPv6, où elle reconnaît encore tous les paquets — mesuré sur Fedora 44,
+`rule family="ipv4" priority="-100" accept` dans FedoraServer a ouvert 8080 en IPv4,
+alors qu'une version antérieure de 0.24.3, qui lisait `family` comme un sélecteur,
+disait « reject ». BOB juge désormais chaque famille séparément : une telle règle
+ouvre l'IPv4 et ne dit rien de l'IPv6, l'alerte nomme la famille (« accepte tous les
+paquets IPv4 »), et la section IPv6 reçoit le verdict IPv6 — si bien que `0.0.0.0/0`
+dans `trusted` ne se lit plus comme « IPv6 non filtré ». `log`, `nflog`, `audit` et
+`limit` ne sélectionnent rien : mesuré sur Fedora 44, `log … accept`, `audit accept`
+et `accept limit value="10/m"` ont chacune rendu 8080 joignable à travers une zone
+filtrante, alors que `service name="http" accept` ne l'a pas fait. Une limite de
+débit ne fait que borner la fréquence d'application de la règle : au-delà,
+l'évaluation continue. Ainsi, un `accept` limité laisse entrer le trafic jusqu'à sa
+limite (mesuré : 8080 a répondu), tandis qu'un `reject` ou un `drop` limité ne peut
+pas montrer le port fermé et n'est pas compté comme décisif ; un mot que BOB ne
+connaît pas rend le verdict de la règle inconnu. Parmi les règles globales, le plus
+petit numéro de priorité décide ; des actions opposées à la même priorité, dont
+firewalld laisse l'ordre indéfini, rendent le verdict inconnu. Les zones `libvirt`
+et `nm-shared` livrées par firewalld associent la cible ACCEPT à
+`rule priority="32767" reject` et sont fermées (enp3s0 dans nm-shared : 22, listé, a
+répondu, 9090 a été refusé).
+
+**Dans quel ordre.** Les policies actives dont la sortie est `HOST` et dont l'entrée
+est `ANY` ou la zone interviennent. BOB lit leur priorité et applique l'ordre de
+firewalld, mesuré sur Fedora 44 avec 8080 en écoute et non listé dans FedoraServer :
+
+| Configuration | 8080 | 0.24.3 |
+|---|---|---|
+| policy DROP à −100, policy ACCEPT à +100 | refusé | deny |
+| policy ACCEPT à −100, policy DROP à +100 | joignable | ALERT −3 |
+| zone `%%REJECT%%`, policy ACCEPT à +100 (ou −100) | joignable | ALERT −3 |
+| zone ACCEPT, policy DROP à +100 | refusé | deny |
+| zone ACCEPT avec sa règle globale de rejet, policy ACCEPT à +100 | refusé | reject |
+| policy ACCEPT avec sa propre règle globale de rejet | refusé | reject |
+
+Donc : les policies de priorité négative, puis les règles de la zone, puis les
+policies de priorité positive, puis la cible de la zone — la première qui tranche
+décide du sort du paquet. Une policy de cible CONTINUE (`allow-host-ipv6`, livrée
+par Fedora) ne tranche rien. Deux policies décisives qui divergent à une même
+priorité, ou une policy décisive dont la priorité n'a pas pu être lue, rendent le
+verdict inconnu.
+
+**La correction suit la cause.** L'alerte nomme ce qui laisse entrer les paquets — la
+zone et son interface (« La zone firewalld 'trusted' accepte tout le trafic entrant
+sur enp3s0 »), une policy et la zone avant laquelle elle tranche, ou une règle riche
+globale — et la correction défait cette cause, jamais une supposition :
+
+- une interface liée à `trusted` passe dans `public`
+  (`--permanent --zone=public --change-interface=<if>`) ; `trusted` en zone par
+  défaut fait passer la zone par défaut à `public` ; `ssh` est d'abord ajouté à
+  `public`, qui le livre mais peut ne plus l'avoir ;
+- toute autre zone dont la cible accepte reçoit `ssh`, puis la cible `default`
+  (rejeter ce qu'aucune règle n'autorise, ICMP excepté comme le fait firewalld) —
+  pour une zone personnalisée, c'est un changement du choix de son propriétaire, et
+  c'est ce que demande le constat ;
+- une zone dont les sources couvrent toute une famille — seule ou avec d'autres
+  zones qui acceptent tout — perd ces sources (`--remove-source`, chaque préfixe,
+  chaque zone), `ssh` étant d'abord ajouté à la zone de l'interface ;
+- une règle globale `accept` est retirée (`--remove-rich-rule='<règle>'`, sur la
+  zone ou la policy), `ssh` étant d'abord ajouté à la zone ;
+- une policy dont la cible accepte repasse en CONTINUE, `ssh` étant d'abord ajouté à
+  la zone qui décide ensuite.
+
+Quand plusieurs causes ouvrent la même zone — une cible ACCEPT *et* une règle
+globale accept, une policy ouverte *et* une zone ouverte — la correction les défait
+l'une après l'autre, en rejugeant après chacune, jusqu'à ce que la zone ne laisse
+plus entrer tous les paquets. Mesuré sur Fedora 44 : retirer la règle seule a laissé
+8080 ouvert, pour une zone comme pour une policy portant les deux causes ; la
+correction enchaînée l'a fermé en une seule commande.
+
+Chaque correction écrit la configuration permanente et se termine par `--reload`
+(ou `--set-default-zone`, qui écrit les deux), si bien que ce qu'elle ferme reste
+fermé : chaque correction ci-dessous a été revérifiée après
+`systemctl restart firewalld`.
+
+Le service ssh, c'est le port 22 : si sshd écoute sur un autre port, `--explain` dit
+de l'ajouter avant d'appliquer. SSH est le seul service préservé : faire passer une
+interface de `trusted` à `public`, ou fermer une zone, refuse tout ce que cette zone
+ne liste pas — `--explain` dit de ré-autoriser les services nécessaires. Deux lignes
+de ports et une ligne IPv6 qui disaient « la zone par défaut de firewalld » disent
+désormais la zone de l'interface, et le texte `--explain` de
+`firewall.firewalld_policy_open` décrit l'ordre et chaque correction.
+
+Mesuré en A/B (0.24.2 contre 0.24.3) sur Fedora 44 : enp3s0 dans `trusted` — 0.24.2
+OK, 0.24.3 ALERT −3 ; la correction appliquée pour de vrai a fait passer enp3s0 dans
+`public` (firewalld a confié le changement à NetworkManager), SSH est resté
+joignable, 9090 a été refusé et le constat avait disparu. Zone par défaut `trusted`
+avec enp3s0 dans `public` — 0.24.2 −3, 0.24.3 rien. enp3s0 dans `nm-shared` — rien
+dans aucune des deux. Une zone dont la cible ACCEPT est supplantée par une policy
+DROP à +100 — 0.24.2 −3, 0.24.3 rien. Chaque alerte de 0.24.3 ci-dessous a été suivie
+de sa propre correction, appliquée telle qu'affichée, puis de
+`systemctl restart firewalld`, d'une sonde depuis le réseau local et d'un nouvel
+audit :
+
+| Ouvert par | 0.24.2 | 0.24.3 | Après la correction |
+|---|---|---|---|
+| règle de zone `priority="100" log … accept` | OK | ALERT −3 | 8080 refusé, SSH préservé, constat disparu |
+| règle de policy `priority="10" audit accept` | OK | ALERT −3 | 8080 refusé, SSH préservé, constat disparu |
+| policy ANY → HOST ACCEPT à +100, zone **sans** ssh (SSH n'atteignait l'hôte que par la policy) | OK | ALERT −3 | 8080 refusé, SSH préservé, constat disparu |
+| cible de zone ACCEPT **et** `priority="100" accept` | OK | ALERT −3 | 8080 refusé, SSH préservé, constat disparu |
+| policy ACCEPT à −100 **et** sa `priority="10" accept` | OK | ALERT −3 | 8080 refusé, SSH préservé, constat disparu |
+| `trusted` liée à `0.0.0.0/0` (priorités égales, ou trusted plus basse) | OK | ALERT −3 | 8080 refusé, SSH préservé, constat disparu |
+| `trusted` liée à `0.0.0.0/1` + `128.0.0.0/1` | OK | ALERT −3 | 8080 refusé, SSH préservé, constat disparu |
+| `trusted` ← `0.0.0.0/1` et une seconde zone ACCEPT ← `128.0.0.0/1` | OK | ALERT −3 | 8080 refusé, SSH préservé, constat disparu |
+| règle de zone `family="ipv4" priority="-100" accept` | OK | ALERT −3 (IPv4) | 8080 refusé, SSH préservé, constat disparu |
+
+Avec la seconde moitié liée plutôt à une zone filtrante (qui liste ssh),
+192.168.1.10 — dans cette moitié — a atteint 22 et pas 8080, et 0.24.3 a affiché
+l'INFO pour la moitié de `trusted`, sans déduction. Les formes IPv6 (`::/1` +
+`8000::/1`, dans une zone ou deux) ne sont couvertes que par les gardes : l'hôte qui
+sondait n'avait pas d'adresse IPv6 globale.
+
+firewalld lui-même refuse une règle riche sans élément si elle ne porte pas une
+priorité non nulle (`rule accept` → `INVALID_RULE`), si bien que toute règle globale
+que BOB peut rencontrer en a une.
+
+### 2. « IPv6 bloqué » seulement quand la chaîne IPv6 INPUT le prouve
+
+0.24.2 lisait la politique par défaut de la chaîne IPv6 INPUT et, avec UFW actif et
+IPV6=no, rapportait les services IPv6 comme injoignables quand elle était DROP. Une
+politique ne décide que pour les paquets qu'aucune règle n'a acceptés : l'affirmation
+allait donc plus loin que la lecture. BOB lit désormais toute la chaîne et ne dit
+« bloqué » que pour la forme que laisse ufw-init : politique DROP et, au plus, la
+règle du loopback. Avec toute autre règle (Docker, libvirt, un ACCEPT écrit à la
+main), BOB n'affirme ni l'un ni l'autre : avec une adresse IPv6 globale, le WARN −2
+précédent demeure (« UFW n'est pas configuré pour l'IPv6 » — pas « exposé ») ; sur
+un hôte en link-local seulement, une nouvelle INFO dit que le DROP est en place mais
+que d'autres règles sont dans la chaîne, si bien que BOB ne peut pas montrer si le
+réseau local atteint les services.
+
+Mesuré sur Linux Mint 22.3 (UFW actif, IPV6=no, link-local seulement, un voisin dans
+un espace de noms réseau relié par une paire veth). ufw-init met aussi OUTPUT en DROP,
+si bien qu'un seul ACCEPT ne suffit pas à atteindre un service :
+
+| Chaînes IPv6 | sshd sur `[::]:22` | 0.24.2 | 0.24.3 |
+|---|---|---|---|
+| forme ufw-init (DROP + loopback) | injoignable | bloqué | bloqué |
+| + ACCEPT tcp/22 dans INPUT | injoignable | bloqué | ni l'un ni l'autre |
+| + ACCEPT tcp/22 dans INPUT et OUTPUT | injoignable | bloqué | ni l'un ni l'autre |
+| + ACCEPT tcp/22 et ICMPv6, dans les deux sens | **joignable** | **bloqué** | ni l'un ni l'autre |
+
+Chaque ligne a été rejouée avec le code final sur la même Mint, le voisin sondant
+`[::]:22` et les deux versions auditant ; la colonne 0.24.3 est ce que le code final
+y a rapporté. 0.24.3 n'affirme que ce qu'il a lu. Le texte `--explain` de
+`ipv6.ufw_disabled_listeners_present` dit quand l'avertissement apparaît et n'affirme
+plus que chaque service est joignable.
+
+### Gardes
+
+- `tests/test_v0243_firewalld_zones.py` — règles globales (cible seule, une règle
+  globale de rejet ou de drop, `log` / `audit` / `limit`, sélecteurs, un rejet
+  limité en débit, un mot inconnu, priorités égales) ; l'ordre des policies et de la
+  zone (chaque ligne du tableau ci-dessus, CONTINUE, une priorité non lue) ; quelle
+  zone est jugée (interface dans trusted, une zone par défaut ouverte ne portant
+  rien, nm-shared, une interface virtuelle, un bridge / bond / VLAN sur une carte,
+  un VLAN sur un bond, un bridge mêlant une carte et des veth, un bridge de veth
+  seules) ; zones liées à des sources (famille entière jugée, chaque famille jugée
+  séparément, préfixes qui s'additionnent dans une zone et entre zones qui acceptent
+  tout mais pas avec une zone filtrante ni entre deux familles, MAC / ipset jamais
+  additionnés, sources plus étroites signalées sans s'en porter garant, priorité
+  d'entrée dans les deux sens et à égalité, les lecteurs) ; listes non lues contre
+  absentes, dites et comptées comme limite de visibilité ; la correction par cause
+  avec ssh d'abord, et plusieurs causes défaites tour à tour ; les messages rendus en
+  EN et FR.
+- `tests/test_v0243_ipv6_chain_rules.py` — la forme ufw-init contre toute autre
+  règle, le message link-local « ni l'un ni l'autre », les règles non lues, le
+  lecteur de chaîne.
+- Mutations `firewalld-zones/*`, `firewalld-order/*`, `firewalld-catch-all/*`,
+  `firewalld-fix/*`, `firewalld-unread/*`, `firewalld-policies/*`,
+  `firewalld-sources/*`, `firewalld-family/*` et `ipv6-chain/*` ; des ancres
+  existantes réorientées vers le nouveau code.
+
+### Chiffres
+
+- **Tests** 12170 → **12513** ; mutations 409 → **465**, toutes tuées.
+- Clés de locale 2840 → **2849** par langue ; clés `--explain` inchangées (219).
+
+### Mise à jour
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+Aucun changement de configuration nécessaire.
+
+---
+
 ## [0.24.2] — 09-10-2026
 
 **Une version de correctifs : une zone firewalld qui accepte tout n'est plus un

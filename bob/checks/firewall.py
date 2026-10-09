@@ -22,10 +22,11 @@ from __future__ import annotations
 
 import re
 import shlex
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from bob.checks import _ufw
+from bob.checks._firewalld import HostPolicy, best_verdict, families_of, open_rules, zone_verdict
 from bob.checks._run import (
     TranslationFunc,
     _MANAGER_ALIASES,
@@ -193,20 +194,122 @@ def _firewall_install_fix(_t):
     return install_fix(_t, None, "ufw", then="sudo ufw enable")
 
 
-def _firewalld_close_cmd(zone: str) -> str:
-    """Stop the default zone accepting every unmatched packet, keeping SSH.
+def _firewalld_close_cmd(zone: str, interfaces: "tuple[str, ...]" = (),
+                         is_default: bool = True) -> str:
+    """Stop *zone* accepting every unmatched packet, keeping SSH.
 
-    ``trusted`` exists to accept everything, so the fix is to stop using it as
-    the default, not to rewrite it: ``public`` ships with ssh allowed. Any other
-    zone gets the stock target back (reject what no rule allows), with ssh
-    added first so a remote operator does not lock themself out.
+    ``trusted`` exists to accept everything, so the fix is to stop using it,
+    not to rewrite it: ``public`` ships with ssh allowed. As the default zone,
+    the default moves to ``public``; bound explicitly to interfaces (v0.24.3),
+    those interfaces move to ``public`` — ``--permanent --change-interface``
+    persisted on Fedora 44 with NetworkManager leaving ``connection.zone``
+    empty. Any other zone gets the stock target back (reject what no rule
+    allows), with ssh added first so a remote operator does not lock themself
+    out.
     """
     if not zone or zone == "trusted":
-        return "sudo firewall-cmd --set-default-zone=public"
+        # ``public`` allows ssh as shipped, but nothing guarantees it still does
+        # here: add it before anything moves (v0.24.3), as for a named zone.
+        keep_ssh = ("sudo firewall-cmd --permanent --zone=public --add-service=ssh && "
+                    "sudo firewall-cmd --reload")
+        if is_default or not interfaces:
+            return f"{keep_ssh} && sudo firewall-cmd --set-default-zone=public"
+        moves = " && ".join(
+            f"sudo firewall-cmd --permanent --zone=public --change-interface={shlex.quote(i)}"
+            for i in interfaces)
+        return f"{keep_ssh} && {moves} && sudo firewall-cmd --reload"
     z = shlex.quote(zone)
     return (f"sudo firewall-cmd --permanent --zone={z} --add-service=ssh && "
             f"sudo firewall-cmd --permanent --zone={z} --set-target=default && "
             f"sudo firewall-cmd --reload")
+
+
+def _firewalld_open_message(zone, verdict, policies=()) -> "tuple[str, dict]":
+    """The message key and variables naming what lets every packet in — and,
+    for a rich rule, in which address family (``family="ipv4"`` opens IPv4
+    only)."""
+    holder = verdict.holder
+    families = "/".join(f.replace("ip", "IP") for f in families_of(zone)
+                        if zone_verdict(zone, policies, f).policy == "allow")
+    if isinstance(holder, HostPolicy):
+        if verdict.by_rule:
+            return ("firewall.firewalld_policy_open_policy_rule",
+                    {"policy": holder.name, "zone": zone.name or "?", "families": families})
+        return "firewall.firewalld_policy_open_host_policy", {"policy": holder.name, "zone": zone.name or "?"}
+    name = zone.name or "?"
+    if verdict.by_rule:
+        return "firewall.firewalld_policy_open_zone_rule", {"zone": name, "families": families}
+    if zone.physical:
+        return ("firewall.firewalld_policy_open_iface",
+                {"zone": name, "interfaces": ", ".join(zone.physical)})
+    if zone.all_sources:
+        return ("firewall.firewalld_policy_open_source",
+                {"zone": name, "sources": ", ".join(zone.all_sources)})
+    return "firewall.firewalld_policy_open", {"zone": name}
+
+
+def _undo_one(zone, verdict, policies, default_zone: str, fallback_zone: str):
+    """The command that undoes the one cause *verdict* names, and the state
+    firewalld is left in: ``(cmd, zone, policies, done)``. ``done`` when the
+    zone no longer decides for the host (its whole-family source removed)."""
+    holder = verdict.holder
+    # No zone name read: firewall-cmd then acts on the default zone.
+    zone_arg = f"--zone={shlex.quote(zone.name)} " if zone.name else ""
+    keep_ssh = f"sudo firewall-cmd --permanent {zone_arg}--add-service=ssh && "
+    if isinstance(holder, HostPolicy):
+        where = f"--policy={shlex.quote(holder.name)}"
+        if verdict.by_rule:
+            undo = " && ".join(f"sudo firewall-cmd --permanent {where} --remove-rich-rule={shlex.quote(r)}"
+                               for r in open_rules(holder.rich_rules))
+            closed = replace(holder, rich_rules=tuple(r for r in holder.rich_rules
+                                                      if r not in open_rules(holder.rich_rules)))
+        else:
+            undo = f"sudo firewall-cmd --permanent {where} --set-target=CONTINUE"
+            closed = replace(holder, target="CONTINUE")
+        policies = [closed if p is holder else p for p in policies]
+        return f"{keep_ssh}{undo} && sudo firewall-cmd --reload", zone, policies, False
+    if verdict.by_rule:
+        where = zone_arg.strip() or "--zone=" + shlex.quote(default_zone)
+        undo = " && ".join(f"sudo firewall-cmd --permanent {where} --remove-rich-rule={shlex.quote(r)}"
+                           for r in open_rules(zone.rich_rules))
+        zone = replace(zone, rich_rules=tuple(r for r in zone.rich_rules
+                                              if r not in open_rules(zone.rich_rules)))
+        return f"{keep_ssh}{undo} && sudo firewall-cmd --reload", zone, policies, False
+    if zone.all_sources and not zone.physical:
+        # Unbinding the whole-family source hands those packets back to the
+        # interface's zone, which keeps ssh first.
+        z = shlex.quote(zone.name)
+        undo = " && ".join(f"sudo firewall-cmd --permanent --zone={z} --remove-source={shlex.quote(src)}"
+                           for src in zone.all_sources)
+        cmd = (f"sudo firewall-cmd --permanent --zone={shlex.quote(fallback_zone)} --add-service=ssh && "
+               f"{undo} && sudo firewall-cmd --reload")
+        return cmd, zone, policies, True
+    cmd = _firewalld_close_cmd(zone.name, zone.physical, is_default=zone.name == default_zone)
+    if not zone.name or zone.name == "trusted":
+        # The interface moves to public, as shipped (target default).
+        zone = replace(zone, name="public", target="default", rich_rules=())
+    else:
+        zone = replace(zone, target="default")
+    return cmd, zone, policies, False
+
+
+def _firewalld_open_fix(zone, verdict, firewalld) -> str:
+    """Undo every cause that lets every packet in, one after the other, until
+    the zone's verdict is no longer "allow" (v0.24.3) — never a guess, and SSH
+    kept in the zone the packets then fall to. Measured on Fedora 44: a zone
+    with target ACCEPT *and* a catch-all accept stayed open once the rule alone
+    was removed, and so did a policy with both."""
+    fallback = next((z.name for z in firewalld.judged_zones if z.physical), firewalld.default_zone)
+    policies = list(firewalld.host_policies)
+    cmds = []
+    for _ in range(8):
+        cmd, zone, policies, done = _undo_one(zone, verdict, policies,
+                                              firewalld.default_zone, fallback)
+        cmds.append(cmd)
+        verdict = best_verdict(zone, policies, families_of(zone))
+        if done or verdict.policy != "allow":
+            break
+    return " && ".join(cmds)
 
 
 def check_firewall(
@@ -254,16 +357,59 @@ def check_firewall(
             # `policy_open`, which costs 3 points there. Here it was an OK and
             # nothing deducted, while the attack surface already said "default
             # policy is ALLOW — no filtering" (measured on Fedora 44).
-            if firewalld.incoming_policy == "allow":
+            # v0.24.3: the zone that actually holds an interface is judged, not
+            # the default zone alone, and its catch-all rich rules count.
+            opened = firewalld.open_verdict
+            if opened is not None:
+                zone, verdict = opened
+                msg_key, tvars = _firewalld_open_message(zone, verdict, firewalld.host_policies)
                 result.alert_with_deduction(
                     key="firewall.firewalld_policy_open",
-                    message=_t("firewall.firewalld_policy_open",
-                               zone=firewalld.default_zone or "?"),
+                    message=_t(msg_key, **tvars),
                     points=3,
-                    cmd=_firewalld_close_cmd(firewalld.default_zone),
+                    cmd=_firewalld_open_fix(zone, verdict, firewalld),
                     nature="action",
-                    template_vars={"zone": firewalld.default_zone or "?"},
+                    template_vars=tvars,
                 )
+            # v0.24.3: a zone bound to narrower sources takes precedence over
+            # the interface's zone for those addresses (measured on Fedora 44:
+            # 192.168.1.10/32 in trusted opened 8080 to that host). An exposure
+            # limited to them — shown, not scored like an open default.
+            # v0.24.3: narrower source zones that, together, cover a whole
+            # address family open the host as one zone bound to 0.0.0.0/0 does.
+            pooled = firewalld.pooled_sources
+            if opened is None and pooled:
+                zones = ", ".join(z.name for z, _ in pooled)
+                sources = ", ".join(src for _, srcs in pooled for src in srcs)
+                fallback = next((z.name for z in firewalld.judged_zones if z.physical),
+                                firewalld.default_zone)
+                undo = " && ".join(
+                    f"sudo firewall-cmd --permanent --zone={shlex.quote(z.name)} "
+                    f"--remove-source={shlex.quote(src)}" for z, srcs in pooled for src in srcs)
+                result.alert_with_deduction(
+                    key="firewall.firewalld_policy_open",
+                    message=_t("firewall.firewalld_policy_open_sources_pooled",
+                               zones=zones, sources=sources),
+                    points=3,
+                    cmd=(f"sudo firewall-cmd --permanent --zone={shlex.quote(fallback)} "
+                         f"--add-service=ssh && {undo} && sudo firewall-cmd --reload"),
+                    nature="action",
+                    template_vars={"zones": zones, "sources": sources},
+                )
+            shown = {z.name for z, _ in pooled} if opened is None else set()
+            for src_zone, _verdict in firewalld.open_sources:
+                if src_zone.name in shown:
+                    continue
+                svars = {"zone": src_zone.name, "sources": ", ".join(src_zone.sources)}
+                result.info(message=_t("firewall.firewalld_source_zone_open",
+                                       zone=svars["zone"], sources=svars["sources"]),
+                            key="firewall.firewalld_source_zone_open", template_vars=svars)
+            # v0.24.3: unread is not none. Without the active zones or
+            # policies the inbound default is unknown: nothing deducted, and
+            # said, so the score reads as a ceiling rather than a clean bill.
+            if not firewalld.zones_read:
+                result.info(message=_t("firewall.firewalld_zones_unread"),
+                            key="firewall.firewalld_zones_unread")
             return result
         # No managed front-end (UFW/firewalld). Before demanding one, consult
         # the raw netfilter layer the runner measured: an nftables/iptables

@@ -789,7 +789,7 @@ def run_checks(
     _sec("ipv6", ipv6_snapshot, check_ipv6, ufw_active=fw_status.active,
          firewalld_active=fwd_status.active,
          netfilter_active=fw_posture.backend == "netfilter",
-         firewalld_policy=fwd_status.incoming_policy if fwd_status.active else "")
+         firewalld_policy=fwd_status.family_policy("ipv6") if fwd_status.active else "")
 
     # =========================================================================
     # GROUP 2 — EXPOSITION & SERVICES

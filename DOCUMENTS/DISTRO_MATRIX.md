@@ -609,7 +609,27 @@ each fix in both polarities, every forged state restored.*
 
 | Gap | Sev. | § | Note |
 |-----|------|---|------|
-| firewalld judged by its **default** zone only | soft | §4 | An interface bound explicitly to another zone is still judged by the default zone's target (and services). On the measured Fedora the interface follows the default zone. Reading the zone of each active interface is a 0.25.0 candidate. |
+| ~~firewalld judged by its **default** zone only~~ | — | §4 | **Resolved in 0.24.3**: the zones holding the interfaces, the policies into the host and the source zones are judged, per address family (below). |
+
+
+### 0.24.3 field pass — firewalld per interface, policy, source and family; IPv6 chain rules
+
+*A/B of the 0.24.3 WIP against published 0.24.2 (2026-10-09) on two real machines.
+Every forged firewalld state was armed with an automatic rollback; every alert was
+followed by its own fix, applied exactly as printed, then `systemctl restart
+firewalld`, a probe from another LAN host and a new audit.*
+
+| Host | Measured | Result |
+|------|----------|--------|
+| Fedora 44 (SELinux enforcing, firewalld 2.4.0) | enp3s0 in `trusted` / in `nm-shared`; default zone `trusted` with enp3s0 in `public`; policies ANY → HOST at −100 / +100 (ACCEPT, DROP, CONTINUE, with and without their own catch-all); catch-all rich rules with `log`, `audit`, `limit`, `family="ipv4"`; zone and policy carrying two causes at once; `trusted` bound to `/32`, `/1`, `0.0.0.0/0` at ingress priorities −100 / 0 / +100; two accepting zones each holding one `/1` | 0.24.2 false OK (enp3s0 in `trusted`, `0.0.0.0/0`, the `/1` pair across one or two zones, catch-all accept rules, accepting policies) → 0.24.3 ALERT −3; 0.24.2 false alert (default `trusted` holding no interface, zone ACCEPT overridden by a policy DROP or a catch-all reject, `0.0.0.0/0` classified after the interface) → 0.24.3 nothing. Each fix closed 8080 and kept SSH after the restart, including SSH reachable only through the policy. firewalld refuses an element-less rich rule without a non-zero priority (`INVALID_RULE`). Narrow sources → INFO without a deduction |
+| Linux Mint 22.3 (ufw 0.36.2) | UFW active + IPV6=no, link-local only, neighbour in a network namespace; IPv6 chain at the ufw-init shape, + ACCEPT tcp/22 in INPUT, + INPUT and OUTPUT, + ICMPv6 both ways | `[::]:22` reachable only in the last case, where 0.24.2 said "blocked"; 0.24.3 says "blocked" only for the ufw-init shape and otherwise the new INFO `ipv6.ufw_v6_off_rules_unresolved`, replayed with the final code on all four rows |
+
+**Still open:**
+
+| Gap | Sev. | § | Note |
+|-----|------|---|------|
+| IPv6 source forms (`::/1` + `8000::/1`) | soft | §1 | Covered by the guards only: the probing host had no global IPv6 address. |
+| Exposure split across zones by narrower, non-adding sources | soft | §1 | Each such zone shows an INFO; BOB does not weigh how much of a family they reach together short of the whole. |
 
 ---
 © 2026 Cédric Clauzel

@@ -29,10 +29,14 @@ from bob.scoring import FindingLevel
 from tests.helpers import _keys, _t
 
 
-def _snap(policy, global_v6=True):
+_UFW_INIT_RULES = ["-A INPUT -i lo -j ACCEPT"]
+
+
+def _snap(policy, global_v6=True, rules=_UFW_INIT_RULES):
     return IPv6Snapshot(kernel_ipv6_enabled=True, ufw_ipv6_enabled=False,
                         ipv6_listeners=["22/tcp"], has_global_ipv6=global_v6,
-                        ufw_present=True, ip6_input_policy=policy)
+                        ufw_present=True, ip6_input_policy=policy,
+                        ip6_input_rules=None if policy is None else rules)
 
 
 @pytest.mark.parametrize("global_v6", [True, False])
@@ -87,16 +91,16 @@ class TestPolicyRead:
     def test_reads_the_policy_line(self, monkeypatch):
         monkeypatch.setattr(ipv6_mod, "run_result", lambda *a, **k: self._R(
             True, "-P INPUT DROP\n-A INPUT -i lo -j ACCEPT\n"))
-        assert ipv6_mod._read_ip6_input_policy() == "DROP"
+        assert ipv6_mod._read_ip6_input_chain() == ("DROP", ["-A INPUT -i lo -j ACCEPT"])
 
     def test_a_failed_read_is_none(self, monkeypatch):
         monkeypatch.setattr(ipv6_mod, "run_result", lambda *a, **k: self._R(False))
-        assert ipv6_mod._read_ip6_input_policy() is None
+        assert ipv6_mod._read_ip6_input_chain() == (None, None)
 
     def test_read_only_when_ufw_ipv6_is_off(self, monkeypatch):
         calls = []
-        monkeypatch.setattr(ipv6_mod, "_read_ip6_input_policy",
-                            lambda: calls.append(1) or "DROP")
+        monkeypatch.setattr(ipv6_mod, "_read_ip6_input_chain",
+                            lambda: calls.append(1) or ("DROP", []))
         monkeypatch.setattr(ipv6_mod, "_read_kernel_ipv6", lambda: (True, True))
         monkeypatch.setattr(ipv6_mod, "_read_global_ipv6", lambda: False)
         monkeypatch.setattr(ipv6_mod, "run_result", lambda *a, **k: self._R(True, ""))

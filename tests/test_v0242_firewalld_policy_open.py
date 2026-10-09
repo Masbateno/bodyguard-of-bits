@@ -88,7 +88,9 @@ class TestTheFixDoesNotLockTheOperatorOut:
     def test_trusted_is_left_alone_and_the_default_moves(self):
         """``trusted`` exists to accept everything; rewriting it would surprise
         whatever deliberately binds an interface to it."""
-        assert _firewalld_close_cmd("trusted") == "sudo firewall-cmd --set-default-zone=public"
+        cmd = _firewalld_close_cmd("trusted")
+        assert cmd.endswith("sudo firewall-cmd --set-default-zone=public")
+        assert cmd.index("--zone=public --add-service=ssh") < cmd.index("--set-default-zone=public")
 
     def test_a_hostile_zone_name_is_quoted(self):
         cmd = _firewalld_close_cmd("x; rm -rf /")
@@ -143,7 +145,8 @@ def test_the_runner_hands_the_zone_policy_to_ipv6():
 
     import bob.runner as runner
     src = inspect.getsource(runner)
-    assert 'firewalld_policy=fwd_status.incoming_policy if fwd_status.active else ""' in src
+    # v0.24.3: the IPv6 verdict — 0.0.0.0/0 or a family="ipv4" rule opens IPv4 only.
+    assert 'firewalld_policy=fwd_status.family_policy("ipv6") if fwd_status.active else ""' in src
 
 
 # ---------------------------------------------------------------------------

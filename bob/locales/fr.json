@@ -188,6 +188,14 @@
     "netfilter_active": "Aucun front-end pare-feu actif (UFW/firewalld), mais la couche netfilter filtre le trafic entrant — audité dans la section iptables/nftables",
     "firewalld_active": "firewalld est le pare-feu actif — la zone par défaut '{zone}' autorise : {services}",
     "firewalld_policy_open": "La zone par défaut firewalld '{zone}' accepte tout le trafic entrant (cible ACCEPT) — tous les ports sont ouverts sauf si une règle les bloque",
+    "firewalld_policy_open_iface": "La zone firewalld '{zone}' accepte tout le trafic entrant sur {interfaces} (cible ACCEPT) — tous les ports sont ouverts sauf si une règle les bloque",
+    "firewalld_policy_open_host_policy": "La policy firewalld '{policy}' accepte tout le trafic entrant vers l'hôte (cible ACCEPT) et tranche avant la zone '{zone}' — tous les ports sont ouverts",
+    "firewalld_policy_open_source": "La zone firewalld '{zone}' est liée à {sources}, donc tous les clients de cette famille d'adresses passent par elle, et elle accepte tout le trafic entrant (cible ACCEPT) — tous les ports sont ouverts",
+    "firewalld_source_zone_open": "La zone firewalld '{zone}' accepte tout le trafic entrant depuis {sources} — tous les ports sont ouverts à ces adresses, qui passent par cette zone avant celle de l'interface ; BOB ne peut pas juger si elles méritent cette confiance",
+    "firewalld_zones_unread": "firewall-cmd n'a pas listé les zones ou les policies actives — la politique entrante par défaut n'a pas pu être établie, elle n'est donc ni créditée ni alertée",
+    "firewalld_policy_open_sources_pooled": "Les zones firewalld {zones} acceptent tout le trafic entrant depuis {sources} — ensemble, ces sources couvrent tous les clients de cette famille d'adresses, donc tous les ports sont ouverts",
+    "firewalld_policy_open_zone_rule": "La zone firewalld '{zone}' a une règle riche qui accepte tous les paquets {families} — tous les ports sont ouverts en {families} sauf si une règle antérieure les bloque",
+    "firewalld_policy_open_policy_rule": "La policy firewalld '{policy}' a une règle riche qui accepte tous les paquets {families} vers l'hôte et tranche avant la zone '{zone}' — tous les ports sont ouverts en {families}",
     "inactive": "Le pare-feu UFW est désactivé. Votre machine n'est actuellement pas protégée.",
     "policy_ok": "Politique par défaut : connexions entrantes bloquées (recommandé)",
     "policy_open": "La politique entrante par défaut est ALLOW — tous les ports sont ouverts par défaut",
@@ -260,7 +268,7 @@
     "uncovered_local": "Port {port} — lié uniquement à localhost — pas d'exposition externe",
     "uncovered_bound_address": "Port {port} — lié uniquement à {address}, sans règle de pare-feu — joignable depuis le réseau de cette adresse",
     "uncovered_bound_address_deny": "Port {port} — lié uniquement à {address}, aucune règle UFW explicite, mais couvert par la politique de refus par défaut",
-    "uncovered_bound_address_firewalld": "Port {port} — lié uniquement à {address} — régi par la zone par défaut de firewalld, pas par une règle UFW",
+    "uncovered_bound_address_firewalld": "Port {port} — lié uniquement à {address} — régi par la zone firewalld de l'interface par laquelle on l'atteint, pas par une règle UFW",
     "uncovered_bound_address_netfilter": "Port {port} — lié uniquement à {address} — régi par le jeu de règles nftables/iptables (entrée refusée par défaut), pas par une règle UFW",
     "system_port": "Port système interne — aucun danger (service OS légitime, pas de règle UFW nécessaire) : {port} ({service})",
     "unreadable": "Les ports en \u00e9coute n'ont pas pu \u00eatre d\u00e9termin\u00e9s",
@@ -271,7 +279,7 @@
     "process_disclaimer": "Ce port appartient à {process} — le bloquer peut interrompre l'application. N'exécutez la commande ci-dessus que si vous savez précisément ce que vous faites.",
     "uncovered_default_deny": "Port {port} en écoute sur toutes les interfaces — aucune règle UFW explicite, mais couvert par la politique de refus par défaut",
     "uncovered_ufw_inactive": "Port {port} en écoute sur toutes les interfaces — aucun pare-feu actif pour le filtrer",
-    "uncovered_firewalld": "Port {port} en écoute sur toutes les interfaces — régi par la zone par défaut de firewalld, pas par une règle UFW",
+    "uncovered_firewalld": "Port {port} en écoute sur toutes les interfaces — régi par la zone firewalld de l'interface par laquelle on l'atteint, pas par une règle UFW",
     "uncovered_netfilter": "Port {port} en écoute sur toutes les interfaces — régi par le jeu de règles nftables/iptables (entrée refusée par défaut), pas par une règle UFW"
   },
   "logs": {
@@ -1165,12 +1173,13 @@
     "port_no_v6_rule": "Port {port} à l'écoute en IPv6 (::) sans règle UFW (v6) correspondante",
     "all_ports_covered": "Les {count} service(s) IPv6 sont couverts par des règles UFW (v6)",
     "firewalld_v6": "Les services IPv6 sont filtrés par firewalld (mêmes règles de zone qu'en IPv4) — aucune règle UFW v6 requise",
-    "firewalld_v6_open": "Les services IPv6 ne sont pas filtrés — la zone par défaut de firewalld accepte tout le trafic entrant (cible ACCEPT)",
+    "firewalld_v6_open": "Les services IPv6 ne sont pas filtrés — une zone firewalld portant une interface accepte tout le trafic entrant (cible ACCEPT)",
     "ufw_v6_off_blocked": "UFW IPv6 est désactivé, donc UFW bloque tout le trafic IPv6 (IPV6=no) — les {count} service(s) IPv6 sont injoignables, et l'IPv6 est inutilisable sur cet hôte",
     "ufw_v6_off_blocked_detail": "Services IPv6 : {ports}. Avec IPV6=no, ufw-init pose DROP sur les chaînes IPv6 INPUT, FORWARD et OUTPUT (loopback excepté). Pas une exposition — mais si cet hôte doit utiliser IPv6, mettre IPV6=yes dans /etc/default/ufw puis lancer : sudo ufw reload",
     "netfilter_v6": "{count} service(s) en écoute sur IPv6 ({ports}) — régis par le jeu de règles nftables/iptables, pas par UFW (non installé) ; une table inet ou ip6 filtre l'IPv6, une table ip non",
     "no_firewall_v6": "{count} service(s) en écoute sur IPv6 ({ports}) — pas d'UFW sur cet hôte ni d'autre pare-feu filtrant l'entrant",
     "no_ufw_no_listeners": "UFW n'est pas installé et aucun service n'écoute sur IPv6",
+    "ufw_v6_off_rules_unresolved": "{count} service(s) en écoute sur IPv6 (::), adresses link-local uniquement : pas joignable depuis internet — UFW IPv6 est désactivé et son DROP est en place, mais la chaîne INPUT IPv6 porte d'autres règles, donc BOB ne peut pas montrer si le réseau local les joint",
     "ufw_disabled_listeners_link_local": "{count} service(s) en écoute sur IPv6 (::) mais UFW IPv6 est désactivé — adresses link-local uniquement : pas joignable depuis internet, mais joignable depuis le réseau local sans filtrage par UFW",
     "kernel_state_unknown": "Impossible de lire l'état IPv6 du noyau",
     "kernel_state_unknown_detail": "/proc/sys/net/ipv6 existe mais conf/all/disable_ipv6 n'a pas pu être lu : BOB ne peut pas dire si la pile IPv6 est active. Il ne tranche pas. Les constats ci-dessous sont calculés comme si IPv6 était activé, la lecture la plus prudente. Vérifier avec : sysctl net.ipv6.conf.all.disable_ipv6"
@@ -2521,10 +2530,10 @@
     "ipv6": {
       "ufw_disabled_listeners_present": {
         "title": "Services en écoute sur IPv6 mais le support UFW IPv6 est désactivé",
-        "why": "Avec IPV6=no dans /etc/default/ufw, UFW bloque normalement l'IPv6 entièrement : ufw-init pose DROP sur les chaînes IPv6 INPUT, FORWARD et OUTPUT (loopback excepté), et BOB rapporte alors les services comme injoignables, non exposés. Cet avertissement n'apparaît que si BOB a lu la politique IPv6 INPUT comme ACCEPT, ou n'a pas pu la lire — typiquement parce qu'ip6tables ne fonctionnait pas au démarrage d'UFW. Dans ce cas rien ne filtre l'IPv6, et tout service en écoute sur une adresse dual-stack (::) est joignable en IPv6, quoi qu'UFW affiche pour IPv4.",
+        "why": "Avec IPV6=no dans /etc/default/ufw, UFW bloque normalement l'IPv6 entièrement : ufw-init pose DROP sur les chaînes IPv6 INPUT, FORWARD et OUTPUT (loopback excepté), et BOB rapporte alors les services comme injoignables, non exposés. Cet avertissement n'apparaît que si BOB a lu la politique IPv6 INPUT comme ACCEPT, a trouvé dans cette chaîne d'autres règles que celle du loopback (Docker, libvirt ou un ACCEPT écrit à la main peuvent admettre un service), ou n'a pas pu la lire — typiquement parce qu'ip6tables ne fonctionnait pas au démarrage d'UFW. Dans ce cas BOB ne peut pas montrer que l'IPv6 est filtré, et tout service en écoute sur une adresse dual-stack (::) est joignable en IPv6, quoi qu'UFW affiche pour IPv4.",
         "how": "1. Activez le support IPv6 d'UFW :\n   sudo nano /etc/default/ufw  →  IPV6=yes\n2. Rechargez UFW pour appliquer les règles ip6tables :\n   sudo ufw reload\n3. Vérifiez que les règles ip6tables sont maintenant actives :\n   sudo ip6tables -L INPUT -n | head -20",
         "server": {
-          "why": "Sur un serveur, un trafic IPv6 qu'aucun pare-feu ne filtre est une faille notable : chaque service en écoute sur (::) est joignable en IPv6 depuis le réseau, hors des règles UFW écrites pour IPv4. Activez l'IPv6 d'UFW pour que les mêmes règles s'appliquent aux deux familles."
+          "why": "Sur un serveur, un IPv6 dont BOB ne peut pas montrer qu'il est filtré est une faille notable : un service en écoute sur (::) peut être joignable en IPv6 depuis le réseau, hors des règles UFW écrites pour IPv4. Activez l'IPv6 d'UFW pour que les mêmes règles s'appliquent aux deux familles."
         },
         "desktop": {
           "why": "Sur un desktop, cette détection est informative. La plupart des services écoutant en IPv6 sont liés à loopback (::1) ou aux adresses link-local (fe80::) sans accessibilité externe. Activez le support IPv6 d'UFW par bonne pratique, mais le risque immédiat est faible."
@@ -2987,8 +2996,8 @@
       },
       "firewalld_policy_open": {
         "title": "La zone par défaut firewalld accepte tout le trafic entrant (cible ACCEPT)",
-        "why": "La cible d'une zone firewalld décide du sort d'un paquet qu'aucune règle ne reconnaît : `default` et `%%REJECT%%` le rejettent, `DROP` l'abandonne, `ACCEPT` le laisse entrer. Avec ACCEPT sur la zone par défaut — la zone `trusted`, ou une zone réglée ainsi — firewalld tourne mais ne filtre rien en entrée : chaque port en écoute est joignable, et un service fraîchement installé est exposé dès son démarrage. C'est l'équivalent firewalld de la politique entrante par défaut ALLOW d'UFW.",
-        "how": "1. Vérifier la zone par défaut et sa cible :\n   sudo firewall-cmd --get-default-zone\n   sudo firewall-cmd --list-all   # la ligne target:\n2. Si la zone par défaut est trusted, passer à une zone restrictive (public autorise ssh) :\n   sudo firewall-cmd --set-default-zone=public\n3. Sinon, garder SSH joignable, puis rétablir la cible d'origine :\n   sudo firewall-cmd --permanent --zone=<zone> --add-service=ssh\n   sudo firewall-cmd --permanent --zone=<zone> --set-target=default\n   sudo firewall-cmd --reload\n4. Ré-autoriser les services nécessaires :\n   sudo firewall-cmd --permanent --zone=<zone> --add-service=<service> && sudo firewall-cmd --reload"
+        "why": "La cible d'une zone firewalld décide du sort d'un paquet qu'aucune règle ne reconnaît : `default` et `%%REJECT%%` le rejettent (`default` laisse passer l'ICMP), `DROP` l'abandonne, `ACCEPT` le laisse entrer — sauf si une règle riche globale le rejette avant (`rule priority=\"32767\" reject` des zones libvirt et nm-shared). BOB juge les zones des interfaces physiques, pas la seule zone par défaut : une interface dans `trusted` est grande ouverte quoi que dise celle-ci, et une zone par défaut en ACCEPT sans interface ne filtre rien ici. Derrière une zone qui accepte tout, chaque port en écoute est joignable, et un nouveau service est exposé d'emblée. Une règle riche qui accepte tous les paquets — même avec log, audit ou limit — ouvre la zone autant qu'une cible ACCEPT. Une zone liée à des sources passe avant celle de l'interface pour ces adresses, sauf priorité d'entrée plus haute : couvrant toute une famille (0.0.0.0/0, ::/0 ou des préfixes qui s'y additionnent), elle est jugée comme la zone d'une interface ; plus étroite et acceptant tout, elle est signalée sans déduction. Les policies dont la sortie est HOST interviennent aussi, dans l'ordre de firewalld : celles de priorité négative avant les règles de la zone, celles de priorité positive après les règles de la zone mais avant sa cible ; la première qui tranche (ACCEPT, REJECT, DROP ou une règle globale — CONTINUE ne tranche pas) décide du sort du paquet. C'est l'équivalent firewalld du ALLOW entrant par défaut d'UFW.",
+        "how": "1. Voir quelle zone porte chaque interface ou source, sa cible, ses règles riches, et les policies actives :\n   sudo firewall-cmd --get-active-zones\n   sudo firewall-cmd --zone=<zone> --list-all\n   sudo firewall-cmd --get-active-policies\n2. D'abord, garder SSH joignable dans la zone qui décidera (public si l'interface quitte trusted) ; si sshd n'écoute pas sur 22, --add-port=<port>/tcp :\n   sudo firewall-cmd --permanent --zone=<zone> --add-service=ssh\n3. Puis défaire la cause que nomme le constat :\n   interface dans trusted :  sudo firewall-cmd --permanent --zone=public --change-interface=<interface>\n   trusted par défaut :      sudo firewall-cmd --set-default-zone=public\n   cible de zone ACCEPT :    sudo firewall-cmd --permanent --zone=<zone> --set-target=default\n   règle riche globale :     sudo firewall-cmd --permanent --zone=<zone> --remove-rich-rule='<règle>'   (--policy=<policy> pour une policy)\n   policy en ACCEPT :        sudo firewall-cmd --permanent --policy=<policy> --set-target=CONTINUE\n   zone liée à 0.0.0.0/0 :   sudo firewall-cmd --permanent --zone=<zone> --remove-source=0.0.0.0/0\n4. Appliquer, puis ré-autoriser les services nécessaires — tout ce qui n'est pas listé est refusé :\n   sudo firewall-cmd --reload\n   sudo firewall-cmd --permanent --zone=<zone> --add-service=<service> && sudo firewall-cmd --reload\n   (si NetworkManager fixe connection.zone : nmcli connection modify <nom> connection.zone public)"
       },
       "policy_unknown": {
         "title": "Politique UFW par défaut indéterminée",

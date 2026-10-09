@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.24.2
+Version:        0.24.3
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,17 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Oct 09 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.24.3-1
+- Patch, BREAKING (scores): firewalld host +/-3 (false OKs and false alerts
+  corrected); up to -2 on a UFW IPV6=no host with other IPv6 INPUT rules.
+- firewalld judged by interface zones (NIC-backed), whole-family sources
+  (prefixes added up, ingress-priority), policies into HOST in firewalld's
+  order, catch-all rich rules by selector, per address family.
+- Fix undoes every cause in turn with ssh kept first; unread zones/policies
+  are a visibility limit, not a pass; narrower source zones shown as INFO.
+- IPv6 "blocked" only for the ufw-init chain; otherwise "not shown".
+- Field-validated on real Fedora 44 and Linux Mint 22.3.
+
 * Fri Oct 09 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.24.2-1
 - Patch, BREAKING (scores): -3 on a firewalld host whose default zone target is
   ACCEPT (false OK corrected); up to +2 on a UFW IPV6=no host with global IPv6.
