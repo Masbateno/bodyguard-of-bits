@@ -6,6 +6,484 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.24.4] — 2026-10-12
+
+**A patch release from a field campaign: each service check was compared with the
+service's own answer, and each fix BOB prints was applied as printed, then checked
+again — on a Raspberry Pi Zero W (Raspbian 13), Linux Mint 22.3, Fedora 44 and
+Alpine 3.24, with a Fedora 43 VM and containers for the cases those hosts could
+not stage.** Twenty targeted defects are corrected here; limitations found
+during the campaign that remain are listed under "Not in this release, and
+known limits" below. No scoring-formula,
+JSON-schema, CSV-column-order or section change. **BREAKING (scores):** −1 where
+an SSH fail2ban jail reads a log file no syslog daemon writes, and where auditd
+"watches" the sensitive files only with read-only rules, or with syscall rules
+for one architecture on a kernel that also runs 32-bit programs, or with rules
+a filter narrows (`success=`, `auid=`, `exe=`…) (server profiles) — false OKs
+corrected; +1 where auditd watches the sensitive files through a directory or a
+`-F path=` rule (server profiles), where auditd runs locked (`enabled 2`) on an OpenRC host, and
+where an OpenRC NTP client is running, and +3 where a second nftables base chain
+of an IPv4 family (`ip` or `inet`) on the input hook drops by default (false
+alerts removed). Several fix
+commands change, and nine INFO findings are new (§§2–5).
+
+### 1. A fix that cut the operator off: `ufw enable`
+
+ufw starts at "deny (incoming)". On the Pi, reached over SSH, the command of the
+report's most urgent finding — ALERT `firewall.inactive`, `sudo ufw enable` —
+was applied as printed: port 22 stopped answering new connections. The same bare
+enable closed `prerequisites.firewall_missing` (after installing ufw) and
+`firewall_iptables.nft_no_input_filter`. `bob --fix --apply` already ordered an
+`ufw allow 22` before an enable when both findings were in the same run; the
+printed command, pasted alone, had no such guard.
+
+Each enable now carries its own allow, for the ports sshd answers on outside
+loopback (read from `ss -tulnp`): `sudo ufw allow 22/tcp && sudo ufw enable`, a
+non-standard port allowed too — on Mint, with sshd on 22 and 2222, the printed
+`sudo ufw allow 22/tcp && sudo ufw allow 2222/tcp && sudo ufw enable` kept both
+ports answering,
+where an allow for 22 alone cut 2222. A socket-activated sshd is listed under
+`systemd` until a first connection starts it: a port systemd holds counts when
+`ssh.socket` (or `sshd.socket`) listens on it, read from `systemctl show -p
+Listen`. On Mint with `ListenStream` on 22 and 2222 and `ssh.service` not yet
+started, BOB had printed an allow for 22 alone and, applied, 2222 stopped
+answering; it now prints both, and both kept answering. Where the socket units
+cannot be read, port 22 held by a named process (systemd, dropbear) still
+counts. When the listening set cannot be read, or names no process (BOB not run
+as root), there is no command: allowing 22 alone would cut an sshd listening
+elsewhere, and a guess is not a way in. The finding says so, and to allow the
+port of the SSH session first. On Mint, run as a user, this release's first
+draft had read the unnamed listeners as `[22]`; it now gives no command and the
+reason, and run as root it still reads `[22]`. When sshd answers on no external
+address, the enable comes alone. Replayed on the Pi: ufw active, a new SSH session
+opens, BOB's firewall section is clean.
+
+The firewalld branch of the "no firewall" fix (Fedora, openSUSE) adds
+`--add-service=ssh` (or `--add-port` for another port) with `--permanent` to the
+default zone and to every active zone, then `--reload`s — the reload applies the
+permanent configuration, so the rule is in both: an interface NetworkManager binds to
+another zone, or a source bound to one, is judged by that zone. While firewalld
+is off its zones filter nothing; keeping SSH in every active zone adds no
+firewalld restriction on SSH that was not there before — anything filtering
+outside firewalld (leftover nftables rules, an upstream device) is outside what
+this command changes. It is a way to stay reachable while turning the firewall
+on, not a least-privilege setting. Measured on a Fedora 43 VM with
+its interface bound to `block` (NetworkManager `connection.zone`): adding ssh to
+the default zone alone cut SSH ("No route to host"); the printed command —
+firewalld absent, then installed but stopped — kept a new SSH session opening,
+`block` listed ssh at runtime and in `--permanent`, and after a reboot SSH
+still answered and BOB's firewall section was clean. The window, measured from a
+stopped firewalld with an SSH session open and a new authenticated SSH login
+attempted every ~0.6 s: the open session kept going throughout (firewalld
+accepts established traffic before its zones); new logins failed for about one
+second — 3 of 60, between firewalld starting and the reload — then answered.
+`firewall-offline-cmd` could avoid that startup window, but cannot establish
+the runtime zone bindings NetworkManager makes; the command keeps the order that
+reaches them, and the finding's detail warns of the window — anything
+reconnecting then (another admin, an orchestration tool) may need to retry. The finding's detail says what the command chose: SSH kept
+in every active zone is a starting point, to be removed afterwards from the
+zones that should not offer it.
+
+With ufw set to `IPV6=no`, ufw-init drops all IPv6 once ufw is on, so an allow
+cannot keep an SSH session that arrives over IPv6. Measured on Mint with sshd on
+`[::]:22` and a neighbour in a network namespace reaching it over IPv6 link-local:
+`ufw allow 22/tcp && ufw enable` cut the neighbour (IPv4 SSH stayed). When sshd
+answers over IPv6 — or that cannot be read — the fix now turns IPv6 on first
+(the same `sed` BOB already uses for `IPV6=no`): the neighbour stayed connected,
+IPv4 too, and ufw held `22/tcp` and `22/tcp (v6)`. An sshd bound to loopback
+only opens nothing.
+
+The raw-firewall fixes had the same flaw, and one more. With no front-end on,
+ALERT `firewall_iptables.input_accept` offered a default-deny policy and
+nothing else. Measured on Mint over SSH (iptables-nft, ufw installed but off),
+a rollback armed first: the nft form it printed, `nft chain inet filter input
+'{ policy drop; }'`, failed — "No such file or directory; did you mean table
+'filter' in family ip?": the input hook is chain `INPUT` in `table ip filter`,
+which nft itself flags as managed by iptables-nft. (The bare `nft chain …`
+form is not the one nft(8) documents, `{add | create} chain`; on nftables
+1.0.9, Mint 22.3, both changed an existing base chain's policy with exit 0.
+BOB now prints the documented `nft add chain`.) The iptables form,
+`iptables -P INPUT DROP`, succeeded: new SSH connections went unanswered and
+the session that ran it froze until the rollback. `--fix --apply` already
+refused both unattended (0.18.0); the printed command had no such guard.
+
+BOB now reads where each hook lives — the family, table and chain from `nft
+list ruleset`, or iptables for a table iptables-nft manages, which nft names on
+stderr ("table ip filter is managed by iptables-nft, do not touch!") — and the
+fix names that chain. The warning means it: rules inserted with nft into that
+chain during this campaign left iptables unable to read it ("chain `INPUT' in
+table `filter' is incompatible, use 'nft' tool") until they were deleted by
+handle. It accepts loopback, established/related traffic and the ports
+sshd answers on before it sets the policy — no command when those ports are
+unknown, as for ufw; on a host with
+ufw installed it gives ufw's own enable, the same command as
+`firewall.inactive`; where no hook chain can be read, it gives none. The
+accepts are appended after the rules already in the chain (`iptables -A`,
+`nft add rule`), never inserted ahead of them: on the Fedora VM, a chain
+refusing SSH to one neighbour (`ip saddr 10.99.0.2 tcp dport 22 drop`) let it
+in once this release's first draft had inserted its accepts at the top — and
+BOB then said INPUT DROP, OK. Appended, the neighbour stayed refused, on the VM
+and on Mint (iptables-nft, `-A`), with SSH kept for the operator. And where the
+chain holds a rule accepting everything, a drop policy behind it changes
+nothing — measured, 8080 stayed open — so BOB gives no command and says to
+remove that rule first. The FORWARD, loopback and conntrack fixes name the real
+chain too. Each command generated by BOB and applied as printed — first on
+Mint, then in the final appended form on Mint (iptables) and on the Fedora VM
+(native nft) — left the policy at DROP, with an open SSH session still beating
+and new connections from the operator answered.
+On an `inet` or `ip6` chain the fix also accepts the ICMPv6 that IPv6 cannot do
+without — neighbour and router discovery, packet-too-big, unreachable,
+time-exceeded, parameter-problem (RFC 4890, as ufw's `before6.rules` does, echo
+aside). Measured on Mint with a neighbour in a network namespace reaching sshd
+over IPv6 link-local, neighbour caches flushed first: without those accepts the
+connection timed out; with them it opened.
+
+Every base chain on a hook sees a packet in priority order: an accept hands it
+to the next, a drop ends it. With iptables-nft's `ip filter INPUT` at policy
+accept and a second chain (`inet`, priority 10, policy drop, SSH kept), port
+8080 was closed on Mint — and BOB, reading the first chain only, raised "all
+incoming traffic is allowed" (ALERT −3). A base chain of family `ip` or
+`inet` dropping by default now makes the hook's IPv4 policy DROP — not any
+chain: on Mint again, 8080 stayed open over IPv4 with the extra chain in family
+`ip6` (it filters IPv6 only), and with an `inet` chain whose drop policy sat
+behind a rule accepting everything; BOB had read DROP both times, and now reads
+ACCEPT, while an `ip` chain closing 8080 reads DROP — BOB matched the port on
+all three. Beyond that BOB reads policies; it does not evaluate every rule.
+The fix's chain is an `ip` or `inet` one too. BOB's fix applied beside a second
+filtering chain kept SSH: it only adds accepts and a drop to one chain, and
+the next chain still accepts what it accepted before — ICMPv6 included, which a
+later chain blocking it was already blocking. And a later `ip`/`inet` chain that
+refuses new SSH connections (loopback and established traffic only, policy
+drop) refused them before any fix — on Mint, new connections were refused as
+soon as it was in place — and makes the hook DROP: BOB said `input_ok` and
+offered no fix there; that OK's detail says it rests on the chains' policies
+and that whether SSH, or any port, passes every chain is not established. The
+fix's own detail likewise promises no SSH continuity: its accepts come after the
+rules already there, so a rule refusing the operator's source still refuses
+it. The `--explain` entry's nftables
+step, the same bare policy on an assumed `inet filter` table, now gives the
+accepts, the real chain and the save.
+
+These rules change the running ruleset only, as the old ones did; the finding's
+detail now says so where the command is: nothing is saved for the next boot,
+when the policy is back to ACCEPT and the finding returns, unless the rules are
+saved where the backend loads them (`netfilter-persistent save`,
+`/etc/nftables.conf`).
+
+### 2. Fixes that did not last: sysctl, and a fail2ban override
+
+systemd-sysctl applies its files in file-name order, the last assignment
+winning. BOB persisted every sysctl fix to `/etc/sysctl.d/99-hardening.conf`.
+On Mint, `/etc/sysctl.d/99-sysctl.conf` (a link to `/etc/sysctl.conf`) sorts
+after it: with `net.ipv4.conf.all.accept_redirects = 1` in sysctl.conf, BOB's fix
+set 0 and BOB said OK; after a reboot the value was 1 and BOB warned again. The
+same on the Pi with `/etc/sysctl.d/99-zlocal.conf`.
+
+BOB now reads the files applied at boot (`/etc`, `/run`, `/usr/local/lib`,
+`/usr/lib`, `/lib` `sysctl.d`; a name in `/etc` masking the same name further
+down) and persists where the value wins: at the end of the administrator's file
+that would otherwise win (within one file the later line wins), or — when the
+winner ships with the system — in a new `/etc/sysctl.d` file sorting just after
+it. BOB always writes the key explicitly, and `sysctl.d(5)` excludes a key set
+explicitly from every glob, so no glob assignment can undo it. Replayed on the Pi:
+the fix appended to `99-zlocal.conf`, and after a reboot the value was 0 and BOB
+said OK. `--fix --apply` writes the same file.
+
+A live value set with `sysctl -w` lasts until the next reboot too. A new INFO
+says when a judged sysctl's live value is not the one the boot files set — on
+Fedora, `fs.protected_hardlinks=0` live against `1` in
+`/usr/lib/sysctl.d/50-default.conf` — so an OK on the live value is no longer the
+whole story. It compares exact keys: a boot value set only by a glob is not
+seen.
+
+The new fail2ban fix (§3) met the same trap on its first replay: fail2ban reads
+`jail.d/*.local` in name order, and a `zz-bobtest.local` setting the opposite sorted
+after BOB's `zz-bob-sshd-journal.local`. Its file is now named to sort after
+every existing `.local`.
+
+### 3. A protection reported active that saw nothing: fail2ban
+
+On the Pi (no rsyslog — sshd logs to the systemd journal only) the SSH jail was
+pointed at `/var/log/auth.log`. `fail2ban-client status` listed it; two failed
+SSH logins later its `Total failed` was 0 — and BOB said "SSH brute-force
+protection active". With the stock jail (`Journal matches:`), the same two
+failures counted 2.
+
+BOB now reads what the SSH jail watches. A jail on files, with no syslog daemon
+running to write them (rsyslog, syslog-ng, syslog, sysklogd, busybox-syslogd),
+is a WARN −1 `fail2ban.ssh_jail_blind` instead of an OK. On a systemd host the
+fix points the jail at the journal (`backend = systemd` in a `jail.d` override,
+then a restart); without the journal there is no command. Replayed on the Pi:
+the fix applied, the jail read the journal, failures were counted, BOB said OK.
+
+A syslog daemon running is no proof it writes that file either. On Mint, with
+rsyslog running, a jail on a file rsyslog does not write counted 0 of two
+failed logins, and BOB said OK; the same jail on `/var/log/auth.log`, where
+rsyslog sends sshd's messages, counted 2. And an sshd message in the file
+proves it was fed once, not that it still is: on Mint, a jail on a copy of
+`auth.log` that rsyslog no longer wrote held 271 sshd lines and counted 0 of a
+new failed login. BOB now reads the last 256 KiB of each file the jail reads.
+Where the systemd journal holds sshd's latest message (older than five
+seconds, so the syslog daemon has written it out), the file must hold that
+message, with its pid; without a journal, any sshd message (`sshd[pid]:` or
+`sshd-session[pid]:`) shows the file was fed once and nothing more. And that
+message must have come after the running rsyslog started: rsyslog reads its
+routing when it starts — on Mint, a re-routing added and sent a HUP (what
+logrotate sends) changed nothing, a message still reached `auth.log` — so a
+message logged since was routed by the routing in force now. syslog-ng re-routes
+on `reload` with its start time unchanged (measured in a Debian 13 container,
+syslog-ng 4.8.1), so its routing cannot be dated that way, nor can any other
+daemon's. Measured on Mint:
+rsyslog re-routed and restarted after sshd's last message, nothing from sshd
+since — the file still held the journal's latest message and BOB said OK; it
+now says the protection is not verified, and says OK again once a new sshd
+message reaches the file. And the failures are what the jail counts: on Mint,
+rsyslog sending "invalid user" lines to another file and the rest of sshd's to
+`auth.log`, the jail counted 0 failures while `auth.log` held sshd's latest
+message (a session closing) — BOB said OK. Where the journal holds a failed
+login (fail2ban's own wording: failed password, invalid user, authentication
+failure…) logged since the running rsyslog started, the file must hold it —
+the latest of each kind (invalid user, an existing user's password or key
+refused, PAM, too many attempts). One kind was not enough: with "invalid user"
+still routed away, an invalid-user failure and then root's key refused, both
+after rsyslog started — the latest failure, root's, was in `auth.log`, and BOB,
+then comparing that latest failure alone, said OK again. Now a kind missing
+from the file is an INFO `fail2ban.ssh_jail_misses_failures`: the jail does not
+see failures it is there to count. Replayed: the INFO with one kind routed
+away, OK with both kinds back. BOB says OK only when the file holds the
+journal's latest sshd message and the latest failed login of each kind seen
+since the running rsyslog started — and that OK says so in its detail: only the latest of each kind is
+compared, so it is no proof that every failure reaches the file, and a kind not
+seen since then is not checked. That OK is not capped, by choice: it rests on
+positive evidence for the kinds observed, and requiring every kind before an OK
+would leave a quiet, correctly routed host without one; its scope is stated
+where the operator reads it.
+A file holding older sshd messages but not the latest is an INFO
+`fail2ban.ssh_jail_file_stale`; a file holding none, an INFO
+`fail2ban.ssh_jail_file_silent`; a file it could not read, or a host whose init
+names no syslog daemon, or no journal to compare with, or a latest message
+older than the rsyslog running now (or this boot), or a syslog daemon other than
+rsyslog, an INFO that the protection is not verified — no
+deduction and no OK in any of them. Replayed on Mint: OK on `auth.log`, the
+stale INFO on the copy, the silent INFO on an empty file. A file-based jail on
+an OpenRC host, or under syslog-ng, therefore no longer gets an OK: BOB cannot
+show today's routing feeds it.
+
+### 4. auditd as the audit log saw it
+
+Each case was checked against the audit log itself — a write to `/etc/shadow`
+journals a SYSCALL record under the rule's key.
+
+- **Coverage.** A watch on the whole of `/etc/` and the syscall form of a watch
+  (`-a always,exit … -F path=/etc/shadow -F perm=wa`) both journalled the write;
+  BOB said the sensitive files were unwatched (WARN −1 on a server). BOB now reads
+  `-F path=` and `-F dir=` rules, and a file under a watched directory is
+  covered.
+- **Only rules that journal a write.** The other direction, measured on Alpine
+  (x86_64) with each form applied to the three files: `-w … -p r`, `-a never,exit`,
+  an `-F arch=b32` rule on a 64-bit kernel, and a `-F path=` rule with a
+  hand-picked `-S openat` and no `perm` each journalled nothing for a write to
+  /etc/shadow — and BOB called the files watched (the read-only `-w` already in
+  0.24.3, the other three by this release's first draft). A rule now counts only
+  when it journals a write: `always`, a write permission (a `-w` with no `-p`
+  means rwxa), and, for a syscall rule, the kernel's own architecture. Replayed
+  on Alpine before the 32-bit check below: BOB matched the audit log on all six
+  forms for a 64-bit write; with that check, an `arch=b64` rule alone counts only
+  where the kernel runs no 32-bit programs.
+- **32-bit programs on a 64-bit kernel.** Measured on a Fedora 43 x86_64 VM with
+  a static i386 program opening /etc/shadow for writing: an `arch=b64` rule
+  journalled the 64-bit write and nothing for the 32-bit one, as did a `-S` rule
+  with no `arch` (resolved against the native table); `arch=b32` alone the
+  reverse; a `-w` watch, the `b64` + `b32` pair, and a `perm` rule with no `-S`
+  (which `auditctl` turns into a `-w`) journalled both. BOB had called the
+  file watched with `arch=b64` alone. When the kernel's configuration says it
+  runs 32-bit programs (`CONFIG_IA32_EMULATION`, unless `ia32_emulation=` or
+  its default disables it; `CONFIG_COMPAT` on other 64-bit architectures), or
+  when it cannot be read, syscall rules must cover both; a `-w` covers every
+  architecture, and BOB's fix writes `-w` rules. Replayed on the VM: BOB matched
+  the audit log on all six rule sets.
+- **A filter that narrows the rule.** On the same VM, with path, `perm` and both
+  architectures right, one more field: `success=0` journalled no write,
+  `auid>=1000 auid!=unset` none from a system service (a login's root shell,
+  auid 1000, was journalled), `exe=/usr/bin/vi` none from anything else — and
+  BOB called the file watched each time. A syscall rule now counts only when its
+  fields are `arch`, `path`, `dir`, `perm` and `key`; any other `-F`, or a `-C`
+  comparison, makes it partial and it does not count. Replayed: BOB matched the
+  audit log on all four. A `-S` list beside `perm` narrows nothing: `-S openat
+  -F perm=wa` was loaded with the whole write and attribute class (`auditctl -l`
+  lists it), and an open for append, a truncate and a chmod were each
+  journalled — a guard pins that BOB reads the rule as loaded.
+- **Locked rules.** `-e 2` locks the rules until the next boot. BOB's fix wrote
+  its rules file; `augenrules --load` answered "immutable mode - exiting with no
+  changes" with exit status 0; the finding came back; after a reboot the rules
+  were loaded. BOB now says the configuration is locked (INFO), and its fixes
+  write the rules without a reload that cannot happen and say they load at the
+  next boot.
+- **OpenRC.** On Alpine, with the rules locked, auditd was running and BOB said
+  it was not: without systemctl, a fallback read `enabled 2` as stopped. The
+  service state is now asked through whichever init system answers. Where none
+  does, `auditctl -s` decides by its `pid` line, not by `enabled`: `enabled` is
+  the kernel's audit state (2 = locked), not the daemon's — on a Fedora 43 VM,
+  rules locked and auditd killed, it still said `enabled 2`, with `pid 0`.
+  `enabled 2` now reads as locked, and the daemon as running only with a
+  non-zero pid.
+
+### 5. Fixes for the host's own init system and units
+
+- auditd, fail2ban and AppArmor "not running" fixes used `systemctl enable --now`
+  everywhere; on Alpine there is no systemctl. They now use the host's init:
+  `rc-update add … default && rc-service … start` under OpenRC. Replayed on
+  Alpine: applied, auditd started, the finding cleared.
+- The ClamAV daemon fix named `clamav-daemon` everywhere. Measured by installing
+  each family's daemon package: Debian 13, Ubuntu 24.04 and Arch ship
+  `clamav-daemon.service`; Fedora `clamd@.service` (run as `clamd@scan`);
+  openSUSE Tumbleweed `clamd.service`; Alpine an OpenRC script `clamd`. On Fedora
+  `clamd@scan` then failed — "Please define server type": its `scan.conf` ships
+  every socket commented out, and the signature database is empty until
+  freshclam runs. The fix now starts the unit the host ships, after enabling the
+  first commented `LocalSocket` line when none is set and running freshclam when
+  there is no database; no daemon unit shipped, no command. The message names
+  the unit. Replayed on Fedora through BOB: applied as printed, `clamd@scan`
+  active, the finding cleared. Its socket is `0666` — `LocalSocketMode` stays
+  commented — but it sits in `/run/clamd.scan`, `0710 clamscan:virusgroup`: an
+  unprivileged user was refused (`Permission denied`). BOB edits the socket
+  setting only where none is set, which among these families is Fedora alone;
+  elsewhere the daemon starts with the socket its package defines, and that
+  socket's permissions admit every local user: Debian and Ubuntu set
+  `LocalSocketMode 666`; Arch, openSUSE and Alpine leave `LocalSocketMode`
+  commented, which `clamd.conf` documents as "socket is world accessible",
+  under a `0755` `/run/clamav`. Measured in Alpine 3.22 and Debian 13 containers
+  with each package's own configuration: an unprivileged user sent `SHUTDOWN`
+  and clamd stopped. ClamAV 1.4 (1.4.3, and 1.4.6 in Alpine edge) has no option
+  to refuse that command — `EnableShutdownCommand` is "Unknown option" and clamd
+  then does not start. With `LocalSocketGroup` and `LocalSocketMode 660`
+  (Alpine) the same user was refused and a member of the group still got `PONG`. Who must
+  keep access — a mail filter's user, a scanner's — is the operator's to say, so
+  BOB does not change the socket: a new INFO `clamav.socket_open_to_all` says,
+  when clamd runs, that the socket's permissions let every local user send it
+  commands (write permission on the socket, search permission on every
+  directory above it — a MAC policy may still refuse a connection, which BOB
+  does not read), and its detail gives the group setting and what it cuts. It
+  is an INFO with no deduction by choice, not by oversight: a local user able to
+  stop the antivirus is a real weakness, but scoring how a package ships its
+  socket is a new check, with its own `--explain` entry, and belongs in a minor
+  release rather than a corrective patch. Replayed in the containers: the
+  INFO on both as packaged, none with the 660 group socket (Alpine). A `0666`
+  socket under a `0710` directory, as on Fedora, is not reported — checked by a
+  test with those modes, not replayed on Fedora.
+- On Alpine, a running clamd was reported "not running": without systemctl,
+  BOB looked only for a `clamd.ctl` socket, and Alpine's is `clamd.sock`. It now
+  asks OpenRC, and looks for the sockets clamd's configuration names.
+- NTP: Alpine runs BusyBox `ntpd` as an OpenRC service. BOB asked only
+  systemctl, so it reported "NTP time synchronisation is not enabled" (WARN −1)
+  and offered `systemctl enable --now systemd-timesyncd`. The running client is
+  now found through the host's init, and the "not enabled" fix starts the client
+  OpenRC has a script for. BusyBox ntpd has no query tool, and the fallback used
+  to *assume* the clock was in sync; it now says it could not verify (INFO
+  `ntp.sync_unknown`) — on that Alpine the clock was within half a second of an
+  NTP-synchronised LAN host, but BOB cannot measure that locally. On systemd
+  hosts nothing changes: the timesyncd fix was measured working on Fedora.
+
+New INFO keys: `auditd.immutable`, `clamav.socket_open_to_all`,
+`fail2ban.ssh_jail_file_silent`, `fail2ban.ssh_jail_file_stale`,
+`fail2ban.ssh_jail_misses_failures`, `fail2ban.ssh_jail_source_unverified`,
+`hardening.reverts_at_boot`, `kernel_hardening.reverts_at_boot`,
+`ntp.sync_unknown`. Five of them stand where a deduction may be hidden — a jail
+that may be blind, a clock that may be off — so `fail2ban.ssh_jail_file_silent`,
+`fail2ban.ssh_jail_file_stale`, `fail2ban.ssh_jail_misses_failures`,
+`fail2ban.ssh_jail_source_unverified` and
+`ntp.sync_unknown` join the keys that
+make the score a ceiling (listed under `unverified` in JSON). New WARN key with its
+`--explain` entry: `fail2ban.ssh_jail_blind`.
+
+### What was checked and found right
+
+`systemd_hardening` matched `systemd-analyze security` exactly (25 services, 16
+UNSAFE, 2 EXPOSED). The stock trixie fail2ban jail counts SSH failures. The ufw
+"default allow" and "logging off" fixes, applied on Mint, closed their findings
+with SSH kept. The auditd "no rules" fix works even where `/var/log/auth.log`
+does not exist (the kernel accepts a watch on a file not yet created).
+
+### Not in this release, and known limits
+
+BOB prefixes its commands with `sudo`; Alpine ships `doas`. Changing the prefix
+touches every fix and is left to a release of its own.
+
+The twenty defects above are corrected. These limits stay, and each finding
+concerned says what it could not establish:
+
+- nftables: BOB reads base-chain policies (family, order, a rule accepting
+  everything); it does not evaluate every rule (for iptables, an `-A INPUT -j
+  ACCEPT` stops the fix being offered but does not change the policy read), so it does not check that new
+  SSH connections pass every chain on the hook. `input_ok` says so in its
+  detail: it rests on policies, and reachability is not established. Base
+  chains of equal priority have no guaranteed order (nftables documents this);
+  BOB's reading does not depend on it — one IPv4 chain dropping by default makes
+  the hook DROP whatever the order, and its appended accepts change no other
+  chain.
+- fail2ban: a file-based jail gets an OK only under rsyslog with the systemd
+  journal to compare with; elsewhere its protection is reported not verified.
+  A kind of failed login not seen since rsyslog started is not verified: a
+  recent failure reaching the file does not prove every kind is routed there.
+  Only the latest failure of each kind is compared: routing that sends some
+  failures of a kind elsewhere can be missed. The OK's detail says so.
+- sysctl: a boot value set only by a glob is not compared with the live value.
+- ClamAV: a socket every local user can reach is an INFO, not a deduction, in
+  this patch.
+- Raw iptables/nftables fixes change the running ruleset only; saving them is
+  the backend's own.
+
+### Guards
+
+- `tests/test_v0244_enable_keeps_ssh.py` — the allow before the enable, the ports
+  sshd answers on (non-standard, loopback, socket activation, unreadable,
+  nameless, a socket-activated port other than 22), an IPv6 SSH path under `IPV6=no`, the three findings, the firewalld
+  branch (its printed command run against every active zone), the runner wiring.
+- `tests/test_v0244_default_deny_keeps_ssh.py` — which chain each hook uses
+  (iptables-nft's own as nft names it on stderr, native nftables, none), every
+  base chain of an IPv4 family on the hook (an accept-everything rule, an ip6
+  chain), the way in and ICMPv6 appended before the policy (never ahead of the
+  rules already there), no command behind an accept-everything rule, the explain entry, ufw
+  where it is installed, the other raw fixes, the runtime-only detail, never
+  unattended.
+- `tests/test_v0244_sysctl_durable.py` — the boot files read as systemd-sysctl
+  reads them, the file that wins, the system file left alone, both checks, the
+  live value the boot files undo.
+- `tests/test_v0244_fail2ban_blind_jail.py` — what the jail reads, whether its
+  file holds sshd messages and the journal's latest one (a FIFO left unopened),
+  the latest failed login of each kind (one kind routed away while another
+  arrives), rsyslog's start, no journal, the scope the OK states, the verdict and its unknowns,
+  the fix and its file order, the rendered messages.
+- `tests/test_v0244_auditd_field.py` — directory and syscall-form coverage, the
+  rules that journal nothing (read-only, never, other arch, no perm, a narrowing
+  filter), both
+  architectures on a kernel that runs 32-bit programs and how BOB tells, the
+  locked rules, the state without systemd, the init-aware fixes.
+- `tests/test_v0244_clamd_unit.py`, `tests/test_v0244_ntp_openrc.py` — the unit
+  each family ships, Fedora's socket and database, who can reach clamd's
+  socket, a running clamd without systemd, OpenRC NTP.
+- Mutations `enable-keeps-ssh/*`, `default-deny/*`, `sysctl-durable/*`, `sysctl-drift/*`,
+  `fail2ban-blind/*`, `fail2ban-fed/*`, `auditd-field/*`, `auditd-negative/*`, `auditd-compat/*`, `auditd-filter/*`,
+  `service-enable/*`, `clamd-unit/*`, `clamd-socket/*`, `clamd-openrc/*`,
+  `ntp-openrc/*`. README_DEV EN/FR stated 94 and 89 best-practice CIS entries
+  against 95 live — unguarded; that form is now guarded too.
+
+### Numbers
+
+- **Tests** 12513 → **13306**; mutations 465 → **600**, all killed.
+- Locale keys 2849 → **2872** per language; `--explain` keys 219 → **220**; CIS
+  references 219 → **220** (117 formal, 96 best-practice, 7 Docker).
+
+### Upgrade
+
+```
+pipx upgrade bodyguard-of-bits
+```
+
+No configuration change needed.
+
+---
+
 ## [0.24.3] — 2026-10-09
 
 **A patch release of accuracy: firewalld is judged by the zones that hold the

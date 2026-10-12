@@ -93,8 +93,10 @@ class TestNftRefusingIsNotAnAbsentBackend:
 
     def test_ufw_present_gets_the_ufw_remedy(self, tools):
         tools({"nft"}, nft_rc=0, nft_out="")
+        # v0.24.4: with the sshd ports unknown no enable is offered; give it
+        # the measured ones, as the runner does.
         result = check_iptables_nftables(
-            IptablesNftSnapshot.from_system(), ufw_installed=True
+            IptablesNftSnapshot.from_system(), ufw_installed=True, ssh_ports=[22]
         )
         cmds = " ".join(f.cmd or "" for f in result.findings)
         assert "ufw enable" in cmds

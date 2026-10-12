@@ -179,7 +179,7 @@ def resolve_firewall_posture(
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def _firewall_install_fix(_t):
+def _firewall_install_fix(_t, ssh_ports: "list[int] | None" = None):
     """``(cmd, detail)`` for "no firewall front-end is active".
 
     Backend-neutral by distribution rather than UFW-specific: ufw is the
@@ -187,11 +187,34 @@ def _firewall_install_fix(_t):
     RPM family (Fedora/RHEL/openSUSE), each with the enable step that actually
     turns it on. The package layer (``detect_install_manager``) decides; an
     unknown manager still lands in the manual bucket via ``install_fix``.
+
+    v0.24.4 — both keep SSH: ufw would start at "deny (incoming)" with nothing
+    allowed, and a firewalld zone need not list ssh (nor a non-standard sshd
+    port), so the port goes in before anything is enforced. Not only in the
+    default zone: an interface NetworkManager binds to another zone, or a source
+    bound to one, is judged by that zone. Every active zone gets it — with no
+    firewall, SSH answered from everywhere, so this leaves it reachable where it
+    was and filters the rest; nothing ends up more open than before.
     """
+    if ssh_ports is None:
+        # Which ports sshd answers on is unknown: a command keeping 22 alone
+        # would cut an sshd on another port. No command, the reason said.
+        return None, _t("firewall.ssh_ports_unknown_detail")
     base = _MANAGER_ALIASES.get(detect_install_manager(), detect_install_manager())
     if base in ("dnf", "yum", "zypper"):
-        return install_fix(_t, None, "firewalld", then="sudo systemctl enable --now firewalld")
-    return install_fix(_t, None, "ufw", then="sudo ufw enable")
+        ports = sorted(set(ssh_ports))
+        if not ports:
+            return install_fix(_t, None, "firewalld", then="sudo systemctl enable --now firewalld")
+        keep = " ".join("--add-service=ssh" if p == 22 else f"--add-port={p}/tcp" for p in ports)
+        then = " && ".join([
+            "sudo systemctl enable --now firewalld",
+            f"sudo firewall-cmd --permanent {keep}",
+            "sudo firewall-cmd --get-active-zones | awk '!/^[[:space:]]/{print $1}' | "
+            f"xargs -rI{{}} sudo firewall-cmd --permanent --zone={{}} {keep}",
+            "sudo firewall-cmd --reload",
+        ])
+        return install_fix(_t, _t("firewall.firewalld_keeps_ssh_detail"), "firewalld", then=then)
+    return install_fix(_t, None, "ufw", then=_ufw.enable_cmd(ssh_ports))
 
 
 def _firewalld_close_cmd(zone: str, interfaces: "tuple[str, ...]" = (),
@@ -317,6 +340,8 @@ def check_firewall(
     firewalld=None,
     netfilter_protective: bool | None = None,
     t: TranslationFunc | None = None,
+    ssh_ports: "list[int] | None" = None,
+    ssh_on_ipv6: "bool | None" = None,
 ) -> CheckResult:
     """
     Evaluate firewall status and return findings and deductions.
@@ -427,7 +452,7 @@ def check_firewall(
 
     # --- UFW installed ---
     if not status.installed:
-        _cmd, _detail = _firewall_install_fix(_t)
+        _cmd, _detail = _firewall_install_fix(_t, ssh_ports)
         result.alert(
             message=_t("prerequisites.firewall_missing"),
             detail=_detail,
@@ -444,7 +469,9 @@ def check_firewall(
         result.alert(
             message=_t("firewall.inactive"),
             nature="action",
-            cmd="sudo ufw enable",
+            cmd=_ufw.enable_cmd(ssh_ports, ipv6_off=status.ipv6_ufw_enabled is False
+                                and ssh_on_ipv6 is not False),
+            detail=_t("firewall.ssh_ports_unknown_detail") if ssh_ports is None else "",
             key="firewall.inactive",
         )
         # Request a score cap — processed automatically by ScoreEngine.apply()

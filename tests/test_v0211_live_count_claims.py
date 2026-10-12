@@ -159,6 +159,12 @@ def test_the_readme_tech_cis_breakdown_matches_the_live_categories():
          r"(\d+) entries \((\d+) formal CIS, (\d+) best-practice, (\d+) Docker\)"),
         ("DOCUMENTS/README_TECH_FR.md",
          r"(\d+) entrées \((\d+) CIS formels, (\d+) best-practice, (\d+) Docker\)"),
+        # v0.24.4: README_DEV writes the split after a colon, and nothing read
+        # it — it said 94 best-practice (FR: 89) while the live count was 95.
+        ("DOCUMENTS/README_DEV.md",
+         r"(\d+) entries: (\d+) formal CIS, (\d+) best-practice, (\d+) Docker\)"),
+        ("DOCUMENTS/README_DEV_FR.md",
+         r"(\d+) entrées : (\d+) CIS formels, (\d+) best-practice, (\d+) Docker\)"),
     ):
         text = (_ROOT / rel).read_text(encoding="utf-8")
         m = re.search(pat, text)

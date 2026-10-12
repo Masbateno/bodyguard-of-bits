@@ -58,7 +58,7 @@ class TestUFWNotInstalled:
 
     def test_fix_cmd_present(self):
         status = make_status(installed=False)
-        result = check_firewall(status)
+        result = check_firewall(status, ssh_ports=[22])   # v0.24.4: unknown ports get no command
         assert result.findings[0].cmd != ""
 
 
@@ -81,7 +81,7 @@ class TestUFWInactive:
 
     def test_fix_cmd_is_ufw_enable(self):
         status = make_status(active=False)
-        result = check_firewall(status)
+        result = check_firewall(status, ssh_ports=[22])   # v0.24.4: unknown ports get no command
         alert = next(f for f in result.findings if f.level == FindingLevel.ALERT)
         assert "ufw enable" in alert.cmd
 

@@ -129,7 +129,12 @@ class TestNtpFromSystemTimedatectl:
 
 class TestNtpFromSystemFallback:
     def test_no_timedatectl_no_service(self):
-        with patch("bob.checks.ntp._command_exists", return_value=False):
+        # v0.24.4: without systemctl the service is asked through
+        # unit_active_state (OpenRC too); "no init answers" is stubbed so the
+        # test does not ask the host it runs on.
+        with patch("bob.checks.ntp._command_exists", return_value=False), \
+             patch("bob.checks.ntp.unit_active_state", return_value=None), \
+             patch("bob.checks.ntp.openrc_available", return_value=False):
             snap = NtpSnapshot.from_system()
         assert not snap.ntp_enabled
         assert not snap.timedatectl_ok

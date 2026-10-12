@@ -37,6 +37,12 @@ def _snap(**kwargs) -> IptablesNftSnapshot:
         has_conntrack_rule=True,
     )
     defaults.update(kwargs)
+    # v0.24.4: the fixes name the chain the hook actually uses.
+    target = {"iptables": ("iptables",)}.get(defaults["backend"],
+                                             ("nft", "inet", "filter", "input"))
+    defaults.setdefault("input_target", target)
+    defaults.setdefault("forward_target", target if target[0] == "iptables"
+                        else ("nft", "inet", "filter", "forward"))
     return IptablesNftSnapshot(**defaults)
 
 
@@ -359,14 +365,14 @@ class TestForwardPolicy:
 class TestNftablesCmd:
     def test_input_accept_cmd_nftables(self):
         result = check_iptables_nftables(
-            _snap(backend="nftables", input_policy="ACCEPT"), t=_t
+            _snap(backend="nftables", input_policy="ACCEPT"), t=_t, ssh_ports=[22]
         )
         f = next(f for f in result.findings if f.key == "firewall_iptables.input_accept")
         assert (f.cmd or "").startswith("sudo nft ")
 
     def test_input_accept_cmd_iptables(self):
         result = check_iptables_nftables(
-            _snap(backend="iptables", input_policy="ACCEPT"), t=_t
+            _snap(backend="iptables", input_policy="ACCEPT"), t=_t, ssh_ports=[22]
         )
         f = next(f for f in result.findings if f.key == "firewall_iptables.input_accept")
         assert (f.cmd or "").startswith("sudo iptables ")
@@ -379,14 +385,14 @@ class TestNftablesCmd:
         f = next(f for f in result.findings if f.key == "firewall_iptables.no_loopback")
         assert (f.cmd or "").startswith("sudo nft ")
 
-    def test_forward_accept_cmd_nftables_uses_chain_not_add(self):
-        """nft chain (not nft add chain) — idempotent on existing chains."""
+    def test_forward_accept_cmd_nftables_uses_add_chain(self):
+        """v0.24.4: the documented ``nft add chain`` — measured on nftables 1.0.9,
+        it changes an existing base chain's policy (exit 0) as bare ``nft chain`` did."""
         result = check_iptables_nftables(
             _snap(backend="nftables", forward_policy="ACCEPT"), t=_t
         )
         f = next(f for f in result.findings if f.key == "firewall_iptables.forward_accept")
-        assert "nft add chain" not in (f.cmd or "")
-        assert (f.cmd or "").startswith("sudo nft chain ")
+        assert (f.cmd or "").startswith("sudo nft add chain ")
 
 
 # ---------------------------------------------------------------------------

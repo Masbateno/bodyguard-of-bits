@@ -54,8 +54,8 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | `sysinfo.py` | Info système — `collect_system_info()`, `detect_network_context()`, `get_user_home()` |
 | `compare.py` | Rapport comparatif — `AuditBaseline` (avec `finding_keys`), `AuditDelta` (avec `new_finding_keys`/`resolved_finding_keys`), `build_baseline()`, `save_baseline()`, `load_baseline()`, `compute_delta()`, `display_delta()` |
 | `plugin_checks.py` | Chargeur de plugins — `PluginCheck`, `load_plugin_checks()`, sanitisation ANSI |
-| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 219 clés canoniques dans 61 préfixes, variantes par profil (71 clés × 3 profils), lookup référence CIS via `cis_refs.py` |
-| `cis_refs.py` | Lookup référence CIS — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` avec `lru_cache` ; données dans `data/cis_refs.json` (219 entrées : 117 CIS formels, 89 best-practice, 7 Docker) |
+| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 220 clés canoniques dans 61 préfixes, variantes par profil (71 clés × 3 profils), lookup référence CIS via `cis_refs.py` |
+| `cis_refs.py` | Lookup référence CIS — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` avec `lru_cache` ; données dans `data/cis_refs.json` (220 entrées : 117 CIS formels, 96 best-practice, 7 Docker) |
 | `domain_scores.py` | Sous-scores par domaine — `compute_domain_scores()`, `render_domain_scores()`, attribution 6 domaines (`backup` → `health_resilience`) |
 | `webhook.py` | Envoi webhook — `build_generic_payload()`, `build_slack_payload()`, `send_webhook()`, auto-détection format |
 | `correlation.py` | Moteur de corrélation — `CorrelationRule` (frozensets all_of/any_of), `CorrelatedFinding`, `run_correlations()`, 6 règles de risque composé intégrées |
@@ -161,7 +161,7 @@ bob/
 ├── csv_output.py        # Formatter sortie CSV (--format csv)
 ├── display.py           # Helpers affichage terminal (display_result, print_audit_summary…)
 ├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — attribution backup→health_resilience
-├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 219 clés dans 61 préfixes
+├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 220 clés dans 61 préfixes
 ├── exposure.py          # Regroupement exposition ports — portée d'interface + niveau de risque
 ├── fixes.py             # Interface du mode fix (interactif + correction automatique)
 ├── formatter.py         # bob.formatter — rendu indépendant de la locale via Finding.template_vars (v0.4.1)
@@ -288,7 +288,7 @@ bob/
 │   └── world_writable.py       # WorldWritableSnapshot + check_world_writable() — --exhaustive (v0.24.0)
 ├── data/
 │   ├── services.json            # Registre déclaratif des 38 services
-│   ├── cis_refs.json            # Références CIS — 219 entrées {ref, code}
+│   ├── cis_refs.json            # Références CIS — 220 entrées {ref, code}
 │   └── bob.bash-completion  # Script d'autocomplétion bash
 └── locales/
     ├── en.json          # Clés de traduction anglais
@@ -520,8 +520,8 @@ print(f'Missing in FR: {missing if missing else \"none\"}')
 
 Résultat attendu :
 ```
-EN keys: 2849
-FR keys: 2849
+EN keys: 2872
+FR keys: 2872
 Missing in FR: none
 ```
 
@@ -537,7 +537,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Traduire toutes les valeurs
 
-Le fichier contient exactement 2849 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
+Le fichier contient exactement 2872 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
 
 Exemple :
 ```json

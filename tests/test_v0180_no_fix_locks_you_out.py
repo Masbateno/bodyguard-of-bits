@@ -46,6 +46,7 @@ class TestADefaultDenyPolicyIsNeverRunUnattended:
         "iptables -P INPUT DROP",
         "sudo ip6tables -P INPUT DROP",
         "sudo nft chain inet filter input '{ policy drop; }'",
+        "sudo nft add chain ip filter INPUT '{ policy drop; }'",   # v0.24.4 form
     ])
     def test_it_is_refused(self, cmd):
         assert _can_apply_unattended(cmd) is False, (

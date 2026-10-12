@@ -32,7 +32,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from bob.checks._run import install_fix, TranslationFunc, _command_exists, _identity_t, _run, path_exists
+from bob.checks._run import install_fix, TranslationFunc, _command_exists, _identity_t, _run, path_exists, service_enable_cmd
 from bob.scoring import CheckResult
 
 # Regex: "   N profiles are in enforce mode."
@@ -371,7 +371,7 @@ def check_mac_policy(
             reason=_t("mac_policy.apparmor_inactive_reason"),
             points=1,
             detail=_t("mac_policy.apparmor_inactive_detail"),
-            cmd="sudo systemctl enable --now apparmor",
+            cmd=service_enable_cmd("apparmor"),
             nature="action",
         )
         return result

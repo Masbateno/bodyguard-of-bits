@@ -692,9 +692,15 @@ def run_checks(
         if _netfilter_protective:
             _netfilter_policy = _nf_snap.input_policy
     fw_posture = resolve_firewall_posture(fw_status, fwd_status, _netfilter_policy)
+    # v0.24.4: the listening set is read before the firewall check — its
+    # enable fixes allow the ports sshd answers on first (a bare `ufw enable`
+    # cut a remote operator off, measured on a Raspberry Pi).
+    ports_snapshot = PortsSnapshot.from_system()
     fw_result  = check_firewall(
         fw_status, firewalld=fwd_status,
         netfilter_protective=_netfilter_protective, t=t,
+        ssh_ports=ports_snapshot.ssh_ports,
+        ssh_on_ipv6=ports_snapshot.ssh_on_ipv6,
     )
     engine.apply(fw_result, section="firewall")
     display_result(fw_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
@@ -707,8 +713,8 @@ def run_checks(
     ufw_numbered = fw_status.numbered_output
     ufw_verbose  = fw_status.ufw_output
 
-    # Collect ports early so orphan-rule detection can cross-reference
-    ports_snapshot        = PortsSnapshot.from_system()
+    # Ports were collected before the firewall check; orphan-rule detection
+    # cross-references the same snapshot.
     loopback_only_ports   = ports_snapshot.loopback_only_ports
     active_external_ports = ports_snapshot.active_external_ports
     # `None` is the services check's own encoding for "the listening set is
@@ -752,7 +758,10 @@ def run_checks(
         emit_section("firewall_iptables")
         with _core("firewall_iptables"):
             ipt_snapshot  = IptablesNftSnapshot.from_system()
-            ipt_result    = check_iptables_nftables(ipt_snapshot, ufw_installed=fw_status.installed, firewalld=fwd_status, t=t)
+            ipt_result    = check_iptables_nftables(ipt_snapshot, ufw_installed=fw_status.installed, firewalld=fwd_status, t=t,
+                                                    ssh_ports=ports_snapshot.ssh_ports,
+                                                    ufw_ipv6_off=fw_status.ipv6_ufw_enabled is False
+                                                    and ports_snapshot.ssh_on_ipv6 is not False)
             engine.apply(ipt_result, section="firewall_iptables")
             display_result(ipt_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
         if not config.quiet:

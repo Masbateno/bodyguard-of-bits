@@ -21,10 +21,10 @@ Usage:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _identity_t, sysctl_fix
+from bob.checks._run import TranslationFunc, _identity_t, read_sysctl_boot_files, report_boot_drift, sysctl_fix
 from bob.scoring import CheckResult
 
 
@@ -73,6 +73,9 @@ class HardeningSnapshot:
     protected_symlinks:          "bool | None" = None
     protected_fifos:             "int | None" = None
     protected_regular:           "int | None" = None
+    #: v0.24.4 — the sysctl files applied at boot (``read_sysctl_boot_files``),
+    #: so a fix persists where its value survives the next reboot.
+    boot_sysctl: list = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "HardeningSnapshot":
@@ -100,6 +103,7 @@ class HardeningSnapshot:
         protected_regular           = _read_sysctl_int("fs.protected_regular")
 
         return cls(
+            boot_sysctl=read_sysctl_boot_files(),
             rp_filter=rp_filter,
             rp_filter_all=rp_filter_all,
             rp_filter_iface=rp_filter_iface,
@@ -160,7 +164,7 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             message=_t("hardening.rp_filter_disabled"),
             detail=_rp_filter_context(snapshot, _t),
             points=1,
-            **sysctl_fix("net.ipv4.conf.all.rp_filter=1"),
+            **sysctl_fix("net.ipv4.conf.all.rp_filter=1", boot=snapshot.boot_sysctl),
             nature="action",
         )
     # --- ICMP redirects ---
@@ -174,7 +178,7 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             key="hardening.redirects_enabled",
             message=_t("hardening.redirects_enabled"),
             points=1,
-            **sysctl_fix("net.ipv4.conf.all.accept_redirects=0"),
+            **sysctl_fix("net.ipv4.conf.all.accept_redirects=0", boot=snapshot.boot_sysctl),
             nature="action",
         )
     # --- log_martians ---
@@ -187,7 +191,7 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
         result.info(
             message=_t("hardening.log_martians_disabled"),
             detail=_t("hardening.log_martians_disabled_detail"),
-            **sysctl_fix("net.ipv4.conf.all.log_martians=1"),
+            **sysctl_fix("net.ipv4.conf.all.log_martians=1", boot=snapshot.boot_sysctl),
             key="hardening.log_martians_disabled",
         )
 
@@ -217,7 +221,7 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             key="hardening.tcp_syncookies_disabled",
             message=_t("hardening.tcp_syncookies_disabled"),
             points=1,
-            **sysctl_fix("net.ipv4.tcp_syncookies=1"),
+            **sysctl_fix("net.ipv4.tcp_syncookies=1", boot=snapshot.boot_sysctl),
             nature="action",
         )
     # --- accept_source_route (IP source routing) ---
@@ -233,7 +237,7 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             key="hardening.accept_source_route_enabled",
             message=_t("hardening.accept_source_route_enabled"),
             points=1,
-            **sysctl_fix("net.ipv4.conf.all.accept_source_route=0"),
+            **sysctl_fix("net.ipv4.conf.all.accept_source_route=0", boot=snapshot.boot_sysctl),
             nature="action",
         )
     # --- IPv6 ICMP redirects ---
@@ -249,7 +253,7 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             key="hardening.accept_redirects_v6_enabled",
             message=_t("hardening.accept_redirects_v6_enabled"),
             points=1,
-            **sysctl_fix("net.ipv6.conf.all.accept_redirects=0"),
+            **sysctl_fix("net.ipv6.conf.all.accept_redirects=0", boot=snapshot.boot_sysctl),
             nature="action",
         )
     # --- send_redirects ---
@@ -266,7 +270,7 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             message=_t("hardening.send_redirects_enabled"),
             points=1,
             detail=_t("hardening.send_redirects_detail"),
-            **sysctl_fix("net.ipv4.conf.all.send_redirects=0"),
+            **sysctl_fix("net.ipv4.conf.all.send_redirects=0", boot=snapshot.boot_sysctl),
             nature="action",
         )
     # --- fs.protected_hardlinks ---
@@ -282,7 +286,7 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             key="hardening.protected_hardlinks_disabled",
             message=_t("hardening.protected_hardlinks_disabled"),
             points=1,
-            **sysctl_fix("fs.protected_hardlinks=1"),
+            **sysctl_fix("fs.protected_hardlinks=1", boot=snapshot.boot_sysctl),
             nature="action",
         )
     # --- fs.protected_symlinks ---
@@ -298,7 +302,7 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             key="hardening.protected_symlinks_disabled",
             message=_t("hardening.protected_symlinks_disabled"),
             points=1,
-            **sysctl_fix("fs.protected_symlinks=1"),
+            **sysctl_fix("fs.protected_symlinks=1", boot=snapshot.boot_sysctl),
             nature="action",
         )
     # --- fs.protected_fifos (0/1/2; >=1 is protective, 2 strengthens 1) ---
@@ -315,7 +319,7 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             key="hardening.protected_fifos_disabled",
             message=_t("hardening.protected_fifos_disabled"),
             points=1,
-            **sysctl_fix("fs.protected_fifos=2"),
+            **sysctl_fix("fs.protected_fifos=2", boot=snapshot.boot_sysctl),
             nature="action",
         )
     # --- fs.protected_regular (0/1/2; >=1 is protective, 2 strengthens 1) ---
@@ -332,7 +336,7 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             key="hardening.protected_regular_disabled",
             message=_t("hardening.protected_regular_disabled"),
             points=1,
-            **sysctl_fix("fs.protected_regular=2"),
+            **sysctl_fix("fs.protected_regular=2", boot=snapshot.boot_sysctl),
             nature="action",
         )
     if _missing:
@@ -342,7 +346,22 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             key="hardening.params_unavailable",
         )
 
+    report_boot_drift(result, _t, "hardening.reverts_at_boot", {
+        "net.ipv4.conf.all.rp_filter": snapshot.rp_filter_all,
+        "net.ipv4.conf.all.accept_redirects": snapshot.accept_redirects,
+        "net.ipv4.conf.all.log_martians": snapshot.log_martians,
+        "net.ipv4.icmp_echo_ignore_broadcasts": snapshot.icmp_echo_ignore_broadcasts,
+        "net.ipv4.tcp_syncookies": snapshot.tcp_syncookies,
+        "net.ipv4.conf.all.accept_source_route": snapshot.accept_source_route,
+        "net.ipv6.conf.all.accept_redirects": snapshot.accept_redirects_v6,
+        "net.ipv4.conf.all.send_redirects": snapshot.send_redirects,
+        "fs.protected_hardlinks": snapshot.protected_hardlinks,
+        "fs.protected_symlinks": snapshot.protected_symlinks,
+        "fs.protected_fifos": snapshot.protected_fifos,
+        "fs.protected_regular": snapshot.protected_regular,
+    }, snapshot.boot_sysctl)
     return result
+
 
 
 # ---------------------------------------------------------------------------

@@ -485,6 +485,9 @@ class TestFromSystemNotInstalled:
     def test_clamd_socket_fallback(self, monkeypatch, tmp_path):
         """When systemctl is unavailable, a clamd socket file marks clamd_active=True."""
         import bob.checks.clamav as clamav_mod
+        # v0.24.4: the host's own clamd.conf and init are not the subject.
+        monkeypatch.setattr(clamav_mod, "_CLAMD_CONFS", ())
+        monkeypatch.setattr(clamav_mod, "unit_active_state", lambda name: None)
         socket_file = tmp_path / "clamd.ctl"
         socket_file.write_bytes(b"")
         monkeypatch.setattr(
@@ -504,6 +507,9 @@ class TestFromSystemNotInstalled:
     def test_clamd_socket_missing_stays_inactive(self, monkeypatch, tmp_path):
         """No systemctl, no socket file → clamd_active stays False."""
         import bob.checks.clamav as clamav_mod
+        # v0.24.4: the host's own clamd.conf and init are not the subject.
+        monkeypatch.setattr(clamav_mod, "_CLAMD_CONFS", ())
+        monkeypatch.setattr(clamav_mod, "unit_active_state", lambda name: None)
         monkeypatch.setattr(
             clamav_mod, "_command_exists",
             lambda name: name != "systemctl",

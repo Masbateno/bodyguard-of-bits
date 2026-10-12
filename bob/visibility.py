@@ -61,6 +61,8 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "world_writable.partial",
     "world_writable.unowned_not_assessed",
     "faillock.unknown",
+    # v0.24.4 — BusyBox ntpd: whether the clock is synchronised (−1 if not) is unknown.
+    "ntp.sync_unknown",
     "disk_encryption.unknown",
     "disk_encryption.volumes_present_root_unknown",
     "polkit.not_present",
@@ -69,6 +71,11 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "disk.smart_unknown",
     "fail2ban.state_unknown",
     "fail2ban.status_unreadable",
+    # v0.24.4 — the SSH jail may be blind (WARN −1) and BOB cannot tell.
+    "fail2ban.ssh_jail_source_unverified",
+    "fail2ban.ssh_jail_file_silent",
+    "fail2ban.ssh_jail_file_stale",
+    "fail2ban.ssh_jail_misses_failures",
     "file_integrity.db_unknown",
     "file_perms.ssh_host_keys_unreadable",
     "file_perms.sudoers_unreadable",

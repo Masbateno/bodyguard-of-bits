@@ -20,9 +20,14 @@ Split into:
 
 from __future__ import annotations
 
+import gzip
+import os
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Set
+
+from bob._atomic import read_text_capped
 
 from bob.checks._run import (
     TranslationFunc,
@@ -32,6 +37,7 @@ from bob.checks._run import (
     append_once,
     install_fix,
     run_result,
+    service_enable_cmd,
     unit_active_state,
 )
 from bob.scoring import CheckResult
@@ -47,6 +53,11 @@ _SENSITIVE_FILES = frozenset({
 # auditctl's own wording for a subsystem that is switched off. Matched rather
 # than rendered: stderr is untrusted subprocess text like any other.
 _AUDIT_DISABLED_RE = re.compile(r"audit system is disabled", re.IGNORECASE)
+
+#: ``auditctl -s`` reports ``enabled 0`` (off), ``1`` (on) or ``2`` (on and
+#: locked until reboot — ``-e 2``).
+_ENABLED_RE = re.compile(r"^enabled\s+(\d)", re.MULTILINE)
+_PID_RE = re.compile(r"^pid\s+(\d+)", re.MULTILINE)
 
 
 @dataclass
@@ -73,6 +84,9 @@ class AuditdSnapshot:
     # query failed rather than that the rule set is empty.
     rules_readable: bool        = True
     audit_disabled: bool        = False
+    #: v0.24.4 — ``enabled 2``: the rules are locked until the next boot, so
+    #: ``augenrules --load`` changes nothing (it says so and exits 0).
+    immutable:      bool        = False
 
     @classmethod
     def from_system(cls) -> "AuditdSnapshot":
@@ -87,7 +101,14 @@ class AuditdSnapshot:
         # Service status via systemctl, falling back to auditd's own answer
         # whenever systemd gives none — a present but failing systemctl used to
         # short-circuit straight to "inactive".
-        state = unit_active_state("auditd") if _command_exists("systemctl") else None
+        # v0.24.4: asked through whichever init system answers (OpenRC
+        # included) — gated on systemctl, an Alpine host skipped straight to
+        # the fallback below, which read the locked state `enabled 2` as
+        # stopped (measured: auditd running, BOB "not running", WARN -1).
+        state = unit_active_state("auditd")
+        status = _run("auditctl", "-s")
+        enabled = _ENABLED_RE.search(status or "")
+        snap.immutable = bool(enabled) and enabled.group(1) == "2"
         if state is not None:
             snap.service_active = state == "active"
         else:
@@ -101,8 +122,19 @@ class AuditdSnapshot:
             # deduction and an order to start a service already running. A
             # working `auditctl -s` always prints its status block; empty
             # output is the honest signal that no answer was obtained.
-            status = _run("auditctl", "-s")
-            snap.service_active = ("enabled 1" in status) if status else None
+            #
+            # v0.24.4: ``enabled`` is the kernel's audit state — 2 means
+            # locked — not the daemon's. Measured on a Fedora 43 VM: rules
+            # locked, auditd killed, ``auditctl -s`` still said "enabled 2"
+            # with "pid 0". The pid is the daemon; ``enabled`` decides only
+            # where an older auditctl prints no pid line.
+            pid = _PID_RE.search(status or "")
+            if not status:
+                snap.service_active = None
+            elif pid:
+                snap.service_active = pid.group(1) != "0"
+            else:
+                snap.service_active = bool(enabled) and enabled.group(1) in ("1", "2")
 
         if not snap.service_active:
             return snap
@@ -124,32 +156,131 @@ class AuditdSnapshot:
         rules_out = rules.stdout or ""
         snap.audit_disabled = _AUDIT_DISABLED_RE.search(rules.stderr or "") is not None
         snap.rules_readable = bool(rules_out.strip()) or snap.audit_disabled
-        snap.watched_files = _parse_watched_files(rules_out)
+        snap.watched_files = _parse_watched_files(rules_out, _native_arch(), _compat_arch())
         snap.rule_count = _count_rules(rules_out)
 
         return snap
 
 
-def _parse_watched_files(auditctl_output: str) -> Set[str]:
+def _native_arch() -> str:
+    """``b64`` on a 64-bit kernel, ``b32`` otherwise — the arch a syscall rule
+    must name to see this kernel's own syscalls."""
+    return "b64" if os.uname().machine in _64BIT_MACHINES else "b32"
+
+
+_64BIT_MACHINES = frozenset({"x86_64", "aarch64", "ppc64", "ppc64le", "s390x",
+                             "riscv64", "loongarch64", "mips64", "sparc64"})
+
+#: The only fields a syscall rule may carry and still journal every write to
+#: its path: any other ``-F`` narrows what it records. Measured on a Fedora 43
+#: VM (path, perm and both arches right): ``success=0`` journalled no write,
+#: ``auid>=1000 auid!=unset`` none from a system service, ``exe=`` none from
+#: anything else — and BOB had called the file watched.
+_NEUTRAL_FIELDS = frozenset({"arch", "path", "dir", "perm", "key"})
+_FIELD_NAME = re.compile(r"-F\s+([A-Za-z0-9_]+)")
+
+_IA32_CMDLINE = re.compile(r"(?:^|\s)ia32_emulation=(\S+)")
+
+
+def _kernel_config() -> "str | None":
+    """This kernel's build configuration, or None when it cannot be read."""
+    try:
+        return read_text_capped(Path(f"/boot/config-{os.uname().release}"), max_bytes=4 << 20)
+    except (OSError, ValueError):
+        pass
+    try:
+        with gzip.open("/proc/config.gz", "rt", errors="replace") as fh:
+            return fh.read(4 << 20)
+    except (OSError, EOFError):
+        return None
+
+
+def _compat_arch() -> "str | None":
+    """``b32`` when this 64-bit kernel also runs 32-bit programs, else None.
+
+    v0.24.4 — measured on a Fedora 43 x86_64 VM against the audit log: an
+    ``arch=b64`` rule on /etc/shadow journalled a write from a 64-bit process
+    and nothing for the same write from a 32-bit (i386) one. A kernel whose
+    configuration cannot be read is taken to run them: not knowing is no
+    proof that the 32-bit door is shut.
     """
-    Extract file paths from ``auditctl -l`` watch rules (-w lines).
+    if _native_arch() != "b64":
+        return None
+    config = _kernel_config()
+    if config is None:
+        return "b32"
+    if os.uname().machine == "x86_64":
+        if not re.search(r"^CONFIG_IA32_EMULATION=y", config, re.MULTILINE):
+            return None
+        try:
+            cmdline = read_text_capped(Path("/proc/cmdline"))
+        except (OSError, ValueError):
+            cmdline = ""
+        m = _IA32_CMDLINE.search(cmdline)
+        if m:
+            return "b32" if m.group(1).lower() in ("1", "y", "yes", "on", "true") else None
+        return None if re.search(r"^CONFIG_IA32_EMULATION_DEFAULT_DISABLED=y", config, re.MULTILINE) else "b32"
+    return "b32" if re.search(r"^CONFIG_COMPAT=y", config, re.MULTILINE) else None
+
+
+def _parse_watched_files(auditctl_output: str, native_arch: "str | None" = None,
+                         compat_arch: "str | None" = None) -> Set[str]:
+    """
+    Extract the paths whose *writes* the loaded rules journal.
 
     Example input::
 
         -w /etc/passwd -p rwxa -k identity
-        -w /etc/shadow -p rwxa -k identity
-        -a always,exit -F arch=b64 -S execve -k exec
+        -a always,exit -F arch=b64 -S open,... -F path=/etc/shadow -F perm=wa -F key=x
+
+    v0.24.4 — measured on Alpine (x86_64) against the audit log itself: a rule
+    only counts when it journals a write. ``-w … -p r``, ``-a never,exit``, a
+    ``-F arch=b32`` rule on a 64-bit kernel, and a ``-F path=`` rule with a
+    hand-picked ``-S`` list and no ``perm`` each journalled nothing for a write
+    to /etc/shadow — and BOB had called the file watched. *native_arch* (``b64``
+    / ``b32``) rejects a syscall rule for the other architecture; None accepts
+    any. A syscall rule with no ``arch`` field was resolved against the native
+    table only (measured: a 32-bit write went unjournalled). When the kernel
+    also runs 32-bit programs (*compat_arch*), a file covered by syscall rules
+    alone needs both architectures; a ``-w`` watch covers every one.
 
     Returns a set of absolute paths (strings).
     """
     watched: Set[str] = set()
+    arches: "dict[str, set]" = {}
     for line in auditctl_output.splitlines():
         line = line.strip()
         m = re.match(r"-w\s+(\/\S+)", line)
         if m:
-            path = m.group(1).rstrip("/")  # normalise trailing slash
+            perm = re.search(r"\s-p\s+(\S+)", line)
+            if perm is None or "w" in perm.group(1):  # no -p means rwxa
+                watched.add(m.group(1).rstrip("/"))
+        elif line.startswith(("-a ", "-A ")):
+            # The syscall form of a watch, as `auditctl -l` prints it — but
+            # only an `always` rule with a write permission, for this kernel's
+            # architecture, journals a write (see above).
+            action = line.split()[1] if len(line.split()) > 1 else ""
+            if "always" not in action.split(","):
+                continue
+            perm = re.search(r"-F\s+perm=(\S+)", line)
+            if perm is None or "w" not in perm.group(1):
+                continue
+            if set(_FIELD_NAME.findall(line)) - _NEUTRAL_FIELDS or re.search(r"\s-C\s", line):
+                continue
+            arch_m = re.search(r"-F\s+arch=(\S+)", line)
+            arch = arch_m.group(1) if arch_m else native_arch
+            for fm in re.finditer(r"-F\s+(?:path|dir)=(\/\S+)", line):
+                arches.setdefault(fm.group(1).rstrip("/"), set()).add(arch)
+    for path, seen in arches.items():
+        if native_arch is None or (native_arch in seen and (compat_arch is None or compat_arch in seen)):
             watched.add(path)
     return watched
+
+
+def _covered(path: str, watched: Set[str]) -> bool:
+    """*path* is watched itself or sits under a watched directory — measured
+    on a Pi, ``-w /etc/`` journals a write to /etc/shadow."""
+    return any(path == w or path.startswith(w + "/") for w in watched)
 
 
 def _count_rules(auditctl_output: str) -> int:
@@ -213,7 +344,7 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
             reason=_t("auditd.service_inactive_reason"),
             points=1,
             detail=_t("auditd.service_inactive_detail"),
-            cmd="sudo systemctl enable --now auditd",
+            cmd=service_enable_cmd("auditd"),
             nature="improvement",
         )
         return result
@@ -237,6 +368,16 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
         )
         return result
 
+    # v0.24.4: `-e 2` locks the rules until the next boot. Measured on a Pi:
+    # BOB's fix wrote its rules file, `augenrules --load` answered "immutable
+    # mode - exiting with no changes" with exit status 0, and the finding came
+    # back; after a reboot the rules were loaded. Say so, and do not hand out
+    # a reload that cannot happen.
+    locked = ""
+    if snapshot.immutable:
+        result.info(message=_t("auditd.immutable"), key="auditd.immutable")
+        locked = " " + _t("auditd.locked_detail")
+
     if snapshot.rule_count == 0:
         _no_rules_cmd = (
             "sudo tee /etc/audit/rules.d/hardening.rules << 'EOF'\n"
@@ -248,10 +389,12 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
             "EOF\n"
             "sudo augenrules --load"
         )
+        if snapshot.immutable:
+            _no_rules_cmd = _no_rules_cmd.removesuffix("\nsudo augenrules --load")
         if is_desktop:
             result.info(
                 message=_t("auditd.no_rules"),
-                detail=_t("auditd.no_rules_detail"),
+                detail=_t("auditd.no_rules_detail") + locked,
                 cmd=_no_rules_cmd,
                 cmd_type="fix",
                 key="auditd.no_rules",
@@ -262,21 +405,21 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
                 message=_t("auditd.no_rules"),
                 reason=_t("auditd.no_rules_reason"),
                 points=1,
-                detail=_t("auditd.no_rules_detail"),
+                detail=_t("auditd.no_rules_detail") + locked,
                 cmd=_no_rules_cmd,
                 nature="improvement",
             )
         return result
 
     # Check for sensitive file coverage
-    missing = sorted(_SENSITIVE_FILES - snapshot.watched_files)
+    missing = sorted(f for f in _SENSITIVE_FILES if not _covered(f, snapshot.watched_files))
     if missing:
         missing_str = ", ".join(missing)
         if is_desktop:
             result.info(
                 message=_t("auditd.missing_sensitive_rules"),
-                detail=_t("auditd.missing_sensitive_rules_detail", files=missing_str),
-                cmd=_suggest_rules_cmd(missing),
+                detail=_t("auditd.missing_sensitive_rules_detail", files=missing_str) + locked,
+                cmd=_suggest_rules_cmd(missing, snapshot.immutable),
                 key="auditd.missing_sensitive_rules",
             )
         else:
@@ -285,8 +428,8 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
                 message=_t("auditd.missing_sensitive_rules"),
                 reason=_t("auditd.missing_sensitive_rules_reason", files=missing_str),
                 points=1,
-                detail=_t("auditd.missing_sensitive_rules_detail", files=missing_str),
-                cmd=_suggest_rules_cmd(missing),
+                detail=_t("auditd.missing_sensitive_rules_detail", files=missing_str) + locked,
+                cmd=_suggest_rules_cmd(missing, snapshot.immutable),
                 nature="improvement",
             )
         return result
@@ -303,7 +446,7 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
     return result
 
 
-def _suggest_rules_cmd(missing_files: list[str]) -> str:
+def _suggest_rules_cmd(missing_files: list[str], immutable: bool = False) -> str:
     """Build a persistent audit rules command for the missing files.
 
     Appends rules to /etc/audit/rules.d/99-sensitive.rules (survives reboot)
@@ -317,4 +460,5 @@ def _suggest_rules_cmd(missing_files: list[str]) -> str:
         "{ " + append_once(f"-w {f} -p rwxa -k sensitive_files", rules) + "; }"
         for f in missing_files
     ]
-    return " && ".join(parts) + " && sudo augenrules --load"
+    # Locked (`-e 2`): the rules file is the whole fix; it loads at boot.
+    return " && ".join(parts) + ("" if immutable else " && sudo augenrules --load")

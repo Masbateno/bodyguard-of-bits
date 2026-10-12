@@ -173,3 +173,30 @@ def is_rule_line(line: str) -> bool:
     """True if *line* is a numbered rule row rather than a header or blank."""
     return _NUMBERED_RE.match(line) is not None
 
+
+
+#: The sed that turns ufw's IPv6 on, as `firewall._ipv6_enable_cmd` writes it
+#: (spaces around ``=`` and any case, measured in v0.20.0).
+_IPV6_ON = "sudo sed -i -E 's/^IPV6[[:space:]]*=[[:space:]]*no\\b.*/IPV6=yes/I' /etc/default/ufw"
+
+
+def enable_cmd(ssh_ports: "list[int] | None" = None, ipv6_off: bool = False) -> "str | None":
+    """``ufw enable``, preceded by an allow for every port sshd answers on.
+
+    v0.24.4 — ufw starts at "deny (incoming)". Measured on a Raspberry Pi
+    (trixie) over SSH: the bare ``sudo ufw enable`` BOB printed for an inactive
+    firewall left port 22 silent for every new connection — the most urgent
+    advice in the report cut a remote operator off. ``None`` (the listening set
+    could not be read): no command — allowing 22 alone would cut an sshd on
+    another port, and a guess is not a way in. ``[]`` (sshd answers on no
+    external address) enables straight away.
+
+    *ipv6_off*: ufw is set to ``IPV6=no`` and sshd answers over IPv6. ufw-init
+    then drops all IPv6 (measured in v0.24.2), so an allow cannot keep an IPv6
+    SSH path: IPv6 is turned on first, and the allow covers both families.
+    """
+    if ssh_ports is None:
+        return None
+    ports = sorted(set(ssh_ports))
+    steps = [_IPV6_ON] if ipv6_off and ports else []
+    return " && ".join(steps + [f"sudo ufw allow {p}/tcp" for p in ports] + ["sudo ufw enable"])

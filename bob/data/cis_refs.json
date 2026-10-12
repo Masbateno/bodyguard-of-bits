@@ -167,6 +167,11 @@
     "ref_fr": "Bonne pratique — Activer fail2ban ou le désinstaller ; un service inactif n'offre aucune protection",
     "code": null
   },
+  "fail2ban.ssh_jail_blind": {
+    "ref": "Best practice — Point the SSH jail at a log that is written: the systemd journal, or a file a running syslog daemon writes",
+    "ref_fr": "Bonne pratique — Faire lire à la jail SSH un journal qui est écrit : le journal systemd, ou un fichier qu'un démon syslog actif écrit",
+    "code": null
+  },
   "file_integrity.check_old": {
     "ref": "CIS Ubuntu 22.04 L1 — 6.1.2 — Ensure filesystem integrity is regularly checked (Automated)",
     "code": "CIS:6.1.2",

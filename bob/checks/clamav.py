@@ -18,12 +18,15 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import re
+import stat
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, install_fix, _command_exists, _identity_t, _run, is_unit_active, path_exists  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
+from bob._atomic import read_text_capped
+from bob.checks._run import TranslationFunc, install_fix, _command_exists, _identity_t, _run, is_unit_active, openrc_available, path_exists, service_enable_cmd, unit_active_state  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -69,6 +72,26 @@ _CLAMD_SOCKETS: list[Path] = [
     Path("/var/run/clamav/clamd.ctl"),
 ]
 
+#: v0.24.4 — the daemon unit each family ships, measured by installing its
+#: daemon package: Debian 13, Ubuntu 24.04 and Arch ``clamav-daemon.service``;
+#: Fedora ``clamd@.service`` (a template, run as ``clamd@scan``); openSUSE
+#: Tumbleweed ``clamd.service``. Alpine's OpenRC script is ``clamd``. The fix
+#: used to name ``clamav-daemon`` everywhere.
+_CLAMD_UNITS: tuple = (
+    ("clamav-daemon", "clamav-daemon.service"),
+    ("clamd@scan", "clamd@.service"),
+    ("clamd", "clamd.service"),
+)
+_UNIT_DIRS: tuple = ("/etc/systemd/system", "/usr/lib/systemd/system", "/lib/systemd/system")
+#: Fedora's ``clamd@scan`` reads this file, which ships with every socket
+#: commented out: measured on Fedora 44, ``systemctl enable --now clamd@scan``
+#: failed with "Please define server type (local and/or TCP)".
+_SCAN_CONF = Path("/etc/clamd.d/scan.conf")
+_SCAN_SOCKET = "/run/clamd.scan/clamd.sock"
+#: v0.24.4 — where each family's clamd reads its ``LocalSocket``.
+_CLAMD_CONFS: tuple = (Path("/etc/clamav/clamd.conf"), Path("/etc/clamd.conf"), _SCAN_CONF)
+_LOCAL_SOCKET_RE = re.compile(r"^\s*LocalSocket\s+(\S+)", re.MULTILINE)
+
 # ---------------------------------------------------------------------------
 # System snapshot
 # ---------------------------------------------------------------------------
@@ -92,6 +115,13 @@ class ClamAVSnapshot:
     # kept printing `sudo apt install -y clamav clamav-daemon` after every other
     # finding had been made portable.
     install_cmd:          "str | None"   = None
+    #: v0.24.4 — the daemon unit this host ships ("" when none).
+    clamd_unit:           str            = ""
+    #: Fedora's scan.conf defines no socket, so clamd@scan cannot start yet.
+    clamd_needs_socket:   bool           = False
+    #: v0.24.4 — clamd's local socket when every local user can connect to it
+    #: ("" when not, or when that could not be established).
+    clamd_socket_open:    str            = ""
 
     @classmethod
     def from_system(cls) -> "ClamAVSnapshot":
@@ -108,19 +138,31 @@ class ClamAVSnapshot:
         if not snap.installed:
             return snap
 
+        snap.clamd_unit = _clamd_unit()
+        if snap.clamd_unit == "clamd@scan":
+            snap.clamd_needs_socket = _scan_conf_lacks_socket()
+
         # --- clamd service status ---
         if _command_exists("systemctl"):
             for unit in ("clamav-daemon", "clamd", "clamd@scan"):
                 if is_unit_active(unit):
                     snap.clamd_active = True
                     break
+        elif snap.clamd_unit:
+            # v0.24.4 — OpenRC (Alpine): asked through the host's init.
+            snap.clamd_active = unit_active_state(snap.clamd_unit) == "active"
         # Fallback: check for the clamd Unix socket (present when daemon is running
-        # even if systemctl is unavailable, e.g. inside containers).
+        # even if systemctl is unavailable, e.g. inside containers). v0.24.4: the
+        # sockets the configuration names too — Alpine's is clamd.sock, and a
+        # running clamd there was reported "not running".
         if not snap.clamd_active:
-            for socket_path in _CLAMD_SOCKETS:
+            for socket_path in [*_CLAMD_SOCKETS, *map(Path, _configured_sockets())]:
                 if path_exists(socket_path):
                     snap.clamd_active = True
                     break
+
+        if snap.clamd_active:
+            snap.clamd_socket_open = _socket_open_to_all()
 
         # --- virus database freshness ---
         for db_path in _DB_CANDIDATES:
@@ -224,10 +266,18 @@ def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> 
     # --- clamd daemon ---
     if not snapshot.clamd_active:
         result.info(
-            message=_t("clamav.clamd_inactive"),
+            message=_t("clamav.clamd_inactive", unit=snapshot.clamd_unit or "clamd"),
             detail=_t("clamav.clamd_inactive_detail"),
-            cmd="sudo systemctl enable --now clamav-daemon",
+            cmd=_clamd_enable_cmd(snapshot),
             key="clamav.clamd_inactive",
+        )
+    elif snapshot.clamd_socket_open:
+        # No command: who must keep access (a mail filter's user, a scanner's)
+        # is the operator's to say; a group-only socket cuts everyone else.
+        result.info(
+            message=_t("clamav.socket_open_to_all", path=snapshot.clamd_socket_open),
+            detail=_t("clamav.socket_open_to_all_detail"),
+            key="clamav.socket_open_to_all",
         )
 
     # --- Last scan ---
@@ -331,3 +381,87 @@ def _scan_age_days(iso_date: str) -> int | None:
         return max(0, (datetime.now() - dt).days)
     except ValueError:
         return None
+
+
+def _clamd_unit() -> str:
+    """The clamd unit this host ships, or "" when it ships none."""
+    if openrc_available() and not _command_exists("systemctl"):
+        return "clamd" if path_exists(Path("/etc/init.d/clamd")) else ""
+    for unit, unit_file in _CLAMD_UNITS:
+        if any(path_exists(Path(d) / unit_file) for d in _UNIT_DIRS):
+            return unit
+    return ""
+
+
+def _scan_conf_lacks_socket() -> bool:
+    """True when Fedora's scan.conf defines neither a local nor a TCP socket.
+    An unreadable file is not evidence either way: False."""
+    try:
+        text = read_text_capped(_SCAN_CONF)
+    except (OSError, ValueError):
+        return False
+    return re.search(r"^\s*(LocalSocket|TCPSocket)\s", text, re.MULTILINE) is None
+
+
+def _clamd_enable_cmd(snapshot: "ClamAVSnapshot") -> "str | None":
+    """Start the daemon this host actually ships (v0.24.4), with what it needs
+    first: on Fedora the socket its scan.conf leaves commented out, and on any
+    host a signature database (clamd refuses to start without one). Measured
+    on Fedora 44: this sequence left clamd@scan active with its socket. No unit
+    shipped: no command — the daemon package is not installed."""
+    if not snapshot.clamd_unit:
+        return None
+    steps = []
+    if snapshot.clamd_needs_socket:
+        sock = _SCAN_SOCKET.replace("/", "\\/")
+        steps.append(f"sudo sed -i '0,/^#LocalSocket {sock}$/s//LocalSocket {sock}/' {_SCAN_CONF}")
+    if snapshot.db_age_days is None and snapshot.freshclam_installed:
+        steps.append("sudo freshclam")
+    steps.append(service_enable_cmd(snapshot.clamd_unit))
+    return " && ".join(steps)
+
+
+def _open_to_others(path: str) -> "bool | None":
+    """Whether a user outside clamd's owner and group can connect to the
+    socket at *path*: write permission on it, search permission on every
+    directory above it. None when it is not a socket or cannot be read.
+
+    Measured (v0.24.4): Alpine's packaged config leaves ``LocalSocketMode``
+    commented (``srw-rw-rw-`` under a ``0755`` /run/clamav), Debian sets 666 —
+    an unprivileged user sent SHUTDOWN and clamd stopped on both. Fedora's
+    ``0666`` socket sits in a ``0710`` directory: refused.
+    """
+    try:
+        st = os.stat(path)
+        if not stat.S_ISSOCK(st.st_mode):
+            return None
+        if not st.st_mode & stat.S_IWOTH:
+            return False
+        parent = os.path.dirname(os.path.abspath(path))
+        while True:
+            if not os.stat(parent).st_mode & stat.S_IXOTH:
+                return False
+            if parent == "/":
+                return True
+            parent = os.path.dirname(parent)
+    except OSError:
+        return None
+
+
+def _configured_sockets() -> "list[str]":
+    """The ``LocalSocket`` paths clamd's configuration files name."""
+    paths: list = []
+    for conf in _CLAMD_CONFS:
+        try:
+            paths += _LOCAL_SOCKET_RE.findall(read_text_capped(conf))
+        except (OSError, ValueError):
+            continue
+    return paths
+
+
+def _socket_open_to_all() -> str:
+    """The first configured clamd socket every local user can connect to."""
+    for path in _configured_sockets():
+        if _open_to_others(path):
+            return path
+    return ""

@@ -184,6 +184,8 @@
     "firewall_missing": "Aucun pare-feu actif — ni UFW ni firewalld installé, et la couche netfilter ne filtre pas le trafic entrant"
   },
   "firewall": {
+    "firewalld_keeps_ssh_detail": "La commande garde SSH autorisé dans la zone par défaut et dans chaque zone active : sans pare-feu il répondait de partout, elle ne ferme donc rien de ce qu'il atteignait. C'est un point de départ, pas une segmentation — ensuite, retirez ssh des zones qui ne doivent pas l'offrir (firewall-cmd --permanent --zone=<zone> --remove-service=ssh, puis --reload). Le démarrage de firewalld précède le rechargement qui ajoute ssh : mesuré sur Fedora, une session SSH ouverte a continué, tandis que les nouvelles connexions SSH ont échoué pendant environ une seconde — ce qui se reconnecte dans cette fenêtre (un autre administrateur, un outil d'orchestration) peut devoir réessayer.",
+    "ssh_ports_unknown_detail": "BOB n'a pas pu établir sur quels ports sshd répond — `ss -tulnp` n'a pas pu tourner, ou n'a nommé aucun processus (BOB n'a pas été lancé en root) — il ne donne donc aucune commande qui active le filtrage : une commande qui ne garderait que le port 22 couperait un sshd qui écoute ailleurs. Autorisez d'abord le port de votre session SSH, puis activez le filtrage.",
     "active": "Le pare-feu UFW est actif",
     "netfilter_active": "Aucun front-end pare-feu actif (UFW/firewalld), mais la couche netfilter filtre le trafic entrant — audité dans la section iptables/nftables",
     "firewalld_active": "firewalld est le pare-feu actif — la zone par défaut '{zone}' autorise : {services}",
@@ -842,6 +844,7 @@
   },
   "hardening": {
     "rp_filter_ok": "Filtrage par chemin inverse activé en mode strict (rp_filter=1)",
+    "reverts_at_boot": "{param} vaut {now} maintenant, mais {file} le met à {boot} au démarrage — le verdict ci-dessus ne dure que jusqu'au prochain redémarrage",
     "rp_filter_loose": "Filtrage par chemin inverse en mode permissif (rp_filter=2) — envisagez le mode strict (=1)",
     "rp_filter_context": "Effectif sur {iface} : {iface_effective} (le noyau prend le max de conf/all et conf/{iface}) ; conf/all seul vaut {all_value}.",
     "rp_filter_disabled": "Filtrage par chemin inverse désactivé — risque d'usurpation d'adresse IP",
@@ -1345,6 +1348,7 @@
     "ok": "Les paquets système sont à jour"
   },
   "kernel_hardening": {
+    "reverts_at_boot": "{param} vaut {now} maintenant, mais {file} le met à {boot} au démarrage — le verdict ci-dessus ne dure que jusqu'au prochain redémarrage",
     "aslr_full": "ASLR entièrement activé (randomize_va_space=2)",
     "aslr_conservative": "ASLR en mode conservateur (randomize_va_space=1) — envisagez d'activer la randomisation complète",
     "aslr_disabled": "ASLR désactivé (randomize_va_space=0) — disposition mémoire prévisible, exploitation facilitée",
@@ -2421,6 +2425,11 @@
       }
     },
     "fail2ban": {
+      "ssh_jail_blind": {
+        "title": "La jail SSH de fail2ban lit un fichier de journal que rien n'écrit (active, mais aveugle)",
+        "why": "Une jail sur fichier compte les échecs qu'elle trouve dans ses fichiers de journal. Quand aucun démon syslog ne tourne — Debian 12+, Raspberry Pi OS et beaucoup d'installations minimales ne journalisent que dans le journal systemd — /var/log/auth.log n'est jamais écrit : la jail démarre, apparaît dans `fail2ban-client status`, et ne voit jamais un échec de connexion. Mesuré sur un Raspberry Pi avec la jail sur /var/log/auth.log et sans rsyslog : deux échecs de connexion SSH, `Total failed: 0`. La protection contre la force brute est déclarée active et ne protège rien.",
+        "how": "1. Voir ce que lit la jail :\n   sudo fail2ban-client status sshd   # File list: ou Journal matches:\n2. Sur un hôte systemd, faire lire le journal à la jail :\n   printf '[sshd]\\nbackend = systemd\\n' | sudo tee /etc/fail2ban/jail.d/zz-bob-sshd-journal.local\n   sudo systemctl restart fail2ban\n3. Ou installer et démarrer un démon syslog qui écrit le fichier (par ex. rsyslog).\n4. Vérifier que les échecs sont comptés : un échec de connexion, puis\n   sudo fail2ban-client status sshd   # Total failed augmente"
+      },
       "no_jails": {
         "title": "fail2ban tourne mais aucune jail n'est configurée (aucune protection active)",
         "why": "La valeur défensive de fail2ban provient de ses jails — chaque jail surveille un log spécifique (sshd, postfix, nginx) et bannit les IPs qui atteignent un seuil d'échecs. Un daemon fail2ban sans jail activée est l'équivalent d'une caméra de surveillance qui n'enregistre rien : le service tourne mais ne surveille rien et ne bannit personne. La cause la plus fréquente est une config par défaut où chaque jail est `enabled = false` et l'opérateur n'a jamais ré-activé celle qui compte (typiquement sshd).",
@@ -3236,7 +3245,7 @@
       "input_accept": {
         "title": "Politique par défaut INPUT = ACCEPT (chaque paquet non filtré entre)",
         "why": "La politique de la chaîne INPUT est le dernier filet de sécurité du pare-feu quand aucune règle explicite ne matche un paquet entrant. Quand elle est à ACCEPT, tout port n'ayant pas de règle DROP/REJECT spécifique est ouvert au réseau — le défaut est permissif. Le pattern sûr est policy=DROP combiné à des règles ACCEPT explicites pour les services autorisés, de sorte que tout ce qui n'est pas en whitelist est bloqué automatiquement.",
-        "how": "1. Appliquer le default-deny immédiatement. Avant de basculer la policy, assurez-vous d'avoir des règles ACCEPT explicites pour loopback et pour tout service dont vous dépendez (notamment SSH) — sinon vous vous bloquez l'accès :\n   sudo iptables -A INPUT -i lo -j ACCEPT\n   sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT   # garder SSH joignable\n   sudo iptables -P INPUT DROP\n2. Sauvegarder les règles pour qu'elles persistent au redémarrage (iptables-persistent sur Debian/Ubuntu) :\n   sudo apt install iptables-persistent\n   sudo netfilter-persistent save\n3. Pour les systèmes nftables, utilisez :\n   sudo nft chain inet filter input '{ policy drop; }'",
+        "how": "1. Appliquer le default-deny immédiatement. Avant de basculer la policy, assurez-vous d'avoir des règles ACCEPT explicites pour loopback et pour tout service dont vous dépendez (notamment SSH) — sinon vous vous bloquez l'accès :\n   sudo iptables -A INPUT -i lo -j ACCEPT\n   sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n   sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT   # garder SSH joignable\n   sudo iptables -P INPUT DROP\n2. Sauvegarder les règles pour qu'elles persistent au redémarrage (iptables-persistent sur Debian/Ubuntu) :\n   sudo apt install iptables-persistent\n   sudo netfilter-persistent save\n3. nftables : agir dans la table et la chaîne du hook input (sudo nft list ruleset | grep -B2 'hook input') ; table gérée par iptables-nft → commandes iptables ci-dessus. Accepter l'accès d'abord (ICMPv6 aussi en inet/ip6), puis la politique (ici inet filter input) :\n   sudo nft add rule inet filter input iif \"lo\" accept\n   sudo nft add rule inet filter input ct state established,related accept\n   sudo nft add rule inet filter input icmpv6 type '{ destination-unreachable, packet-too-big, time-exceeded, parameter-problem, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert }' accept\n   sudo nft add rule inet filter input tcp dport 22 accept\n   sudo nft add chain inet filter input '{ policy drop; }'\n   L'enregistrer dans /etc/nftables.conf, sinon il disparaît au prochain démarrage.",
         "server": {
           "why": "Sur un serveur, INPUT=ACCEPT signifie que chaque nouveau socket ouvert est joignable depuis n'importe quelle source jusqu'à ce que vous ajoutiez manuellement une règle DROP. Une politique de default-deny est obligatoire sur tout serveur en production. Oublier un DROP explicite aujourd'hui, c'est oublier un port ouvert demain."
         },
@@ -3473,8 +3482,10 @@
     "db_outdated": "La base de données virale a {days} jour(s) — mise à jour recommandée",
     "db_outdated_detail": "Les signatures sont publiées plusieurs fois par jour. Après 7 jours, des centaines de nouveaux variants manquent dans la base, réduisant significativement les taux de détection des menaces récentes.",
     "db_ok": "La base de données virale est à jour ({days} jour(s))",
-    "clamd_inactive": "Le démon ClamAV (clamav-daemon) n'est pas en cours d'exécution",
+    "clamd_inactive": "Le démon ClamAV ({unit}) n'est pas en cours d'exécution",
     "clamd_inactive_detail": "Le service clamav-daemon permet la surveillance en temps réel et est requis pour l’intégration aux serveurs mail (Postfix, Amavis, etc.). Sans le démon, seules les analyses manuelles à la demande sont possibles.",
+    "socket_open_to_all": "Les permissions du socket du démon ClamAV ({path}) laissent tout utilisateur local lui envoyer des commandes, SHUTDOWN compris",
+    "socket_open_to_all_detail": "Ses permissions Unix — écriture sur le socket, traversée de chaque répertoire au-dessus — admettent une connexion de n'importe quel compte de cet hôte (une politique MAC comme SELinux ou AppArmor peut encore en refuser une) : chacun peut donc arrêter le démon, mesuré sur Debian et Alpine tels que livrés. C'est ainsi que le paquet le livre (Debian, Ubuntu, Arch, openSUSE et Alpine). Le restreindre — LocalSocketGroup et LocalSocketMode 660 dans la configuration de clamd, puis un redémarrage — le garde pour le propriétaire, le groupe et root, et coupe tout autre client : vérifiez d'abord sous quels utilisateurs tournent votre filtre de messagerie ou vos analyseurs, et ajoutez-les à ce groupe.",
     "no_scan_log": "Aucun journal d'analyse ClamAV trouvé — date de dernière analyse inconnue",
     "no_scan_log_detail": "Aucun journal trouvé dans les chemins standards (/var/log/clamav/). -r = analyse récursive, --infected = affiche uniquement les fichiers infectés (réduit le bruit), --log = sauvegarde les résultats pour traçabilité.",
     "scan_very_old": "Dernière analyse il y a {days} jour(s) ({date}) — très en retard",
@@ -3513,6 +3524,7 @@
     "not_enabled": "La synchronisation NTP n'est pas activée",
     "not_enabled_detail": "Sans NTP, l'horloge système dérive. Cela casse la validation des certificats TLS, corrompt les horodatages des journaux (rendant l'analyse d'incidents peu fiable) et provoque des échecs d'authentification dans les protocoles dépendants de l'heure (Kerberos, TOTP/2FA). Activez systemd-timesyncd (léger, intégré) ou chrony (plus précis, recommandé pour les serveurs).",
     "not_enabled_reason": "NTP désactivé — risque de dérive horaire",
+    "sync_unknown": "Le client NTP {service} tourne ; la synchronisation de l'horloge n'a pas pu être vérifiée (aucun outil pour l'interroger)",
     "not_synchronized": "NTP est activé mais l'horloge n'est pas encore synchronisée",
     "not_synchronized_detail": "Le service NTP fonctionne mais n'a pas encore terminé sa première synchronisation. C'est normal juste après le démarrage ou sur un système fraîchement installé. Si cela persiste, vérifiez la connectivité vers le pool NTP et consultez : journalctl -u systemd-timesyncd ou chronyc tracking.",
     "not_synchronized_reason": "NTP activé mais pas encore synchronisé"
@@ -3551,6 +3563,8 @@
     "no_rules": "auditd fonctionne mais aucune règle d'audit n'est chargée",
     "no_rules_detail": "auditd est actif mais n'a aucune règle configurée. Sans règles de surveillance, les accès aux fichiers sensibles (/etc/passwd, /etc/shadow, /etc/sudoers) ne sont pas journalisés. Exécutez 'sudo auditctl -l' pour vérifier. Appliquez les règles ci-dessous pour couvrir les chemins les plus critiques.",
     "no_rules_reason": "auditd actif sans règle d'audit chargée",
+    "immutable": "La configuration d'audit est verrouillée jusqu'au prochain redémarrage (enabled 2) — les changements de règles ne se chargent qu'au démarrage",
+    "locked_detail": "Les règles d'audit sont verrouillées (enabled 2) : le fichier de règles écrit maintenant se charge au prochain démarrage — redémarrez pour l'appliquer ; augenrules --load ne peut pas modifier une configuration verrouillée.",
     "missing_sensitive_rules": "auditd ne surveille pas les fichiers système sensibles",
     "missing_sensitive_rules_detail": "Les fichiers sensibles suivants ne sont pas couverts par des règles auditd : {files}. Tout accès ou modification de ces fichiers ne sera pas journalisé.",
     "missing_sensitive_rules_reason": "auditd : fichiers sensibles non surveillés — {files}",
@@ -3820,8 +3834,16 @@
     "no_jails": "Fail2ban fonctionne mais aucun jail n'est actif",
     "no_jails_detail": "Fail2ban fonctionne mais n'a aucun jail actif configuré. Activez au minimum le jail sshd dans /etc/fail2ban/jail.local pour protéger SSH des attaques par force brute.",
     "no_jails_reason": "Fail2ban actif sans aucun jail configuré",
+    "ssh_jail_source_unverified": "La jail SSH de Fail2ban '{jail}' lit {files} ; BOB n'a pas pu établir qu'un démon syslog l'écrit, sa protection n'est donc pas vérifiée",
+    "ssh_jail_file_silent": "La jail SSH de Fail2ban '{jail}' lit {files}, où aucun message de sshd n'a été trouvé ; sa protection n'est donc pas vérifiée",
+    "ssh_jail_file_stale": "La jail SSH de Fail2ban '{jail}' lit {files}, qui contient d'anciens messages de sshd mais pas son dernier ; sa protection n'est donc pas vérifiée",
+    "ssh_jail_misses_failures": "La jail SSH de Fail2ban '{jail}' lit {files}, qui ne contient pas le dernier échec de connexion de sshd ; elle ne voit donc pas les échecs qu'elle doit compter",
+    "ssh_jail_blind": "La jail SSH de Fail2ban '{jail}' lit {files}, mais aucun démon syslog ne l'écrit — les échecs de connexion n'atteignent jamais la jail",
+    "ssh_jail_blind_reason": "La jail SSH lit un fichier de journal que rien n'écrit",
+    "ssh_jail_blind_detail": "La jail '{jail}' surveille {files}. Aucun démon syslog (rsyslog, syslog-ng, syslog) ne tourne : les échecs de sshd vont dans le seul journal systemd et la jail n'en compte aucun — elle est active et ne bannit personne. Faites lire le journal à la jail (backend = systemd), ou démarrez un démon syslog qui écrit le fichier.",
     "active": "Fail2ban actif — {count} jail(s) activé(s)",
     "ssh_jail_active": "Protection SSH contre la force brute active (jail : {jail})",
+    "ssh_jail_active_file_detail": "Vérifié : le fichier de la jail contient le dernier message de sshd, et le dernier échec de connexion de chaque type vu depuis le démarrage de rsyslog (utilisateur inconnu ; mot de passe ou clé refusés pour un utilisateur existant ; PAM ; trop de tentatives). Ce n'est pas une preuve que chaque échec atteint le fichier : seul le dernier de chaque type est comparé, un routage qui envoie ailleurs une partie des échecs d'un type peut échapper, et un type non vu depuis n'est pas vérifié.",
     "status_unreadable": "Impossible de lire la liste des prisons fail2ban",
     "status_unreadable_detail": "`fail2ban-client status` n'a renvoyé aucune liste de prisons alors que le service est actif — refus, délai dépassé, ou socket pas encore prête. Un appel réussi comporte toujours une ligne « Jail list: », même vide : c'est donc une requête échouée et non une machine faisant tourner fail2ban sans rien de configuré. Vérifier avec : sudo fail2ban-client status"
   },
@@ -4146,7 +4168,10 @@
     "backend_detected": "Backend actif : {backend}",
     "firewalld_active": "firewalld est le pare-feu actif — la zone par défaut '{zone}' autorise : {services} ; la policy de chaîne de base reste ACCEPT par conception (firewalld filtre dans ses chaînes de zone)",
     "input_accept": "Politique INPUT par défaut : ACCEPT — tout le trafic entrant est autorisé",
+    "runtime_only_detail": "Cette commande ne modifie que le jeu de règles en cours et n'enregistre rien : au prochain démarrage la politique revient à ACCEPT et ce constat reparaît, sauf si les règles sont enregistrées là où le backend les charge (netfilter-persistent save pour iptables ; /etc/nftables.conf pour nftables). Ses accept sont ajoutés après les règles déjà présentes dans la chaîne, qui continuent donc de décider en premier : une règle qui y refuse votre source SSH la refuse toujours.",
+    "accept_all_detail": "Une règle de cette chaîne accepte chaque paquet avant que la politique ne soit atteinte : passer la politique à DROP ne changerait rien — mesuré, le port est resté ouvert. BOB ne donne pas de commande : retirez d'abord cette règle (repérez-la avec nft -a list ruleset ou iptables -S INPUT), en gardant des accept explicites pour les services nécessaires, puis posez la politique.",
     "input_ok": "Politique INPUT par défaut : {policy} (recommandé)",
+    "input_ok_detail": "Lu dans les politiques par défaut des chaînes (pour nftables, chaque chaîne de base IPv4 du hook input, en tenant compte d'une règle qui accepte tout). Les règles ne sont pas évaluées une à une : que SSH, ou un port donné, franchisse chaque chaîne n'est pas établi ici.",
     "input_unknown": "Politique INPUT par défaut : indéterminée — vérification manuelle recommandée",
     "no_loopback": "Aucune règle loopback (lo) — les services locaux peuvent être inaccessibles",
     "no_conntrack": "Aucune règle ESTABLISHED/RELATED — les connexions sortantes peuvent être bloquées en retour",

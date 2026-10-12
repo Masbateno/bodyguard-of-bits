@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.24.3
+Version:        0.24.4
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,22 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Mon Oct 12 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.24.4-1
+- Patch, BREAKING (scores): -1 for a blind fail2ban SSH jail and for auditd
+  rules that miss writes (read-only, one ABI of two, narrowing filters); +1
+  where auditd coverage, a locked OpenRC auditd or an OpenRC NTP client were
+  misread; +3 where a second IPv4 nftables input chain drops by default.
+- Fixes: turning a firewall on keeps sshd's ports (ufw, every active
+  firewalld zone, raw rules appended after existing ones), no command when
+  they cannot be read; sysctl fixes persist where they win at boot;
+  clamd/auditd/fail2ban/apparmor/NTP fixes name the shipped unit.
+- fail2ban OK needs sshd's latest message and failures in the jail's file.
+- New INFO: audit rules locked; sysctl undone at boot; fail2ban source
+  silent/stale/missing failures/unverified; ClamAV socket open to all; NTP
+  sync unverifiable.
+- Field-validated on Raspberry Pi Zero W, Mint 22.3, Fedora 44, Alpine 3.24,
+  a Fedora 43 VM and containers.
+
 * Fri Oct 09 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.24.3-1
 - Patch, BREAKING (scores): firewalld host +/-3 (false OKs and false alerts
   corrected); up to -2 on a UFW IPV6=no host with other IPv6 INPUT rules.

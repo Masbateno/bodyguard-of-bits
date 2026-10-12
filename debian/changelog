@@ -1,3 +1,32 @@
+bodyguard-of-bits (0.24.4-1) unstable; urgency=medium
+
+  * Patch, BREAKING (scores): -1 where an SSH fail2ban jail reads a log file
+    no syslog daemon writes, and where auditd watches the sensitive files only
+    read-only, for one architecture on a kernel running 32-bit programs, or
+    through a narrowing filter (false OKs corrected); +1 where auditd watches
+    them through a directory or -F path= rule, where a locked auditd runs
+    under OpenRC, where an OpenRC NTP client runs; +3 where a second IPv4
+    nftables input chain drops by default (false alerts removed).
+  * Fixes that cut or failed: turning a firewall on keeps the ports sshd
+    answers on (non-standard and socket-activated ones too) - ufw, every
+    active firewalld zone, and raw iptables/nftables accepts appended after
+    the rules already there, in the chain the hook uses - with no command
+    when those ports cannot be read; sysctl fixes persist in the file that
+    wins at boot; a fail2ban override sorts last; the clamd, auditd,
+    fail2ban, apparmor and NTP fixes name the unit or OpenRC service the
+    host ships.
+  * fail2ban: a file-based jail is OK only when its file holds sshd's latest
+    journal message and latest failure of each kind, logged since rsyslog
+    started.
+  * New INFO: auditd rules locked; a sysctl value the boot files undo; a
+    fail2ban jail file silent, stale, missing failures or unverified; a
+    ClamAV socket every local user can reach; NTP sync unverifiable.
+  * Field-validated on a Raspberry Pi Zero W, Linux Mint 22.3, Fedora 44 and
+    Alpine 3.24, with a Fedora 43 VM and containers (each fix applied as
+    printed, re-audited, rebooted where it matters).
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 12 Oct 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.24.3-1) unstable; urgency=medium
 
   * Patch, BREAKING (scores): on a firewalld host the score moves by 3 either

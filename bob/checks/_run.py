@@ -345,7 +345,115 @@ def sysctl_fix_cmd(param: str, conf: str = SYSCTL_CONF) -> str:
     return f"sudo sysctl -w {param} && {{ {append_once(param, conf)}; }}"
 
 
-def sysctl_fix(param: str, conf: str = SYSCTL_CONF) -> dict:
+#: v0.24.4 — where systemd-sysctl reads its files at boot, most important
+#: first: a file name in an earlier directory masks the same name later on.
+_SYSCTL_BOOT_DIRS = ("/etc/sysctl.d", "/run/sysctl.d", "/usr/local/lib/sysctl.d",
+                     "/usr/lib/sysctl.d", "/lib/sysctl.d")
+_SYSCTL_LINE = re.compile(r"^\s*-?\s*([A-Za-z0-9_./*-]+)\s*=\s*(.*?)\s*$")
+
+
+def read_sysctl_boot_files() -> "list[tuple[str, str, dict]]":
+    """The sysctl files systemd-sysctl applies at boot, in the order it applies
+    them: ``(file name, path, {key: value})``. Never raises.
+
+    v0.24.4 — measured on Linux Mint 22.3: ``/etc/sysctl.d/99-sysctl.conf`` (a
+    link to ``/etc/sysctl.conf``) sorts after BOB's ``99-hardening.conf``, so a
+    value set in sysctl.conf won at boot. BOB's fix said "fixed" and the reboot
+    put the old value back. Knowing the order lets the fix persist where it wins.
+    Keys are normalised to dots; glob keys are kept as written.
+    """
+    chosen: dict[str, str] = {}
+    for directory in _SYSCTL_BOOT_DIRS:
+        try:
+            names = sorted(os.listdir(directory))
+        except OSError:
+            continue
+        for name in names:
+            if name.endswith(".conf") and name not in chosen:
+                chosen[name] = f"{directory}/{name}"
+    files = []
+    for name in sorted(chosen):
+        path = chosen[name]
+        try:
+            text = read_text_capped(Path(path))
+        except (OSError, ValueError):
+            continue
+        settings: dict[str, str] = {}
+        for line in text.splitlines():
+            if line.lstrip().startswith(("#", ";")):
+                continue
+            m = _SYSCTL_LINE.match(line)
+            if m:
+                settings[m.group(1).replace("/", ".")] = m.group(2)
+        files.append((name, path, settings))
+    return files
+
+
+def durable_sysctl_conf(param: str, boot_files, conf: str = SYSCTL_CONF) -> str:
+    """The file a sysctl fix must persist *param* to so that it still holds
+    after a reboot.
+
+    BOB's own file, unless a file applied after it at boot sets the same key to
+    another value: then the last such file wins and the fix goes where it wins.
+    A file under /etc is the administrator's: the setting is appended at its
+    end (within one file the later line wins). A file shipped by the system
+    (/usr/lib, /run) is left alone and a file sorting just after it is created
+    in /etc/sysctl.d. Only exact keys are weighed; glob assignments are not.
+    """
+    key, _, value = param.partition("=")
+    mine = Path(conf).name
+    winner = None
+    for name, path, settings in boot_files:
+        if name > mine and key in settings and settings[key] != value:
+            winner = (name, path)
+    if winner is None:
+        return conf
+    name, path = winner
+    if path.startswith("/etc/"):
+        return os.path.realpath(path)
+    return f"/etc/sysctl.d/{name}-bob.conf"
+
+
+def _sysctl_norm(value) -> str:
+    """A sysctl value as a comparable string: ints compared as ints."""
+    text = str(int(value)) if isinstance(value, (bool, int)) else str(value).strip()
+    try:
+        return str(int(text))
+    except ValueError:
+        return text
+
+
+def sysctl_boot_drift(runtime: dict, boot_files) -> "list[tuple[str, str, str, str]]":
+    """``(key, value now, value at boot, file)`` for each key whose live value
+    differs from the one the boot files will set.
+
+    v0.24.4 — a value set with ``sysctl -w`` lasts until the next reboot, when
+    the files win again: measured on a Raspberry Pi and on Linux Mint, BOB said
+    OK on the live value and the reboot brought the old one back. Keys no boot
+    file sets, or whose live value is unknown (None), are not compared.
+    """
+    drift = []
+    for key, value in runtime.items():
+        if value is None:
+            continue
+        boot = None
+        for _name, path, settings in boot_files:
+            if key in settings:
+                boot = (settings[key], path)
+        if boot is not None and _sysctl_norm(boot[0]) != _sysctl_norm(value):
+            drift.append((key, _sysctl_norm(value), _sysctl_norm(boot[0]), os.path.realpath(boot[1])))
+    return drift
+
+
+def report_boot_drift(result, _t, key: str, runtime: dict, boot_files) -> None:
+    """v0.24.4 — an INFO for every judged sysctl whose live value is not the
+    one the boot files set: the verdict above holds until the next reboot."""
+    for param, now, boot, path in sysctl_boot_drift(runtime, boot_files):
+        tvars = {"param": param, "now": now, "boot": boot, "file": path}
+        result.info(message=_t(key, param=param, now=now, boot=boot, file=path),
+                    key=key, template_vars=tvars)
+
+def sysctl_fix(param: str, conf: str = SYSCTL_CONF, boot=None) -> dict:
     """Both halves of a sysctl remediation: what to show, and what to run.
 
     The command is for a human to read and paste. The action is the same change
@@ -360,6 +468,8 @@ def sysctl_fix(param: str, conf: str = SYSCTL_CONF) -> dict:
     reads docstrings too, and a warn/alert spelled out here would look like a
     call site missing its `nature=`.)
     """
+    if boot:
+        conf = durable_sysctl_conf(param, boot, conf)
     return {"cmd": sysctl_fix_cmd(param, conf),
             "fix_action": {"kind": "sysctl", "param": param, "conf": conf}}
 

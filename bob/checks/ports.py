@@ -38,6 +38,17 @@ from bob.scoring import CheckResult
 # Ports above this threshold are considered ephemeral (kernel-assigned)
 EPHEMERAL_THRESHOLD = 32767
 
+# v0.24.4 — sshd under socket activation: ``ss`` lists the listening socket
+# under ``systemd`` until the first connection starts sshd.
+_SSH_SOCKET_UNITS = ("ssh.socket", "sshd.socket")
+_LISTEN_STREAM = re.compile(r"^Listen=.*:(\d+) \(Stream\)$")
+
+
+def _parse_socket_listen(output: str) -> "frozenset[int]":
+    """Ports from ``systemctl show -p Listen`` lines (``Listen=[::]:22 (Stream)``)."""
+    return frozenset(int(m.group(1)) for line in output.splitlines()
+                     if (m := _LISTEN_STREAM.match(line.strip())))
+
 # System-internal ports that are safe to ignore without UFW rules
 # Format: (port, proto, description)
 _SYSTEM_PORTS: list[tuple[int, str, str]] = [
@@ -177,6 +188,8 @@ class PortsSnapshot:
     ss_output: str
     ufw_apps:  "dict[str, list[str]]" = field(default_factory=dict)
     ports_readable: bool = True
+    # v0.24.4 — the ports ssh.socket / sshd.socket listen on.
+    ssh_socket_ports: "frozenset[int]" = frozenset()
 
     @classmethod
     def from_system(cls) -> "PortsSnapshot":
@@ -192,7 +205,9 @@ class PortsSnapshot:
 
         return cls(ports=ports, ufw_rules=ufw_rules, ss_output=ss.stdout,
                    ufw_apps=_read_ufw_app_profiles(),
-                   ports_readable=ss.ok)
+                   ports_readable=ss.ok,
+                   ssh_socket_ports=_parse_socket_listen(
+                       _run("systemctl", "show", "-p", "Listen", *_SSH_SOCKET_UNITS)))
 
     @property
     def loopback_only_ports(self) -> set[str]:
@@ -201,6 +216,43 @@ class PortsSnapshot:
         for lp in self.ports:
             bindings[lp.port_proto].append(lp)
         return {pp for pp, lps in bindings.items() if all(lp.is_loopback for lp in lps)}
+
+    @property
+    def ssh_ports(self) -> "list[int] | None":
+        """TCP ports sshd answers on outside loopback (v0.24.4), for the firewall
+        fixes that must keep them open; None when that cannot be established.
+
+        A socket-activated sshd (Ubuntu 24.04's ``ssh.socket``) is listed under
+        ``systemd`` until a first connection starts it: a port systemd holds
+        counts when the ssh socket unit listens on it — measured on Mint with
+        ``ListenStream`` on 22 and 2222, keeping only 22 cut 2222 — and port 22
+        held by any process counts when that cannot be read. With no process
+        names at all (``ss -p`` without privileges) nothing can be attributed:
+        None, and the fix keeps 22.
+        """
+        if not self.ports_readable:
+            return None
+        external = [lp for lp in self.ports if lp.proto == "tcp" and not lp.is_loopback]
+        # v0.24.4: no process names at all (``ss`` without root) is no
+        # attribution — checked first, measured on Mint: run as a user, the
+        # port-22 fallback below turned the unnamed listeners into [22].
+        if external and not any(lp.process for lp in external):
+            return None
+        ports = {lp.port for lp in external if lp.process.startswith("sshd")}
+        ports |= {lp.port for lp in external if lp.process == "systemd" and lp.port in self.ssh_socket_ports}
+        if not ports and any(lp.port == 22 and lp.process for lp in external):
+            ports = {22}
+        return sorted(ports)
+
+    @property
+    def ssh_on_ipv6(self) -> "bool | None":
+        """sshd answers on an IPv6 address outside loopback (v0.24.4) — what a
+        ufw set to IPV6=no would cut. None when that cannot be established."""
+        ports = self.ssh_ports
+        if ports is None:
+            return None
+        return any(lp.proto == "tcp" and not lp.is_loopback and ":" in lp.address
+                   and lp.port in ports for lp in self.ports)
 
     @property
     def active_external_ports(self) -> set[str]:

@@ -10,8 +10,10 @@ conntrack rules are in place when the INPUT policy is restrictive.
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass, field
 
+from bob.checks import _ufw
 from bob.checks._run import _command_exists, _identity_t, _run, install_command, run_result
 from bob.scoring import CheckResult
 
@@ -47,6 +49,14 @@ class IptablesNftSnapshot:
     # True when nft answered cleanly and its ruleset filters no inbound
     # traffic. A measurement, not an absence: the backend is installed.
     nft_no_input_filter: bool = False
+    #: v0.24.4 — where the input / forward hooks live: ("nft", family, table,
+    #: chain), ("iptables",) for a chain iptables manages (iptables-nft says
+    #: so in the ruleset), or None when that could not be read.
+    input_target:   "tuple | None" = None
+    forward_target: "tuple | None" = None
+    #: The chain the input fix would target holds a rule accepting everything:
+    #: a drop policy behind it would change nothing.
+    input_accepts_all: bool = False
 
     @classmethod
     def from_system(cls) -> "IptablesNftSnapshot":
@@ -74,6 +84,9 @@ class IptablesNftSnapshot:
                     has_loopback_rule=_nft_has_loopback(raw),
                     has_conntrack_rule=_nft_has_conntrack(raw),
                     raw_output=raw,
+                    input_target=_nft_hook_target(raw, "input", _nft_managed(nft_res.stderr)),
+                    forward_target=_nft_hook_target(raw, "forward", _nft_managed(nft_res.stderr)),
+                    input_accepts_all=_nft_first_ipv4_chain_accepts_all(raw, "input"),
                 )
 
         # --- fall back to iptables ---
@@ -87,6 +100,9 @@ class IptablesNftSnapshot:
                     has_loopback_rule=_ipt_has_loopback(raw),
                     has_conntrack_rule=_ipt_has_conntrack(raw),
                     raw_output=raw,
+                    input_target=("iptables",),
+                    forward_target=("iptables",),
+                    input_accepts_all=bool(re.search(r"^-A INPUT -j ACCEPT\s*$", raw, re.MULTILINE)),
                 )
 
         # Nothing came back from either backend. That is two different
@@ -137,16 +153,111 @@ class IptablesNftSnapshot:
 # Parsers — nftables
 # ---------------------------------------------------------------------------
 
+#: The families whose base chains see IPv4 — what these findings are about.
+#: An ``ip6`` chain filters IPv6 only (v0.24.4, measured on Mint: an ``ip6``
+#: chain at policy drop beside ``ip filter INPUT`` at accept left 8080 open
+#: over IPv4, and BOB had read the hook as DROP).
+_IPV4_FAMILIES = ("ip", "inet")
+_RULE_NOISE = re.compile(r"\bcounter(?:\s+packets\s+\d+\s+bytes\s+\d+)?|#.*$")
+
+
+def _nft_base_chains(ruleset: str, hook: str) -> "list[dict]":
+    """The base chains on *hook*, in ruleset order: family, table, chain,
+    policy and the rules they hold."""
+    chains: list = []
+    table = current = None
+    for line in ruleset.splitlines():
+        text = line.strip()
+        m = re.match(r"table\s+(\w+)\s+(\S+)\s*\{", text)
+        if m:
+            table, current = (m.group(1), m.group(2)), None
+            continue
+        m = re.match(r"chain\s+(\S+)\s*\{", text)
+        if m and table:
+            current = {"family": table[0], "table": table[1], "chain": m.group(1),
+                       "hook": None, "policy": None, "rules": []}
+            chains.append(current)
+            continue
+        if current is None:
+            continue
+        if text == "}":
+            current = None
+            continue
+        hm = re.search(r"\bhook\s+(\w+)", text)
+        if hm:
+            current["hook"] = hm.group(1).lower()
+            pm = re.search(r"\bpolicy\s+(\w+)", text)
+            current["policy"] = pm.group(1).upper() if pm else "ACCEPT"
+        elif text:
+            current["rules"].append(text)
+    return [c for c in chains if c["hook"] == hook]
+
+
+def _nft_first_ipv4_chain_accepts_all(ruleset: str, hook: str) -> bool:
+    """Whether the chain a fix would target (the first ip/inet base chain on
+    *hook*) holds a rule accepting everything."""
+    for c in _nft_base_chains(ruleset, hook):
+        if c["family"] in _IPV4_FAMILIES:
+            return any(_accepts_everything(r) for r in c["rules"])
+    return False
+
+
+def _accepts_everything(rule: str) -> bool:
+    """A rule that accepts every packet: ``accept``, counters and comments aside."""
+    return _RULE_NOISE.sub("", rule).strip() == "accept"
+
+
 def _nft_policy(ruleset: str, hook: str) -> str:
-    """Return the default policy for a given hook name in nft ruleset output."""
-    pattern = re.compile(
-        rf"hook\s+{hook}\s+[^;]+;\s*policy\s+(\w+)\s*;",
-        re.IGNORECASE,
-    )
-    m = pattern.search(ruleset)
-    if m:
-        return m.group(1).upper()
-    return "unknown"
+    """Return the default policy on a hook in nft ruleset output, for IPv4.
+
+    v0.24.4 — every base chain on a hook sees the packet in priority order; an
+    accept hands it to the next one, a drop ends it. One chain dropping by
+    default is enough for the hook to filter. Measured on Mint 22.3: with
+    iptables-nft's ``ip filter INPUT`` at policy accept and a second chain
+    (``inet bobB``, priority 10, policy drop) keeping SSH, port 8080 was closed
+    — and BOB, reading the first chain only, raised "INPUT ACCEPT, all incoming
+    traffic is allowed" (ALERT −3). Two limits, measured there too: an ``ip6``
+    chain filters no IPv4, and a drop policy behind a rule that accepts
+    everything is never reached — 8080 stayed open over IPv4 both times. BOB
+    reads policies; it does not evaluate every rule.
+    """
+    chains = _nft_base_chains(ruleset, hook)
+    if not chains:
+        return "unknown"
+    effective = ["ACCEPT" if any(_accepts_everything(r) for r in c["rules"]) else c["policy"]
+                 for c in chains if c["family"] in _IPV4_FAMILIES]
+    for restrictive in ("DROP", "REJECT"):
+        if restrictive in effective:
+            return restrictive
+    # No IPv4 base chain on the hook filters nothing for IPv4.
+    return "ACCEPT"
+
+
+def _nft_managed(stderr: str) -> "frozenset[tuple]":
+    """Tables nft says iptables-nft manages — it says so on stderr:
+    ``# Warning: table ip filter is managed by iptables-nft, do not touch!``"""
+    return frozenset(m.groups() for m in re.finditer(
+        r"table\s+(\w+)\s+(\S+)\s+is managed by iptables-nft", stderr or ""))
+
+
+def _nft_hook_target(ruleset: str, hook: str, managed: "frozenset[tuple]" = frozenset()) -> "tuple | None":
+    """Where the first base chain on *hook* lives, as a fix must name it.
+
+    v0.24.4 — the fixes named ``inet filter input`` whatever the host had.
+    Measured on Mint 22.3 (iptables-nft): the input hook is chain ``INPUT`` in
+    ``table ip filter``, and ``nft chain inet filter input …`` failed with "No
+    such file or directory; did you mean table 'filter' in family ip?". nft
+    prints "table ip filter is managed by iptables-nft, do not touch!" above
+    such a table — on stderr, measured on Mint (nftables 1.0.9): *managed* —
+    and those chains are iptables' to change.
+    """
+    for c in _nft_base_chains(ruleset, hook):
+        if c["family"] not in _IPV4_FAMILIES:
+            continue          # an ip6 chain does not carry the IPv4 policy the finding is about
+        if (c["family"], c["table"]) in managed:
+            return ("iptables",)
+        return ("nft", c["family"], c["table"], c["chain"])
+    return None
 
 
 def _nft_has_loopback(ruleset: str) -> bool:
@@ -197,6 +308,61 @@ def _ipt_has_conntrack(rules: str) -> bool:
     ))
 
 
+#: ICMPv6 a host must accept to keep IPv6 working (RFC 4890 §4.4.1), as ufw's
+#: before6.rules does, echo aside.
+_ICMPV6_NEEDED = ("destination-unreachable, packet-too-big, time-exceeded, parameter-problem, "
+                  "nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert")
+
+
+def _nft_rule(target: tuple, rule: str) -> str:
+    _, family, table, chain = target
+    return f"sudo nft insert rule {family} {shlex.quote(table)} {shlex.quote(chain)} {rule}"
+
+
+def _nft_append(target: tuple, rule: str) -> str:
+    _, family, table, chain = target
+    return f"sudo nft add rule {family} {shlex.quote(table)} {shlex.quote(chain)} {rule}"
+
+
+def _nft_drop_policy(target: tuple) -> str:
+    _, family, table, chain = target
+    # The documented form (nft(8): {add | create} chain). Measured on nftables
+    # 1.0.9: on an existing base chain it changes the policy, exit 0, as the
+    # undocumented bare `nft chain …` BOB printed before did.
+    return f"sudo nft add chain {family} {shlex.quote(table)} {shlex.quote(chain)} '{{ policy drop; }}'"
+
+
+def _input_default_deny(target: "tuple | None", ssh_ports: "list[int] | None") -> "str | None":
+    """Default-deny on input that keeps the operator's way in (v0.24.4).
+
+    Measured on Mint 22.3 over SSH: ``iptables -P INPUT DROP``, as printed,
+    left new connections unanswered and froze the session that ran it — no
+    rule accepted loopback, established traffic or sshd's port. Loopback,
+    established/related and the ports sshd answers on are accepted first; then
+    the policy.
+
+    The accepts are *appended*, after the rules already there. Measured on a
+    Fedora 43 VM: a chain dropping SSH from one neighbour, then BOB's fix with
+    its accepts inserted at the top — the neighbour got in, and BOB then said
+    INPUT DROP, OK. Appended, the administrator's rules keep deciding first.
+    """
+    if target is None or ssh_ports is None:
+        return None       # a policy that might cut an sshd BOB cannot place is no fix
+    ports = sorted(set(ssh_ports))
+    if target[0] == "iptables":
+        steps = ["sudo iptables -A INPUT -i lo -j ACCEPT",
+                 "sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"]
+        steps += [f"sudo iptables -A INPUT -p tcp --dport {p} -j ACCEPT" for p in ports]
+        return " && ".join(steps + ["sudo iptables -P INPUT DROP"])
+    steps = [_nft_append(target, 'iif "lo" accept'), _nft_append(target, "ct state established,related accept")]
+    if target[1] in ("inet", "ip6"):
+        # IPv6 needs neighbour and router discovery, which conntrack does not
+        # call established: without them a drop policy cuts IPv6 itself.
+        steps.append(_nft_append(target, f"icmpv6 type '{{ {_ICMPV6_NEEDED} }}' accept"))
+    steps += [_nft_append(target, f"tcp dport {p} accept") for p in ports]
+    return " && ".join(steps + [_nft_drop_policy(target)])
+
+
 # ---------------------------------------------------------------------------
 # Check
 # ---------------------------------------------------------------------------
@@ -206,6 +372,8 @@ def check_iptables_nftables(
     ufw_installed: bool = False,
     firewalld=None,
     t=None,
+    ssh_ports: "list[int] | None" = None,
+    ufw_ipv6_off: bool = False,
 ) -> CheckResult:
     """
     Audit the non-UFW firewall layer (iptables or nftables).
@@ -251,7 +419,8 @@ def check_iptables_nftables(
             message=_t("firewall_iptables.nft_no_input_filter"),
             points=3,
             nature="action",
-            cmd="sudo ufw enable" if ufw_installed else "sudo nft -f /etc/nftables.conf",
+            cmd=_ufw.enable_cmd(ssh_ports, ipv6_off=ufw_ipv6_off) if ufw_installed else "sudo nft -f /etc/nftables.conf",
+            detail=_t("firewall.ssh_ports_unknown_detail") if ufw_installed and ssh_ports is None else "",
         )
         return result
 
@@ -282,16 +451,23 @@ def check_iptables_nftables(
             key="firewall_iptables.input_accept",
             message=_t("firewall_iptables.input_accept"),
             points=3,
-            cmd=(
-                "sudo iptables -P INPUT DROP"
-                if snapshot.backend == "iptables"
-                else 'sudo nft chain inet filter input \'{ policy drop; }\''
-            ),
+            # v0.24.4: a front-end the host has keeps SSH (the same command as
+            # firewall.inactive); otherwise the backend's own default-deny,
+            # with the way in accepted first, in the chain the hook uses.
+            cmd=(_ufw.enable_cmd(ssh_ports, ipv6_off=ufw_ipv6_off) if ufw_installed
+                 else None if snapshot.input_accepts_all
+                 else _input_default_deny(snapshot.input_target, ssh_ports)),
+            detail=(_t("firewall.ssh_ports_unknown_detail") if ssh_ports is None
+                    else "" if ufw_installed or snapshot.input_target is None
+                    else _t("firewall_iptables.accept_all_detail") if snapshot.input_accepts_all
+                    else _t("firewall_iptables.runtime_only_detail")),
             nature="action",
         )
     elif snapshot.input_policy in ("DROP", "REJECT"):
         result.ok(
             message=_t("firewall_iptables.input_ok", policy=snapshot.input_policy),
+            # v0.24.4: what this OK rests on — policies, not every rule.
+            detail=_t("firewall_iptables.input_ok_detail"),
             key="firewall_iptables.input_ok",
         )
 
@@ -303,8 +479,9 @@ def check_iptables_nftables(
                 points=1,
                 cmd=(
                     "sudo iptables -I INPUT 1 -i lo -j ACCEPT"
-                    if snapshot.backend == "iptables"
-                    else 'sudo nft insert rule inet filter input iif "lo" accept'
+                    if snapshot.input_target == ("iptables",)
+                    else _nft_rule(snapshot.input_target, 'iif "lo" accept') if snapshot.input_target
+                    else None
                 ),
                 nature="action",
             )
@@ -316,8 +493,9 @@ def check_iptables_nftables(
                 points=1,
                 cmd=(
                     "sudo iptables -I INPUT 2 -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
-                    if snapshot.backend == "iptables"
-                    else "sudo nft insert rule inet filter input ct state established,related accept"
+                    if snapshot.input_target == ("iptables",)
+                    else _nft_rule(snapshot.input_target, "ct state established,related accept")
+                    if snapshot.input_target else None
                 ),
                 nature="action",
             )
@@ -335,8 +513,9 @@ def check_iptables_nftables(
             points=1,
             cmd=(
                 "sudo iptables -P FORWARD DROP"
-                if snapshot.backend == "iptables"
-                else 'sudo nft chain inet filter forward \'{ policy drop; }\''
+                if snapshot.forward_target == ("iptables",)
+                else _nft_drop_policy(snapshot.forward_target) if snapshot.forward_target
+                else None
             ),
             nature="action",
         )

@@ -631,5 +631,31 @@ firewalld`, a probe from another LAN host and a new audit.*
 | IPv6 source forms (`::/1` + `8000::/1`) | soft | §1 | Covered by the guards only: the probing host had no global IPv6 address. |
 | Exposure split across zones by narrower, non-adding sources | soft | §1 | Each such zone shows an INFO; BOB does not weigh how much of a family they reach together short of the whole. |
 
+
+### 0.24.4 field pass — service checks against the service's own answer, fixes applied as printed
+
+*A field campaign (2026-10-09 → 2026-10-12): each service check compared with what the
+service itself reports, each fix BOB prints applied exactly as printed and re-audited,
+rebooted where persistence was the claim. Every change to a remote firewall was armed
+with an automatic rollback first, and access checked between cases.*
+
+| Host | Measured | Result |
+|------|----------|--------|
+| Raspberry Pi Zero W (Raspbian 13 trixie, armv6l) | `ufw enable` over SSH; fail2ban jail on `/var/log/auth.log` with no rsyslog vs `Journal matches:`; sysctl fix against a later `99-zlocal.conf`, rebooted; auditd `-w /etc/`, `-F path=` (b32), `-e 2` then reboot | ufw: the bare enable cut port 22, the new allow-first command kept it; jail on a file nothing wrote counted 0 failures → WARN, the journal fix counted them; sysctl held after reboot in the winning file; auditd coverage read as the audit log showed it, the locked state said |
+| Linux Mint 22.3 (ufw 0.36.2, iptables-nft, rsyslog) | sshd on 22+2222 and `ssh.socket` on 22+2222; ufw `IPV6=no` with a link-local neighbour in a netns; `/etc/sysctl.conf` overriding; raw `iptables -P INPUT DROP` and the nft form; a second nftables input chain (inet / ip6 / ip, accept-everything); an SSH restriction for one neighbour; fail2ban under rsyslog — file not written, stale copy, rsyslog re-routed and restarted, failures of one kind routed away; BOB run as a user | allow-first kept every sshd port, socket-activated ones too; IPv6 turned on first kept the neighbour; raw DROP froze the session (old form) and the nft form named a missing table → appended accepts in the hook's real chain kept SSH and the neighbour's restriction; policy read per IPv4 family; fail2ban OK only with sshd's latest message and failures of each kind in the file since rsyslog started; unnamed listeners → no command |
+| Fedora 44 Server (SELinux enforcing, firewalld) | clamd@scan from the printed fix; timesyncd fix; sysctl live value vs `50-default.conf` | clamd@scan needed its socket and database first, then active; socket 0666 under a 0710 dir refused `nobody`; reverts-at-boot INFO on `protected_hardlinks` |
+| Alpine 3.24 (OpenRC, BusyBox, musl) | auditd locked (`enabled 2`) and running; the auditd fix under OpenRC; negative audit rules (read-only, never, b32, no perm) against the audit log; BusyBox ntpd | locked auditd read as running; the rc-update/rc-service fix applied, auditd started, the finding cleared; BOB matched the audit log on six rule forms; ntpd seen, sync said unverifiable |
+| Fedora 43 VM (firewalld 2.3.2, NetworkManager, auditd) | interface bound to `block`, firewalld absent / stopped, the printed fix, reboot, start-up window under authenticated probes; auditd b64/b32 with a static i386 writer, `success=`/`auid`/`exe` filters, `-S` beside `perm`, `-e 2` with auditd killed; raw nft chain with an SSH restriction and with an accept-everything rule | ssh in every active zone (block kept SSH, reboot too), ~1 s of refused new logins while firewalld starts, open session kept; audit coverage needs both ABIs and no narrowing filter (BOB = audit log on every set); `pid 0` with `enabled 2` read as stopped; appended accepts kept the restriction; no fix behind accept-everything |
+| Containers (Debian 13, Ubuntu 24.04, Arch, openSUSE Tumbleweed, Alpine 3.22/edge, Fedora 44) | each family's clamd unit and packaged socket; unprivileged `SHUTDOWN`; `LocalSocketGroup` + `660`; syslog-ng 4.8.1 reload | unit per family named; SHUTDOWN stopped clamd as packaged (Alpine, Debian) → INFO; 660 group socket refused the user, served the group; syslog-ng re-routes on reload without restarting |
+
+**Still open:**
+
+| Gap | Sev. | § | Note |
+|-----|------|---|------|
+| nftables rules are not evaluated one by one | soft | §1 | BOB reads base-chain policies (family, accept-everything); `input_ok` says reachability is not established. |
+| fail2ban routing is sampled, not proven | soft | §3 | Latest sshd message and latest failure of each kind seen since rsyslog started; OpenRC / syslog-ng jails on files are not verified. |
+| ClamAV socket open to every local user | soft | §5 | INFO without a deduction in this patch; a scored check belongs in a minor release. |
+| `sudo` vs Alpine's `doas` | soft | — | Every printed fix uses `sudo`; left to a release of its own. |
+
 ---
 © 2026 Cédric Clauzel

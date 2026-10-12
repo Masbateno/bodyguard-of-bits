@@ -194,6 +194,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ("fail2ban", [
         "fail2ban.no_jails",
         "fail2ban.service_inactive",
+        "fail2ban.ssh_jail_blind",
     ]),
     ("DDNS / external exposure", [
         "ddns.found",
