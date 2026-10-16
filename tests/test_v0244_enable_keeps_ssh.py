@@ -139,6 +139,7 @@ class TestEveryEnableKeepsSsh:
     def test_installing_firewalld_keeps_the_ssh_service(self, manager):
         manager("dnf")
         cmd, _ = _firewall_install_fix(_t, [22])
+        assert cmd.index("firewall-offline-cmd --add-service=ssh") < cmd.index("systemctl enable --now firewalld")
         assert cmd.index("systemctl enable --now firewalld") \
             < cmd.index("firewall-cmd --permanent --add-service=ssh") \
             < cmd.index("firewall-cmd --reload")
@@ -157,17 +158,36 @@ class TestEveryEnableKeepsSsh:
     def test_installing_firewalld_keeps_ssh_in_every_active_zone(self, manager, tmp_path):
         """An interface NetworkManager binds to another zone, or a source bound
         to one, is judged by that zone, not the default. The printed command is
-        run here against a stand-in firewall-cmd answering as firewalld 2.x does."""
+        run here against stand-ins answering as firewalld 2.3 and NetworkManager
+        1.54 do — strict as they are: firewall-cmd refuses --add-service with
+        --add-port ("not allowed with argument"), firewall-offline-cmd takes one
+        action per call. v0.25.0: the 0.24.4 command passed a lenient stand-in
+        and, on Fedora 43 for an sshd on 22 and 2222, stopped right after
+        starting firewalld — 29 of 34 new SSH logins refused."""
         import os
         import subprocess
         manager("dnf")
         cmd, _ = _firewall_install_fix(_t, [2222, 22])
         then = cmd.split(" && ", 1)[1]          # past the package install
         log = tmp_path / "calls"
+        strict = ('case " $* " in *" --add-service="*" --add-port="*|*" --add-port="*" --add-service="*) '
+                  'echo "error: argument --add-port: not allowed with argument --add-service" >&2; exit 2;; esac\n')
         for name, body in {
             "sudo": 'exec "$@"',
-            "systemctl": "exit 0",
-            "firewall-cmd": ('[ "$1" = --get-active-zones ] && { printf \''
+            "systemctl": f'echo "systemctl $*" >> {log}',
+            "nmcli": ('[ "$*" = "-g UUID connection show --active" ] && { printf \'u1\\nu2\\n\'; exit 0; }\n'
+                      '[ "$*" = "-g connection.zone connection show u1" ] && { echo internal; exit 0; }\n'
+                      'echo'),
+            "firewall-offline-cmd": (strict
+                                     + 'n=0; for a; do case "$a" in --add-*) n=$((n+1));; esac; done\n'
+                                     '[ $n -gt 1 ] && exit 2\n'
+                                     '[ "$1" = --list-all-zones ] && { printf \''
+                                     'public (default)\\n  interfaces: \\n  sources: \\n'
+                                     'internal\\n  interfaces: \\n  sources: \\n'
+                                     'work\\n  interfaces: \\n  sources: 192.168.1.0/24\\n\'; exit 0; }\n'
+                                     f'echo "offline $*" >> {log}'),
+            "firewall-cmd": (strict
+                             + '[ "$1" = --get-active-zones ] && { printf \''
                              'public (default)\\n  interfaces: enp1s0\\n'
                              'internal\\n  interfaces: enp2s0\\n'
                              'work\\n  sources: 192.168.1.0/24\\n\'; exit 0; }\n'
@@ -178,9 +198,40 @@ class TestEveryEnableKeepsSsh:
         env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
         subprocess.run(["sh", "-c", then], check=True, env=env, timeout=30)
         calls = log.read_text().splitlines()
+        start = calls.index("systemctl enable --now firewalld")
+        before = calls[:start]
+        assert "offline --add-service=ssh" in before and "offline --add-port=2222/tcp" in before
+        for zone in ("internal", "work"):          # NetworkManager's, and bound in its file
+            assert f"offline --zone={zone} --add-service=ssh" in before
+            assert f"offline --zone={zone} --add-port=2222/tcp" in before
         for zone in ("public", "internal", "work"):
-            assert f"--permanent --zone={zone} --add-service=ssh --add-port=2222/tcp" in calls
+            assert f"--permanent --zone={zone} --add-service=ssh" in calls[start:]
+            assert f"--permanent --zone={zone} --add-port=2222/tcp" in calls[start:]
         assert calls[-1] == "--reload"
+
+    def test_a_zone_the_offline_tool_does_not_know_does_not_stop_the_chain(self, manager, tmp_path):
+        """NetworkManager may name a zone firewalld has no file for: the offline
+        call fails, firewalld must still start and the online pass still run."""
+        import os
+        import subprocess
+        manager("dnf")
+        cmd, _ = _firewall_install_fix(_t, [22])
+        log = tmp_path / "calls"
+        for name, body in {
+            "sudo": 'exec "$@"',
+            "systemctl": f'echo "systemctl $*" >> {log}',
+            "nmcli": ('[ "$*" = "-g UUID connection show --active" ] && { echo u1; exit 0; }\necho ghost'),
+            "firewall-offline-cmd": ('[ "$1" = --list-all-zones ] && exit 0\n'
+                                     '[ "$1" = --zone=ghost ] && { echo "INVALID_ZONE: ghost" >&2; exit 112; }\n'
+                                     f'echo "offline $*" >> {log}'),
+            "firewall-cmd": ('[ "$1" = --get-active-zones ] && exit 0\n' f'echo "$*" >> {log}'),
+        }.items():
+            (tmp_path / name).write_text(f"#!/bin/sh\n{body}\n")
+            (tmp_path / name).chmod(0o755)
+        env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
+        subprocess.run(["sh", "-c", cmd.split(" && ", 1)[1]], check=True, env=env, timeout=30)
+        calls = log.read_text().splitlines()
+        assert "systemctl enable --now firewalld" in calls and calls[-1] == "--reload"
 
     def test_nft_with_no_input_filter(self):
         result = check_iptables_nftables(IptablesNftSnapshot(backend="nftables", input_policy="ACCEPT",
@@ -268,4 +319,4 @@ def test_the_firewalld_detail_says_ssh_stays_in_every_active_zone(monkeypatch):
     finally:
         i18n.init(lang="en")
     assert "every active zone" in detail and "--remove-service=ssh" in detail
-    assert "new SSH logins failed for about a second" in detail     # measured on Fedora
+    assert "before firewalld starts" in detail and "0 new SSH logins refused" in detail  # measured on Fedora

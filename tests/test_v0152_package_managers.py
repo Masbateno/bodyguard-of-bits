@@ -24,6 +24,16 @@ import pytest
 from bob.checks._run import _PACKAGE_QUERIES, package_installed
 
 
+
+@pytest.fixture(scope="module")
+def registry():
+    """One registry for the module. Was a class-scoped fixture on each class,
+    defined as an instance method — deprecated (PytestRemovedIn10Warning,
+    pytest 9.1 on Ubuntu 26.04) and removed in pytest 10."""
+    from bob.registry import ServiceRegistry
+    return ServiceRegistry.load()
+
+
 class TestEveryManagerIsAsked:
     @pytest.mark.parametrize("tool", ["dpkg-query", "rpm", "pacman", "apk"])
     def test_the_manager_is_in_the_table(self, tool):
@@ -166,11 +176,6 @@ class TestTheRegistryNamesEachDistributionsPackage:
     conclusions can live in a unit test; the container runs cannot.
     """
 
-    @pytest.fixture(scope="class")
-    def registry(self):
-        from bob.registry import ServiceRegistry
-        return ServiceRegistry.load()
-
     @pytest.mark.parametrize("service_id,names", [
         ("apache", {"apache2", "httpd", "apache"}),      # Debian / RHEL / Arch
         ("mysql",  {"mysql-server", "mariadb-server", "mariadb"}),
@@ -198,11 +203,6 @@ class TestTheRegistryNamesEachDistributionsPackage:
 
 
 class TestConfigPathsMeasuredPerDistribution:
-    @pytest.fixture(scope="class")
-    def registry(self):
-        from bob.registry import ServiceRegistry
-        return ServiceRegistry.load()
-
     @pytest.mark.parametrize("service_id,path,where", [
         ("apache",     "/etc/apache2/ports.conf",              "Debian"),
         ("apache",     "/etc/apache2/httpd.conf",              "Alpine"),
@@ -247,11 +247,6 @@ class TestOpenSUSEMixesTheConventions:
     `listen_port=2121` and a `my.cnf.d` drop-in on 3307, all four read and all
     four detected through `rpm`.
     """
-
-    @pytest.fixture(scope="class")
-    def registry(self):
-        from bob.registry import ServiceRegistry
-        return ServiceRegistry.load()
 
     def test_the_opensuse_listen_file_is_declared(self, registry):
         declared = next(s for s in registry._services

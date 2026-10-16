@@ -15,6 +15,7 @@ Split into:
 
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import dataclass
 
@@ -22,11 +23,14 @@ from pathlib import Path
 
 from bob.checks._run import (
     TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t, _run, is_unit_active,  # noqa: F401
-    openrc_available, path_exists, service_enable_cmd, unit_active_state,
+    openrc_available, path_exists, run_result, service_enable_cmd, unit_active_state,
 )
 from bob.scoring import CheckResult
 
 # Known NTP service unit names (checked in order)
+#: ``chronyc tracking``: "Normal", "Insert second", "Delete second" or
+#: "Not synchronised" (chrony's own wording, under LC_ALL=C).
+_CHRONY_LEAP = re.compile(r"^Leap status\s*:\s*(.+?)\s*$", re.MULTILINE)
 _NTP_SERVICES = ("systemd-timesyncd", "chronyd", "ntpd", "openntpd", "ntp")
 #: v0.24.4 — the NTP clients an OpenRC host may ship an init script for, most
 #: common first. Alpine's default is BusyBox ``ntpd``.
@@ -109,13 +113,19 @@ def _check_sync_fallback(service: str) -> "bool | None":
     """
     Best-effort sync check when timedatectl is unavailable.
 
-    - chronyc tracking: exit-0 + non-empty output → synced
+    - chronyc tracking: its "Leap status" line — "Not synchronised" is not in
+      sync (v0.25.0: any output used to count as synced; measured on Alpine
+      3.22, chrony pointed at an unreachable server printed "Not synchronised"
+      and BOB said "NTP time synchronisation active")
     - ntpstat: exit-0 → synced
     - systemd-timesyncd: assume synced if active (timedatectl not available)
     """
     if service in ("chronyd",) and _command_exists("chronyc"):
-        out = _run("chronyc", "tracking")
-        return bool(out.strip())
+        res = run_result("chronyc", "tracking")
+        leap = _CHRONY_LEAP.search(res.stdout) if res.ok else None
+        if leap is None:
+            return None                         # no answer we can read
+        return leap.group(1) != "Not synchronised"
     if service == "ntpd" and _command_exists("ntpstat"):
         try:
             result = subprocess.run(
@@ -169,7 +179,8 @@ def check_ntp(snapshot: NtpSnapshot, t: TranslationFunc | None = None) -> CheckR
             reason=_t("ntp.not_synchronized_reason"),
             points=1,
             detail=_t("ntp.not_synchronized_detail"),
-            cmd="sudo timedatectl set-ntp true",
+            # timedatectl only where it answered: an OpenRC host has none.
+            cmd="sudo timedatectl set-ntp true" if snapshot.timedatectl_ok else None,
             nature="improvement",
         )
         return result

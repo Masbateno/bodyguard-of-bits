@@ -132,7 +132,7 @@
       "core_dumps": "Disposition des core dumps — core_pattern, stockage systemd-coredump, limites",
       "kexec_lockdown": "Intégrité du boot — kexec_load_disabled + mode lockdown noyau",
       "faillock": "Verrouillage de compte PAM — pam_faillock/tally2 dans la pile auth, seuil deny",
-      "disk_encryption": "Chiffrement du disque — si le système de fichiers racine est sur un volume LUKS/dm-crypt (filtré par profil)",
+      "disk_encryption": "Chiffrement du disque — si la racine, les autres systèmes de fichiers de données locaux et le swap sur disque sont sur LUKS/dm-crypt (filtré par profil)",
       "polkit": "Autorisation polkit — fichiers de règles évalués en tant que root ; un .rules/.pkla modifiable par non-root est un chemin d'escalade de privilèges",
       "smtp": "Exposition démon SMTP — binding Postfix / Exim, risque de relais",
       "cups": "Service d'impression CUPS — adresse d'écoute cupsd.conf, browsing réseau",
@@ -157,6 +157,7 @@
       "virtualization": "Virtualisation — libvirt/KVM, Docker, interfaces bridge snap",
       "cron": "Tâches cron utilisateur + système — motifs risqués (pipe vers shell, world-writable)",
       "docker_hardening": "Containers Docker — privileged, root, socket monté, host network",
+      "kubernetes": "Nœud Kubernetes — pods privileged, chemins et namespaces de l'hôte, accès anonyme au kubelet et port lecture seule",
       "services_health": "Cohérence d'état services — installé-inactif, actif-disabled",
       "firewall_iptables": "Politique par défaut iptables / nftables + règles loopback",
       "firewall_drivers": "Cohérence pile pare-feu — superposition nftables/iptables/ufw",
@@ -165,6 +166,7 @@
     },
     "cron": "AUDIT DES TÂCHES CRON",
     "docker_hardening": "AUDIT SÉCURITÉ CONTENEURS DOCKER",
+    "kubernetes": "AUDIT NŒUD KUBERNETES",
     "services_health": "AUDIT DE L'ÉTAT DES SERVICES",
     "firewall_iptables": "AUDIT IPTABLES / NFTABLES",
     "firewall_drivers": "ANALYSE DE LA PILE PARE-FEU",
@@ -184,7 +186,7 @@
     "firewall_missing": "Aucun pare-feu actif — ni UFW ni firewalld installé, et la couche netfilter ne filtre pas le trafic entrant"
   },
   "firewall": {
-    "firewalld_keeps_ssh_detail": "La commande garde SSH autorisé dans la zone par défaut et dans chaque zone active : sans pare-feu il répondait de partout, elle ne ferme donc rien de ce qu'il atteignait. C'est un point de départ, pas une segmentation — ensuite, retirez ssh des zones qui ne doivent pas l'offrir (firewall-cmd --permanent --zone=<zone> --remove-service=ssh, puis --reload). Le démarrage de firewalld précède le rechargement qui ajoute ssh : mesuré sur Fedora, une session SSH ouverte a continué, tandis que les nouvelles connexions SSH ont échoué pendant environ une seconde — ce qui se reconnecte dans cette fenêtre (un autre administrateur, un outil d'orchestration) peut devoir réessayer.",
+    "firewalld_keeps_ssh_detail": "La commande garde SSH autorisé dans la zone par défaut et dans chaque zone active : sans pare-feu il répondait de partout, elle ne ferme donc rien de ce qu'il atteignait. C'est un point de départ, pas une segmentation — ensuite, retirez ssh des zones qui ne doivent pas l'offrir (firewall-cmd --permanent --zone=<zone> --remove-service=ssh, puis --reload). SSH est inscrit dans la configuration permanente avant le démarrage de firewalld — la zone par défaut, les zones que NetworkManager donne aux connexions actives et les zones auxquelles une interface ou une source est liée — si bien que le premier jeu de règles chargé l'autorise déjà : mesuré sur Fedora, 0 nouvelle connexion SSH refusée, contre 3 à 4 quand ssh était ajouté après le démarrage. Une zone liée autrement reçoit ssh après le démarrage, avec le rechargement.",
     "ssh_ports_unknown_detail": "BOB n'a pas pu établir sur quels ports sshd répond — `ss -tulnp` n'a pas pu tourner, ou n'a nommé aucun processus (BOB n'a pas été lancé en root) — il ne donne donc aucune commande qui active le filtrage : une commande qui ne garderait que le port 22 couperait un sshd qui écoute ailleurs. Autorisez d'abord le port de votre session SSH, puis activez le filtrage.",
     "active": "Le pare-feu UFW est actif",
     "netfilter_active": "Aucun front-end pare-feu actif (UFW/firewalld), mais la couche netfilter filtre le trafic entrant — audité dans la section iptables/nftables",
@@ -271,7 +273,7 @@
     "uncovered_bound_address": "Port {port} — lié uniquement à {address}, sans règle de pare-feu — joignable depuis le réseau de cette adresse",
     "uncovered_bound_address_deny": "Port {port} — lié uniquement à {address}, aucune règle UFW explicite, mais couvert par la politique de refus par défaut",
     "uncovered_bound_address_firewalld": "Port {port} — lié uniquement à {address} — régi par la zone firewalld de l'interface par laquelle on l'atteint, pas par une règle UFW",
-    "uncovered_bound_address_netfilter": "Port {port} — lié uniquement à {address} — régi par le jeu de règles nftables/iptables (entrée refusée par défaut), pas par une règle UFW",
+    "uncovered_bound_address_netfilter": "Port {port} — lié uniquement à {address} — régi par le jeu de règles nftables/iptables (entrée refusée par défaut ; une règle peut encore autoriser ce port — BOB lit la politique par défaut, pas toutes les règles, et n'établit pas la joignabilité), pas par une règle UFW",
     "system_port": "Port système interne — aucun danger (service OS légitime, pas de règle UFW nécessaire) : {port} ({service})",
     "unreadable": "Les ports en \u00e9coute n'ont pas pu \u00eatre d\u00e9termin\u00e9s",
     "unreadable_detail": "`ss -tulnp` n'a pas pu \u00eatre ex\u00e9cut\u00e9 \u2014 le binaire est absent (iproute2 n'est pas install\u00e9 sur les images minimales ni dans beaucoup de conteneurs) ou il a \u00e9chou\u00e9. Sa sortie est vide dans les deux cas, ce qui est indiscernable d'une machine sans rien en \u00e9coute : BOB signale donc la lacune au lieu d'annoncer z\u00e9ro port ouvert. V\u00e9rifier avec : ss -tulnp",
@@ -282,7 +284,7 @@
     "uncovered_default_deny": "Port {port} en écoute sur toutes les interfaces — aucune règle UFW explicite, mais couvert par la politique de refus par défaut",
     "uncovered_ufw_inactive": "Port {port} en écoute sur toutes les interfaces — aucun pare-feu actif pour le filtrer",
     "uncovered_firewalld": "Port {port} en écoute sur toutes les interfaces — régi par la zone firewalld de l'interface par laquelle on l'atteint, pas par une règle UFW",
-    "uncovered_netfilter": "Port {port} en écoute sur toutes les interfaces — régi par le jeu de règles nftables/iptables (entrée refusée par défaut), pas par une règle UFW"
+    "uncovered_netfilter": "Port {port} en écoute sur toutes les interfaces — régi par le jeu de règles nftables/iptables (entrée refusée par défaut ; une règle peut encore autoriser ce port — BOB lit la politique par défaut, pas toutes les règles, et n'établit pas la joignabilité), pas par une règle UFW"
   },
   "logs": {
     "no_logfile": "Fichier de log UFW introuvable (/var/log/ufw.log) et aucune entrée UFW dans journald — journalisation désactivée ?",
@@ -386,29 +388,6 @@
     "scope_line1": "Ce score couvre le pare-feu, les services, SSH, le contrôle d'accès, les mises à jour, le durcissement système et les outils de détection.",
     "scope_line2": "La sécurité applicative, l'accès physique et les autres vecteurs d'attaque ne sont pas couverts par cet audit.",
     "context_disclaimer": "Verdict conditionné par le profil et le contexte réseau ci-dessus. BOB est un auditeur de configuration hardening, pas un moteur d'analyse de menaces — à interpréter en conséquence."
-  },
-  "fixes": {
-    "title": "CORRECTIONS DISPONIBLES",
-    "none": "Aucune correction automatique disponible.",
-    "count": "{count} correction(s) automatique(s) disponible(s)",
-    "apply_prompt": "Appliquer cette correction ? [y/N]",
-    "applied": "Appliqué",
-    "manual": "manuel — appliquez la commande manuellement",
-    "skipped_unsafe_shell": "syntaxe shell non sûre dans la commande",
-    "auto_mode_banner": "MODE AUTO-FIX — {count} correction(s) seront appliquées automatiquement",
-    "auto_summary_title": "RÉCAPITULATIF AUTO-FIX",
-      "count_manual_only": "{count} constat(s) — aucun n'est automatisable",
-      "diagnostic_items_title": "Non automatisable — BOB ne peut que vous montrer où regarder :",
-    "manual_items_title": "Actions manuelles requises (aucune correction automatique disponible) :",
-    "done_summary": "{applied} correction(s) sur {total} appliquée(s).",
-    "dry_run_hint": "Aperçu uniquement — utilisez {cmd} pour exécuter les corrections",
-    "timed_out": "délai dépassé après {seconds} s — BOB a cessé d'attendre ; le changement peut être à mi-chemin",
-    "unknown_items_title": "RÉSULTAT INCONNU — VÉRIFIEZ LE SYSTÈME AVANT DE RELANCER"
-  },
-  "risk_context": {
-    "title": "Contexte de risque",
-    "exposure": "Exposition",
-    "threat": "Menace potentielle"
   },
   "log_dir": {
     "prompt": "Où stocker les rapports détaillés ?",
@@ -618,6 +597,29 @@
     "selected": "Sélectionnés jusqu'ici : {emails}",
     "add_another": "Ajouter une autre adresse email ? [o/N]",
     "cancel": "Annuler — retour au menu"
+  },
+  "fixes": {
+    "title": "CORRECTIONS DISPONIBLES",
+    "none": "Aucune correction automatique disponible.",
+    "count": "{count} correction(s) automatique(s) disponible(s)",
+    "apply_prompt": "Appliquer cette correction ? [y/N]",
+    "applied": "Appliqué",
+    "manual": "manuel — appliquez la commande manuellement",
+    "skipped_unsafe_shell": "syntaxe shell non sûre dans la commande",
+    "auto_mode_banner": "MODE AUTO-FIX — {count} correction(s) seront appliquées automatiquement",
+    "auto_summary_title": "RÉCAPITULATIF AUTO-FIX",
+      "count_manual_only": "{count} constat(s) — aucun n'est automatisable",
+      "diagnostic_items_title": "Non automatisable — BOB ne peut que vous montrer où regarder :",
+    "manual_items_title": "Actions manuelles requises (aucune correction automatique disponible) :",
+    "done_summary": "{applied} correction(s) sur {total} appliquée(s).",
+    "dry_run_hint": "Aperçu uniquement — utilisez {cmd} pour exécuter les corrections",
+    "timed_out": "délai dépassé après {seconds} s — BOB a cessé d'attendre ; le changement peut être à mi-chemin",
+    "unknown_items_title": "RÉSULTAT INCONNU — VÉRIFIEZ LE SYSTÈME AVANT DE RELANCER"
+  },
+  "risk_context": {
+    "title": "Contexte de risque",
+    "exposure": "Exposition",
+    "threat": "Menace potentielle"
   },
   "config": {
     "found": "Configuration trouvée : {path}",
@@ -1425,7 +1427,7 @@
     "health_resilience": "Santé & Résilience",
     "detection": "Détection des menaces",
     "reason": {
-      "no_action": "aucune action requise",
+      "no_action": "signalé, non noté",
       "unreadable": "n'a pas pu être lu",
       "not_assessed": "non évalué (profil {profile})",
       "filtered": "non évalué (--check/--skip)",
@@ -2317,7 +2319,7 @@
                   "title": "Un service prévu au démarrage ne tourne pas",
                   "why": "Deux faits, tous deux lus auprès du gestionnaire de services : la machine est configurée pour lancer ce service, et le service n'est pas lancé.\n\nCe désaccord est le constat. Rien ici ne dit pourquoi — un plantage, un démarrage échoué sur un fichier de configuration fautif, une dépendance qui n'est jamais montée, ou quelqu'un qui l'a arrêté à la main sans le défaire. Vus de l'extérieur ces cas sont identiques, et chacun signifie que le service restera absent jusqu'à ce qu'une personne regarde.\n\nC'est l'image miroir de *tourne mais n'est pas activé*, que BOB rapporte à côté : celui-là perdra le service au prochain redémarrage, celui-ci l'a déjà perdu. Savoir si cela compte vous revient — un service arrêté volontairement pendant une maintenance ressemble exactement à un service mort.",
                   "how": "1. Demandez au gestionnaire de services. Il s'explique en général lui-même :\n   systemd  →  systemctl status <unité> ; journalctl -u <unité> -b\n   OpenRC   →  rc-service <nom> status\n2. S'il a échoué au démarrage, corrigez cela avant de le relancer — un service qui meurt au boot mourra de nouveau.\n3. S'il doit tourner, lancez-le et vérifiez qu'il tient :\n   systemd  →  sudo systemctl start <unité>\n   OpenRC   →  sudo rc-service <nom> start\n4. S'il ne doit pas tourner, dites-le, pour que ce ne soit plus une surprise à chaque audit :\n   systemd  →  sudo systemctl disable <unité>\n   OpenRC   →  sudo rc-update del <nom> default"
-                }
+        }
       }
     },
     "rootkit": {
@@ -2628,7 +2630,7 @@
         "title": "/etc/shadow non lisible — vérifications de sécurité des comptes incomplètes",
         "why": "/etc/shadow contient les mots de passe hachés et les données d'expiration des comptes. Sans accès en lecture, bob ne peut pas vérifier les mots de passe vides, les politiques d'expiration ni les anomalies UID 0. Ce résultat est purement informatif et signifie que l'audit tourne sans privilège complet pour les vérifications de comptes.",
         "how": "1. Ce n'est pas un problème de configuration — lancez l'audit complet en root :\n   sudo bob\n2. Vérifiez que /etc/shadow a les bonnes permissions (640, root:shadow) :\n   sudo chmod 640 /etc/shadow\n   sudo chown root:shadow /etc/shadow"
-      }
+    }
     },
     "disk": {
       "smart_failed": {
@@ -2805,6 +2807,11 @@
         "container": {
           "why": "Si ClamAV tourne dans un container, freshclam devrait être dans l'arbre de processus du container (ou les signatures partagées depuis l'hôte via volume). Sur l'hôte, ré-enable là."
         }
+      },
+      "socket_open_to_all": {
+        "title": "Socket du démon ClamAV ouvert à tout utilisateur local (tout processus peut arrêter l'antivirus)",
+        "why": "clamd reçoit des commandes sur son socket local — SCAN, RELOAD, SHUTDOWN entre autres. Quand les permissions du socket admettent chaque compte (écriture sur le socket, traversée de chaque répertoire au-dessus), tout processus qui tourne sous n'importe quel utilisateur local peut les envoyer. Mesuré avec Alpine 3.22 et Debian 13 tels que livrés : un utilisateur non privilégié a envoyé SHUTDOWN et clamd s'est arrêté. Un logiciel malveillant qui tourne sous un utilisateur ordinaire peut donc couper l'antivirus avant d'agir. Debian et Ubuntu livrent LocalSocketMode 666 ; Arch, openSUSE et Alpine ne le posent pas, ce que clamd.conf documente comme accessible à tous. Fedora place son socket dans un répertoire 0710 et n'est pas concerné. ClamAV 1.4 n'a pas d'option pour refuser SHUTDOWN.",
+        "how": "1. Repérer les comptes qui doivent joindre le socket : votre filtre de messagerie (amavis, rspamd, clamsmtp), les analyseurs à l'accès, les utilisateurs de clamdscan.\n2. Dans la configuration de clamd (/etc/clamav/clamd.conf, /etc/clamd.conf ou /etc/clamd.d/scan.conf), poser :\n   LocalSocketGroup clamav\n   LocalSocketMode 660\n3. Ajouter chaque compte client à ce groupe : sudo usermod -aG clamav <utilisateur>\n4. Redémarrer le démon (l'unité que BOB nomme dans le constat) et vérifier qu'un client se connecte toujours : clamdscan --ping 1\nLe propriétaire, le groupe et root gardent l'accès ; tout autre compte est refusé."
       }
     },
     "auditd": {
@@ -2909,6 +2916,11 @@
         "title": "Le système de fichiers racine n'est pas chiffré",
         "why": "Le chiffrement intégral du disque protège les données au repos. Sans lui, quiconque obtient la possession physique du disque — un portable volé, un disque retourné en RMA, un disque mis au rebut ou revendu — peut lire chaque fichier en le branchant sur une autre machine, contournant entièrement toutes les permissions au niveau de l'OS et les contrôles de connexion. C'est le seul contrôle qui tient encore une fois la machine hors de ta garde. BOB filtre par profil : c'est une déduction sur un poste desktop/workstation (portable, physiquement exposé) et informatif sur un serveur (baie verrouillée, pas de console de boot pour une passphrase).",
         "how": "Activer le chiffrement intégral LUKS (ou au moins de la partition).\n\nCela ne peut pas se faire en place sur une racine nue existante. Soit :\n  (a) réinstaller l'OS et choisir « chiffrer le disque » dans l'installateur, soit\n  (b) sauvegarder, recréer le volume avec `cryptsetup luksFormat`, et restaurer.\n\nPortable/desktop : l'option LUKS de l'installateur est le chemin le plus simple.\nServeur sans écran : associer LUKS à une méthode de déverrouillage distant (Clevis + Tang, ou dropbear-initramfs) pour que la machine démarre sans surveillance.\n\nBOB n'active jamais le chiffrement automatiquement — c'est une opération destructive et à sens unique sur le volume."
+      },
+      "data_unencrypted": {
+        "title": "Données ou swap hors de la racine chiffrée",
+        "why": "Chiffrer le système de fichiers racine passe souvent pour « le disque est chiffré ». Cela veut dire que le volume qui porte / l'est. Une partition /home, /var ou /srv séparée créée sans LUKS, un disque de données ajouté plus tard ou une partition de swap laissée en clair gardent leur contenu lisible pour quiconque obtient le disque — et pour un /home séparé, ce contenu, ce sont précisément les fichiers des utilisateurs.\n\nLe swap est le cas discret : le noyau y écrit des pages mémoire sous pression, et l'hibernation y écrit toute la mémoire. Un swap en clair contient donc, en clair, ce qui était en RAM — phrases de passe, clés privées, documents déchiffrés — y compris des secrets qui n'ont jamais existé qu'à l'intérieur du système chiffré.\n\nBOB liste chaque système de fichiers local sur un périphérique bloc autre que /, /boot et les images en lecture seule, et chaque swap sur disque (zram est de la mémoire, pas du disque), et résout chacun à travers la pile device-mapper, comme pour la racine. Un fichier de swap est jugé d'après le système de fichiers qui le contient.",
+        "how": "1. Voir l'organisation :\n   lsblk -o NAME,TYPE,FSTYPE,MOUNTPOINTS\n   cat /proc/swaps\n2. Swap — la correction la plus simple, rien à conserver : une clé aléatoire neuve à chaque démarrage.\n   /etc/crypttab :  cryptswap  /dev/disk/by-partuuid/<id>  /dev/urandom  swap,cipher=aes-xts-plain64,size=512\n   /etc/fstab :     /dev/mapper/cryptswap  none  swap  defaults  0 0\n   (Un swap à clé aléatoire ne permet pas l'hibernation ; pour hiberner, placer le swap dans le LVM chiffré.)\n3. Une partition de données : la sauvegarder, y créer un volume LUKS (cryptsetup luksFormat), l'ajouter à /etc/crypttab et /etc/fstab, puis restaurer — ou déplacer les données dans le groupe de volumes de la racine chiffrée.\n4. Redémarrer et relancer BOB : chaque volume doit se résoudre en périphérique crypt."
       }
     },
     "polkit": {
@@ -3142,7 +3154,7 @@
               "title": "Un binaire SUID appartenant à root qu'aucun paquet ne livre",
               "why": "Tout binaire SUID installé par une distribution est traçable : le gestionnaire de paquets peut nommer ce qui l'a mis là. Ceux-ci ne le sont pas — le gestionnaire a été interrogé et a répondu qu'aucun paquet ne les possède.\n\nC'est la forme que prend une escalade de privilèges laissée derrière. Un binaire appartenant à root avec le bit setuid s'exécute en root pour qui le lance, et celui qui est arrivé hors du système de paquets est arrivé par un autre moyen : un attaquant, un installeur qui contourne l'empaquetage, ou un `chmod u+s` fait à la main.\n\nCe n'est pas une preuve de compromission. Un logiciel compilé localement, l'installeur d'un éditeur ou un choix administratif délibéré produisent tous des binaires qu'aucun paquet ne possède. BOB ne sait pas les distinguer des autres et n'essaie pas : il rapporte le fait et laisse le jugement là où se trouve la connaissance.\n\nUn binaire dont la propriété n'a pas pu être établie n'est pas rapporté ici. Le silence du gestionnaire de paquets n'est pas une preuve sur le fichier.",
               "how": "1. Regardez chacun d'eux, et quand il est arrivé :\n   stat <chemin>\n2. Demandez-vous si c'est vous qui l'avez mis là. Un logiciel que vous avez compilé ou installé hors du gestionnaire de paquets apparaîtra dans cette liste, et c'est sa place.\n3. Si ce n'est pas vous, considérez l'hôte comme suspect avant de toucher au fichier — ses horodatages sont des preuves.\n4. Si c'est le vôtre et que le bit setuid est inutile, retirez-le :\n   sudo chmod u-s <chemin>\n5. S'il est nécessaire, ajoutez le nom de base à votre liste blanche pour que cette liste reste courte et digne d'être lue."
-            },
+      },
       "writable_suid": {
         "title": "Un binaire SUID/SGID modifiable par le groupe ou les autres",
         "why": "Un binaire set-id s'exécute avec des privilèges élevés — un binaire SUID en tant que son propriétaire (pour SUID-root, c'est root), un binaire SGID avec son groupe. Si le fichier est aussi modifiable par son groupe ou par tous, quiconque a ce droit d'écriture peut en remplacer le contenu.\n\nCe qu'il ne peut pas faire, c'est garder le privilège : écrire dans le fichier fait retirer par le noyau son bit SUID/SGID (et toute capability de fichier), donc l'attaquant qui lance le binaire réécrit n'obtient que ses propres droits — mesuré sur Linux 6.12. L'escalade, c'est le prochain lancement par quelqu'un d'autre : root tapant `passwd`, une tâche cron, un service, un administrateur utilisant l'outil — chacun exécute le code de l'attaquant avec ses propres privilèges. Pour un binaire SUID-root que des personnes et des tâches lancent en root, c'est une compromission root qui attend son déclencheur ; pour un binaire SGID, le même chemin vers celui qui le lance.\n\nLe bit d'écriture est aussi une preuve : un binaire packagé ne devient pas modifiable par le groupe/les autres tout seul. C'est signalé même pour les noms en whitelist — un binaire attendu devenu modifiable n'est pas sûr parce que son nom est attendu.",
@@ -3193,6 +3205,28 @@
         "title": "Conteneur Docker utilisant le mode réseau hôte",
         "why": "Un conteneur avec --network=host partage entièrement l'espace de noms réseau de l'hôte. Il peut se lier à n'importe quel port de l'hôte, écouter sur toutes les interfaces et accéder à tout service réseau sur localhost. L'isolation réseau des conteneurs n'existe pas pour de tels conteneurs.",
         "how": "1. Supprimer --network=host et utiliser la publication de ports explicite :\n   docker run -p 8080:80 monimage  (au lieu de --network=host)\n2. Si le réseau hôte est requis pour la performance, restreindre les capacités et utiliser des profils AppArmor/seccomp\n3. Auditer les conteneurs en mode réseau hôte :\n   docker ps -q | xargs docker inspect --format '{{.Name}}: {{.HostConfig.NetworkMode}}' | grep host"
+      }
+    },
+    "kubernetes": {
+      "privileged_pod": {
+        "title": "Conteneur avec toutes les capabilities Linux, hors kube-system",
+        "why": "Un conteneur qui détient toutes les capabilities de son ensemble limitant — ce qu'accorde privileged: true, et ce qu'accorde capabilities.add: [ALL] sans le reste du mode privileged (privileged lève aussi seccomp, le confinement AppArmor/SELinux et les restrictions de périphériques, ce que BOB n'établit pas ici). De l'intérieur, monter le disque du nœud, charger un module noyau ou atteindre les processus d'un autre conteneur est un travail ordinaire : qui exécute du code dans ce pod — par son application, un point de débogage exposé ou une image compromise — contrôle le nœud et tous ses pods.\n\nBOB lit la spec OCI de chaque conteneur (via ctr, ou crictl pour CRI-O) et nomme un conteneur quand son ensemble limitant contient toutes les capabilities que connaît le noyau (/proc/sys/kernel/cap_last_cap). Les pods de kube-system sont signalés à part et non déduits : un agent CNI comme calico-node tourne en privileged par conception.",
+        "how": "1. Voir quels conteneurs, et pourquoi :\n   kubectl get pods -A -o custom-columns=NAMESPACE:.metadata.namespace,POD:.metadata.name,PRIVILEGED:.spec.containers[*].securityContext.privileged\n2. Remplacer privileged: true par les capabilities dont la charge a réellement besoin :\n   securityContext:\n     capabilities:\n       drop: [\"ALL\"]\n       add: [\"NET_ADMIN\"]\n3. L'imposer au namespace avec Pod Security Admission :\n   kubectl label namespace <ns> pod-security.kubernetes.io/enforce=baseline"
+      },
+      "host_mount": {
+        "title": "Pod montant un chemin sensible de l'hôte",
+        "why": "Un volume hostPath place une partie du système de fichiers du nœud dans le pod. Pour certains chemins, c'est le nœud lui-même : / ou /etc inscriptibles depuis le pod, c'est modifier les utilisateurs, le sudoers ou les unités du nœud ; /root, les clés de son administrateur ; /var/lib/kubelet, les secrets de tous les pods ; et le socket d'un runtime de conteneurs (containerd, CRI-O, Docker) permet au pod de lancer un nouveau conteneur privileged sur le nœud.\n\nBOB nomme un pod quand l'un de ses conteneurs monte exactement l'un de ces chemins. Les pods de kube-system sont signalés à part et non déduits.",
+        "how": "1. Lister les volumes hostPath :\n   kubectl get pods -A -o custom-columns=NAMESPACE:.metadata.namespace,POD:.metadata.name,HOSTPATH:.spec.volumes[*].hostPath.path\n2. Les remplacer par ce dont la charge a besoin : un PersistentVolume ou un emptyDir pour les données, une ConfigMap ou un Secret pour la configuration.\n3. Si un chemin de l'hôte est vraiment nécessaire, monter le plus étroit, en lecture seule (readOnly: true).\n4. Refuser hostPath pour le namespace avec Pod Security Admission :\n   kubectl label namespace <ns> pod-security.kubernetes.io/enforce=baseline"
+      },
+      "kubelet_anonymous": {
+        "title": "API du kubelet répondant aux requêtes anonymes",
+        "why": "Le kubelet de chaque nœud sert une API HTTPS sur le port 10250. Avec l'accès anonyme actif et l'autorisation laissée à AlwaysAllow, une requête sans identifiant est servie : /pods liste les spécifications des pods, y compris les valeurs d'environnement écrites en clair qu'elles contiennent, et /exec, /run, /attach et /portForward exécutent des commandes dans n'importe quel conteneur. BOB envoie un GET /pods à 127.0.0.1:10250 sans identifiant : 401 signifie que les requêtes anonymes sont refusées ; 403 qu'elles sont acceptées mais que la lecture est refusée ; un 2xx qu'elles peuvent lire les spécifications des pods. Lectures et commandes relèvent de permissions distinctes, selon le verbe : BOB envoie aussi POST /run (create) et GET /exec (get) pour un nom de pod en majuscules qu'aucun pod ne peut porter. Un 404 disant que le pod n'existe pas signifie que la requête a passé le contrôle d'accès. Si l'une ou l'autre le fait, les commandes anonymes sont autorisées (ALERT −3) ; si les deux sont refusées, aucun point d'accès de commande n'est ouvert pour ces verbes. Un 405 (endpoints de débogage désactivés) ou un 5xx (le kubelet n'a pas pu interroger le serveur d'API) n'est pas une autorisation. L'autorisation Webhook seule ne suffit pas : le serveur d'API tranche selon son propre mode. Mesuré sur MicroK8s 1.35.6 : avec une permission get sur nodes/proxy seule, /pods a répondu 200, POST /run 403 et GET /exec 404. Rien ne peut s'exécuter : ce pod n'existe pas.",
+        "how": "1. Trouver la configuration du kubelet :\n   ps -o args= -C kubelet,kubelite | tr ' ' '\\n' | grep -E 'config|anonymous|authorization'\n   (MicroK8s : /var/snap/microk8s/current/args/kubelet)\n2. Régler :\n   --anonymous-auth=false          (ou authentication.anonymous.enabled: false)\n   --authorization-mode=Webhook    (ou authorization.mode: Webhook), avec un API server qui autorise via RBAC (MicroK8s : microk8s enable rbac)\n3. Redémarrer le kubelet (MicroK8s : sudo snap restart microk8s.daemon-kubelite).\n4. Vérifier : curl -sk https://127.0.0.1:10250/pods doit répondre 401 Unauthorized."
+      },
+      "kubelet_readonly_port": {
+        "title": "Port lecture seule du kubelet ouvert",
+        "why": "Le port 10255 est l'API lecture seule du kubelet, sans authentification. Quiconque l'atteint lit toutes les specs de pods du nœud — images, commandes, variables d'environnement (où l'on place souvent des identifiants) — et les détails du nœud : une carte pour l'étape suivante, sans identifiant et sans trace dans l'API server.",
+        "how": "1. Régler --read-only-port=0 (readOnlyPort: 0 dans le fichier de configuration du kubelet).\n2. Redémarrer le kubelet.\n3. Vérifier : curl -s http://127.0.0.1:10255/pods doit échouer à se connecter."
       }
     },
     "services_health": {
@@ -3486,6 +3520,7 @@
     "clamd_inactive_detail": "Le service clamav-daemon permet la surveillance en temps réel et est requis pour l’intégration aux serveurs mail (Postfix, Amavis, etc.). Sans le démon, seules les analyses manuelles à la demande sont possibles.",
     "socket_open_to_all": "Les permissions du socket du démon ClamAV ({path}) laissent tout utilisateur local lui envoyer des commandes, SHUTDOWN compris",
     "socket_open_to_all_detail": "Ses permissions Unix — écriture sur le socket, traversée de chaque répertoire au-dessus — admettent une connexion de n'importe quel compte de cet hôte (une politique MAC comme SELinux ou AppArmor peut encore en refuser une) : chacun peut donc arrêter le démon, mesuré sur Debian et Alpine tels que livrés. C'est ainsi que le paquet le livre (Debian, Ubuntu, Arch, openSUSE et Alpine). Le restreindre — LocalSocketGroup et LocalSocketMode 660 dans la configuration de clamd, puis un redémarrage — le garde pour le propriétaire, le groupe et root, et coupe tout autre client : vérifiez d'abord sous quels utilisateurs tournent votre filtre de messagerie ou vos analyseurs, et ajoutez-les à ce groupe.",
+    "socket_open_to_all_reason": "Socket du démon ClamAV ouvert à tout utilisateur local (peut être arrêté)",
     "no_scan_log": "Aucun journal d'analyse ClamAV trouvé — date de dernière analyse inconnue",
     "no_scan_log_detail": "Aucun journal trouvé dans les chemins standards (/var/log/clamav/). -r = analyse récursive, --infected = affiche uniquement les fichiers infectés (réduit le bruit), --log = sauvegarde les résultats pour traçabilité.",
     "scan_very_old": "Dernière analyse il y a {days} jour(s) ({date}) — très en retard",
@@ -3672,7 +3707,10 @@
     "unexpected": "{count} binaire(s) portent une capability de fichier que BOB ne leur connaît pas : {paths}",
     "unexpected_detail": "Aucune de ces capabilities n'est équivalente à root, donc rien n'est scoré. Chacune reste un privilège accordé à quiconque exécute le fichier — confirmez qu'il est voulu (getcap <fichier>).",
     "partial": "Scan des capabilities de fichiers incomplet — {files} fichier(s) examiné(s), {count} avec une capability ; un répertoire n'a pas pu être lu ou le budget de temps est épuisé, donc le reste n'est pas vérifié",
-    "ok": "Aucune capability de fichier inattendue — {files} fichier(s) examiné(s), {count} attribution(s) connue(s)"
+    "ok": "Aucune capability de fichier inattendue — {files} fichier(s) examiné(s), {count} attribution(s) connue(s)",
+    "provenance_unowned": "{path} : aucun paquet ne le possède.",
+    "provenance_packaged": "{path} : son paquet le livre avec {caps} seulement.",
+    "provenance_packaged_none": "{path} : son paquet le livre sans aucune capability."
   },
   "cpu_security": {
     "unknown": "État des vulnérabilités CPU non vérifié — /sys/devices/system/cpu/vulnerabilities n'a pas pu être lu",
@@ -3779,7 +3817,12 @@
     "root_unencrypted_detail": "Le périphérique derrière / est une partition nue, donc les données au repos sont lisibles par quiconque obtient le disque (portable volé, disque retourné en RMA, disque mis au rebut). Le chiffrement intégral (LUKS) protège les données au repos. Il ne peut pas être activé en place — il faut réinstaller avec le chiffrement activé, ou un cycle sauvegarde/re-chiffrement/restauration. BOB ne le fait jamais automatiquement.",
     "root_unencrypted_detail_with_volumes": "Le périphérique derrière / est une partition nue, donc les données au repos sont lisibles par quiconque obtient le disque. Des volumes chiffrés existent bien sur cet hôte ({volumes}) mais le système de fichiers racine n'en fait pas partie. Le chiffrement intégral (LUKS) protège les données au repos ; il ne peut pas être activé en place — il faut réinstaller avec le chiffrement activé, ou un cycle sauvegarde/re-chiffrement/restauration. BOB ne le fait jamais automatiquement.",
     "root_unencrypted_server": "Le système de fichiers racine n'est pas chiffré (profil serveur — signalé, pas décompté)",
-    "root_unencrypted_server_detail": "Le périphérique racine est une partition nue. Sur un serveur sans écran, le chiffrement intégral nécessite un outillage de déverrouillage distant (une invite de passphrase au boot n'a pas de console), et le modèle de menace physique est une baie verrouillée plutôt qu'un appareil portable — donc BOB le signale sans déduction. Si le serveur détient des données sensibles au repos ou si ses disques peuvent être physiquement retirés ou mis au rebut, envisager LUKS avec une méthode de déverrouillage distant (Clevis/Tang, dropbear-initramfs)."
+    "root_unencrypted_server_detail": "Le périphérique racine est une partition nue. Sur un serveur sans écran, le chiffrement intégral nécessite un outillage de déverrouillage distant (une invite de passphrase au boot n'a pas de console), et le modèle de menace physique est une baie verrouillée plutôt qu'un appareil portable — donc BOB le signale sans déduction. Si le serveur détient des données sensibles au repos ou si ses disques peuvent être physiquement retirés ou mis au rebut, envisager LUKS avec une méthode de déverrouillage distant (Clevis/Tang, dropbear-initramfs).",
+    "data_unencrypted": "La racine est chiffrée, mais d'autres données de cet hôte ne le sont pas : {volumes}",
+    "data_unencrypted_reason": "des données hors de la racine chiffrée sont sur des périphériques en clair — un disque volé ou mis au rebut les révèle",
+    "data_unencrypted_detail": "La racine chiffrée protège le système ; un système de fichiers sur une partition en clair à côté (/home, /var, /srv…) est lisible par quiconque détient le disque, et un swap en clair contient des pages mémoire écrites en clair — phrases de passe, clés, documents ouverts. Placez aussi ces données sur LUKS et utilisez un swap chiffré (une entrée crypttab à clé aléatoire, ou le swap dans le LVM chiffré). Voir : bob --explain disk_encryption.data_unencrypted",
+    "data_unencrypted_server": "La racine est chiffrée, mais d'autres données de cet hôte ne le sont pas : {volumes} (profil serveur — signalé, non noté)",
+    "data_unknown": "La racine est chiffrée ; pour ceux-ci, le chiffrement n'a pas pu être déterminé : {volumes}"
   },
   "polkit": {
     "not_present": "Aucun répertoire de règles polkit trouvé — polkit non installé ou non configuré",
@@ -4136,6 +4179,35 @@
     "unexpected_users": "Crontab(s) d'utilisateur(s) inattendu(s) trouvé(s) : {users}",
     "ok": "Aucun motif risqué trouvé dans les tâches cron"
   },
+  "kubernetes": {
+    "workloads_unread": "Les conteneurs Kubernetes de ce nœud n'ont pas pu être listés (ctr) — les droits des pods n'ont pas été évalués",
+    "workloads_partial": "{count} conteneur(s) Kubernetes n'ont pas pu être inspectés — leurs droits n'ont pas été évalués",
+    "workloads_ok": "{count} pod(s) hors kube-system — aucun conteneur avec toutes les capabilities Linux, aucun dans les namespaces de l'hôte, aucun chemin sensible de l'hôte monté",
+    "privileged_pod": "{count} pod(s) hors kube-system ont un conteneur avec toutes les capabilities Linux (privileged, ou capabilities: ALL) : {pods}",
+    "privileged_pod_reason": "{count} pod(s) hors kube-system avec un conteneur détenant toutes les capabilities Linux",
+    "privileged_pod_detail": "BOB lit les capabilities avec lesquelles tourne chaque conteneur, pas la spec du pod : toutes les capabilities, c'est ce qu'accorde privileged: true, et ce qu'accorde capabilities.add: [ALL] sans le reste du mode privileged. Dans les deux cas, le code du conteneur peut monter le disque du nœud ou charger un module noyau. Accordez seulement les capabilities nécessaires (securityContext.capabilities.add) et retirez privileged: true ou ALL. Voir : bob --explain kubernetes.privileged_pod",
+    "host_mount": "{count} pod(s) hors kube-system montent un chemin sensible de l'hôte : {mounts}",
+    "host_mount_reason": "{count} pod(s) montant un chemin sensible de l'hôte",
+    "host_mount_detail": "Le / , /etc ou /root de l'hôte, le répertoire du kubelet ou le socket d'un runtime de conteneurs : chacun permet au code du pod de prendre le contrôle du nœud. Utilisez un volume, une ConfigMap ou un Secret, ou un chemin plus étroit monté en lecture seule. Voir : bob --explain kubernetes.host_mount",
+    "host_namespaces": "{count} pod(s) hors kube-system partagent le namespace réseau, PID ou IPC de l'hôte : {pods}",
+    "system_pods_elevated": "{count} pod(s) de kube-system tournent avec des droits élevés (toutes les capabilities, namespaces ou chemins de l'hôte) — non déduits, kube-system contenant en général les composants de la plateforme ; vérifiez que chaque pod listé en est un : {pods}",
+    "kubelet_anonymous": "Le kubelet autorise les commandes anonymes sur le port 10250 (demandé depuis cet hôte : GET /pods a répondu, et une demande de commande pour un pod inexistant a passé l'autorisation) — quiconque atteint le port peut lire chaque pod et exécuter des commandes dans ses conteneurs",
+    "kubelet_anonymous_inconclusive": "Le kubelet a répondu {answer} à une requête anonyme sur /pods : son autorisation n'a pas pu être tranchée, l'accès anonyme n'est pas évalué",
+    "kubelet_run_indeterminate_detail": "La sonde de commande n'est pas concluante et n'entraîne aucune déduction pour l'exposition aux commandes ; une exposition des spécifications des pods, si elle est établie, reste WARN −1. 405 signifie que les points d'accès de débogage (exec, run, logs) sont désactivés, donc aucune commande ne peut s'exécuter sur ce kubelet ; un 5xx signifie que le kubelet n'a pas pu décider de l'accès de la requête, par exemple faute de pouvoir interroger l'API server. --enable-debugging-handlers=false désactive ces points d'accès.",
+    "kubelet_run_indeterminate": "Les réponses du kubelet aux demandes de commande (POST /run et GET /exec, pour un pod inexistant) ne sont pas concluantes ({answer}) — l'autorisation des commandes anonymes n'est pas établie",
+    "kubelet_anonymous_reason": "API du kubelet autorisant les commandes anonymes",
+    "kubelet_anonymous_run_only_reason": "API du kubelet autorisant les commandes anonymes, bien qu'elle refuse les lectures",
+    "kubelet_anonymous_run_only": "Le kubelet refuse les lectures anonymes de /pods mais autorise les commandes anonymes sur le port 10250 (demandé depuis cet hôte : une demande de commande pour un pod inexistant a passé l'autorisation) — quiconque atteint le port peut exécuter des commandes dans les conteneurs des pods",
+    "kubelet_anonymous_read": "Le kubelet sert les requêtes anonymes sur le port 10250 (demandé depuis cet hôte : GET /pods a répondu) — quiconque atteint le port peut lire la spécification de chaque pod, y compris les valeurs d'environnement écrites en clair ; aucun point d'accès de commande n'a été montré comme les autorisant",
+    "kubelet_anonymous_read_reason": "API du kubelet servant tous les pods aux requêtes anonymes",
+    "kubelet_anonymous_detail": "BOB a interrogé depuis cet hôte ; que le port soit joignable depuis le réseau dépend de l'adresse d'écoute du kubelet et du pare-feu, que ce contrôle ne teste pas — les utilisateurs locaux et les pods en réseau hôte l'atteignent de toute façon. Désactivez l'accès anonyme (--anonymous-auth=false, ou authentication.anonymous.enabled: false) et faites autoriser par l'API server (--authorization-mode=Webhook) — qui ne décide quelque chose que si l'API server autorise via RBAC, donc activez aussi RBAC là-bas (MicroK8s : microk8s enable rbac) — puis redémarrez le kubelet. Voir : bob --explain kubernetes.kubelet_anonymous",
+    "kubelet_anonymous_denied": "Le kubelet accepte les requêtes anonymes sur le port 10250 mais son autorisation les refuse (403) — l'accès anonyme lui-même peut encore être désactivé",
+    "kubelet_auth_ok": "Le kubelet refuse les requêtes anonymes sur le port 10250 (401)",
+    "kubelet_unprobed": "Le kubelet n'a pas répondu sur 127.0.0.1:10250 dans les 15 secondes — son accès anonyme n'a pas été évalué",
+    "kubelet_readonly_port": "Le port lecture seule 10255 du kubelet répond sans authentification (demandé depuis cet hôte) — les spécifications des pods, y compris les valeurs d'environnement écrites en clair, et les détails du nœud sont lisibles",
+    "kubelet_readonly_port_reason": "port lecture seule du kubelet ouvert",
+    "kubelet_readonly_port_detail": "Réglez --read-only-port=0 (readOnlyPort: 0 dans la configuration du kubelet) et redémarrez le kubelet. Voir : bob --explain kubernetes.kubelet_readonly_port"
+  },
   "docker_hardening": {
     "scan_error": "Runtime de conteneurs inaccessible — vérification de sécurité des conteneurs ignorée",
     "no_containers": "Aucun conteneur en cours d'exécution — rien à auditer",
@@ -4147,7 +4219,7 @@
     "socket_mounted_detail": "Monter /var/run/docker.sock dans un conteneur donne un contrôle équivalent à root sur l'hôte. Tout processus du conteneur peut créer de nouveaux conteneurs privilégiés ou s'échapper du bac à sable.",
     "socket_mounted_reason": "{count} conteneur(s) avec la socket de contrôle du runtime montée",
     "userns_not_configured": "Remappage des espaces de noms utilisateurs non configuré (userns-remap)",
-    "userns_not_configured_detail": "Sans userns-remap, un processus conteneur s'exécutant en tant qu'UID 0 est mappé directement sur root de l'hôte. Activez userns-remap dans /etc/docker/daemon.json pour remapper les UID des conteneurs. La commande ci-dessous ne crée le fichier que s'il n'existe pas — si vous avez déjà un /etc/docker/daemon.json, ne l'écrasez PAS : sauvegardez-le et fusionnez-y la clé \"userns-remap\": \"default\", puis redémarrez docker.",
+    "userns_not_configured_detail": "Sans userns-remap, un processus conteneur s'exécutant en tant qu'UID 0 est mappé directement sur root de l'hôte. Activez userns-remap dans /etc/docker/daemon.json pour remapper les UID des conteneurs. La commande ci-dessous ne crée le fichier que s'il n'existe pas — si vous avez déjà un /etc/docker/daemon.json, ne l'écrasez PAS : sauvegardez-le et fusionnez-y la clé \"userns-remap\": \"default\", puis redémarrez docker. Une fois le remappage actif, Docker range images et conteneurs dans un nouveau répertoire (/var/lib/docker/<uid>.<gid>) : ceux qui existaient n'apparaissent plus et doivent être récupérés ou recréés (mesuré sur Alpine).",
     "userns_configured": "Remappage des espaces de noms utilisateurs activé (userns-remap)",
     "root_containers": "{count} conteneur(s) s'exécutant en tant que root (UID 0) : {containers}",
     "root_containers_detail": "Exécuter des conteneurs en tant que root augmente le rayon d'explosion d'une évasion de conteneur. Définissez un utilisateur non-root dans le Dockerfile ou utilisez --user à l'exécution.",
@@ -4185,9 +4257,9 @@
     "no_issues": "Aucun ruleset pare-feu parallèle en conflit détecté",
     "iptables_bypass": "Règle iptables ACCEPT brute contourne UFW dans la chaîne INPUT : {rule}",
     "iptables_forward_bypass": "Règle iptables ACCEPT brute contourne UFW dans la chaîne FORWARD : {rule}",
-    "forward_routing_ok": "La chaîne FORWARD contient des règles ACCEPT — cohérent avec le routage Docker/VPN",
+    "forward_routing_ok": "La chaîne FORWARD contient des règles ACCEPT — cohérent avec le routage Docker, VPN, KVM ou Kubernetes",
     "nftables_parallel": "Règles nftables actives détectées en parallèle d'UFW — conflits potentiels",
-    "ip_forward_ok": "Transfert IP activé — démon de routage détecté (Docker, VPN ou KVM)",
+    "ip_forward_ok": "Transfert IP activé — démon de routage détecté (Docker, VPN, KVM ou Kubernetes)",
     "ip_forward_enabled": "Transfert IP activé sans VPN/Docker détecté — vérifiez que c'est intentionnel",
     "rules_unreadable": "Impossible de lister les règles des pilotes de pare-feu",
     "rules_unreadable_detail": "`iptables -L` et `nft list ruleset` exigent tous deux CAP_NET_ADMIN et écrivent leur refus sur stderr, laissant stdout vide. Un `iptables -L` qui fonctionne imprime toujours ses en-têtes de chaîne, même sans aucune règle chargée : une sortie vide venant d'un binaire installé signifie donc que la requête a été refusée, et non que le jeu de règles est vide. BOB n'annonce ici ni conflit ni pile saine. Vérifier avec : sudo iptables -L -n"

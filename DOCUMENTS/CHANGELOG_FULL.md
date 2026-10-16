@@ -6,6 +6,279 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.25.0] — 2026-10-16
+
+**A minor release: BOB now audits a Kubernetes node, looks at the data beside an
+encrypted root, and prints fixes that run as written on the host in front of it —
+measured on Fedora 44, Linux Mint 22.3, Alpine 3.24 and Ubuntu Server 26.04
+(MicroK8s 1.35), with Fedora 43 and Alpine 3.22 VMs and Debian 13 / Fedora 43
+containers for what those hosts could not stage.** One new section
+(`kubernetes`), six new `--explain` keys, a new CIS family: CIS Kubernetes 2.0,
+with the numbering of kube-bench's `cis-2.0` (CIS has since published 2.1.0;
+it is not mapped).
+No scoring-formula, JSON-schema or CSV-column-order change. **BREAKING (scores):**
+−3 where an iptables INPUT chain with a DROP policy accepts everything in its
+first rule, and where anonymous requests are authorised to a command-capable kubelet
+endpoint (`POST /run` or `GET /exec`), whether or not the pod specifications can be
+read; −1 where anonymous users can read pod specifications and no command endpoint
+is shown to be authorised; also −1 for a container with every Linux
+capability or a sensitive hostPath mount in a pod outside
+`kube-system`, a kubelet read-only port, a ClamAV socket every local user can
+reach (was INFO), a file capability on an RPM host that its owning package does
+not grant or on a file no package owns, an OpenRC host whose chrony is not
+synchronised (was reported synchronised), and — desktop/workstation profiles —
+data or swap in clear beside an encrypted root; up by the FORWARD and
+`ip_forward` deductions on a Kubernetes node, which routes pods by design. For the
+kubelet check, BOB applies the highest established severity; the read and command
+levels are not cumulative.
+Several printed fixes change (§4), one of which failed as published in 0.24.4.
+
+### 1. A Kubernetes node
+
+`kubernetes` runs where a kubelet runs (upstream `kubelet`, MicroK8s'
+`kubelite`, k3s) and audits the node, with no cluster credentials. It reads
+every container's OCI spec through `ctr` (`microk8s.ctr`, `k3s ctr`, or `ctr`
+on containerd's socket), else through `crictl` (CRI-O):
+
+- a container, in a pod outside `kube-system`, with every Linux capability in
+  its bounding set (against `/proc/sys/kernel/cap_last_cap`): WARN −1. That is what
+  `privileged: true` grants, and also what `capabilities.add: [ALL]` grants
+  without the rest of privileged mode; BOB reads the capabilities, not the pod
+  spec, and the finding names them, not "privileged";
+- a sensitive hostPath mount — a pod outside `kube-system` bind-mounting `/`,
+  `/etc`, `/root`, `/var/lib/kubelet` or a container runtime's socket: WARN −1;
+- a pod in the host's network, PID or IPC namespace: INFO;
+- `kube-system` pods with those rights are listed, not deducted — measured on
+  MicroK8s, calico-node is privileged and in the host network by design. The
+  namespace alone proves nothing, and the finding asks for each listed pod to
+  be checked;
+- the kubelet, asked on 127.0.0.1:10250 with no credentials: `GET /pods` 401 OK,
+  403 INFO (accepted, then refused). A 2xx exposes the pod specifications,
+  including any literal environment values they contain: WARN −1, unless a command
+  endpoint is authorised. A 5xx on `/pods` is inconclusive: INFO, not a refused
+  read. Reads and commands are separate permissions, and the verb decides: `/pods`
+  checks `nodes/pods` and can fall back to `nodes/proxy`, while command access depends
+  on the HTTP verb and the `nodes/proxy` permission. So two command requests are sent
+  whatever `/pods` answered, except a 401: `POST /run` (the create verb) and `GET /exec`
+  (the get verb), because a grant on `get` `nodes/proxy` alone authorises `/exec` while
+  refusing `/run`. Both carry an upper-case namespace and pod name. Pod, namespace and container names must use lowercase DNS-compatible syntax, so an upper-case namespace and pod name cannot identify a valid Kubernetes pod; the
+  kubelet answers 404 for it as for a lower-case name (measured). The requests carry
+  the parameters the handler checks before it looks the pod up: without them `/exec`
+  answers 400 about stdin, stdout and stderr (measured). A 404 saying the pod does not
+  exist means the request passed the access check and reached the handler. If either
+  request does so, anonymous commands are authorised: ALERT −3, whether or not the reads
+  were allowed. A 403 means refused. A 405 with debugging endpoints disabled (`Debug
+  endpoints are disabled`) incurs no command-exposure deduction, and any independently
+  established pod-read exposure remains WARN −1. A 5xx (`Authorization error`, when the
+  kubelet cannot ask the API server) is indeterminate: BOB does not read it as an
+  authorisation, and it is reported as INFO. Other kubelet endpoints subject to the
+  `nodes/proxy` authorisation (`/attach`, `/portForward`, container logs) answer by the
+  same verbs, as measured: `/attach` and `/portForward` as `/exec` and `/run` do, logs by
+  the get verb as `/exec` does. BOB does not probe them and does not treat them as an
+  exec authorisation. `PUT`, `PATCH` and `DELETE` answer 405 once granted (no handler
+  exists for them) and 403 otherwise. The checkpoint endpoint is a separate permission
+  (`nodes/checkpoint`): a grant on `nodes/proxy` does not give it, and it runs no command
+  in a container. BOB does not probe it. The question is asked from the host itself:
+  local users and host-network pods reach the port either way; whether the network does
+  depends on the kubelet's listen address and the firewall, which this check does not
+  test, and the finding says so.
+- the read-only port 10255 answering: WARN −1.
+
+Measured on a MicroK8s 1.35 node with five test pods (plain, privileged,
+host namespaces, hostPath `/`, containerd's socket mounted): each got the
+verdict above; the plain pod got none. The kubelet was measured with its arguments edited and restored, on MicroK8s
+1.35.6, in these configurations. Anonymous access on, RBAC off, debugging endpoints
+on: `/pods` 200, `POST /run` 404, `GET /exec` 404: commands authorised, ALERT −3.
+Debugging endpoints switched off: the command requests 405, `Debug endpoints are
+disabled`: no command-exposure deduction, and an established read exposure stays WARN −1.
+RBAC on, Webhook authorisation, a grant on `get` `nodes/pods` alone: `/pods` 200,
+`POST /run` 403, `GET /exec` 403: reads only, WARN −1. A grant on `get` `nodes/proxy`
+alone: `/pods` 200 (falling back to `nodes/proxy`), `POST /run` 403, `GET /exec` 404:
+commands authorised by the get verb, ALERT −3; `GET /run` 405 from the router, as `/run`
+has no GET handler. A grant on `create` `nodes/proxy` alone: `/pods` 403, `POST /run` 404,
+`GET /exec` 403: commands authorised while the reads are refused, ALERT −3. A grant on
+`update`, `patch` and `delete` `nodes/proxy` alone: `/pods` 403, `POST /run` 403,
+`GET /exec` 403, and `PUT`, `PATCH` and `DELETE` on `/run`, `/exec`, `/attach` and
+`/portForward` 405, no handler, so no command authorisation is established: INFO, nothing scored. Those requests reach a router with no handler (405), not a refusal. RBAC on, no grant: 403 on every
+endpoint, INFO. The probe names in upper case give the same answers: 404 for `GET /exec`
+under `get` alone and for `POST /run` under `create` alone. The API server unreachable
+from the kubelet: `POST /run` 500, `Authorization error`: indeterminate, since the kubelet
+could not finish its check, and BOB does not read it as an authorisation. Webhook
+authorisation alone, with the API server in AlwaysAllow, still answered 200, which the
+explain entry says. Anonymous access off gives 401 again, and the read-only port answers
+200 when turned on. BOB's own verdict was checked on the same node in these
+configurations: alert for anonymous commands with debugging on; warn for reads with
+debugging off; alert for commands with the reads allowed (get alone) and with them
+refused (create alone); info for no grant and for the update, patch and delete
+grant.
+CRI-O: the pod reading was measured on Fedora 43 with crictl-created pods and
+no kubelet (the section ran against a stand-in kubelet process); without the
+kubelet's labels `crictl ps` names no pod, so names come from the sandbox.
+
+A container whose spec does not come back is counted, and the section then says
+its rights were not assessed instead of reporting the workloads clean —
+measured: a first pass minutes after a MicroK8s restart under load missed two
+containers that the next pass read. Containers that cannot be listed, or a
+kubelet that does not answer, are reported as unread and make the score a
+ceiling. The kubelet is asked with a 15-second limit: on a loaded node the
+first answer after a kubelet restart took 9.5 seconds, and a 5-second limit
+reported it as no answer.
+
+On the same node, `firewall_drivers` no longer deducts for the FORWARD rules
+and IPv4 forwarding a Kubernetes node needs: BOB had offered
+`sysctl net.ipv4.ip_forward=0` on a MicroK8s node.
+
+### 2. Encryption beyond the root filesystem
+
+`disk_encryption` reported "Root filesystem is on an encrypted volume" and
+stopped there. It now resolves, through the same device-mapper walk, every
+other local filesystem on a block device (not `/boot`, the EFI partition,
+snaps, ISO images or removable media under `/media` and `/run/media`) and every
+swap on disk — a swap file by the filesystem holding it; zram is memory and is
+skipped. With the root encrypted, data or swap in clear is
+`disk_encryption.data_unencrypted`: WARN −1 on a desktop or workstation, INFO
+on a server, as for the root. A volume it cannot decide (a loop or RAID device)
+is said, never counted as encrypted.
+
+Measured on a Fedora 43 VM whose root was LVM on LUKS (`/` pivoted onto the
+encrypted volume, `/home` and a swap partition in clear): WARN naming both;
+server profile INFO; root alone OK. A marker written to each volume was found
+in the raw `/home` disk, not in the raw LUKS disk, and again once the volume
+was opened. This also measured, for the first time on a real encrypted root,
+the device-mapper walk shipped in 0.21.0.
+
+Inside a container `disk_encryption` now says "not applicable" whatever the
+profile — measured in `python:3.14-slim`: under the default server profile it
+reported the overlay root as unresolved and counted it as reduced visibility.
+
+### 3. Readings that said the opposite of the host
+
+- **iptables accepting everything.** `-P INPUT DROP` behind `-A INPUT -j ACCEPT`
+  was read as DROP. Measured on a Fedora 43 VM with iptables-legacy: port 8080
+  open from the LAN while BOB said the policy dropped. Now ALERT
+  `input_accept`, with no command (which rule to keep is the operator's), and
+  the accept-all rule named in the detail.
+- **chrony without timedatectl.** On an OpenRC host any output of
+  `chronyc tracking` counted as synchronised. Measured on Alpine 3.22 and
+  3.24, chrony pointed at an unreachable server printed "Leap status : Not
+  synchronised" and BOB said "NTP time synchronisation active". BOB reads that
+  line now; an unreadable answer is unknown.
+- **File capabilities on RPM hosts.** A file was judged known by its name.
+  Measured on Fedora 44: a copy of `newuidmap` with `cap_setuid`, owned by no
+  package, read OK. BOB now asks rpm which package ships each file and with
+  which capabilities (one `rpm -qf` for all of them): a file no package owns,
+  or carrying a capability its package does not grant, is no longer known,
+  and the detail says which — no package owns the file, or the capabilities
+  its package ships.
+- **ClamAV socket.** clamd's local socket reachable by every local user (which
+  lets any of them send SHUTDOWN) is now WARN −1, with no command — which
+  clients keep access is the operator's call.
+
+### 4. Fixes that run as written
+
+- **`doas` where there is no `sudo`.** Every printed command used `sudo`.
+  Measured on Alpine 3.24: the 17 commands BOB prints now say `doas`; three
+  were applied by a doas user and their findings cleared.
+- **Turning firewalld on keeps SSH from the first rule.** 0.24.4 started
+  firewalld, then added ssh to the active zones and reloaded. Measured on
+  Fedora 44 with the interface in a NetworkManager zone without ssh: 10 of 118
+  new SSH logins refused in that window; with ssh written into the permanent
+  configuration first (`firewall-offline-cmd`, for the default zone, the zones
+  NetworkManager gives active connections, and zones with an interface or
+  source bound), 0 of 115 and 0 of 117.
+- **…and no longer fails for an sshd on several ports.** firewalld refuses
+  `--add-service` and `--add-port` in one call ("not allowed with argument").
+  **The 0.24.4 command for an sshd on 22 and 2222 stopped right after starting
+  firewalld**; measured on a Fedora 43 VM: 29 of 34 new SSH logins refused
+  until a rollback stopped firewalld. One call per port now; measured on
+  Fedora 44 with sshd on 22 and 2222: the chain completes, 0 of 115 refused,
+  and a login on 2222 succeeds afterwards.
+- **CUPS bound back to localhost.** The fix was `cupsctl --no-remote-any`,
+  then a restart. Measured on Debian 13, Fedora 43 and Alpine: with a
+  hand-written `Listen 0.0.0.0:631` it exits 0 and changes nothing; Alpine also
+  refuses it to root (`Forbidden`) and names the service `cupsd`. The fix now
+  removes exactly the Listen/Port lines BOB read, keeps a `Listen localhost` on
+  their port and restarts CUPS in the host's init system — measured on Fedora
+  44, Mint 22.3 and Alpine 3.24: listening on 127.0.0.1 and ::1 only, the
+  finding gone when re-audited.
+- **Docker user-namespace remapping.** The fix restarted Docker with
+  `systemctl` (Alpine has OpenRC), wrote into an `/etc/docker` Alpine does not
+  create, and left the dockremap user and its ID range to Docker. Measured:
+  on Alpine 3.22 dockerd stopped with no `/etc/subuid` while OpenRC said
+  "started"; on Alpine 3.24 Docker 29.8.2 could not create the user ("no
+  useradd/adduser binary found") and stopped; on Mint 22.3 Docker 29.1.3 gave
+  dockremap 100000:65536 — the range the existing user already held, so
+  remapped containers shared host IDs with that user's namespaces. The fix now
+  creates the directory, the user and group if missing, and a range after the
+  highest one already allocated, then restarts Docker in the host's init
+  system. Measured with the final command on Alpine 3.24 and Ubuntu 26.04, and
+  its range step on Mint 22.3: Docker up with `userns`, a container's root on
+  a host ID outside every other range, the finding gone, and the command a
+  no-op when run twice. Its detail now says
+  that images and containers made before the remapping no longer appear.
+- **NTP not synchronised** prints `timedatectl` only where timedatectl
+  answered; on OpenRC there is no command.
+- **AppArmor** is enabled through the host's init system (only an apt host
+  gets a command; not measured under OpenRC).
+
+### 5. Wording
+
+- A port behind a raw nftables/iptables firewall read "governed by the
+  ruleset (inbound default: refuse)". Measured on a Fedora 43 VM: an input
+  chain with policy drop and `tcp dport 8080 accept` gave those words exactly
+  as one without the accept, while 8080 answered. The message now says a rule
+  may still allow the port, and that BOB reads the default policy, not every
+  rule, and does not establish reachability. The "Listening ports" summary already listed 8080.
+- A domain whose sections produced only notices read "no action needed".
+  Measured on Alpine: "Threat Detection — no action needed" with auditd,
+  fail2ban, ClamAV, AIDE and rkhunter all absent. It now reads **"reported,
+  not scored"** («signalé, non noté»): the notices are reported and, by design,
+  not scored. The JSON is unchanged (`active: false`, `reason: "info_only"`).
+
+### What was checked and found right
+
+A/B runs of 0.24.4 and 0.25.0 on the four real hosts gave the same score,
+deductions and findings except those named above; the other differences
+followed the host's state between runs (a service started, free memory, a
+filesystem walk past its time budget under load), not the version — checked by
+running the two versions in the reverse order. Three branches of 0.21.0 seen
+only in unit tests until now were measured, on a VM and in a container: `Storage=none` reads
+core dumps disabled and a crash wrote nothing; `/dev/shm` without `nosuid`
+reads WARN and a set-uid copy of `id` ran as root from it; the container
+profile reads disk encryption not applicable.
+
+### Not in this release, and known limits
+
+- `--explain` texts still say `sudo`; only printed commands use `doas`.
+- Kubernetes: the node, not the cluster (no API-server credentials). k3s is
+  not measured. CRI-O was measured without a kubelet.
+- Encryption: a loop, RAID or ZFS volume is reported undecided; removable
+  media are not judged.
+- The firewalld offline step is measured on Fedora; openSUSE is not.
+- The Docker fix is measured on Alpine, Mint and Ubuntu; Fedora's Docker
+  is not.
+
+### Counters
+
+Tests 13306 → **13828**, mutations 600 → **670**, `--explain` keys 220 → 226,
+CIS references 220 → 226, sections 56 → 57.
+
+### Guards
+
+`test_v0250_kubernetes_node.py`, `test_v0250_kubernetes_routing.py`,
+`test_v0250_disk_encryption_beyond_root.py`, `test_v0250_init_aware_fixes.py`,
+`test_v0250_ntp_chrony_leap.py`, `test_v0250_privilege_prefix.py`,
+`test_v0250_rpm_filecaps.py`, `test_v0250_info_only_domain_label.py`,
+`test_v0250_review_wording.py`, `test_v0250_locale_size_headroom.py` (the French locale had reached the
+loader's cap of 512 Ki characters during development; the cap is now 1 Mi and
+a quarter of it must stay free), and strict stand-ins for `firewall-cmd`,
+`firewall-offline-cmd` and `nmcli`: each refuses what the real tool refuses,
+where 0.24.4's stand-in accepted the call firewalld rejected. Every guard has a
+mutation that brings its defect back. The suite passes under Ubuntu 26.04's
+Python and pytest 9.1, ahead of GitHub's `ubuntu-latest` runner moving to that
+release: class-scoped fixtures written as instance methods, which pytest 9
+deprecates for removal in pytest 10, are now module-level fixtures.
+
 ## [0.24.4] — 2026-10-12
 
 **A patch release from a field campaign: each service check was compared with the

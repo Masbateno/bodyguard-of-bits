@@ -337,3 +337,22 @@ class TestTheRulesAlreadyThere:
         src = inspect.getsource(IptablesNftSnapshot.from_system)
         assert 'input_accepts_all=_nft_first_ipv4_chain_accepts_all(raw, "input"),' in src
         assert 'input_accepts_all=bool(re.search(r"^-A INPUT -j ACCEPT\\s*$", raw, re.MULTILINE)),' in src
+
+
+class TestAnIptablesChainAcceptingEverything:
+    """v0.25.0 — measured on a Fedora 43 VM, iptables-legacy: ``-P INPUT
+    DROP`` then ``-A INPUT -j ACCEPT``; 8080 answered from the LAN and BOB
+    read DROP (a false OK)."""
+
+    _RULES = "-P INPUT DROP\n-P FORWARD DROP\n-P OUTPUT ACCEPT\n-A INPUT -j ACCEPT\n"
+
+    def test_the_policy_is_never_reached(self):
+        assert ipt._ipt_effective_input_policy(self._RULES) == "ACCEPT"
+
+    def test_a_narrower_accept_leaves_the_policy(self):
+        rules = "-P INPUT DROP\n-A INPUT -i lo -j ACCEPT\n-A INPUT -p tcp -m tcp --dport 22 -j ACCEPT\n"
+        assert ipt._ipt_effective_input_policy(rules) == "DROP"
+
+    def test_the_snapshot_reads_it(self):
+        import inspect
+        assert "input_policy=_ipt_effective_input_policy(raw)," in inspect.getsource(IptablesNftSnapshot.from_system)

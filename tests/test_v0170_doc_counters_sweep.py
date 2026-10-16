@@ -84,6 +84,9 @@ _COINCIDENCES = {
     # SECURITY.md: "64 KB cap" is a read-size limit that v0.24.0 made equal to
     # the check-module count. Unrelated counter.
     "KB",
+    # README_TECH_FR: "62 caractères" is the ASCII header width, which v0.25.0 made equal
+    # to the explain-prefix count. Unrelated counter.
+    "caractères",
     # README_TECH: "194 entries (108 formal CIS, 79 best-practice, 7 Docker)"
     # is the CIS reference count, and it is already checked — with its
     # breakdown — by test_v0163_readme_tech_claims.py::test_the_cis_reference

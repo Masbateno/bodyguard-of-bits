@@ -499,24 +499,25 @@ class TestBusinessConstraints:
 # Plugin file wrapper schema (v0.4.0 Phase 1 Vague 1)
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(scope="module")
+def plugin_file_validator(plugin_file_schema, services_list_schema, service_schema):
+    # Cross-file $ref resolution via the shared compat helper:
+    # tries the modern `referencing` Registry first (jsonschema 4.18+),
+    # falls back to the legacy RefResolver path (jsonschema 4.10–4.17).
+    return _make_resolved_validator(
+        plugin_file_schema,
+        extra_schemas={
+            "plugin-file.schema.json": plugin_file_schema,
+            "services-list.schema.json": services_list_schema,
+            "service.schema.json": service_schema,
+            services_list_schema["$id"]: services_list_schema,
+            service_schema["$id"]: service_schema,
+        },
+    )
+
 class TestPluginFileWrapper:
     """Plugin files accept both legacy array form and wrapped object form."""
 
-    @pytest.fixture(scope="class")
-    def plugin_file_validator(self, plugin_file_schema, services_list_schema, service_schema):
-        # Cross-file $ref resolution via the shared compat helper:
-        # tries the modern `referencing` Registry first (jsonschema 4.18+),
-        # falls back to the legacy RefResolver path (jsonschema 4.10–4.17).
-        return _make_resolved_validator(
-            plugin_file_schema,
-            extra_schemas={
-                "plugin-file.schema.json": plugin_file_schema,
-                "services-list.schema.json": services_list_schema,
-                "service.schema.json": service_schema,
-                services_list_schema["$id"]: services_list_schema,
-                service_schema["$id"]: service_schema,
-            },
-        )
 
     @pytest.fixture
     def valid_service(self):

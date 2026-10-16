@@ -81,6 +81,27 @@ _MANUAL_BY_DESIGN = frozenset({
     # paths (installer option; backup+re-encrypt) and applying it is the
     # operator's call.
     "disk_encryption.root_unencrypted",
+    # v0.25.0 — data or swap in clear beside an encrypted root. Same as the root:
+    # a data partition is encrypted by backup / luksFormat / restore, and a swap
+    # moved to a random-key crypttab entry changes what hibernation can do. The
+    # detail gives both paths; nothing here is reversible unattended.
+    "disk_encryption.data_unencrypted",
+    # v0.25.0 — clamd's local socket reachable by every local user. The fix is a
+    # group (LocalSocketGroup + LocalSocketMode 660) holding the clients that
+    # need it — which clients those are is the operator's to say, and choosing
+    # wrong cuts a mail filter or a scanner off from the daemon.
+    "clamav.socket_open_to_all",
+    # v0.25.0 — the Kubernetes node. A privileged pod, a node-handing hostPath:
+    # the workload's manifest is the fix, owned by whoever deploys it, and the
+    # rights it needs are its own. The kubelet's anonymous access and read-only
+    # port live in a configuration file whose place depends on the
+    # distribution (kubeadm, MicroK8s args, k3s config) and need a restart of
+    # the node's kubelet; measured on MicroK8s, Webhook alone still answered 200
+    # with the API server in AlwaysAllow. The explain entries give each path.
+    "kubernetes.privileged_pod",
+    "kubernetes.host_mount",
+    "kubernetes.kubelet_anonymous",
+    "kubernetes.kubelet_readonly_port",
     # v0.18.0 — a service enabled at boot and not running. There is no one-line
     # remediation because the finding does not know why it is down: a crash, a
     # start that failed on a bad config, a dependency that never came up, or a

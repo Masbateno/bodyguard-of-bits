@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.24.4
+Version:        0.25.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,12 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Oct 16 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.25.0-1
+- Minor, BREAKING (scores): a Kubernetes node audited, the kubelet asked per
+  verb (measured on MicroK8s 1.35.6); encryption checked beyond the root
+  filesystem; firewalld, CUPS, Docker user-namespace remapping, chrony and doas
+  fixes that run as written on the host; file capabilities judged against
+  their owning package.
 * Mon Oct 12 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.24.4-1
 - Patch, BREAKING (scores): -1 for a blind fail2ban SSH jail and for auditd
   rules that miss writes (read-only, one ABI of two, narrowing filters); +1

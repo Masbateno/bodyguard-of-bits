@@ -1130,8 +1130,11 @@ def install_fix(t, detail: "str | None", *logical: str,
     fixes ``--fix --apply`` will run and count — and the reason is appended to
     the detail, where the operator is already reading.
 
-    *then* is a follow-up command that works anywhere (``systemctl enable`` and
-    friends). *then_apt* is one that does **not**: ``aideinit``,
+    *then* is a follow-up command for any package manager — built for this
+    host's init system by the caller (``service_enable_cmd``,
+    ``service_restart_cmd``); v0.25.0, the AppArmor fix passed a literal
+    ``systemctl enable`` here as if it were portable. *then_apt* is one that
+    does **not**: ``aideinit``,
     ``pam-auth-update`` and ``dpkg-reconfigure`` are Debian's own tools, and
     three findings appended them to advice they were about to hand a Fedora or
     Arch operator. Where a *then_apt* is declared and the host does not install
@@ -1413,3 +1416,30 @@ def _parse_english_month_day(s: str) -> tuple[int, int, int, int, int] | None:
         return month, day, int(h), int(m), int(sec)
     except (ValueError, IndexError):
         return None
+
+
+#: A running kubelet, by process name: upstream ``kubelet``, MicroK8s'
+#: single-binary ``kubelite``, k3s (``k3s-server`` / ``k3s-agent``, or ``k3s``).
+_KUBELET_NAMES = frozenset({"kubelet", "kubelite", "k3s", "k3s-server", "k3s-agent"})
+
+
+def kubelet_running() -> bool:
+    """Whether a kubelet process is running (v0.25.0).
+
+    Measured on a real Ubuntu Server 26.04 with MicroK8s 1.35 running: BOB
+    deducted for the FORWARD rule MicroK8s writes for its pod network and
+    offered ``sysctl net.ipv4.ip_forward=0`` — a fix that cuts every pod off.
+    An installed but stopped MicroK8s (snap disabled) needs no forwarding: the
+    process, not the package, is the evidence.
+    """
+    try:
+        pids = [d for d in Path("/proc").iterdir() if d.name.isdigit()]
+    except OSError:
+        return False
+    for pid in pids:
+        try:
+            if (pid / "comm").read_text(errors="replace").strip() in _KUBELET_NAMES:
+                return True
+        except OSError:
+            continue
+    return False

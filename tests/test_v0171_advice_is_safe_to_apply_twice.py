@@ -90,8 +90,11 @@ class TestNoBareAppendSurvivesInCode:
         delete regex lives in a ``kill`` variable, so match the ``sed -i`` that
         applies it in the same statement).
         """
+        # v0.25.0 — also ``grep -qiE``: the CUPS fix checks for a Listen line
+        # in any case, indented or commented, before appending one; its
+        # double application is run in test_v0250_init_aware_fixes.
         bare = [(w, ln) for w, ln in _command_statements()
-                if "tee -a" in ln and "grep -qxF" not in ln
+                if "tee -a" in ln and "grep -qxF" not in ln and "grep -qiE" not in ln
                 and "sed -i" not in ln
                 and "append_once" not in ln]
         assert not bare, (

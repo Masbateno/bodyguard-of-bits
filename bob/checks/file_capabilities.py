@@ -38,11 +38,12 @@ from __future__ import annotations
 
 import errno
 import os
+import re
 import shlex
 import time
 from dataclasses import dataclass, field
 
-from bob.checks._run import TranslationFunc, _identity_t
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, run_result
 from bob.checks.suid_audit import _SCAN_ROOTS
 from bob.scoring import CheckResult
 
@@ -164,6 +165,11 @@ class FileCapabilitiesSnapshot:
     files_seen:   int  = 0
     scan_partial: bool = False
     scan_skipped: bool = False
+    #: v0.25.0 — what the rpm database recorded for each capability file:
+    #: the capability names its package ships it with, ``None`` when no
+    #: package owns the file. A path absent from the map was not answered for
+    #: (no rpm, or rpm could not be asked): judged by name, as before.
+    rpm_caps:     "dict[str, frozenset[str] | None]" = field(default_factory=dict)
 
     @classmethod
     def from_system(cls, *, _roots: "tuple[str, ...] | None" = None,
@@ -208,12 +214,76 @@ class FileCapabilitiesSnapshot:
                     elif caps:
                         snap.entries.append((path, caps))
         snap.entries.sort()
+        snap.rpm_caps = _rpm_filecaps([p for p, _ in snap.entries])
         return snap
+
+
+def _parse_cap_text(text: str) -> "frozenset[str]":
+    """Capability names in libcap's text form, as rpm stores it:
+    ``cap_setgid,cap_setuid=ep``, ``cap_net_raw+p``; a bare ``=ep`` is all."""
+    names: "set[str]" = set()
+    for clause in text.split():
+        m = re.match(r"([^=+-]*)[=+-]", clause)
+        if not m:
+            continue
+        if not m.group(1):
+            names.update(_CAP_NAMES)
+            continue
+        for name in m.group(1).split(","):
+            name = name.strip().lower()
+            names.add(name[4:] if name.startswith("cap_") else name)
+    return frozenset(names)
+
+
+def _rpm_filecaps(paths: "list[str]") -> "dict[str, frozenset[str] | None]":
+    """What the rpm database recorded for *paths* (see ``rpm_caps``).
+
+    v0.25.0 — ``_KNOWN`` recognises a binary by its name. Measured on Fedora
+    44: a copy of ``newuidmap`` in /usr/local/bin with ``cap_setuid`` (root by
+    another name), owned by no package, passed as the shadow-utils binary and
+    BOB said OK. rpm records each packaged file's capabilities
+    (``%{FILECAPS}``), so on an rpm host the origin is proved, not guessed.
+    """
+    if not paths or not _command_exists("rpm"):
+        return {}
+    res = run_result("rpm", "-qf", "--qf", "[%{FILENAMES}\t%{FILECAPS}\n]", *paths)
+    recorded: "dict[str, str]" = {}
+    for line in res.stdout.splitlines():
+        if "\t" in line:
+            name, caps = line.split("\t", 1)
+            recorded[name] = caps
+    answered: "dict[str, frozenset[str] | None]" = {}
+    said = res.stdout + "\n" + res.stderr
+    for path in paths:
+        if path in recorded:
+            answered[path] = _parse_cap_text(recorded[path])
+        elif f"file {path} is not owned by any package" in said:
+            answered[path] = None
+    return answered
 
 
 def _fmt(entries: "list[tuple[str, frozenset[str]]]") -> str:
     shown = ", ".join(f"{p} ({','.join(sorted(c))})" for p, c in entries[:10])
     return shown + (f" (+{len(entries) - 10} more)" if len(entries) > 10 else "")
+
+
+def _provenance(snapshot: "FileCapabilitiesSnapshot", flagged: "list[tuple[str, frozenset[str]]]",
+                _t: "TranslationFunc") -> str:
+    """What the rpm database said about each flagged file: owned by no package,
+    or shipped with other capabilities (v0.25.0). Empty where rpm was not asked."""
+    lines = []
+    for path, _caps in flagged[:8]:
+        if path not in snapshot.rpm_caps:
+            continue
+        shipped = snapshot.rpm_caps[path]
+        if shipped is None:
+            lines.append(_t("file_capabilities.provenance_unowned", path=path))
+        elif shipped:
+            lines.append(_t("file_capabilities.provenance_packaged", path=path,
+                            caps=",".join(sorted(shipped))))
+        else:
+            lines.append(_t("file_capabilities.provenance_packaged_none", path=path))
+    return (" " + " ".join(lines)) if lines else ""
 
 
 def check_file_capabilities(snapshot: FileCapabilitiesSnapshot,
@@ -232,6 +302,11 @@ def check_file_capabilities(snapshot: FileCapabilitiesSnapshot,
     unexpected: "list[tuple[str, frozenset[str]]]" = []
     for path, caps in snapshot.entries:
         allowed = _KNOWN.get(os.path.basename(path))
+        if path in snapshot.rpm_caps:
+            # v0.25.0: on an rpm host the package database decides — a file
+            # no package owns, or carrying more than its package ships, is not
+            # known whatever its name.
+            allowed = snapshot.rpm_caps[path]
         if allowed is not None and caps <= allowed:
             known.append((path, caps))
         elif caps & _ROOT_EQUIVALENT:
@@ -246,7 +321,7 @@ def check_file_capabilities(snapshot: FileCapabilitiesSnapshot,
                        count=len(dangerous), paths=_fmt(dangerous)),
             reason=_t("file_capabilities.root_equivalent_reason", count=len(dangerous)),
             points=1,
-            detail=_t("file_capabilities.root_equivalent_detail"),
+            detail=_t("file_capabilities.root_equivalent_detail") + _provenance(snapshot, dangerous, _t),
             nature="action",
             cmd=" && ".join(f"getcap {shlex.quote(p)}" for p, _ in dangerous[:5]),
             cmd_type="check",
@@ -256,7 +331,7 @@ def check_file_capabilities(snapshot: FileCapabilitiesSnapshot,
         result.info(
             message=_t("file_capabilities.unexpected",
                        count=len(unexpected), paths=_fmt(unexpected)),
-            detail=_t("file_capabilities.unexpected_detail"),
+            detail=_t("file_capabilities.unexpected_detail") + _provenance(snapshot, unexpected, _t),
             cmd=" && ".join(f"getcap {shlex.quote(p)}" for p, _ in unexpected[:5]),
             cmd_type="check",
             key="file_capabilities.unexpected",

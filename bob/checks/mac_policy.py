@@ -410,11 +410,14 @@ def check_mac_policy(
     # --- No MAC framework found ---------------------------------------------
     # `apparmor-utils` is Debian's split of the tooling; Arch and Alpine ship it
     # inside `apparmor`, and Fedora ships SELinux instead of AppArmor entirely.
-    # The systemctl half is portable, so it rides along wherever a command is
-    # produced at all.
+    # v0.25.0: the enable step in this host's init system (the comment here said
+    # the systemctl half was portable; OpenRC has no systemctl). Only an apt host
+    # gets a command at all (then_apt), so this matters for apt under OpenRC —
+    # not measured. On Alpine, as measured, the kernel carries AppArmor switched
+    # off and apparmor_off_in_kernel answers first.
     _cmd, _detail = install_fix(
         _t, _t("mac_policy.no_mac_detail"), "apparmor",
-        then="sudo systemctl enable --now apparmor",
+        then=service_enable_cmd("apparmor"),
         then_apt="sudo apt install -y apparmor-utils",
     )
     result.warn_with_deduction(

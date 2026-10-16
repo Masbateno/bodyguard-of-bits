@@ -205,12 +205,37 @@ def _firewall_install_fix(_t, ssh_ports: "list[int] | None" = None):
         ports = sorted(set(ssh_ports))
         if not ports:
             return install_fix(_t, None, "firewalld", then="sudo systemctl enable --now firewalld")
-        keep = " ".join("--add-service=ssh" if p == 22 else f"--add-port={p}/tcp" for p in ports)
+        items = ["--add-service=ssh" if p == 22 else f"--add-port={p}/tcp" for p in ports]
+        # v0.25.0 — ssh goes into the permanent configuration before firewalld
+        # starts, so the first ruleset it loads already allows it: the default
+        # zone, the zones NetworkManager gives active connections
+        # (connection.zone — firewall-offline-cmd cannot see them) and every
+        # zone with an interface or source bound in its file. Measured on
+        # Fedora 43, interface in an NM zone without ssh: 3 and 4 new SSH logins
+        # refused with ssh added after the start, 0 in three runs this way.
+        # firewall-offline-cmd takes one action per call, and so does
+        # firewall-cmd for --add-service with --add-port ("not allowed with
+        # argument", firewalld 2.3) — measured: the v0.24.4 command for an
+        # sshd on 22 and 2222 stopped right after starting firewalld. One call
+        # per item; a zone the offline tool does not know must not stop the
+        # rest of the chain.
+        offline_default = " && ".join(f"sudo firewall-offline-cmd {i}" for i in items)
+        offline_zones = (
+            "for z in $({ nmcli -g UUID connection show --active 2>/dev/null"
+            " | xargs -rI{} nmcli -g connection.zone connection show {} 2>/dev/null;"
+            " sudo firewall-offline-cmd --list-all-zones"
+            " | awk '/^[^[:space:]]/{z=$1} /^[[:space:]]+(interfaces|sources):[[:space:]]*[^[:space:]]/{print z}';"
+            " } | awk NF | sort -u); do "
+            + " ".join(f'sudo firewall-offline-cmd --zone="$z" {i} || true;' for i in items)
+            + " done"
+        )
         then = " && ".join([
+            offline_default,
+            offline_zones,
             "sudo systemctl enable --now firewalld",
-            f"sudo firewall-cmd --permanent {keep}",
-            "sudo firewall-cmd --get-active-zones | awk '!/^[[:space:]]/{print $1}' | "
-            f"xargs -rI{{}} sudo firewall-cmd --permanent --zone={{}} {keep}",
+            *(f"sudo firewall-cmd --permanent {i}" for i in items),
+            *("sudo firewall-cmd --get-active-zones | awk '!/^[[:space:]]/{print $1}' | "
+              f"xargs -rI{{}} sudo firewall-cmd --permanent --zone={{}} {i}" for i in items),
             "sudo firewall-cmd --reload",
         ])
         return install_fix(_t, _t("firewall.firewalld_keeps_ssh_detail"), "firewalld", then=then)

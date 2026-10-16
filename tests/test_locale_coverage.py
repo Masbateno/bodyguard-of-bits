@@ -226,17 +226,18 @@ class TestLocaleCoverage:
 # EXPLAIN_KEYS list itself.
 # ---------------------------------------------------------------------------
 
-class TestExplainNamespaceCoverage:
-    @pytest.fixture(scope="class")
-    def explain_leaves(self) -> list[str]:
-        """Expected dotted paths in en.json / fr.json for every explain entry."""
-        from bob.explain import EXPLAIN_KEYS
-        leaves: list[str] = []
-        for key in EXPLAIN_KEYS:
-            for suffix in ("title", "why", "how"):
-                leaves.append(f"explain.{key}.{suffix}")
-        return leaves
+@pytest.fixture(scope="module")
+def explain_leaves() -> list[str]:
+    """Expected dotted paths in en.json / fr.json for every explain entry."""
+    from bob.explain import EXPLAIN_KEYS
+    leaves: list[str] = []
+    for key in EXPLAIN_KEYS:
+        for suffix in ("title", "why", "how"):
+            leaves.append(f"explain.{key}.{suffix}")
+    return leaves
 
+
+class TestExplainNamespaceCoverage:
     def test_explain_keys_have_full_locale_content_en(self, explain_leaves, en_data):
         missing = [p for p in explain_leaves if _resolve_dotted(en_data, p) is None]
         assert not missing, (

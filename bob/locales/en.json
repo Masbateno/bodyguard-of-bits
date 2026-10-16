@@ -132,7 +132,7 @@
       "core_dumps": "Core-dump disposition — core_pattern, systemd-coredump storage, limits",
       "kexec_lockdown": "Boot integrity — kexec_load_disabled + kernel lockdown mode",
       "faillock": "PAM account lockout — pam_faillock/tally2 in the auth stack, deny threshold",
-      "disk_encryption": "Disk encryption — whether the root filesystem is on a LUKS/dm-crypt volume (profile-gated)",
+      "disk_encryption": "Disk encryption — whether the root filesystem, the other local data filesystems and disk swap are on LUKS/dm-crypt (profile-gated)",
       "polkit": "polkit authorization — rule files evaluated as root; a non-root-writable .rules/.pkla is a privilege-escalation path",
       "smtp": "SMTP daemon exposure — Postfix / Exim binding, relay risk",
       "cups": "CUPS print service — cupsd.conf listen address, network browsing",
@@ -157,6 +157,7 @@
       "virtualization": "Virtualisation — libvirt/KVM, Docker, snap bridge interfaces",
       "cron": "User + system cron jobs — risky patterns (pipe-to-shell, world-writable)",
       "docker_hardening": "Docker containers — privileged, root, socket-mounted, host network",
+      "kubernetes": "Kubernetes node — privileged pods, host paths and namespaces, kubelet anonymous access and read-only port",
       "services_health": "Services state coherence — installed-inactive, active-disabled",
       "firewall_iptables": "iptables / nftables default policy + loopback rules",
       "firewall_drivers": "Firewall stack coherence — nftables/iptables/ufw layering",
@@ -165,6 +166,7 @@
     },
     "cron": "CRON JOB AUDIT",
     "docker_hardening": "DOCKER CONTAINER SECURITY AUDIT",
+    "kubernetes": "KUBERNETES NODE AUDIT",
     "services_health": "SERVICE STATE AUDIT",
     "firewall_iptables": "IPTABLES / NFTABLES AUDIT",
     "firewall_drivers": "FIREWALL STACK ANALYSIS",
@@ -184,7 +186,7 @@
     "firewall_missing": "No active firewall — neither UFW nor firewalld is installed, and the netfilter layer is not filtering inbound traffic"
   },
   "firewall": {
-    "firewalld_keeps_ssh_detail": "The command keeps SSH allowed in the default zone and in every active zone: with no firewall it answered from everywhere, so this closes nothing it reached. It is a starting point, not a segmentation — afterwards, remove ssh from the zones that should not offer it (firewall-cmd --permanent --zone=<zone> --remove-service=ssh, then --reload). Starting firewalld comes before the reload that adds ssh: measured on Fedora, an open SSH session kept going, while new SSH logins failed for about a second — anything reconnecting in that window (another admin, an orchestration tool) may need to retry.",
+    "firewalld_keeps_ssh_detail": "The command keeps SSH allowed in the default zone and in every active zone: with no firewall it answered from everywhere, so this closes nothing it reached. It is a starting point, not a segmentation — afterwards, remove ssh from the zones that should not offer it (firewall-cmd --permanent --zone=<zone> --remove-service=ssh, then --reload). SSH is written into the permanent configuration before firewalld starts — the default zone, the zones NetworkManager gives active connections, and the zones with an interface or source bound — so the first ruleset it loads already allows it: measured on Fedora, 0 new SSH logins refused, against 3 to 4 when ssh was added after the start. A zone bound some other way gets ssh after the start, with the reload.",
     "ssh_ports_unknown_detail": "BOB could not tell which ports sshd answers on — `ss -tulnp` could not be run, or named no process (BOB was not run as root) — so it gives no command that turns filtering on: one that kept port 22 alone would cut an sshd listening elsewhere. Allow the port your SSH session uses first, then turn filtering on.",
     "active": "UFW firewall is active",
     "netfilter_active": "No active firewall front-end (UFW/firewalld), but the netfilter layer is filtering inbound traffic — audited in the iptables/nftables section",
@@ -271,7 +273,7 @@
     "uncovered_bound_address": "Port {port} — bound to {address} only, no firewall rule — reachable from the network that address is on",
     "uncovered_bound_address_deny": "Port {port} — bound to {address} only, no explicit UFW rule, but covered by default deny policy",
     "uncovered_bound_address_firewalld": "Port {port} — bound to {address} only — governed by the firewalld zone of the interface it is reached on, not a UFW rule",
-    "uncovered_bound_address_netfilter": "Port {port} — bound to {address} only — governed by the nftables/iptables ruleset (inbound default: refuse), not a UFW rule",
+    "uncovered_bound_address_netfilter": "Port {port} — bound to {address} only — governed by the nftables/iptables ruleset (inbound default: refuse; a rule may still allow this port — BOB reads the default policy, not every rule, and does not establish reachability), not a UFW rule",
     "system_port": "Internal system port — no risk (legitimate OS service, no UFW rule needed): {port} ({service})",
     "unreadable": "Listening ports could not be determined",
     "unreadable_detail": "`ss -tulnp` could not be run \u2014 the binary is absent (iproute2 is not installed on minimal images and many containers) or it failed. Its stdout is empty either way, which is indistinguishable from a host with nothing listening, so BOB reports the gap instead of claiming zero open ports. Check with: ss -tulnp",
@@ -282,7 +284,7 @@
     "uncovered_default_deny": "Port {port} listening on all interfaces — no explicit UFW rule, but covered by default deny policy",
     "uncovered_ufw_inactive": "Port {port} listening on all interfaces — no active firewall to filter it",
     "uncovered_firewalld": "Port {port} listening on all interfaces — governed by the firewalld zone of the interface it is reached on, not a UFW rule",
-    "uncovered_netfilter": "Port {port} listening on all interfaces — governed by the nftables/iptables ruleset (inbound default: refuse), not a UFW rule"
+    "uncovered_netfilter": "Port {port} listening on all interfaces — governed by the nftables/iptables ruleset (inbound default: refuse; a rule may still allow this port — BOB reads the default policy, not every rule, and does not establish reachability), not a UFW rule"
   },
   "logs": {
     "no_logfile": "UFW log file not found (/var/log/ufw.log) and no UFW entries in journald — logging disabled?",
@@ -1425,7 +1427,7 @@
     "health_resilience": "Health & Resilience",
     "detection": "Threat Detection",
     "reason": {
-      "no_action": "no action needed",
+      "no_action": "reported, not scored",
       "unreadable": "could not be read",
       "not_assessed": "not assessed ({profile} profile)",
       "filtered": "not assessed (--check/--skip)",
@@ -2805,6 +2807,11 @@
         "container": {
           "why": "If ClamAV runs inside a container, freshclam should be in the container's process tree (or signatures shared from the host via volume). If on the host, re-enable there."
         }
+      },
+      "socket_open_to_all": {
+        "title": "ClamAV daemon socket open to every local user (any process can stop the antivirus)",
+        "why": "clamd takes commands on its local socket — SCAN, RELOAD, SHUTDOWN among them. When the socket's permissions admit every account (write on the socket, search on every directory above it), any process running as any local user can send them. Measured with Alpine 3.22 and Debian 13 as packaged: an unprivileged user sent SHUTDOWN and clamd stopped. Malware running as an ordinary user can therefore switch the antivirus off before it acts. Debian and Ubuntu ship LocalSocketMode 666; Arch, openSUSE and Alpine leave it unset, which clamd.conf documents as world accessible. Fedora puts its socket in a 0710 directory and is not affected. ClamAV 1.4 has no option to refuse SHUTDOWN.",
+        "how": "1. Find which accounts must reach the socket: your mail filter (amavis, rspamd, clamsmtp), on-access scanners, clamdscan users.\n2. In clamd's configuration (/etc/clamav/clamd.conf, /etc/clamd.conf or /etc/clamd.d/scan.conf) set:\n   LocalSocketGroup clamav\n   LocalSocketMode 660\n3. Add each client account to that group: sudo usermod -aG clamav <user>\n4. Restart the daemon (the unit BOB names in the finding) and check a client still connects: clamdscan --ping 1\nOwner, group and root keep access; every other account is refused."
       }
     },
     "auditd": {
@@ -2909,6 +2916,11 @@
         "title": "Root filesystem is not encrypted",
         "why": "Full-disk encryption protects data at rest. Without it, anyone who gains physical possession of the disk — a stolen laptop, a drive returned under RMA, a decommissioned or resold disk — can read every file by attaching it to another machine, bypassing all OS-level permissions and login controls entirely. It is the one control that still holds once the machine leaves your custody. BOB gates this by profile: it is a deduction on a desktop/workstation (portable, physically exposed) and informational on a server (locked rack, no boot console for a passphrase).",
         "how": "Enable LUKS full-disk (or at least full-partition) encryption.\n\nThis cannot be done in place on an existing plain root. Either:\n  (a) re-install the OS and choose \"encrypt the disk\" in the installer, or\n  (b) back up, re-create the volume with `cryptsetup luksFormat`, and restore.\n\nLaptop/desktop: the installer's LUKS option is the simplest path.\nHeadless server: pair LUKS with a remote-unlock method (Clevis + Tang, or dropbear-initramfs) so the machine can boot unattended.\n\nBOB never enables encryption automatically — it is a destructive, one-way operation on the volume."
+      },
+      "data_unencrypted": {
+        "title": "Data or swap outside the encrypted root",
+        "why": "Encrypting the root filesystem is often taken to mean the disk is encrypted. It means the volume holding / is. A separate /home, /var or /srv partition created without LUKS, a data disk added later, or a swap partition left plain keeps its contents readable to whoever obtains the disk — and for a separate /home those contents are exactly the users' files.\n\nSwap is the quieter case: the kernel writes memory pages to it under pressure, and hibernation writes all of memory. A plain swap therefore holds, in clear, whatever was in RAM — passphrases, private keys, decrypted documents — including secrets that only ever existed inside the encrypted system.\n\nBOB lists every local filesystem on a block device other than /, /boot and read-only images, and every swap on disk (zram is memory, not disk), and resolves each one through the device-mapper stack, as for the root. A swap file is judged by the filesystem that holds it.",
+        "how": "1. See the layout:\n   lsblk -o NAME,TYPE,FSTYPE,MOUNTPOINTS\n   cat /proc/swaps\n2. Swap — the simplest fix, nothing to keep: give it a fresh random key at every boot.\n   /etc/crypttab:  cryptswap  /dev/disk/by-partuuid/<id>  /dev/urandom  swap,cipher=aes-xts-plain64,size=512\n   /etc/fstab:     /dev/mapper/cryptswap  none  swap  defaults  0 0\n   (A random-key swap cannot be used to hibernate; for hibernation put swap inside the encrypted LVM.)\n3. A data partition: back it up, create a LUKS volume on it (cryptsetup luksFormat), add it to /etc/crypttab and /etc/fstab, and restore — or move the data into the encrypted root's volume group.\n4. Reboot and re-run BOB: each volume should resolve to a crypt device."
       }
     },
     "polkit": {
@@ -3193,6 +3205,28 @@
         "title": "Docker container using host network mode",
         "why": "A container with --network=host shares the host's network namespace entirely. It can bind to any port on the host, listen on all interfaces, and access any network service running on localhost. Network-based container isolation does not exist for such containers.",
         "how": "1. Remove --network=host and use explicit port publishing:\n   docker run -p 8080:80 myimage  (instead of --network=host)\n2. If host networking is required for performance (e.g. latency-sensitive apps), restrict capabilities and use AppArmor/seccomp profiles\n3. Audit host-networked containers:\n   docker ps -q | xargs docker inspect --format '{{.Name}}: {{.HostConfig.NetworkMode}}' | grep host"
+      }
+    },
+    "kubernetes": {
+      "privileged_pod": {
+        "title": "Container with every Linux capability, outside kube-system",
+        "why": "A container holding every capability in its bounding set — what privileged: true grants, and what capabilities.add: [ALL] grants without the rest of privileged mode (privileged also lifts seccomp, AppArmor/SELinux confinement and device restrictions, which BOB does not establish here). From inside it, mounting the node's disk, loading a kernel module or reaching another container's processes is ordinary work: whoever runs code in that pod — through its application, an exposed debug endpoint or a compromised image — controls the node and every pod on it.\n\nBOB reads each container's OCI spec (through ctr, or crictl for CRI-O) and names a container when its bounding set holds every capability the kernel knows (/proc/sys/kernel/cap_last_cap). Pods in kube-system are reported separately and not deducted: a CNI agent such as calico-node runs privileged by design.",
+        "how": "1. See which containers and why:\n   kubectl get pods -A -o custom-columns=NAMESPACE:.metadata.namespace,POD:.metadata.name,PRIVILEGED:.spec.containers[*].securityContext.privileged\n2. Replace privileged: true with the capabilities the workload actually needs:\n   securityContext:\n     capabilities:\n       drop: [\"ALL\"]\n       add: [\"NET_ADMIN\"]\n3. Enforce it for the namespace with Pod Security Admission:\n   kubectl label namespace <ns> pod-security.kubernetes.io/enforce=baseline"
+      },
+      "host_mount": {
+        "title": "Pod mounting a sensitive host path",
+        "why": "A hostPath volume puts part of the node's filesystem inside the pod. For some paths that is the node itself: / or /etc writable from the pod means editing the node's users, sudoers or units; /root its administrator's keys; /var/lib/kubelet every pod's secrets; and a container runtime's socket (containerd, CRI-O, Docker) lets the pod start a new privileged container on the node.\n\nBOB names a pod when one of its containers bind-mounts one of these exact paths. Pods in kube-system are reported separately and not deducted.",
+        "how": "1. List the hostPath volumes:\n   kubectl get pods -A -o custom-columns=NAMESPACE:.metadata.namespace,POD:.metadata.name,HOSTPATH:.spec.volumes[*].hostPath.path\n2. Replace them with what the workload needs: a PersistentVolume or emptyDir for data, a ConfigMap or Secret for configuration.\n3. If a host path is truly needed, mount the narrowest one, read-only (readOnly: true).\n4. Refuse hostPath for the namespace with Pod Security Admission:\n   kubectl label namespace <ns> pod-security.kubernetes.io/enforce=baseline"
+      },
+      "kubelet_anonymous": {
+        "title": "Kubelet API answering anonymous requests",
+        "why": "Every node's kubelet serves an HTTPS API on port 10250. With anonymous access on and authorisation left to AlwaysAllow, a request without credentials is served: /pods lists the pod specifications, including any literal environment values they contain, and /exec, /run, /attach and /portForward run commands in any container. BOB sends one GET /pods to 127.0.0.1:10250 without credentials: 401 means anonymous requests are refused; 403 means they are accepted but the read is denied; a 2xx means they may read the pod specifications. Reads and commands are separate permissions, checked by verb: BOB also sends POST /run (create) and GET /exec (get) for an upper-case pod name that no pod can carry. A 404 saying the pod does not exist means the request passed the access check. If either request does so, anonymous commands are authorised (ALERT −3); if both are refused, no command endpoint is open to these verbs. A 405 (debugging endpoints disabled) or a 5xx (the kubelet could not ask the API server) is not an authorisation. Webhook authorisation alone is not enough: the API server decides with its own mode. Measured on MicroK8s 1.35.6: with a grant on get nodes/proxy alone, /pods answered 200, POST /run 403 and GET /exec 404. Nothing can run: there is no such pod.",
+        "how": "1. Find the kubelet's configuration:\n   ps -o args= -C kubelet,kubelite | tr ' ' '\\n' | grep -E 'config|anonymous|authorization'\n   (MicroK8s: /var/snap/microk8s/current/args/kubelet)\n2. Set:\n   --anonymous-auth=false          (or authentication.anonymous.enabled: false)\n   --authorization-mode=Webhook    (or authorization.mode: Webhook), with an API server that authorises through RBAC (MicroK8s: microk8s enable rbac)\n3. Restart the kubelet (MicroK8s: sudo snap restart microk8s.daemon-kubelite).\n4. Verify: curl -sk https://127.0.0.1:10250/pods should answer 401 Unauthorized."
+      },
+      "kubelet_readonly_port": {
+        "title": "Kubelet read-only port open",
+        "why": "Port 10255 is the kubelet's unauthenticated read-only API. Anyone who reaches it reads every pod spec on the node — images, commands, environment variables (where credentials are often placed) — and the node's details: a map for the next step, with no credential needed and no trace in the API server.",
+        "how": "1. Set --read-only-port=0 (readOnlyPort: 0 in the kubelet configuration file).\n2. Restart the kubelet.\n3. Verify: curl -s http://127.0.0.1:10255/pods should fail to connect."
       }
     },
     "services_health": {
@@ -3486,6 +3520,7 @@
     "clamd_inactive_detail": "The clamav-daemon service enables on-access scanning and is required for integration with mail servers (Postfix, Amavis, etc.). Without the daemon, only manual on-demand scans are possible.",
     "socket_open_to_all": "The permissions on the ClamAV daemon's socket ({path}) let every local user send it commands, SHUTDOWN included",
     "socket_open_to_all_detail": "Its Unix permissions — write on the socket, search on every directory above it — admit a connection from any account on this host (a MAC policy such as SELinux or AppArmor may still refuse one), so any of them can stop the daemon: measured on Debian and Alpine as packaged. This is how the package ships it (Debian, Ubuntu, Arch, openSUSE and Alpine). Restricting it — LocalSocketGroup and LocalSocketMode 660 in clamd's configuration, then a restart — keeps it working for the owner, the group and root, and cuts every other client: first check which users your mail filter or scanners run as, and add them to that group.",
+    "socket_open_to_all_reason": "ClamAV daemon socket open to every local user (can be stopped)",
     "no_scan_log": "No ClamAV scan log found — last scan date unknown",
     "no_scan_log_detail": "No scan log found in standard paths (/var/log/clamav/). -r = recursive scan, --infected = show only infected files (reduces output noise), --log = save results for audit trail and future diff comparisons.",
     "scan_very_old": "Last scan was {days} day(s) ago ({date}) — very overdue",
@@ -3672,7 +3707,10 @@
     "unexpected": "{count} binary(ies) carry a file capability BOB does not know them for: {paths}",
     "unexpected_detail": "None of these capabilities is root-equivalent, so nothing is scored. Each one is still a privilege granted to everyone who runs the file — confirm it is intended (getcap <file>).",
     "partial": "File-capability scan incomplete — {files} file(s) examined, {count} with a capability; a directory could not be read or the time budget ran out, so the rest is unverified",
-    "ok": "No unexpected file capability — {files} file(s) examined, {count} known grant(s)"
+    "ok": "No unexpected file capability — {files} file(s) examined, {count} known grant(s)",
+    "provenance_unowned": "{path}: no package owns it.",
+    "provenance_packaged": "{path}: its package ships it with {caps} only.",
+    "provenance_packaged_none": "{path}: its package ships it with no capability."
   },
   "cpu_security": {
     "unknown": "CPU vulnerability status not checked — /sys/devices/system/cpu/vulnerabilities could not be read",
@@ -3779,7 +3817,12 @@
     "root_unencrypted_detail": "The device backing / is a plain partition, so data at rest is readable by anyone who obtains the disk (a stolen laptop, a returned RMA drive, a decommissioned disk). Full-disk encryption (LUKS) protects data at rest. It cannot be turned on in place — it requires re-installing with encryption enabled, or a backup/re-encrypt/restore cycle. BOB never does this automatically.",
     "root_unencrypted_detail_with_volumes": "The device backing / is a plain partition, so data at rest is readable by anyone who obtains the disk. Encrypted volumes do exist on this host ({volumes}) but the root filesystem is not among them. Full-disk encryption (LUKS) protects data at rest; it cannot be turned on in place — it requires re-installing with encryption enabled, or a backup/re-encrypt/restore cycle. BOB never does this automatically.",
     "root_unencrypted_server": "Root filesystem is not encrypted (server profile — reported, not scored)",
-    "root_unencrypted_server_detail": "The root device is a plain partition. On a headless server full-disk encryption needs remote-unlock tooling (a boot-time passphrase prompt has no console), and the physical threat model is a locked rack rather than a portable device — so BOB reports this without a deduction. If the server holds sensitive data at rest or its disks may be physically removed or decommissioned, consider LUKS with a remote-unlock method (Clevis/Tang, dropbear-initramfs)."
+    "root_unencrypted_server_detail": "The root device is a plain partition. On a headless server full-disk encryption needs remote-unlock tooling (a boot-time passphrase prompt has no console), and the physical threat model is a locked rack rather than a portable device — so BOB reports this without a deduction. If the server holds sensitive data at rest or its disks may be physically removed or decommissioned, consider LUKS with a remote-unlock method (Clevis/Tang, dropbear-initramfs).",
+    "data_unencrypted": "Root is encrypted, but other data on this host is not: {volumes}",
+    "data_unencrypted_reason": "data outside the encrypted root sits on plain devices — a stolen or discarded disk reveals it",
+    "data_unencrypted_detail": "The encrypted root protects the system; a filesystem on a plain partition beside it (/home, /var, /srv…) is readable by whoever holds the disk, and a plain swap holds memory pages written in clear — passphrases, keys, open documents. Put that data on LUKS too, and use an encrypted swap (a crypttab entry with a random key, or swap inside the encrypted LVM). See: bob --explain disk_encryption.data_unencrypted",
+    "data_unencrypted_server": "Root is encrypted, but other data on this host is not: {volumes} (server profile — reported, not scored)",
+    "data_unknown": "Root is encrypted; whether these are could not be determined: {volumes}"
   },
   "polkit": {
     "not_present": "No polkit rule directories found — polkit not installed or unconfigured",
@@ -4136,6 +4179,35 @@
     "unexpected_users": "Unexpected user crontab(s) found: {users}",
     "ok": "No risky patterns found in cron jobs"
   },
+  "kubernetes": {
+    "workloads_unread": "Kubernetes containers on this node could not be listed (ctr) — the pods' rights were not assessed",
+    "workloads_partial": "{count} Kubernetes container(s) could not be inspected — their rights were not assessed",
+    "workloads_ok": "{count} pod(s) outside kube-system — no container with every Linux capability, none in the host's namespaces, no sensitive host path mounted",
+    "privileged_pod": "{count} pod(s) outside kube-system have a container with every Linux capability (privileged, or capabilities: ALL): {pods}",
+    "privileged_pod_reason": "{count} pod(s) outside kube-system with a container holding every Linux capability",
+    "privileged_pod_detail": "BOB reads the capabilities each container runs with, not its pod spec: every capability is what privileged: true grants, and what capabilities.add: [ALL] grants without the rest of privileged mode. Either way, code in the container can mount the node's disk or load a kernel module. Grant only the capabilities it needs (securityContext.capabilities.add) and remove privileged: true or ALL. See: bob --explain kubernetes.privileged_pod",
+    "host_mount": "{count} pod(s) outside kube-system mount a sensitive host path: {mounts}",
+    "host_mount_reason": "{count} pod(s) mounting a sensitive host path",
+    "host_mount_detail": "The host's /, /etc or /root, the kubelet's directory, or a container runtime's socket: each lets code in the pod take over the node. Use a volume, a ConfigMap or Secret, or a narrower path mounted read-only. See: bob --explain kubernetes.host_mount",
+    "host_namespaces": "{count} pod(s) outside kube-system share the host's network, PID or IPC namespace: {pods}",
+    "system_pods_elevated": "{count} kube-system pod(s) run with elevated rights (every capability, host namespaces or host paths) — not deducted, as kube-system usually holds the platform's own components; check that each one listed is: {pods}",
+    "kubelet_anonymous": "The kubelet authorises anonymous commands on port 10250 (asked from this host: GET /pods answered, and a command request for a pod that does not exist passed authorisation) — whoever can reach the port can read every pod and run commands in its containers",
+    "kubelet_anonymous_inconclusive": "The kubelet answered an anonymous request for /pods with {answer}: its authorisation could not be decided, so anonymous access is not assessed",
+    "kubelet_run_indeterminate_detail": "The command probe is inconclusive and does not incur a command-exposure deduction; an exposure of the pod specifications, if established, remains WARN −1. 405 means the debugging endpoints (exec, run, logs) are switched off, so no command can run on this kubelet; a 5xx means the kubelet could not decide the request's access, as when it cannot ask the API server. --enable-debugging-handlers=false switches the endpoints off.",
+    "kubelet_run_indeterminate": "The kubelet's answers to the command requests (POST /run and GET /exec, for a pod that does not exist) are inconclusive ({answer}) — whether anonymous commands are authorised is not established",
+    "kubelet_anonymous_reason": "kubelet API authorises anonymous commands",
+    "kubelet_anonymous_run_only_reason": "kubelet API authorises anonymous commands, though it refuses reads",
+    "kubelet_anonymous_run_only": "The kubelet refuses anonymous reads of /pods but authorises anonymous commands on port 10250 (asked from this host: a command request for a pod that does not exist passed authorisation) — whoever can reach the port can run commands in the pods' containers",
+    "kubelet_anonymous_read": "The kubelet serves anonymous requests on port 10250 (asked from this host: GET /pods answered) — whoever can reach the port can read every pod's specification, including any literal environment values; no command endpoint was shown to authorise them",
+    "kubelet_anonymous_read_reason": "kubelet API serves every pod to anonymous requests",
+    "kubelet_anonymous_detail": "BOB asked from this host; whether the port is reachable from the network depends on the address the kubelet listens on and the firewall, which this check does not test — local users and host-network pods can reach it either way. Turn anonymous access off (--anonymous-auth=false, or authentication.anonymous.enabled: false) and authorise through the API server (--authorization-mode=Webhook) — which only decides anything where the API server authorises through RBAC, so enable RBAC there too (MicroK8s: microk8s enable rbac) — then restart the kubelet. See: bob --explain kubernetes.kubelet_anonymous",
+    "kubelet_anonymous_denied": "The kubelet accepts anonymous requests on port 10250 but its authorisation refuses them (403) — anonymous access itself can still be turned off",
+    "kubelet_auth_ok": "The kubelet refuses anonymous requests on port 10250 (401)",
+    "kubelet_unprobed": "The kubelet did not answer on 127.0.0.1:10250 within 15 seconds — its anonymous access was not assessed",
+    "kubelet_readonly_port": "The kubelet's read-only port 10255 answers without authentication (asked from this host) — pod specifications, including literal environment values, and node details are readable",
+    "kubelet_readonly_port_reason": "kubelet read-only port open",
+    "kubelet_readonly_port_detail": "Set --read-only-port=0 (readOnlyPort: 0 in the kubelet configuration) and restart the kubelet. See: bob --explain kubernetes.kubelet_readonly_port"
+  },
   "docker_hardening": {
     "scan_error": "Container runtime not reachable — container security check skipped",
     "no_containers": "No running containers — nothing to audit",
@@ -4147,7 +4219,7 @@
     "socket_mounted_detail": "Mounting /var/run/docker.sock inside a container grants root-equivalent control over the host. Any process in the container can create new privileged containers or escape the sandbox.",
     "socket_mounted_reason": "{count} container(s) with the runtime control socket mounted",
     "userns_not_configured": "User namespace remapping not configured (userns-remap)",
-    "userns_not_configured_detail": "Without userns-remap, a container process running as UID 0 maps directly to root on the host. Enable userns-remap in /etc/docker/daemon.json to remap container UIDs away from root. The command below only creates the file when it does not exist — if you already have a /etc/docker/daemon.json, do NOT overwrite it: back it up and merge the \"userns-remap\": \"default\" key into it, then restart docker.",
+    "userns_not_configured_detail": "Without userns-remap, a container process running as UID 0 maps directly to root on the host. Enable userns-remap in /etc/docker/daemon.json to remap container UIDs away from root. The command below only creates the file when it does not exist — if you already have a /etc/docker/daemon.json, do NOT overwrite it: back it up and merge the \"userns-remap\": \"default\" key into it, then restart docker. Once remapping is on, Docker keeps its images and containers under a new directory (/var/lib/docker/<uid>.<gid>): the existing ones no longer appear and must be pulled or re-created (measured on Alpine).",
     "userns_configured": "User namespace remapping enabled (userns-remap)",
     "root_containers": "{count} container(s) running as root (UID 0): {containers}",
     "root_containers_detail": "Running containers as root increases the blast radius of a container escape. Set a non-root USER in the Dockerfile or pass --user at runtime.",
@@ -4185,9 +4257,9 @@
     "no_issues": "No conflicting parallel firewall ruleset detected",
     "iptables_bypass": "Raw iptables ACCEPT rule bypasses UFW in INPUT chain: {rule}",
     "iptables_forward_bypass": "Raw iptables ACCEPT rule bypasses UFW in FORWARD chain: {rule}",
-    "forward_routing_ok": "FORWARD chain has ACCEPT rules — consistent with Docker/VPN routing",
+    "forward_routing_ok": "FORWARD chain has ACCEPT rules — consistent with Docker, VPN, KVM or Kubernetes routing",
     "nftables_parallel": "Active nftables rules detected alongside UFW — potential rule conflicts",
-    "ip_forward_ok": "IP forwarding enabled — routing daemon detected (Docker, VPN or KVM)",
+    "ip_forward_ok": "IP forwarding enabled — routing daemon detected (Docker, VPN, KVM or Kubernetes)",
     "ip_forward_enabled": "IP forwarding enabled without detected VPN/Docker — verify this is intentional",
     "rules_unreadable": "Firewall driver rules could not be listed",
     "rules_unreadable_detail": "`iptables -L` and `nft list ruleset` both need CAP_NET_ADMIN and write their refusal to stderr, leaving stdout empty. A working `iptables -L` always prints its chain headers, even with no rules loaded, so empty output from an installed binary means the query was refused rather than that the ruleset is empty. BOB reports neither a conflict nor a clean stack here. Check with: sudo iptables -L -n"

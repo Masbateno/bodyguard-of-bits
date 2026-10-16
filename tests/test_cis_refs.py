@@ -22,7 +22,7 @@ from bob.cis_refs import _load, get_cis_code, get_cis_ref
 
 _DATA_FILE = Path(__file__).parent.parent / "bob" / "data" / "cis_refs.json"
 _KEY_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
-_CODE_RE = re.compile(r"^CIS( Docker)?:\d+(\.\d+)*$")
+_CODE_RE = re.compile(r"^CIS( Docker| Kubernetes)?:\d+(\.\d+)*$")
 
 
 class TestGetCisRef:

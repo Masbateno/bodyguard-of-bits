@@ -190,6 +190,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ("ClamAV (additional)", [
         "clamav.db_not_found",
         "clamav.freshclam_missing",
+        "clamav.socket_open_to_all",
     ]),
     ("fail2ban", [
         "fail2ban.no_jails",
@@ -301,6 +302,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("Disk encryption", [
         "disk_encryption.root_unencrypted",
+        "disk_encryption.data_unencrypted",
     ]),
     ("polkit authorization", [
         "polkit.rule_writable",
@@ -349,6 +351,12 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "docker_hardening.root_containers",
         "docker_hardening.socket_mounted",
         "docker_hardening.host_network",
+    ]),
+    ("Kubernetes", [
+        "kubernetes.privileged_pod",
+        "kubernetes.host_mount",
+        "kubernetes.kubelet_anonymous",
+        "kubernetes.kubelet_readonly_port",
     ]),
     ("Kernel Hardening", [
         "kernel_hardening.aslr_disabled",

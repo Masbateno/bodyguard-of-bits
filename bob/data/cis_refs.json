@@ -145,6 +145,22 @@
     "ref": "CIS Docker 1.6 — 5.13 — Ensure that the container's network is not set to host",
     "code": "CIS Docker:5.13"
   },
+  "kubernetes.privileged_pod": {
+    "ref": "CIS Kubernetes 2.0 — 5.2.2 — Minimize the admission of privileged containers",
+    "code": "CIS Kubernetes:5.2.2"
+  },
+  "kubernetes.host_mount": {
+    "ref": "CIS Kubernetes 2.0 — 5.2.11 — Minimize the admission of HostPath volumes",
+    "code": "CIS Kubernetes:5.2.11"
+  },
+  "kubernetes.kubelet_anonymous": {
+    "ref": "CIS Kubernetes 2.0 — 4.2.1 — Ensure that the --anonymous-auth argument is set to false",
+    "code": "CIS Kubernetes:4.2.1"
+  },
+  "kubernetes.kubelet_readonly_port": {
+    "ref": "CIS Kubernetes 2.0 — 4.2.4 — Verify that if defined, the --read-only-port argument is set to 0",
+    "code": "CIS Kubernetes:4.2.4"
+  },
   "docker_hardening.privileged": {
     "ref": "CIS Docker 1.6 — 5.4 — Ensure that privileged containers are not used",
     "code": "CIS Docker:5.4"
@@ -165,6 +181,11 @@
   "fail2ban.service_inactive": {
     "ref": "Best practice — Activate fail2ban or uninstall it; an inactive service provides no protection",
     "ref_fr": "Bonne pratique — Activer fail2ban ou le désinstaller ; un service inactif n'offre aucune protection",
+    "code": null
+  },
+  "clamav.socket_open_to_all": {
+    "ref": "Best practice — Restrict clamd's local socket to a group (LocalSocketGroup, LocalSocketMode 660) holding the clients that need it",
+    "ref_fr": "Bonne pratique — Restreindre le socket local de clamd à un groupe (LocalSocketGroup, LocalSocketMode 660) qui réunit les clients qui en ont besoin",
     "code": null
   },
   "fail2ban.ssh_jail_blind": {
@@ -1104,6 +1125,11 @@
   "disk_encryption.root_unencrypted": {
     "ref": "Best practice — Encrypt data at rest (LUKS full-disk encryption) on portable or physically exposed hosts",
     "ref_fr": "Bonne pratique — Chiffrer les données au repos (chiffrement intégral LUKS) sur les hôtes portables ou physiquement exposés",
+    "code": null
+  },
+  "disk_encryption.data_unencrypted": {
+    "ref": "Best practice — Keep every local data filesystem and swap on encrypted storage, not only the root filesystem",
+    "ref_fr": "Bonne pratique — Garder chaque système de fichiers de données local et le swap sur un stockage chiffré, pas seulement la racine",
     "code": null
   },
   "polkit.rule_writable": {

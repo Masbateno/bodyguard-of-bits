@@ -197,7 +197,7 @@ class TestCheckNtpEnabledNotSynced:
         assert result.findings[0].key == "ntp.not_synchronized"
 
     def test_fix_cmd_present(self):
-        snap = NtpSnapshot(ntp_enabled=True, ntp_synchronized=False)
+        snap = NtpSnapshot(ntp_enabled=True, ntp_synchronized=False, timedatectl_ok=True)
         result = check_ntp(snap)
         assert result.findings[0].cmd != ""
 

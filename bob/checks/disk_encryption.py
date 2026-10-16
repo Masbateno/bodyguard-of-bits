@@ -3,7 +3,12 @@ Storage-encryption (LUKS / dm-crypt) check for BOB.
 
 Full-disk encryption protects **data at rest**: a stolen laptop, a decommissioned
 drive, a disk pulled from a server all read as noise instead of files. BOB reports
-whether the root filesystem is backed by an encrypted (dm-crypt / LUKS) device.
+whether the root filesystem is backed by an encrypted (dm-crypt / LUKS) device —
+and, since v0.25.0, whether the data beside it is: every other local filesystem
+on a block device (``/home``, ``/var``, ``/srv``…) and every swap on disk. An
+encrypted root with ``/home`` on a plain partition protects the system and hands
+over the user's files; a plain swap partition writes memory pages — passphrases,
+keys, documents — to the disk in clear.
 
 The verdict is deliberately **profile-gated and never binary** — encryption is a
 threat-model decision, not a universal rule:
@@ -16,7 +21,9 @@ threat-model decision, not a universal rule:
     INFO (worth knowing, not a deduction);
   - **container** — a container has no block devices of its own; data-at-rest is
     the *host's* responsibility, so the check reports "not applicable" and moves
-    on;
+    on — under the container profile, and since v0.25.0 whenever BOB detects it
+    runs inside one (measured: in a container under the default server profile it
+    said "root device could not be resolved", counted as reduced visibility);
   - **unknown / unreadable** — never read as clean.
 
 Detection reads the running system, not `/etc/crypttab` intent:
@@ -27,7 +34,10 @@ Detection reads the running system, not `/etc/crypttab` intent:
      dm node (`/dev/mapper/NAME` → `dm-N`);
   3. the dm **stack** is walked through `/sys/block/dm-N/slaves`, so the common
      LVM-on-LUKS layout (a linear mapping sitting on a crypt device) is detected,
-     not just a bare crypt mount.
+     not just a bare crypt mount;
+  4. the other local mounts (``/dev/*`` sources, not ``/boot``, squashfs or ISO
+     images) and ``/proc/swaps`` are resolved the same way — a swap file by the
+     filesystem holding it, zram skipped (it is memory, nothing reaches a disk).
 
 BOB never turns encryption on: enabling full-disk encryption means re-installing
 or re-encrypting the volume, which cannot be done unattended. The remediation is
@@ -35,6 +45,9 @@ described, not applied.
 
 Score impact:
   - root filesystem encrypted:                    OK
+  - root encrypted, other data or swap in clear:  WARN −1 (desktop / workstation),
+                                                  INFO (server)
+  - root encrypted, another mount undecidable:    INFO (unknown)
   - root unencrypted, desktop / workstation:      WARN −1 pt
   - root unencrypted, server:                     INFO
   - container profile:                            OK (not applicable)
@@ -57,11 +70,13 @@ from bob.checks._run import (
     path_exists,
     read_text_capped,
 )
+from bob.checks.container_security import _detect_container
 from bob.scoring import CheckResult
 
 _MOUNTS = "/proc/self/mounts"
 _SYS_BLOCK = "/sys/block"
 _CRYPTTAB = "/etc/crypttab"
+_SWAPS = "/proc/swaps"
 
 #: Real block-device prefixes: if root sits directly on one of these it is a plain
 #: partition (an encrypted root is always mounted through its dm mapper, never the
@@ -81,17 +96,23 @@ class DiskEncryptionSnapshot:
                         (a pseudo root such as overlay/nfs, or an unreadable stack).
         crypt_volumes:  Mapper names of every LUKS/dm-crypt volume found.
         crypttab_present: True when a non-empty /etc/crypttab exists.
+        in_container:   the runtime BOB detected it runs in, "" on a host.
+        extra_volumes:  ``(what, source, encrypted)`` for each other local
+                        filesystem and each disk swap — ``what`` is the mount
+                        point or ``swap``; ``encrypted`` None when undecidable.
     """
     readable:         bool = True
     root_source:      str = ""
     root_encrypted:   "bool | None" = None
     crypt_volumes:    list[str] = field(default_factory=list)
     crypttab_present: bool = False
+    in_container:     str = ""
+    extra_volumes:    "list[tuple[str, str, bool | None]]" = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "DiskEncryptionSnapshot":
         """Inspect the running device-mapper stack. Never raises."""
-        snap = cls()
+        snap = cls(in_container=_detect_container())
 
         # 1. Which dm nodes are crypt targets? (dm name -> mapper name)
         crypt_nodes: set[str] = set()
@@ -126,14 +147,34 @@ class DiskEncryptionSnapshot:
             snap.readable = False
             return snap
         root_src = ""
+        mounts: "dict[str, tuple[str, str]]" = {}     # mount point -> (source, fstype)
         for line in text.splitlines():
             parts = line.split()
-            if len(parts) >= 2 and parts[1] == "/":
-                root_src = parts[0]
+            if len(parts) >= 3:
+                point = _unescape(parts[1])
+                mounts[point] = (_unescape(parts[0]), parts[2])
+                if point == "/":
+                    root_src = mounts[point][0]
         snap.root_source = root_src
 
         # 3. Resolve the root device to its dm node and walk the stack.
         snap.root_encrypted = _root_is_encrypted(root_src, crypt_nodes)
+
+        # 4. The data beside it: other local filesystems, and swap on disk.
+        seen_sources = {root_src}
+        for point, (src, fstype) in sorted(mounts.items()):
+            if _holds_data(point, src, fstype, root_src) and src not in seen_sources:
+                seen_sources.add(src)            # a bind mount repeats its source
+                snap.extra_volumes.append((point, src, _root_is_encrypted(src, crypt_nodes)))
+        for swap, kind in _read_swaps():
+            if kind == "file":
+                holder = _containing_mount(swap, mounts)
+                src = mounts[holder][0] if holder else ""
+            else:
+                src = swap
+            if src.startswith("/dev/zram"):
+                continue
+            snap.extra_volumes.append(("swap", swap, _root_is_encrypted(src, crypt_nodes)))
 
         # Supporting evidence (intent, not state): a configured crypttab.
         try:
@@ -147,6 +188,50 @@ class DiskEncryptionSnapshot:
         except OSError:
             pass
         return snap
+
+
+_NOT_DATA_FSTYPES = frozenset({"squashfs", "iso9660", "udf", "erofs"})
+
+
+def _unescape(field_: str) -> str:
+    """/proc/self/mounts and /proc/swaps write a space as \\040."""
+    return (field_.replace("\\040", " ").replace("\\011", "\t")
+            .replace("\\012", "\n").replace("\\134", "\\"))
+
+
+def _holds_data(point: str, src: str, fstype: str, root_src: str) -> bool:
+    """A local filesystem other than / whose contents are data at rest."""
+    if point == "/" or not src.startswith("/dev/") or src == root_src:
+        return False                     # pseudo / network fs, or a subvolume of /
+    if fstype in _NOT_DATA_FSTYPES or point.startswith("/snap/"):
+        return False                     # read-only images (snaps, ISO)
+    if point.startswith(("/media/", "/run/media/")):
+        return False                     # removable media, mounted for a session
+    return not (point == "/boot" or point.startswith("/boot/") or point == "/efi")
+
+
+def _read_swaps() -> "list[tuple[str, str]]":
+    """``(filename, type)`` for each active swap; empty when unreadable."""
+    try:
+        text = read_text_capped(Path(_SWAPS), encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    out = []
+    for line in text.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 2:
+            out.append((_unescape(parts[0]), parts[1]))
+    return out
+
+
+def _containing_mount(path: str, mounts: "dict[str, tuple[str, str]]") -> str:
+    """The mount point holding *path* — the longest one that prefixes it."""
+    best = ""
+    for point in mounts:
+        prefix = point.rstrip("/") + "/"
+        if (path == point or path.startswith(prefix)) and len(point) > len(best):
+            best = point
+    return best
 
 
 def _dm_node_for(root_src: str) -> "str | None":
@@ -207,7 +292,7 @@ def check_disk_encryption(snapshot: DiskEncryptionSnapshot,
     p = profile_name.lower()
     is_portable = p in ("desktop", "workstation")
 
-    if p == "container":
+    if p == "container" or snapshot.in_container:
         result.ok(
             message=_t("disk_encryption.container_na"),
             key="disk_encryption.container_na",
@@ -228,6 +313,34 @@ def check_disk_encryption(snapshot: DiskEncryptionSnapshot,
             message=_t("disk_encryption.root_encrypted"),
             key="disk_encryption.root_encrypted",
         )
+        clear = [f"{what} ({src})" for what, src, e in snapshot.extra_volumes if e is False]
+        unknown = [f"{what} ({src})" for what, src, e in snapshot.extra_volumes if e is None]
+        if clear:
+            listed = ", ".join(clear)
+            if is_portable:
+                result.warn_with_deduction(
+                    key="disk_encryption.data_unencrypted",
+                    message=_t("disk_encryption.data_unencrypted", volumes=listed),
+                    reason=_t("disk_encryption.data_unencrypted_reason"),
+                    points=1,
+                    detail=_t("disk_encryption.data_unencrypted_detail"),
+                    nature="action",
+                    template_vars={"volumes": listed},
+                )
+            else:
+                result.info(
+                    message=_t("disk_encryption.data_unencrypted_server", volumes=listed),
+                    detail=_t("disk_encryption.data_unencrypted_detail"),
+                    key="disk_encryption.data_unencrypted_server",
+                    template_vars={"volumes": listed},
+                )
+        if unknown:
+            listed = ", ".join(unknown)
+            result.info(
+                message=_t("disk_encryption.data_unknown", volumes=listed),
+                key="disk_encryption.data_unknown",
+                template_vars={"volumes": listed},
+            )
         return result
 
     if enc is None:

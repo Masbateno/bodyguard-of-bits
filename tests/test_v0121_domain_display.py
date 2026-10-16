@@ -183,7 +183,7 @@ class TestRenderAllDomains:
         text = self._text(AuditProfile(name="container",
                                        skip_sections=set(_DETECTION_SECTIONS)))
         hr_line = next(l for l in text.splitlines() if "Health & Resilience" in l)
-        assert "no action needed" in hr_line
+        assert "reported, not scored" in hr_line
         assert "/10" not in hr_line
 
     def test_profile_skipped_label(self):
@@ -327,7 +327,7 @@ class TestADVB1MarkdownHtmlDomains:
         md = build_markdown_output(self._engine(), si, t=None, profile=prof, config=_config())
         assert "Domain Scores" in md
         assert "Access Control" in md and "Threat Detection" in md
-        assert "no action needed" in md          # health_resilience info_only
+        assert "reported, not scored" in md      # health_resilience info_only
         assert "not assessed (container profile)" in md   # detection profile-skipped
 
     def test_html_has_domain_section(self):

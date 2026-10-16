@@ -160,10 +160,14 @@ class TestASocketEveryLocalUserCanReach:
         assert clamav._socket_open_to_all() == ""
 
     def test_it_is_said_without_a_command(self):
+        """v0.25.0: scored (WARN −1). Still no command: which clients keep
+        access is the operator's to say."""
+        from bob.scoring import FindingLevel
         result = check_clamav(_snap(clamd_active=True, clamd_socket_open="/run/clamav/clamd.sock"), t=_t)
         finding = next(f for f in result.findings if f.key == "clamav.socket_open_to_all")
         assert not finding.cmd
-        assert not [d for d in result.deductions if d.key == "clamav.socket_open_to_all"]
+        assert finding.level == FindingLevel.WARN
+        assert [d.points for d in result.deductions if d.key == "clamav.socket_open_to_all"] == [1]
 
     def test_a_restricted_socket_says_nothing(self):
         result = check_clamav(_snap(clamd_active=True), t=_t)

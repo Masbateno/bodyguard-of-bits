@@ -65,6 +65,8 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "ntp.sync_unknown",
     "disk_encryption.unknown",
     "disk_encryption.volumes_present_root_unknown",
+    # v0.25.0 — a mount or swap beside the encrypted root left undecided.
+    "disk_encryption.data_unknown",
     "polkit.not_present",
     "polkit.unreadable",
     "grub.cfg_unreadable",
@@ -120,6 +122,13 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "package_authenticity.unreadable",
     "package_authenticity.not_assessed",
     "crypto_policy.unknown",
+    # v0.25.0 — the node's containers unlisted or partly uninspected, the
+    # kubelet's anonymous access unprobed: their deductions are unknown.
+    "kubernetes.workloads_unread",
+    "kubernetes.workloads_partial",
+    "kubernetes.kubelet_unprobed",
+    "kubernetes.kubelet_run_indeterminate",
+    "kubernetes.kubelet_anonymous_inconclusive",
     "systemd_timers.unreadable",
     "umask.sources_unreadable",
     # v0.16.1 — neither name matches the ``*_unreadable`` / ``*_unknown``

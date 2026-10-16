@@ -1,3 +1,15 @@
+bodyguard-of-bits (0.25.0-1) unstable; urgency=medium
+
+  * Minor, BREAKING (scores): a Kubernetes node audited, the kubelet asked per
+    verb (POST /run and GET /exec, measured on MicroK8s 1.35.6): -3 where
+    anonymous commands are authorised, -1 where pod specifications can be read
+    and no command endpoint is shown authorised; the encryption of data beside
+    an encrypted root checked beyond "/"; firewalld, CUPS, Docker user-namespace
+    remapping, chrony and doas fixes that run as written on the host; file
+    capabilities judged against their owning package.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 16 Oct 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.24.4-1) unstable; urgency=medium
 
   * Patch, BREAKING (scores): -1 where an SSH fail2ban jail reads a log file

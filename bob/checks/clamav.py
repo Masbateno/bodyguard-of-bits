@@ -274,10 +274,17 @@ def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> 
     elif snapshot.clamd_socket_open:
         # No command: who must keep access (a mail filter's user, a scanner's)
         # is the operator's to say; a group-only socket cuts everyone else.
-        result.info(
-            message=_t("clamav.socket_open_to_all", path=snapshot.clamd_socket_open),
-            detail=_t("clamav.socket_open_to_all_detail"),
+        # v0.25.0: scored. Measured in 0.24.4 — Alpine and Debian as packaged,
+        # an unprivileged user sent SHUTDOWN and clamd stopped: any process
+        # running as any local account can turn the antivirus off.
+        result.warn_with_deduction(
             key="clamav.socket_open_to_all",
+            message=_t("clamav.socket_open_to_all", path=snapshot.clamd_socket_open),
+            reason=_t("clamav.socket_open_to_all_reason"),
+            points=1,
+            detail=_t("clamav.socket_open_to_all_detail"),
+            nature="action",
+            template_vars={"path": snapshot.clamd_socket_open},
         )
 
     # --- Last scan ---

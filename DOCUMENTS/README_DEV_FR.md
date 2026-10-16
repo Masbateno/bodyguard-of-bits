@@ -38,7 +38,7 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | Module | Rôle |
 |---|---|
 | `__main__.py` | Orchestrateur — parsing des arguments, collecte des snapshots, appelle `run_checks()`, affiche le résumé (~1009 lignes) |
-| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (56 sections filtrables + 10 always-on), `_section_enabled()` (~1219 lignes) |
+| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (57 sections filtrables + 10 always-on), `_section_enabled()` (~1219 lignes) |
 | `cli.py` | Parsing des arguments — retourne un `AuditConfig` dataclass |
 | `config.py` | Configuration utilisateur — `UserConfig`, `EmailStore` |
 | `display.py` | Helpers d'affichage terminal — `display_result()`, `print_audit_summary()`, etc. |
@@ -54,8 +54,8 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | `sysinfo.py` | Info système — `collect_system_info()`, `detect_network_context()`, `get_user_home()` |
 | `compare.py` | Rapport comparatif — `AuditBaseline` (avec `finding_keys`), `AuditDelta` (avec `new_finding_keys`/`resolved_finding_keys`), `build_baseline()`, `save_baseline()`, `load_baseline()`, `compute_delta()`, `display_delta()` |
 | `plugin_checks.py` | Chargeur de plugins — `PluginCheck`, `load_plugin_checks()`, sanitisation ANSI |
-| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 220 clés canoniques dans 61 préfixes, variantes par profil (71 clés × 3 profils), lookup référence CIS via `cis_refs.py` |
-| `cis_refs.py` | Lookup référence CIS — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` avec `lru_cache` ; données dans `data/cis_refs.json` (220 entrées : 117 CIS formels, 96 best-practice, 7 Docker) |
+| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 226 clés canoniques dans 62 préfixes, variantes par profil (71 clés × 3 profils), lookup référence CIS via `cis_refs.py` |
+| `cis_refs.py` | Lookup référence CIS — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` avec `lru_cache` ; données dans `data/cis_refs.json` (226 entrées : 117 CIS formels, 98 best-practice, 7 Docker, 4 Kubernetes) |
 | `domain_scores.py` | Sous-scores par domaine — `compute_domain_scores()`, `render_domain_scores()`, attribution 6 domaines (`backup` → `health_resilience`) |
 | `webhook.py` | Envoi webhook — `build_generic_payload()`, `build_slack_payload()`, `send_webhook()`, auto-détection format |
 | `correlation.py` | Moteur de corrélation — `CorrelationRule` (frozensets all_of/any_of), `CorrelatedFinding`, `run_correlations()`, 6 règles de risque composé intégrées |
@@ -88,6 +88,7 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | `ddns.py` | Clients DDNS actifs (ddclient), domaine configuré, ports ouverts croisés |
 | `docker.py` | Détection install Docker, contournement iptables via chaîne DOCKER, exposition ports conteneurs |
 | `docker_audit.py` | Durcissement daemon.json : conteneurs privilégiés, host network/pid/ipc, montages volume sensibles, no-new-privileges |
+| `kubernetes.py` | Nœud Kubernetes (v0.25.0) : droits des pods lus via `ctr` (containerd, MicroK8s, k3s) ou `crictl` (CRI-O) (privileged, chemins de l'hôte qui livrent le nœud, namespaces de l'hôte ; kube-system signalé, non déduit), accès anonyme au kubelet sur 10250 et port lecture seule 10255 ; ne tourne que là où tourne un kubelet |
 | `virtualization.py` | Hyperviseurs actifs (libvirt/KVM, VirtualBox, VMware, LXD/LXC) et paquets Snap réseau |
 | `samba.py` | Audit sécurité Samba : SMBv1 désactivé, rejet null-password, signing serveur, `map to guest`, `bind interfaces only` |
 | `smtp.py` | Exposition serveur SMTP : détection MTA (postfix/exim/sendmail), liaison localhost-only, risque open-relay |
@@ -128,7 +129,7 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | `core_dumps.py` | **v0.21.0** (INFO) — `core_pattern`, `Storage=` de systemd-coredump, limites `hard core 0` — si les core dumps peuvent persister |
 | `kexec_lockdown.py` | **v0.21.0** (INFO) — `kexec_load_disabled` + `/sys/kernel/security/lockdown` |
 | `faillock.py` | **v0.21.0** — verrouillage de compte PAM : absence de `pam_faillock` (ou `pam_tally2` legacy) dans la pile auth (WARN −1 sur server, INFO sur desktop/workstation) |
-| `disk_encryption.py` | **v0.21.0** — système de fichiers racine sur LUKS/dm-crypt via `/proc/mounts` + parcours de la pile dm (LVM-sur-LUKS reconnu) ; WARN sur une racine en clair desktop/workstation, INFO sur server, N/A en conteneur |
+| `disk_encryption.py` | **v0.21.0** — système de fichiers racine sur LUKS/dm-crypt via `/proc/mounts` + parcours de la pile dm (LVM-sur-LUKS reconnu) ; WARN sur une racine en clair desktop/workstation, INFO sur server, N/A en conteneur (profil ou détecté, v0.25.0) ; **v0.25.0** autres systèmes de fichiers de données locaux et swap sur disque à côté d'une racine chiffrée (`/proc/swaps`, fichier de swap jugé par son système de fichiers, zram ignoré) |
 | `polkit.py` | **v0.21.0** — règles polkit : un `.rules`/`.pkla` (ou le dossier `rules.d`) inscriptible par non-root est un chemin d'escalade (WARN + `chown`/`chmod`) ; un `.pkla` legacy accordant `ResultAny=yes` (INFO) |
 | `module_blacklist.py` | **v0.22.0** (INFO) — modules noyau rarement utiles (cramfs, udf, usb_storage, dccp, sctp…) ni chargés ni empêchés de charger par un `blacklist` / `install … /bin/true` de modprobe.d (CIS §3.4) |
 | `dev_privileged.py` | **v0.22.0** (INFO) — accès « tous » sur les nœuds `/dev` sensibles (`/dev/mem`, `/dev/kmem`, `/dev/port`, périphériques bloc bruts), par stat seulement |
@@ -161,7 +162,7 @@ bob/
 ├── csv_output.py        # Formatter sortie CSV (--format csv)
 ├── display.py           # Helpers affichage terminal (display_result, print_audit_summary…)
 ├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — attribution backup→health_resilience
-├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 220 clés dans 61 préfixes
+├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 226 clés dans 62 préfixes
 ├── exposure.py          # Regroupement exposition ports — portée d'interface + niveau de risque
 ├── fixes.py             # Interface du mode fix (interactif + correction automatique)
 ├── formatter.py         # bob.formatter — rendu indépendant de la locale via Finding.template_vars (v0.4.1)
@@ -180,7 +181,7 @@ bob/
 ├── registry.py          # ServiceRegistry.load()
 ├── report.py            # AuditReport + NullReport
 ├── report_markdown.py   # MarkdownReport, email HTML
-├── runner.py            # Moteur d'exécution d'audit — run_checks() avec closure _sec (56 sections filtrables + 10 always-on)
+├── runner.py            # Moteur d'exécution d'audit — run_checks() avec closure _sec (57 sections filtrables + 10 always-on)
 ├── scoring.py           # ScoreEngine, CheckResult, Finding, Deduction
 ├── sysinfo.py           # collect_system_info(), detect_network_context(), get_user_home()
 ├── watch.py             # Mode --watch=N — relance l'audit toutes les N secondes
@@ -235,6 +236,7 @@ bob/
 │   ├── ddns.py             # DdnsSnapshot + check_ddns()
 │   ├── docker.py           # DockerSnapshot + check_docker()
 │   ├── docker_audit.py     # DockerAuditSnapshot + check_docker_audit() — durcissement daemon + conteneurs
+│   ├── kubernetes.py       # KubernetesSnapshot + check_kubernetes() — droits des pods du nœud + accès anonyme au kubelet
 │   ├── virtualization.py   # VirtSnapshot + check_virtualization()
 │   ├── samba.py            # SambaSnapshot + check_samba() — SMBv1, signing, map-to-guest
 │   ├── smtp.py             # SmtpSnapshot + check_smtp() — exposition MTA
@@ -288,7 +290,7 @@ bob/
 │   └── world_writable.py       # WorldWritableSnapshot + check_world_writable() — --exhaustive (v0.24.0)
 ├── data/
 │   ├── services.json            # Registre déclaratif des 38 services
-│   ├── cis_refs.json            # Références CIS — 220 entrées {ref, code}
+│   ├── cis_refs.json            # Références CIS — 226 entrées {ref, code}
 │   └── bob.bash-completion  # Script d'autocomplétion bash
 └── locales/
     ├── en.json          # Clés de traduction anglais
@@ -520,8 +522,8 @@ print(f'Missing in FR: {missing if missing else \"none\"}')
 
 Résultat attendu :
 ```
-EN keys: 2872
-FR keys: 2872
+EN keys: 2928
+FR keys: 2928
 Missing in FR: none
 ```
 
@@ -537,7 +539,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Traduire toutes les valeurs
 
-Le fichier contient exactement 2872 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
+Le fichier contient exactement 2928 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
 
 Exemple :
 ```json

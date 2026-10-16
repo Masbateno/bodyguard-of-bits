@@ -57,6 +57,7 @@ from bob.checks.package_authenticity import PackageAuthenticitySnapshot, check_p
 from bob.checks.crypto_policy import CryptoPolicySnapshot, check_crypto_policy
 from bob.checks.world_writable import WorldWritableSnapshot, check_world_writable
 from bob.checks.docker_audit import DockerAuditSnapshot, check_docker_audit
+from bob.checks.kubernetes import KubernetesSnapshot, check_kubernetes
 from bob.checks.log_rotation import LogRotationSnapshot, check_log_rotation
 from bob.checks.ipv6 import IPv6Snapshot, check_ipv6
 from bob.checks.ssh import SSHSnapshot, check_ssh
@@ -149,6 +150,7 @@ _SECTIONS: tuple[_Section, ...] = (
     _Section("package_authenticity",   False),
     _Section("crypto_policy",     False),
     _Section("docker_hardening",  False),
+    _Section("kubernetes",        False),
     _Section("log_rotation",      False),
     _Section("kernel_modules",    False),
     _Section("module_blacklist",  False),
@@ -1097,6 +1099,10 @@ def run_checks(
     # ---- CHECK 38 — Docker container security audit ----
     _sec("docker_hardening", DockerAuditSnapshot.from_system, check_docker_audit,
          skip_if=lambda s: not s.runtime)
+
+    # ---- CHECK — Kubernetes node: pods' rights, kubelet anonymous access ----
+    _sec("kubernetes", KubernetesSnapshot.from_system, check_kubernetes,
+         skip_if=lambda s: not s.kubelet_running)
 
     # ---- CHECK 47 — Container self-hardening posture (only inside a container) ----
     _sec("container_security", ContainerSecuritySnapshot.from_system, check_container_security,

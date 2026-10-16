@@ -155,6 +155,7 @@ CIS_BENCHMARK_URLS = {
     "CIS Debian": "https://www.cisecurity.org/benchmark/debian_linux",
     "CIS Docker": "https://www.cisecurity.org/benchmark/docker",
     "CIS Red Hat": "https://www.cisecurity.org/benchmark/red_hat_linux",
+    "CIS Kubernetes": "https://www.cisecurity.org/benchmark/kubernetes",
 }
 
 

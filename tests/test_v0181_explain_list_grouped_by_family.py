@@ -105,7 +105,7 @@ def test_a_shared_control_cites_every_benchmark_it_appears_in():
 
 def test_the_tree_is_distro_then_version_then_section():
     tree = {distro: benches for distro, _lbl, benches in _grouped_families(i18n.t)}
-    assert set(tree) == {"CIS Ubuntu", "CIS Debian", "CIS Docker",
+    assert set(tree) == {"CIS Ubuntu", "CIS Debian", "CIS Docker", "CIS Kubernetes",
                          "CIS Red Hat", BEST_PRACTICE_FAMILY}
     ubuntu = dict(tree["CIS Ubuntu"])
     assert set(ubuntu) == {"CIS Ubuntu 22.04", "CIS Ubuntu 24.04"}
@@ -177,8 +177,8 @@ def test_every_key_still_appears():
 
 def test_each_distro_has_a_folder_heading():
     out = _list()
-    for distro in ("CIS Ubuntu", "CIS Debian", "CIS Docker", "CIS Red Hat",
-                   "Best practice"):
+    for distro in ("CIS Ubuntu", "CIS Debian", "CIS Docker", "CIS Kubernetes",
+                   "CIS Red Hat", "Best practice"):
         assert f"{_FOLDER} {distro}  (" in out
 
 
@@ -312,7 +312,7 @@ def test_the_citation_label_is_translated_in_french():
 
 def test_each_cis_family_has_a_verified_benchmark_url():
     from bob.cis_refs import cis_benchmark_url
-    for fam in ("CIS Ubuntu", "CIS Debian", "CIS Docker", "CIS Red Hat"):
+    for fam in ("CIS Ubuntu", "CIS Debian", "CIS Docker", "CIS Kubernetes", "CIS Red Hat"):
         url = cis_benchmark_url(fam)
         assert url and url.startswith("https://www.cisecurity.org/benchmark/"), fam
 

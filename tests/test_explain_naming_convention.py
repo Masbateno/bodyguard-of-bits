@@ -158,6 +158,7 @@ class TestExplainPrefixDiscipline:
     # widen by adding here without updating the EXPLAIN_KEYS audit in
     # DOCUMENTS/README_TECH.md.
     KNOWN_PREFIXES = frozenset({
+        "kubernetes",          # v0.25.0 — the Kubernetes node section
         # v0.17.0 — the Raspberry Pi section. Its two deduction-carrying
         # findings are about the FAT boot partition and the historical
         # default account; the rest of the section stays INFO.
@@ -277,7 +278,11 @@ class TestExplainAuditInvariants:
         # → 218: package_authenticity.disabled, crypto_policy.legacy.
         # → 219: firewall.firewalld_policy_open (v0.24.2).
         # → 220: fail2ban.ssh_jail_blind (v0.24.4).
-        assert len(EXPLAIN_KEYS) == 220, (
+        # → 221: clamav.socket_open_to_all (v0.25.0).
+        # → 225: kubernetes.privileged_pod, host_mount, kubelet_anonymous,
+        # kubelet_readonly_port (v0.25.0).
+        # → 226: disk_encryption.data_unencrypted (v0.25.0).
+        assert len(EXPLAIN_KEYS) == 226, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."
@@ -296,7 +301,8 @@ class TestExplainAuditInvariants:
         # v0.22.0 → 57: root_path (suid_audit.writable_suid reuses an existing prefix).
         # v0.24.0 → 61: file_capabilities, cpu_security, package_authenticity,
         # crypto_policy.
-        assert len(prefixes) == 61, (
+        # v0.25.0 → 62: kubernetes.
+        assert len(prefixes) == 62, (
             f"Prefix count drifted from v0.8.0 baseline 45 to "
             f"{len(prefixes)}. Update KNOWN_PREFIXES + audit doc."
         )

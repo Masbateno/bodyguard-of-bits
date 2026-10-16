@@ -48,7 +48,10 @@ _LOCALES_DIR = (_share_path / "locales") if _share_path else (Path(__file__).par
 
 SUPPORTED_LANGS = ("en", "fr")
 DEFAULT_LANG = "en"
-_MAX_LOCALE_SIZE = 512 * 1024  # 512 KB
+# A sanity bound on a shipped file, counted in characters. v0.25.0: 512 Ki
+# was crossed by fr.json (524 454 characters) and French stopped loading;
+# raised, and tests/test_v0250_locale_size_headroom.py keeps 25 % spare.
+_MAX_LOCALE_SIZE = 1024 * 1024
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +271,7 @@ def _load_locale(path: Path) -> dict[str, Any]:
     with path.open(encoding="utf-8") as fh:
         content = fh.read(_MAX_LOCALE_SIZE + 1)
     if len(content) > _MAX_LOCALE_SIZE:
-        raise ValueError(f"Locale file {path} exceeds maximum allowed size (512 KB)")
+        raise ValueError(f"Locale file {path} exceeds maximum allowed size ({_MAX_LOCALE_SIZE} characters)")
     try:
         data = json.loads(content)
     except json.JSONDecodeError as exc:

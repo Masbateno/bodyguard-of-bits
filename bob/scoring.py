@@ -317,6 +317,10 @@ class CheckResult:
         fix_action: "dict | None" = None,
     ) -> None:
         """Convenience method to append a finding. See Finding docstring for template_vars contract."""
+        # v0.25.0: the host's privilege prefix (doas where sudo is absent),
+        # applied here so that no check has to know about it.
+        from bob._privilege import with_privilege
+        cmd = with_privilege(cmd)
         # Contract guard: cmd_type is rendered by display.py as either the "→"
         # fix branch or the "ℹ" check branch — any other value silently renders
         # as "fix" (a non-"check" string is treated as fix), which is how the

@@ -41,9 +41,13 @@ from pathlib import Path
 
 from bob.checks._run import (
     TranslationFunc,
+    _command_exists,
     _identity_t,
+    openrc_available,
     path_exists,
     read_text_capped,
+    sed_ci,
+    service_restart_cmd,
 )
 from bob.scoring import CheckResult
 
@@ -129,6 +133,60 @@ class CupsSnapshot:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
+#: What a Listen operand read from cupsd.conf may hold before BOB writes it into
+#: a sed expression: host names, IPv4/IPv6 literals, ``*``, a port. Anything
+#: else and no command is printed.
+_SAFE_LISTEN = re.compile(r"^[A-Za-z0-9.:*\[\]-]+$")
+
+
+def _listen_fix(values: "list[str]") -> "str | None":
+    """Bind CUPS back to localhost: drop exactly the Listen/Port lines that
+    expose it, keep a ``Listen localhost`` on each of their ports, restart.
+
+    v0.25.0 — the command was ``cupsctl --no-remote-any``. Measured on
+    Debian 13 and Fedora 43: with a hand-written ``Listen 0.0.0.0:631`` it
+    exits 0 and changes nothing (cupsctl rewrites the file only when one of its
+    settings changes); with every setting turned off it rewrites the file but
+    cupsd keeps listening on 0.0.0.0 until restarted; on Alpine 3.22 root is not
+    in CUPS's SystemGroup (lpadmin) and cupsctl answers "Forbidden". Editing the
+    lines BOB read needs none of that.
+    """
+    exprs: "list[str]" = []
+    ports: "list[str]" = []
+    for v in values:
+        if v.startswith("Port "):
+            port = v.split()[1]
+            exprs.append(f"/^[[:space:]]*{sed_ci('Port')}[[:space:]]+{port}([[:space:]]|#|$)/d")
+        elif not _is_loopback_listen(v):
+            if not _SAFE_LISTEN.match(v):
+                return None
+            port = v.rsplit(":", 1)[1] if ":" in v and not v.endswith("]") else "631"
+            escaped = "".join(f"\\{c}" if c in ".*[]" else c for c in v)
+            exprs.append(f"/^[[:space:]]*{sed_ci('Listen')}[[:space:]]+{escaped}([[:space:]]|#|$)/d")
+        else:
+            continue
+        if not port.isdigit():
+            return None
+        if port not in ports:
+            ports.append(port)
+    if not exprs:
+        return None
+    edit = "sudo sed -i -E " + " ".join(f"-e '{e}'" for e in exprs) + f" {_CUPSD_CONF}"
+    keep = " && ".join(
+        f"{{ grep -qiE '^[[:space:]]*Listen[[:space:]]+localhost:{p}([[:space:]]|#|$)' {_CUPSD_CONF}"
+        f" || echo 'Listen localhost:{p}' | sudo tee -a {_CUPSD_CONF} >/dev/null; }}" for p in ports)
+    return f"{edit} && {keep} && {service_restart_cmd(_cups_unit())}"
+
+
+def _cups_unit() -> str:
+    """The CUPS service as this host's init system names it: ``cups`` under
+    systemd, ``cupsd`` for OpenRC (measured on Alpine 3.22, which ships
+    /etc/init.d/cupsd — v0.25.0: the fix said ``systemctl restart cups``)."""
+    if openrc_available() and not _command_exists("systemctl") and path_exists(Path("/etc/init.d/cupsd")):
+        return "cupsd"
+    return "cups"
+
+
 def check_cups(snapshot: CupsSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """Analyse CupsSnapshot and return findings."""
     _t = t if t is not None else _identity_t
@@ -159,7 +217,7 @@ def check_cups(snapshot: CupsSnapshot, t: TranslationFunc | None = None) -> Chec
             reason=_t("cups.listen_exposed_reason"),
             points=1,
             detail=_t("cups.listen_exposed_detail"),
-            cmd="sudo cupsctl --no-remote-any && sudo systemctl restart cups",
+            cmd=_listen_fix(snapshot.listen_values),
             nature="action",
         )
     else:

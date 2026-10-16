@@ -298,7 +298,7 @@ def run_fixes(engine, config, t) -> None:
         return
 
     # Sort ufw delete commands descending to avoid renumbering
-    _UFW_DELETE_RE = re.compile(r"^(?:sudo\s+)?ufw\s+.*--force\s+delete\s+\d+$")
+    _UFW_DELETE_RE = re.compile(r"^(?:(?:sudo|doas)\s+)?ufw\s+.*--force\s+delete\s+\d+$")
     ufw_deletes = [it for it in auto_items if _UFW_DELETE_RE.search(it[1])]
     others      = [it for it in auto_items if not _UFW_DELETE_RE.search(it[1])]
 

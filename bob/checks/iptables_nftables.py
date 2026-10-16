@@ -95,7 +95,7 @@ class IptablesNftSnapshot:
             if raw:
                 return cls(
                     backend="iptables",
-                    input_policy=_ipt_policy(raw, "INPUT"),
+                    input_policy=_ipt_effective_input_policy(raw),
                     forward_policy=_ipt_policy(raw, "FORWARD"),
                     has_loopback_rule=_ipt_has_loopback(raw),
                     has_conntrack_rule=_ipt_has_conntrack(raw),
@@ -295,6 +295,20 @@ def _ipt_policy(rules: str, chain: str) -> str:
     if m:
         return m.group(1).upper()
     return "unknown"
+
+
+def _ipt_effective_input_policy(rules: str) -> str:
+    """INPUT's policy as packets meet it: ACCEPT when an unconditional
+    ``-A INPUT -j ACCEPT`` sits in the chain, whatever ``-P`` says.
+
+    v0.25.0 — measured on a Fedora 43 VM (iptables-legacy): ``-P INPUT DROP``
+    then ``-A INPUT -j ACCEPT``, port 8080 answered from the LAN, and BOB read
+    DROP — the policy is never reached. As for nftables, BOB reads policies
+    and this one rule; a rule accepting a whole interface is not weighed.
+    """
+    if re.search(r"^-A INPUT -j ACCEPT\s*$", rules, re.MULTILINE):
+        return "ACCEPT"
+    return _ipt_policy(rules, "INPUT")
 
 
 def _ipt_has_loopback(rules: str) -> bool:

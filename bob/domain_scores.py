@@ -129,6 +129,7 @@ _PREFIX_TO_DOMAIN: dict[str, str] = {
     "cron":               "system_hardening",
     "systemd_hardening":  "system_hardening",
     "docker_hardening":   "system_hardening",
+    "kubernetes":         "system_hardening",
     "container_security": "system_hardening",
     "socket_units":       "system_hardening",
     "secure_boot":        "system_hardening",
@@ -554,7 +555,11 @@ def _reason_text(reason: str, t, profile_name: str) -> str:
                 return txt
         return f"not assessed ({profile_name} profile)"
     key, fallback = {
-        REASON_INFO_ONLY:     ("domain_scores.reason.no_action",     "no action needed"),
+        # v0.25.0 — was "no action needed": measured on Alpine, Threat Detection
+        # read that with auditd, fail2ban, ClamAV, AIDE and rkhunter all
+        # absent. The notices were reported; they are not scored. Nothing more
+        # is known, so nothing more is said.
+        REASON_INFO_ONLY:     ("domain_scores.reason.no_action",     "reported, not scored"),
         REASON_UNREADABLE:    ("domain_scores.reason.unreadable",    "could not be read"),
         REASON_FILTERED:      ("domain_scores.reason.filtered",      "not assessed (--check/--skip)"),
         REASON_NOT_INSTALLED: ("domain_scores.reason.not_installed", "not installed"),

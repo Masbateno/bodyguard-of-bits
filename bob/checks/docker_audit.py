@@ -28,7 +28,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t
+from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t, service_restart_cmd
 from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
 
@@ -172,6 +172,29 @@ class DockerAuditSnapshot:
 # Check logic
 # ---------------------------------------------------------------------------
 
+#: The dockremap user and group, created here when missing. Measured on Alpine
+#: 3.24 with docker 29.8.2: dockerd logged "cannot add user; no useradd/adduser
+#: binary found" with BusyBox adduser on its PATH, and stopped (docker 28.3.3 on
+#: Alpine 3.22 had created it); with the user there it started remapped.
+_DOCKREMAP_USER = (
+    "{ id dockremap >/dev/null 2>&1 || if command -v useradd >/dev/null 2>&1; "
+    "then sudo useradd -r -U -M -s /bin/false dockremap; "
+    "else sudo addgroup -S dockremap && sudo adduser -S -D -H -G dockremap -s /bin/false dockremap; fi; }"
+)
+
+def _dockremap_range(path: str) -> str:
+    """Give dockremap a subordinate range of its own in *path*, unless it has one.
+
+    The range starts after the highest one already there (100000 at least), so
+    a remapped container's root shares no host UID with another user's
+    namespaces. Docker reuses a range it finds for dockremap - measured on
+    Alpine 3.22, where the files did not exist and this line created them.
+    """
+    return (f"{{ grep -qiE '^dockremap:' {path} 2>/dev/null || cat {path} 2>/dev/null | "
+            "awk -F: 'BEGIN{m=100000} NF>=3 && $2+$3>m {m=$2+$3} END{print \"dockremap:\" m \":65536\"}' | "
+            f"sudo tee -a {path} >/dev/null; }}")
+
+
 def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Check Docker container security configuration.
@@ -273,7 +296,20 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
                 # may already hold log-driver / registry-mirrors / iptables keys).
                 # If the file exists the command is a no-op — the detail explains the
                 # manual merge. No human-language text in the cmd (would leak locale).
-                cmd='test -f /etc/docker/daemon.json || { echo \'{"userns-remap": "default"}\' | sudo tee /etc/docker/daemon.json && sudo systemctl restart docker; }',
+                # v0.25.0: the restart in this host's init system — measured on
+                # Alpine (OpenRC), it said `systemctl restart docker`.
+                # And /etc/docker first: Alpine's docker package does not create
+                # it, so `tee` failed there ("No such file or directory"). Nor
+                # does Alpine have /etc/subuid or /etc/subgid: measured, dockerd
+                # then logged "Can't create ID mappings" and stopped answering
+                # while OpenRC said "started" and the command exited 0. Nor can
+                # the range be left to docker where the files exist: measured
+                # on Mint 22.3 (docker 29.1.3), it gave dockremap 100000:65536,
+                # the range so6 already held. See _dockremap_range.
+                cmd=('test -f /etc/docker/daemon.json || { sudo mkdir -p /etc/docker && '
+                     'echo \'{"userns-remap": "default"}\' | sudo tee /etc/docker/daemon.json >/dev/null && '
+                     f'{_DOCKREMAP_USER} && {_dockremap_range("/etc/subuid")} && {_dockremap_range("/etc/subgid")} && '
+                     f'{service_restart_cmd("docker")}; }}'),
                 cmd_type="fix",
                 key="docker_hardening.userns_not_configured",
             )

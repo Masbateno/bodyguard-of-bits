@@ -201,15 +201,15 @@ class TestTheCataloguesMatch:
         """"174 entries (107 CIS, 60 best-practice, 7 Docker)" against 192 (108/77/7)."""
         raw = json.loads((_ROOT / "bob" / "data" / "cis_refs.json").read_text(encoding="utf-8"))
         total = len(raw)
-        pattern = (r"(\d+) entries \((\d+) formal CIS, (\d+) best-practice, (\d+) Docker\)"
+        pattern = (r"(\d+) entries \((\d+) formal CIS, (\d+) best-practice, (\d+) Docker, (\d+) Kubernetes\)"
                    if lang == "en" else
-                   r"(\d+) entrées \((\d+) CIS formels, (\d+) best-practice, (\d+) Docker\)")
+                   r"(\d+) entrées \((\d+) CIS formels, (\d+) best-practice, (\d+) Docker, (\d+) Kubernetes\)")
         m = re.search(pattern, _doc(lang))
         assert m, f"{lang}: the CIS reference count sentence is gone or reshaped"
         assert int(m.group(1)) == total, (
             f"{lang}: the document says {m.group(1)} CIS entries, the file holds {total}"
         )
-        parts = sum(int(m.group(i)) for i in (2, 3, 4))
+        parts = sum(int(m.group(i)) for i in (2, 3, 4, 5))
         assert parts == total, f"{lang}: the breakdown sums to {parts}, not {total}"
 
     @pytest.mark.parametrize("lang", LOCALES)

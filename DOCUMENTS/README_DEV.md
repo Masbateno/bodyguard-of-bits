@@ -38,7 +38,7 @@ This separation allows the entire business logic to be tested by instantiating s
 | Module | Role |
 |---|---|
 | `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~1009 lines) |
-| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (56 filterable + 10 always-on sections), `_section_enabled()` (~1219 lines) |
+| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (57 filterable + 10 always-on sections), `_section_enabled()` (~1219 lines) |
 | `cli.py` | Argument parsing — returns an `AuditConfig` dataclass |
 | `config.py` | User configuration — `~/.config/bob/config.conf`, `EmailStore` |
 | `display.py` | Terminal output helpers — `display_result()`, `print_audit_summary()`, etc. |
@@ -54,8 +54,8 @@ This separation allows the entire business logic to be tested by instantiating s
 | `sysinfo.py` | System info — `collect_system_info()`, `detect_network_context()`, `get_user_home()` |
 | `compare.py` | Comparative report — `AuditBaseline` (with `finding_keys`), `AuditDelta` (with `new_finding_keys`/`resolved_finding_keys`), `build_baseline()`, `save_baseline()`, `load_baseline()`, `compute_delta()`, `display_delta()` |
 | `plugin_checks.py` | Plugin loader — `PluginCheck`, `load_plugin_checks()`, ANSI sanitization |
-| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 220-key canonical list in 61 prefixes, profile variants (71 keys × 3 profiles), CIS reference lookup via `cis_refs.py` |
-| `cis_refs.py` | CIS benchmark reference lookup — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` with `lru_cache`; data from `data/cis_refs.json` (220 entries: 117 formal CIS, 96 best-practice, 7 Docker) |
+| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 226-key canonical list in 62 prefixes, profile variants (71 keys × 3 profiles), CIS reference lookup via `cis_refs.py` |
+| `cis_refs.py` | CIS benchmark reference lookup — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` with `lru_cache`; data from `data/cis_refs.json` (226 entries: 117 formal CIS, 98 best-practice, 7 Docker, 4 Kubernetes) |
 | `domain_scores.py` | Per-domain sub-scores — `compute_domain_scores()`, `render_domain_scores()`, 6-domain attribution (`backup` → `health_resilience`) |
 | `webhook.py` | Webhook delivery — `build_generic_payload()`, `build_slack_payload()`, `send_webhook()`, format auto-detection |
 | `correlation.py` | Signal correlation engine — `CorrelationRule` (all_of/any_of frozensets), `CorrelatedFinding`, `run_correlations()`, 6 built-in compound-risk rules |
@@ -88,6 +88,7 @@ This separation allows the entire business logic to be tested by instantiating s
 | `ddns.py` | Active DDNS clients (ddclient), configured domain, crossed with open UFW ports |
 | `docker.py` | Docker installation detection, iptables bypass via DOCKER chain, container port exposure |
 | `docker_audit.py` | Daemon.json hardening: privileged containers, host network/pid/ipc, sensitive volume mounts, no-new-privileges |
+| `kubernetes.py` | Kubernetes node (v0.25.0): pods' rights read through `ctr` (containerd, MicroK8s, k3s) or `crictl` (CRI-O) (privileged, node-handing host paths, host namespaces; kube-system said, not deducted), kubelet anonymous access on 10250 and read-only port 10255; runs only where a kubelet runs |
 | `virtualization.py` | Active hypervisors (libvirt/KVM, VirtualBox, VMware, LXD/LXC) and Snap network packages |
 | `samba.py` | Samba security audit: SMBv1 disabled, null-password rejection, server signing, `map to guest`, `bind interfaces only` |
 | `smtp.py` | SMTP server exposure: MTA detection (postfix/exim/sendmail), localhost-only binding, open-relay risk |
@@ -128,7 +129,7 @@ This separation allows the entire business logic to be tested by instantiating s
 | `core_dumps.py` | **v0.21.0** (INFO) — `core_pattern`, systemd-coredump `Storage=`, `hard core 0` limits — whether crash dumps could persist |
 | `kexec_lockdown.py` | **v0.21.0** (INFO) — `kexec_load_disabled` + `/sys/kernel/security/lockdown` |
 | `faillock.py` | **v0.21.0** — PAM account lockout: no `pam_faillock` (or legacy `pam_tally2`) in the auth stack (WARN −1 on server, INFO on desktop/workstation) |
-| `disk_encryption.py` | **v0.21.0** — root filesystem on LUKS/dm-crypt via `/proc/mounts` + dm-stack walk (LVM-on-LUKS recognised); WARN on a desktop/workstation plain root, INFO on server, N/A in a container |
+| `disk_encryption.py` | **v0.21.0** — root filesystem on LUKS/dm-crypt via `/proc/mounts` + dm-stack walk (LVM-on-LUKS recognised); WARN on a desktop/workstation plain root, INFO on server, N/A in a container (profile or detected, v0.25.0); **v0.25.0** other local data filesystems and disk swap beside an encrypted root (`/proc/swaps`, swap file by its filesystem, zram skipped) |
 | `polkit.py` | **v0.21.0** — polkit rules: a non-root-writable `.rules`/`.pkla` (or `rules.d` dir) is a privesc path (WARN + `chown`/`chmod`); legacy `.pkla` granting `ResultAny=yes` (INFO) |
 | `module_blacklist.py` | **v0.22.0** (INFO) — rarely-needed kernel modules (cramfs, udf, usb_storage, dccp, sctp…) neither loaded nor kept from loading by a modprobe.d `blacklist` / `install … /bin/true` (CIS §3.4) |
 | `dev_privileged.py` | **v0.22.0** (INFO) — world access on sensitive `/dev` nodes (`/dev/mem`, `/dev/kmem`, `/dev/port`, raw block devices), stat-only |
@@ -161,7 +162,7 @@ bob/
 ├── csv_output.py        # CSV output formatter (--format csv)
 ├── display.py           # Terminal output helpers (display_result, print_audit_summary…)
 ├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — backup→health_resilience attribution
-├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 220 keys in 61 prefixes
+├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 226 keys in 62 prefixes
 ├── exposure.py          # Port exposure grouping — interface scope + risk level
 ├── fixes.py             # Fix mode UI (interactive + auto-fix)
 ├── formatter.py         # bob.formatter — locale-independent rendering via Finding.template_vars (v0.4.1)
@@ -180,7 +181,7 @@ bob/
 ├── registry.py          # ServiceRegistry.load()
 ├── report.py            # AuditReport + NullReport
 ├── report_markdown.py   # MarkdownReport, HTML email
-├── runner.py            # Audit execution engine — run_checks() with _sec section closure (56 filterable + 10 always-on)
+├── runner.py            # Audit execution engine — run_checks() with _sec section closure (57 filterable + 10 always-on)
 ├── scoring.py           # ScoreEngine, CheckResult, Finding, Deduction
 ├── sysinfo.py           # collect_system_info(), detect_network_context(), get_user_home()
 ├── watch.py             # --watch=N mode — re-run audit every N seconds
@@ -235,6 +236,7 @@ bob/
 │   ├── ddns.py             # DdnsSnapshot + check_ddns()
 │   ├── docker.py           # DockerSnapshot + check_docker()
 │   ├── docker_audit.py     # DockerAuditSnapshot + check_docker_audit() — daemon + container hardening
+│   ├── kubernetes.py       # KubernetesSnapshot + check_kubernetes() — node pods' rights + kubelet anonymous access
 │   ├── virtualization.py   # VirtSnapshot + check_virtualization()
 │   ├── samba.py            # SambaSnapshot + check_samba() — SMBv1, signing, map-to-guest
 │   ├── smtp.py             # SmtpSnapshot + check_smtp() — MTA exposure
@@ -288,7 +290,7 @@ bob/
 │   └── world_writable.py       # WorldWritableSnapshot + check_world_writable() — --exhaustive (v0.24.0)
 ├── data/
 │   ├── services.json            # Declarative registry of the 38 services
-│   ├── cis_refs.json            # CIS benchmark references — 220 entries {ref, code}
+│   ├── cis_refs.json            # CIS benchmark references — 226 entries {ref, code}
 │   └── bob.bash-completion  # Bash completion script
 └── locales/
     ├── en.json          # English translation keys
@@ -520,8 +522,8 @@ print(f'Missing in FR: {missing if missing else \"none\"}')
 
 Expected output:
 ```
-EN keys: 2872
-FR keys: 2872
+EN keys: 2928
+FR keys: 2928
 Missing in FR: none
 ```
 
@@ -537,7 +539,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Translate all values
 
-The file contains exactly 2872 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
+The file contains exactly 2928 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
 
 Example:
 ```json

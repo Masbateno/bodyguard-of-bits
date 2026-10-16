@@ -21,7 +21,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, sysctl_fix
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, kubelet_running, sysctl_fix
 from bob.scoring import CheckResult
 
 
@@ -50,6 +50,8 @@ class FirewallStackSnapshot:
         docker_present:      True if Docker is installed/running.
         wireguard_present:   True if WireGuard is configured.
         libvirt_present:     True if libvirt/KVM is installed.
+        kubernetes_running:  True if a kubelet runs (kubelet, MicroK8s'
+                             kubelite, k3s) — pod networking needs forwarding.
     """
     input_raw_accepts:   list[str] = field(default_factory=list)
     forward_raw_accepts: list[str] = field(default_factory=list)
@@ -61,6 +63,7 @@ class FirewallStackSnapshot:
     docker_present:      bool = False
     wireguard_present:   bool = False
     libvirt_present:     bool = False
+    kubernetes_running:  bool = False
 
     @classmethod
     def from_system(cls) -> "FirewallStackSnapshot":
@@ -128,7 +131,14 @@ class FirewallStackSnapshot:
             docker_present=docker_present,
             wireguard_present=wireguard_present,
             libvirt_present=libvirt_present,
+            kubernetes_running=kubelet_running(),
         )
+
+
+def _routing_daemon(snapshot: "FirewallStackSnapshot") -> bool:
+    """Something that legitimately routes and writes FORWARD rules."""
+    return (snapshot.docker_present or snapshot.wireguard_present
+            or snapshot.libvirt_present or snapshot.kubernetes_running)
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +175,7 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
     # Docker, WireGuard, and libvirt/KVM legitimately add ACCEPT rules to FORWARD.
     # Only flag them when no such routing daemon is detected.
     if snapshot.forward_raw_accepts:
-        if snapshot.docker_present or snapshot.wireguard_present or snapshot.libvirt_present:
+        if _routing_daemon(snapshot):
             result.info(
                 message=_t("firewall_drivers.forward_routing_ok"),
                 key="firewall_drivers.forward_routing_ok",
@@ -192,7 +202,7 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
 
     # --- IP forwarding ---
     if snapshot.ip_forward:
-        if snapshot.docker_present or snapshot.wireguard_present or snapshot.libvirt_present:
+        if _routing_daemon(snapshot):
             result.ok(message=_t("firewall_drivers.ip_forward_ok"), key="firewall_drivers.ip_forward_ok")
         else:
             result.warn_with_deduction(

@@ -68,13 +68,15 @@ def _locale_key_count() -> int:
 def _cis_breakdown() -> dict:
     raw = json.loads(
         (_ROOT / "bob" / "data" / "cis_refs.json").read_text(encoding="utf-8"))
-    ubuntu = docker = redhat = best_practice = 0
+    ubuntu = docker = kubernetes = redhat = best_practice = 0
     for v in raw.values():
         ref = v.get("ref", "")
         if not v.get("code"):
             best_practice += 1
         elif "Docker" in ref:
             docker += 1
+        elif "Kubernetes" in ref:
+            kubernetes += 1
         elif "Red Hat" in ref or "RHEL" in ref:
             redhat += 1
         else:
@@ -83,9 +85,10 @@ def _cis_breakdown() -> dict:
         "total": len(raw),
         "ubuntu": ubuntu,
         "docker": docker,
+        "kubernetes": kubernetes,
         "redhat": redhat,
         "best_practice": best_practice,
-        "formal": ubuntu + redhat,   # README_TECH's "formal CIS" = coded, non-Docker
+        "formal": ubuntu + redhat,   # README_TECH's "formal CIS" = coded, non-Docker, non-Kubernetes
     }
 
 
@@ -156,47 +159,47 @@ def test_the_readme_tech_cis_breakdown_matches_the_live_categories():
     b = _cis_breakdown()
     for rel, pat in (
         ("DOCUMENTS/README_TECH.md",
-         r"(\d+) entries \((\d+) formal CIS, (\d+) best-practice, (\d+) Docker\)"),
+         r"(\d+) entries \((\d+) formal CIS, (\d+) best-practice, (\d+) Docker, (\d+) Kubernetes\)"),
         ("DOCUMENTS/README_TECH_FR.md",
-         r"(\d+) entrées \((\d+) CIS formels, (\d+) best-practice, (\d+) Docker\)"),
+         r"(\d+) entrées \((\d+) CIS formels, (\d+) best-practice, (\d+) Docker, (\d+) Kubernetes\)"),
         # v0.24.4: README_DEV writes the split after a colon, and nothing read
         # it — it said 94 best-practice (FR: 89) while the live count was 95.
         ("DOCUMENTS/README_DEV.md",
-         r"(\d+) entries: (\d+) formal CIS, (\d+) best-practice, (\d+) Docker\)"),
+         r"(\d+) entries: (\d+) formal CIS, (\d+) best-practice, (\d+) Docker, (\d+) Kubernetes\)"),
         ("DOCUMENTS/README_DEV_FR.md",
-         r"(\d+) entrées : (\d+) CIS formels, (\d+) best-practice, (\d+) Docker\)"),
+         r"(\d+) entrées : (\d+) CIS formels, (\d+) best-practice, (\d+) Docker, (\d+) Kubernetes\)"),
     ):
         text = (_ROOT / rel).read_text(encoding="utf-8")
         m = re.search(pat, text)
         assert m, f"{rel}: the CIS breakdown sentence is gone or reshaped"
-        total, formal, bp, docker = (int(m.group(i)) for i in range(1, 5))
-        assert (total, formal, bp, docker) == (
-            b["total"], b["formal"], b["best_practice"], b["docker"]), (
+        total, formal, bp, docker, k8s = (int(m.group(i)) for i in range(1, 6))
+        assert (total, formal, bp, docker, k8s) == (
+            b["total"], b["formal"], b["best_practice"], b["docker"], b["kubernetes"]), (
             f"{rel}: says total={total} formal={formal} best-practice={bp} "
-            f"Docker={docker}; live is total={b['total']} formal={b['formal']} "
-            f"best-practice={b['best_practice']} Docker={b['docker']}")
+            f"Docker={docker} Kubernetes={k8s}; live is total={b['total']} formal={b['formal']} "
+            f"best-practice={b['best_practice']} Docker={b['docker']} Kubernetes={b['kubernetes']}")
 
 
-def test_the_readme_four_way_cis_breakdown_matches_the_live_categories():
+def test_the_readme_per_benchmark_cis_breakdown_matches_the_live_categories():
     b = _cis_breakdown()
     for rel, pat in (
         ("README.md",
-         r"(\d+) entries: \*\*(\d+) CIS Ubuntu 22\.04 · (\d+) CIS Docker 1\.6 · "
+         r"(\d+) entries: \*\*(\d+) CIS Ubuntu 22\.04 · (\d+) CIS Docker 1\.6 · (\d+) CIS Kubernetes 2\.0 · "
          r"(\d+) CIS Red Hat 8/9 · (\d+) best-practice\*\*"),
         ("README_FR.md",
-         r"(\d+) entrées : \*\*(\d+) CIS Ubuntu 22\.04 · (\d+) CIS Docker 1\.6 · "
+         r"(\d+) entrées : \*\*(\d+) CIS Ubuntu 22\.04 · (\d+) CIS Docker 1\.6 · (\d+) CIS Kubernetes 2\.0 · "
          r"(\d+) CIS Red Hat 8/9 · (\d+) bonnes pratiques\*\*"),
     ):
         text = (_ROOT / rel).read_text(encoding="utf-8")
         m = re.search(pat, text)
-        assert m, f"{rel}: the four-way CIS breakdown sentence is gone or reshaped"
-        total, ubuntu, docker, redhat, bp = (int(m.group(i)) for i in range(1, 6))
-        assert (total, ubuntu, docker, redhat, bp) == (
-            b["total"], b["ubuntu"], b["docker"], b["redhat"], b["best_practice"]), (
-            f"{rel}: says total={total} Ubuntu={ubuntu} Docker={docker} "
+        assert m, f"{rel}: the per-benchmark CIS breakdown sentence is gone or reshaped"
+        total, ubuntu, docker, k8s, redhat, bp = (int(m.group(i)) for i in range(1, 7))
+        assert (total, ubuntu, docker, k8s, redhat, bp) == (
+            b["total"], b["ubuntu"], b["docker"], b["kubernetes"], b["redhat"], b["best_practice"]), (
+            f"{rel}: says total={total} Ubuntu={ubuntu} Docker={docker} Kubernetes={k8s} "
             f"RedHat={redhat} best-practice={bp}; live is total={b['total']} "
-            f"Ubuntu={b['ubuntu']} Docker={b['docker']} RedHat={b['redhat']} "
-            f"best-practice={b['best_practice']}")
+            f"Ubuntu={b['ubuntu']} Docker={b['docker']} Kubernetes={b['kubernetes']} "
+            f"RedHat={b['redhat']} best-practice={b['best_practice']}")
 
 
 def test_the_matchers_read_something_at_all():
