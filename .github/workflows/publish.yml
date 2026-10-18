@@ -1,6 +1,6 @@
 name: Publish to PyPI + GitHub Release
 
-# Triggers on version tags pushed to main (e.g. v0.4.6).
+# Triggers on version tags pushed to main (bare SemVer, e.g. 0.25.1; legacy v* kept).
 # Pipeline: tests → build (sdist + wheel) → PyPI publish (OIDC) → GitHub Release.
 # If PyPI publish fails, the GitHub release is not created.
 on:

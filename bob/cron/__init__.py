@@ -64,6 +64,7 @@ from ._io import (  # noqa: F401 — _atomic_write re-exported for back-compat
     apply_cron_email,
     apply_cron_schedule,
     build_script_content,
+    resolve_audit_binary,
 )
 from ._install import (  # noqa: F401 — _CronQuit / _run_*_plain re-exported
     _CronQuit,
@@ -95,6 +96,7 @@ __all__ = [
     "apply_cron_schedule",
     "build_schedule_expr",
     "build_script_content",
+    "resolve_audit_binary",
     "CRON_LANGS",
     "CRON_PROFILES",
     "build_audit_options",

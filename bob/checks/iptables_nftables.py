@@ -424,6 +424,18 @@ def check_iptables_nftables(
         )
         return result
     if snapshot.nft_no_input_filter:
+        if ufw_installed:
+            _nft_no_input_cmd = _ufw.enable_cmd(ssh_ports, ipv6_off=ufw_ipv6_off)
+            _nft_no_input_detail = _t("firewall.ssh_ports_unknown_detail") if ssh_ports is None else ""
+        elif firewalld is not None and firewalld.installed:
+            # v0.25.1 — firewalld installed and stopped: the host's front-end is
+            # the remedy. `nft -f /etc/nftables.conf` named a file openSUSE Leap
+            # 16 does not have (measured).
+            from bob.checks.firewall import _firewall_install_fix
+            _nft_no_input_cmd, _nft_no_input_detail = _firewall_install_fix(
+                _t, ssh_ports, firewalld_installed=True)
+        else:
+            _nft_no_input_cmd, _nft_no_input_detail = "sudo nft -f /etc/nftables.conf", ""
         # Same weight as no_backend — nothing is filtering inbound traffic
         # either way — but the statement and the remedy are the host's own.
         # Telling an nftables machine to install iptables was false advice on
@@ -433,8 +445,8 @@ def check_iptables_nftables(
             message=_t("firewall_iptables.nft_no_input_filter"),
             points=3,
             nature="action",
-            cmd=_ufw.enable_cmd(ssh_ports, ipv6_off=ufw_ipv6_off) if ufw_installed else "sudo nft -f /etc/nftables.conf",
-            detail=_t("firewall.ssh_ports_unknown_detail") if ufw_installed and ssh_ports is None else "",
+            cmd=_nft_no_input_cmd,
+            detail=_nft_no_input_detail,
         )
         return result
 

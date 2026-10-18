@@ -17,8 +17,9 @@ it; a rule that cannot says so.
 
 ## 1. Colour — terminal output
 
-Sixteen ANSI colours are defined in `bob/output.py`; fourteen carry meaning.
-The table is the authority, and no module builds an escape sequence itself.
+Fifteen ANSI escapes are defined in `bob/output.py` (`_Colours`): `reset` and
+fourteen colours and weights. The table gives the meaning of those that carry
+one; it is the authority, and no module builds an escape sequence itself.
 
 | Colour | Means |
 |---|---|
@@ -102,9 +103,9 @@ on both sides. `VERBATIM` was added in v0.16.4 because the convention stopped
 at the curses boundary for no reason anyone had stated: the same lines that
 were violet in `bob --explain` read as ordinary prose inside the wizard.
 
-Inside a `HOW TO FIX` block, indentation is what marks the material — 664
-indented lines against 527 numbered steps and 74 notes, consistent across all
-explain keys. Painting a whole block violet was tried and emptied the colour of
+Inside a `HOW TO FIX` block, indentation is what marks the material,
+consistently across all explain keys (English locale, 2026-10-16: 903 indented
+lines against 636 numbered steps, the rest being notes and prose). Painting a whole block violet was tried and emptied the colour of
 meaning: two thirds of a block is prose.
 
 Both orange and violet fall back to the nearest 8-colour approximation rather
@@ -206,8 +207,9 @@ def check_xxx(snapshot: XxxSnapshot, t=None) -> CheckResult:
    a section excluded by `--check` / `--skip` / the profile costs nothing.
    Passing a pre-built snapshot silently moves the collection outside the
    barrier; `tests/test_v0141_robustness.py` fails the build if any call site
-   does. (`hardening_snapshot` is the one documented exception — it also feeds
-   `ChecksResult` for the `--json-full` sysctl block.)
+   does. (`hardening_snapshot` and `ipv6_snapshot` are the exceptions — both are
+   returned in `ChecksResult` for `--json-full`, so they are collected eagerly,
+   inside the `_core` barrier rather than `_sec`'s.)
 
 2. **Read files through `bob._atomic.read_text_capped()`**, not `read_text()`.
    It refuses anything that is not a regular file (device, FIFO, directory) and
@@ -240,8 +242,14 @@ result.add_deduction(
     reason=_t("key"),
     points=2,
     context="local",   # or "public"
+    key="xxx.something",
 )
+
+# usual form since v0.5.x: the finding and its deduction in one call
+result.warn_with_deduction(key="xxx.something", message=_t("xxx.something"), points=1)
 ```
+
+`warn()` and `alert()` take no `points`; a deduction always carries a `key`.
 
 ### Finding natures
 
@@ -249,7 +257,7 @@ result.add_deduction(
 |---|---|---|
 | `"action"` | Correction required | *Action required* |
 | `"improvement"` | Possible improvement | *Possible improvements* |
-| `"structural"` | Normal but notable configuration | *Normal configuration* |
+| `"structural"` | Normal but notable configuration | No block of its own — shown in its section |
 | `None` | Purely informational | Not shown in summary |
 
 ### Translation function
@@ -270,24 +278,25 @@ result = check_firewall(make_status(), t=my_t)  # custom translation
 
 ### Subprocess
 
-Always via the `_run()` helper local to each module:
+Always through the shared helpers in `bob/checks/_run.py` — `_run()` for the
+output, `run_result()` when the exit status matters — which every check module
+imports:
 
 ```python
-def _run(*args: str) -> str:
-    try:
-        proc = subprocess.run(
-            list(args), capture_output=True, text=True, timeout=10,
-        )
-        return proc.stdout
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return ""
+from bob.checks._run import _run, _C_LOCALE_ENV
+
+out = _run("ufw", "status", timeout=10)   # no shell, a timeout, "" on any failure
 ```
 
-Never let a subprocess exception propagate.
+Never call `subprocess` directly from a check, and never let a subprocess
+exception propagate.
 
 ### Tests
 
-Each check module has a corresponding test file. Tests:
+Each check module is covered by tests — in `tests/test_<module>.py` for most of
+them, and for the others in the file named after the release that added the
+check (`tests/test_v0170_raspberry_pi.py`, `tests/test_v0210_polkit.py`,
+`tests/test_v0250_kubernetes_node.py`, …). Check tests:
 
 - Make no system calls
 - Build snapshots directly
@@ -330,7 +339,9 @@ display surface, not part of BOB's compatibility contract. It changed exactly
 once — the `v` was dropped in 0.21.0 — and is now fixed as the bare SemVer core.
 The stable CLI contract is: exit codes, the JSON schema (`schema_version` and its
 keys), option names, and finding keys — those do not change without a MAJOR/MINOR
-bump and a changelog note. A script that parsed `bob --version` and hard-coded the
+bump and a changelog note. Dropping a supported Python version is BREAKING too: it
+happens only in a release labelled BREAKING, 6 months at least after that version's
+upstream end of life (see README_TECH, *Python support policy*). A script that parsed `bob --version` and hard-coded the
 `v` (or `sed 's/^v//'`) must read the bare form from 0.21.0 on; scripts that need a
 machine-stable version should read `--format json` (`schema_version`) rather than
 scrape human output. This is called out so the de-`v` is a one-time, documented
@@ -364,7 +375,7 @@ field carries the host-specific command, and `test_v0170_distro_paths.py` reject
 package manager named in message prose (explain blocks that name the family are
 exempt).
 
-**The 27 service labels stay English by design.** `services.json` prose labels
+**The service labels stay English by design.** The 38 `services.json` labels
 (`Samba (Windows file sharing)`, …) are not translated — a deliberate, documented
 exception, not drift.
 
@@ -430,7 +441,7 @@ about one of the two.
 | **finding** | One line of a `CheckResult`: a level (OK / INFO / WARN / ALERT), a key, a message, and optionally a detail, a command and a deduction. | `Finding`, `FindingLevel` in `bob/scoring.py` |
 | **key** | A finding's dotted identifier, `<prefix>.<name>` (`ssh.password_auth`). It is what `--explain`, `ignore.yml`, the CIS map and the domain map are indexed by. | every `key=` argument |
 | **deduction** | Points a finding removes from its domain's score. INFO never carries one. | `warn_with_deduction`, `alert_with_deduction`, `add_deduction` |
-| **cap** | An upper bound a finding sets on the score (an inactive firewall caps it at 3). | `CheckResult.set_cap` |
+| **cap** | An upper bound a finding sets on its domain's score (an inactive UFW holds *Firewall & Network* at 3/10); the headline is the average of the domains, so it is not capped itself. | `CheckResult.set_cap` |
 | **visibility key** | A key that says a section could not be read. Its presence turns the score into a ceiling (`≤ N/10`) — unknown is not clean. | `VISIBILITY_KEYS` in `bob/visibility.py` |
 | **domain** | One of the six scored areas — firewall & network, exposure & services, access control, system hardening, health & resilience, threat detection — each scored 0–10; a key belongs to one through its prefix. | `DOMAINS`, `_PREFIX_TO_DOMAIN` in `bob/domain_scores.py` |
 | **group** | The on-screen heading that gathers a domain's sections. Since v0.20.0 groups and domains are the same six. | `emit_group()` in `bob/runner.py` |

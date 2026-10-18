@@ -321,6 +321,9 @@ class CheckResult:
         # applied here so that no check has to know about it.
         from bob._privilege import with_privilege
         cmd = with_privilege(cmd)
+        # v0.25.1: the prose too — "Fix: sudo chmod 600 …", "run with sudo" —
+        # as the --explain texts already are; on a sudo host nothing changes.
+        message, detail, note = with_privilege(message), with_privilege(detail), with_privilege(note)
         # Contract guard: cmd_type is rendered by display.py as either the "→"
         # fix branch or the "ℹ" check branch — any other value silently renders
         # as "fix" (a non-"check" string is treated as fix), which is how the
@@ -1040,3 +1043,21 @@ def set_posture_from_engine(engine: "ScoreEngine", fw_active: bool) -> None:
         ),
         firewall_domain_score=_fw_score,
     )
+
+
+def score_out_of_ten(engine: "ScoreEngine") -> str:
+    """The headline score as a sink should print it: ``≤ 7/10``, ``~ 7/10 (6–8)``
+    or ``7/10``.
+
+    v0.25.1 — the Slack payload and the ``--watch`` line printed the bare
+    number while the terminal, the report and the formats said it was a
+    ceiling. Same three states as the summary box: a ceiling when a check could
+    not read its input, a span when blindness removed a whole domain, else the
+    plain number.
+    """
+    if engine.score_is_upper_bound:
+        return f"≤ {engine.score}/10"
+    if getattr(engine, "score_is_uncertain", False):
+        low, high = engine.score_span
+        return f"~ {engine.score}/10 ({low}–{high})"
+    return f"{engine.score}/10"

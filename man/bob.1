@@ -1,7 +1,7 @@
 .\" Manpage for bob (Bodyguard Of Bits)
 .\" Format: man-7 (groff_man). Render with: man -l man/bob.1
 .\" Contact: cedricclauzel@mailo.com to correct errors or typos.
-.TH BOB 1 "2026-10-16" "BOB 0.25.0" "User Commands"
+.TH BOB 1 "2026-10-18" "BOB 0.25.1" "User Commands"
 .SH NAME
 bob \- Bodyguard Of Bits, a Linux hardening auditor with CIS benchmark mapping
 .
@@ -28,19 +28,28 @@ below). The
 mode disables all outbound network calls and is recommended for distro
 build sandboxes and air-gapped environments.
 .PP
-Most checks require root for full coverage (reading
-.IR /etc/shadow ,
-parsing UFW rules, querying
-.B systemctl
-state). Use
-.B sudo bob
-in normal operation.
+.B bob
+audits only as root (it exits with \(lqThis script must be run as root\(rq
+otherwise): run
+.BR "sudo bob" ,
+or
+.B doas
+on a host without sudo (with BOB's full path until
+.B \-\-install\-completion
+has created
+.IR /usr/local/bin/bob ). Even as root, a file it cannot read
+is reported as not verified, and the score then reads as a ceiling.
+The options \fB\-\-help\fR, \fB\-\-version\fR, \fB\-\-explain\fR, \fB\-\-history\fR, \fB\-\-ignore\fR,
+\fB\-\-unignore\fR, \fB\-\-test\-email\fR and \fB\-\-test\-webhook\fR need no root.
 .
 .SH OPTIONS
 .SS Audit control
 .TP
 .BR \-v ", " \-\-verbose
-Show detailed port exposure per service in the services section.
+Print, under each finding, its detail, its command, its note and its CIS
+reference (an ALERT shows its detail without this flag), plus the raw
+listening-port table and the output of
+.BR "ufw status verbose" .
 .TP
 .B \-\-exhaustive
 Also run the slow, full-coverage checks that are held out of the default fast
@@ -101,7 +110,7 @@ is an accepted spelling of the same flag.
 .BR \-j ", " \-\-json
 Emit the audit summary to standard output as JSON
 .RB ( schema_version
-.BR \(dq1\(dq ).
+.BR \(dq3\(dq ).
 Suppresses the human-readable terminal box. See
 .B JSON OUTPUT
 below.
@@ -167,9 +176,12 @@ Delete the saved configuration
 .RI ( ~/.config/bob/config.conf )
 and exit. Always asks for confirmation; answering anything but
 .B y
-leaves the file untouched. Later runs fall back to their defaults: the audit profile returns to
-.BR server ,
-and
+leaves the file untouched. Later runs fall back to their defaults: the audit
+profile returns to the automatic choice
+.RB ( server ,
+or
+.B desktop
+when a display manager is active), and
 .B \-\-manage\-logs
 asks for a log directory again.
 .TP
@@ -180,6 +192,17 @@ Built-in profiles:
 .BR desktop ", "
 .BR workstation ", "
 .BR container .
+A valid name is saved as your default for later runs; an invalid one warns,
+runs that audit with
+.BR server ,
+and is not saved. With no profile given or saved,
+.B bob
+uses
+.BR desktop
+when
+.B display-manager.service
+is active, else
+.BR server .
 User profiles in
 .IR ~/.config/bob/profiles/*.conf
 take precedence. See
@@ -217,51 +240,50 @@ a major system change to avoid noisy "new findings" lists.
 .TP
 .B \-\-history
 Display a sparkline of the last 50 audit scores from
-.IR ~/.config/bob/history.jsonl .
+.IR ~/.config/bob/history.jsonl ,
+then a table of the last 10.
 .TP
 .B \-\-breakdown ", " \-B
-After the audit, print the complete score computation (deductions, caps,
-per-domain scores). Useful for understanding why the final score is what
+Run the audit without its usual terminal output and print the complete score
+computation (deductions, caps, per-domain scores). Useful for understanding why the final score is what
 it is.
 .
 .SS Remediation
 .TP
 .BR \-f ", " \-\-fix
-Enter interactive fix mode: each finding with a remediation command prompts
-the user with
-.RB \(dq y/N \(dq.
+Preview the available fixes after the audit (dry run): the commands
 .B bob
-NEVER runs a command without explicit user confirmation.
+can apply, the ones it only shows, and the findings that need a manual fix.
+Nothing is executed.
 .TP
 .B \-\-apply
-Like
-.BR \-\-fix ,
-but assume
-.B y
-for every prompt. Use with extreme caution; intended for unattended fix runs
-where the user has reviewed
-.BR \-\-explain
-beforehand.
+Requires
+.BR \-\-fix .
+Execute the applicable fixes, each after a
+.RB \(dq y/N \(dq
+prompt. Only commands with no shell operator and no editor are run.
 .TP
 .BR \-y ", " \-\-yes
-Auto-confirm every interactive prompt (equivalent to piping
-.RI \(dq y \(dq
-to stdin). Typically combined with
-.B \-\-fix
-for non-interactive remediation, but applies to any other confirmation prompt
-.B bob
-emits.
+Requires
+.BR "\-\-fix \-\-apply" .
+Answer
+.B y
+to every fix prompt and print the commands applied at the end. It does not
+answer the confirmation of
+.BR \-\-reconfigure .
 .TP
 .B \-\-explain=\fIKEY\fR
 Display a structured explanation for a single finding key. Pass
 .B list
 as the
 .I KEY
-to list all available explain keys (205 keys).
+to list all available explain keys (226 keys). With no
+.IR KEY ,
+open the interactive picker.
 .TP
 .B \-e
 Shortcut for
-.BR \-\-explain= .
+.BR \-\-explain .
 .
 .SS Network and integrations
 .TP
@@ -306,22 +328,39 @@ is
 Run an interactive wizard to install a cron job that audits the system on
 a schedule and emails the report. The wizard asks for a name, a schedule, a
 time, notification addresses, and then the audit's profile, language and
-outbound-probe stance \(em each pre-selected from the invoking session. Those
+outbound-probe stance \(em pre-selected from the
+.BR \-p ,
+the language and the
+.B \-\-offline
+given to this command (without
+.BR \-p ,
+the saved profile, else
+.BR server ).
+When no
+.B bob
+is found on root's PATH, the script calls the one being run, and the wizard
+warns if the path it writes does not exist. Those
 three are pinned into the generated script because cron runs as root: without
 them the scheduled audit would read root's saved profile rather than yours,
 and cron's bare environment, where
 .B $LANG
 is normally unset. The resulting command line is shown before anything is
 written. Installed cron jobs are not changed by an upgrade; re-run this wizard
-with the same name to regenerate one.
+with the same name to regenerate one. On a host without
+.I /etc/cron.d
+(BusyBox crond on Alpine reads
+.IR /etc/crontabs/ )
+the wizard refuses before the first question and explains how to use root's
+crontab instead.
 .TP
 .B \-\-manage\-cron
 Manage installed cron jobs (list, edit schedule/email, delete).
 .TP
-.B \-\-watch=\fIN\fR
-Re-run the audit every
+.B \-\-watch\fR[\fB=\fIN\fR]
+Re-run a silent audit every
 .I N
-seconds until interrupted with Ctrl\-C. Live-monitoring mode.
+seconds (default 60, minimum 10) until interrupted with Ctrl\-C, printing
+each time only what changed since the previous run.
 .
 .SS Filters
 .TP
@@ -369,11 +408,20 @@ Print help.
 .TP
 .B \-\-install\-completion
 Install bash completion to
-.IR /etc/bash_completion.d/bob .
+.IR /etc/bash_completion.d/bob
+and, when run through
+.B sudo
+or
+.BR doas ,
+link
+.I /usr/local/bin/bob
+to the invoking user's
+.IR ~/.local/bin/bob .
 .TP
 .BR \-m ", " \-\-manage\-logs
-Manage stored audit reports (list, view, delete) in
-.IR ~/.local/share/bob/logs/ .
+Manage stored audit reports (list, view, delete) in the saved report directory
+.RI ( ~/.local/share/bob/logs/
+by default) and the earlier ones BOB still tracks.
 .TP
 .B \-\-ignore=\fIKEY\fR
 Persistently ignore finding
@@ -417,29 +465,41 @@ Technical error (CLI parsing, IO, internal).
 .TP
 .B 4
 .B \-\-target=\fIN\fR
-specified and score < N, or anything could not be read: a score nothing
+specified and either the score is below N or anything could not be read: a score nothing
 verified cannot satisfy a gate, so it fails closed. Widened in v0.16.2 from
 \(lqis an upper bound\(rq, which stops being true when blindness removes a
 whole scoring domain.
 .
 .SH JSON OUTPUT
 .B \-\-json
-emits a stable JSON contract (see
-.B schema_version
-.BR \(dq1\(dq ).
-Top-level keys:
+emits a stable JSON contract
+.RB ( schema_version
+.BR \(dq3\(dq ).
+Always-present top-level keys:
 .IR schema_version ,
 .IR version ,
 .IR host ,
-.IR timestamp ,
+.IR timestamp_utc ,
 .IR score ,
 .IR score_max ,
+.IR score_is_upper_bound ,
+.IR score_low ,
+.IR score_high ,
+.IR unscored_domains ,
+.IR unverified ,
+.IR target ,
+.IR target_met ,
 .IR risk ,
 .IR network_context ,
 .IR public_ip ,
-.IR alerts ,
-.IR warnings ,
+.IR alert_count ,
+.IR warning_count ,
+.IR info_count ,
+.IR degraded_sections ,
+.IR profile ,
+.IR duration_seconds ,
 .IR deductions ,
+.IR posture_escalation ,
 .IR domain_scores .
 Full mode
 .RB ( \-\-json\-full )
@@ -447,9 +507,12 @@ adds
 .IR findings ,
 .IR services ,
 .IR open_ports ,
-.IR firewall_stack ,
-.IR hardening ,
-.IR ipv6 .
+.IR open_ports_all ,
+.IR deductions_raw ,
+.IR firewall_drivers ,
+and
+.IR hardening " and " ipv6
+when those sections ran.
 .PP
 Each deduction and finding carries a stable dotted
 .B key
@@ -480,7 +543,9 @@ User service plugin definitions. JSON Schema:
 .IR bob/data/schemas/service.schema.json .
 .TP
 .I ~/.config/bob/checks.d/*.py
-Custom Python audit plugins. NOT sandboxed.
+Custom Python audit plugins, executed through BOB's in-process sandbox
+(SandboxRunner, since v0.7.0). It is defence-in-depth, not a security
+boundary: run only plugins you have reviewed.
 .TP
 .I ~/.config/bob/last_baseline.json
 Snapshot of the previous audit for
@@ -493,6 +558,12 @@ Append-only score history (rotated at 1000 entries).
 .I ~/.config/bob/ignore.yml
 Persistently ignored finding keys.
 .TP
+.I ~/.config/bob/recurrence.json
+Consecutive-audit counter of each ALERT/WARN key.
+.TP
+.I ~/.config/bob/emails
+Address book of the cron notifications.
+.TP
 .I ~/.local/share/bob/logs/
 Default detailed-report destination
 .RB ( \-d
@@ -501,16 +572,27 @@ flag).
 .I /etc/cron.d/bob-NAME
 System cron entries installed via
 .BR \-\-install\-cron .
+.TP
+.I /usr/local/bin/bob-NAME
+The script each cron entry runs.
+.TP
+.IR /usr/local/bin/bob ", " /etc/bash_completion.d/bob
+The sudo-PATH link and the completion script written by
+.BR \-\-install\-completion .
 .
 .SH ENVIRONMENT
 .TP
-.B SUDO_USER
+.BR SUDO_USER ", " DOAS_USER
 Honored by BOB to resolve
 .RB \(dq ~/.config/bob/ \(dq
 to the invoking user's home rather than
 .IR /root/
 when run via
-.BR sudo .
+.B sudo
+or (since 0.25.1)
+.BR doas ;
+.B SUDO_USER
+wins when both are set.
 .TP
 .BR LC_ALL ", " LC_MESSAGES ", " LANG
 Used for locale auto-detection (POSIX precedence). See
@@ -518,14 +600,30 @@ Used for locale auto-detection (POSIX precedence). See
 above.
 .TP
 .B BOB_SHARE
-Absolute path to BOB's installed share directory (containing
-.IR locales/ ", " data/ ", etc.).
-Set by the installer entry point — typical values:
-.IR /usr/share/bob/
-(distro packages) or
-.IR /usr/local/share/bob/
-(local installs). When unset, BOB uses the data files bundled inside the
-Python package itself (pipx / pip install layout).
+Absolute path to a share directory (containing
+.IR locales/ ", " data/ )
+that replaces the data files bundled inside the Python package. Nothing in
+BOB's own packaging sets it; when it is unset, or does not resolve to an
+absolute directory, the bundled files are used.
+.TP
+.BR NO_COLOR ", " FORCE_COLOR
+Any non-empty value turns colour off, or on even when the output is not a
+terminal. Without either, colour follows whether the output is a terminal;
+.B \-\-no\-color
+wins over both.
+.TP
+.B BOB_DEBUG
+Any non-empty value installs a logging handler (for example, why a service
+plugin entry was skipped) and prints the full traceback of a fatal error.
+.TP
+.B BOB_WEBHOOK_ALLOW_INSECURE
+Set to
+.B 1
+to allow an
+.B http://
+webhook URL; by default only
+.B https://
+is accepted.
 .
 .SH SECURITY
 BOB is an audit-only tool that runs with root privileges. It is part of the

@@ -18,9 +18,10 @@ garde ; une règle qui ne l'est pas le dit.
 
 ## 1. Couleur — sortie terminal
 
-Seize couleurs ANSI sont définies dans `bob/output.py` ; quatorze portent un
-sens. La table fait autorité, et aucun module ne fabrique lui-même une séquence
-d'échappement.
+Quinze séquences ANSI sont définies dans `bob/output.py` (`_Colours`) : `reset`
+et quatorze couleurs et graisses. La table donne le sens de celles qui en
+portent un ; elle fait autorité, et aucun module ne fabrique lui-même une
+séquence d'échappement.
 
 | Couleur | Signifie |
 |---|---|
@@ -109,9 +110,9 @@ v0.16.4 parce que la convention s'arrêtait à la frontière curses sans raison
 énoncée : les mêmes lignes qui étaient violettes dans `bob --explain` se
 lisaient comme de la prose ordinaire dans l'assistant.
 
-Dans un bloc `HOW TO FIX`, c'est l'indentation qui marque la matière — 664
-lignes indentées contre 527 étapes numérotées et 74 notes, de façon constante
-sur toutes les clés. Peindre un bloc entier en violet a été essayé et a vidé la
+Dans un bloc `HOW TO FIX`, c'est l'indentation qui marque la matière, de façon
+constante sur toutes les clés (locale anglaise, 2026-10-16 : 903 lignes
+indentées contre 636 étapes numérotées, le reste étant notes et prose). Peindre un bloc entier en violet a été essayé et a vidé la
 couleur de son sens : les deux tiers d'un bloc sont de la prose.
 
 L'orange comme le violet se replient sur l'approximation la plus proche en 8
@@ -219,8 +220,10 @@ def check_xxx(snapshot: XxxSnapshot, t=None) -> CheckResult:
    l'audit — et une section exclue par `--check` / `--skip` / le profil ne coûte
    rien. Passer un snapshot pré-construit déplace silencieusement la collecte
    hors de la barrière ; `tests/test_v0141_robustness.py` fait échouer le build
-   si un site d'appel le fait. (`hardening_snapshot` est l'exception documentée
-   — il alimente aussi `ChecksResult` pour le bloc sysctl de `--json-full`.)
+   si un site d'appel le fait. (`hardening_snapshot` et `ipv6_snapshot` sont
+   les exceptions — tous deux sont renvoyés dans `ChecksResult` pour
+   `--json-full`, donc collectés d'emblée, dans la barrière `_core` plutôt que
+   dans celle de `_sec`.)
 
 2. **Lire les fichiers via `bob._atomic.read_text_capped()`**, pas `read_text()`.
    Il refuse tout ce qui n'est pas un fichier régulier (périphérique, FIFO,
@@ -255,8 +258,14 @@ result.add_deduction(
     reason=_t("clé"),
     points=2,
     context="local",   # ou "public"
+    key="xxx.something",
 )
+
+# forme habituelle depuis la v0.5.x : le constat et sa déduction en un appel
+result.warn_with_deduction(key="xxx.something", message=_t("xxx.something"), points=1)
 ```
+
+`warn()` et `alert()` ne prennent pas de `points` ; une déduction porte toujours une `key`.
 
 ### Natures des constats
 
@@ -264,7 +273,7 @@ result.add_deduction(
 |---|---|---|
 | `"action"` | Correction requise | *Action requise* |
 | `"improvement"` | Amélioration possible | *Améliorations possibles* |
-| `"structural"` | Configuration normale mais notable | *Configuration normale* |
+| `"structural"` | Configuration normale mais notable | Pas de bloc à elle — affichée dans sa section |
 | `None` | Informatif pur | Non affiché dans le résumé |
 
 ### Fonction de traduction
@@ -285,24 +294,26 @@ result = check_firewall(make_status(), t=my_t)  # traduction personnalisée
 
 ### Subprocess
 
-Toujours via le helper `_run()` local à chaque module :
+Toujours par les aides partagées de `bob/checks/_run.py` — `_run()` pour la
+sortie, `run_result()` quand le code de retour compte — que chaque module de
+vérification importe :
 
 ```python
-def _run(*args: str) -> str:
-    try:
-        proc = subprocess.run(
-            list(args), capture_output=True, text=True, timeout=10,
-        )
-        return proc.stdout
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        return ""
+from bob.checks._run import _run, _C_LOCALE_ENV
+
+out = _run("ufw", "status", timeout=10)   # pas de shell, un délai, "" sur tout échec
 ```
 
-Ne jamais laisser une exception subprocess remonter.
+Ne jamais appeler `subprocess` directement depuis un check, ni laisser une
+exception subprocess remonter.
 
 ### Tests
 
-Chaque module de vérification a son fichier de test correspondant. Les tests :
+Chaque module de vérification est couvert par des tests — dans
+`tests/test_<module>.py` pour la plupart, et pour les autres dans le fichier
+nommé d'après la version qui a ajouté le check (`tests/test_v0170_raspberry_pi.py`,
+`tests/test_v0210_polkit.py`, `tests/test_v0250_kubernetes_node.py`, …). Les
+tests de checks :
 
 - Ne font aucun appel système
 - Construisent les snapshots directement
@@ -347,7 +358,9 @@ Elle a changé exactement une fois — le `v` a été retiré en 0.21.0 — et e
 désormais figée sur le cœur SemVer nu. Le contrat CLI stable, c'est : les codes de
 sortie, le schéma JSON (`schema_version` et ses clés), les noms d'options et les
 clés de constat — ceux-là ne changent pas sans incrément MAJEUR/MINEUR et note de
-changelog. Un script qui parsait `bob --version` en codant en dur le `v` (ou
+changelog. L'abandon d'une version de Python supportée est aussi BREAKING : il n'a lieu que
+dans une release étiquetée BREAKING, au moins 6 mois après la fin de vie upstream de
+cette version (voir README_TECH, *Politique de support Python*). Un script qui parsait `bob --version` en codant en dur le `v` (ou
 `sed 's/^v//'`) doit lire la forme nue à partir de 0.21.0 ; un script qui a besoin
 d'une version stable machine doit lire `--format json` (`schema_version`) plutôt
 que de gratter la sortie humaine. C'est explicité pour que le dé-`v` soit une
@@ -385,7 +398,7 @@ mettre une commande spécifique à une distribution (`apt install …`) dans un
 `test_v0170_distro_paths.py` rejette un gestionnaire de paquets nommé dans la prose
 d'un message (les blocs explain qui nomment la famille sont exemptés).
 
-**Les 27 libellés de services restent en anglais à dessein.** Les libellés de prose
+**Les libellés de services restent en anglais à dessein.** Les 38 libellés
 de `services.json` (`Samba (Windows file sharing)`, …) ne sont pas traduits — une
 exception délibérée et documentée, pas une dérive.
 
@@ -453,7 +466,7 @@ se trompe en général sur l'un des deux.
 | **constat** (finding) | Une ligne d'un `CheckResult` : un niveau (OK / INFO / WARN / ALERT), une clé, un message, et au besoin un détail, une commande et une déduction. | `Finding`, `FindingLevel` dans `bob/scoring.py` |
 | **clé** | L'identifiant pointé d'un constat, `<préfixe>.<nom>` (`ssh.password_auth`). C'est ce qu'indexent `--explain`, `ignore.yml`, la table CIS et la table des domaines. | chaque argument `key=` |
 | **déduction** | Les points qu'un constat retire au score de son domaine. Une INFO n'en porte jamais. | `warn_with_deduction`, `alert_with_deduction`, `add_deduction` |
-| **plafond** (cap) | Une borne haute qu'un constat impose au score (un pare-feu inactif le plafonne à 3). | `CheckResult.set_cap` |
+| **plafond** (cap) | Une borne haute qu'un constat impose au score de son domaine (un UFW inactif maintient *Pare-feu & Réseau* à 3/10) ; le score global est la moyenne des domaines, il n'est donc pas plafonné lui-même. | `CheckResult.set_cap` |
 | **clé de visibilité** | Une clé qui dit qu'une section n'a pas pu être lue. Sa présence fait du score un plafond (`≤ N/10`) — inconnu n'est pas propre. | `VISIBILITY_KEYS` dans `bob/visibility.py` |
 | **domaine** | L'un des six périmètres scorés — pare-feu & réseau, exposition & services, contrôle d'accès, durcissement système, santé & résilience, détection des menaces — chacun noté de 0 à 10 ; une clé y appartient par son préfixe. | `DOMAINS`, `_PREFIX_TO_DOMAIN` dans `bob/domain_scores.py` |
 | **groupe** | Le titre à l'écran qui rassemble les sections d'un domaine. Depuis v0.20.0, groupes et domaines sont les mêmes six. | `emit_group()` dans `bob/runner.py` |

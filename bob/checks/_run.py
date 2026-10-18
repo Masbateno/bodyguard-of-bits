@@ -544,14 +544,15 @@ def service_restart_cmd(unit: str) -> str:
     return f"sudo systemctl restart {unit}"
 
 
-def service_enable_cmd(unit: str) -> str:
+def service_enable_cmd(unit: str, runlevel: str = "default") -> str:
     """The command that starts *unit* now and at boot, per init system.
 
     OpenRC splits what systemd's `enable --now` does into two verbs, so the
-    command is two commands.
+    command is two commands. *runlevel* is OpenRC's (``boot`` for a service
+    that must run before the others, such as AppArmor loading its profiles).
     """
     if openrc_available() and not _command_exists("systemctl"):
-        return f"sudo rc-update add {unit} default && sudo rc-service {unit} start"
+        return f"sudo rc-update add {unit} {runlevel} && sudo rc-service {unit} start"
     return f"sudo systemctl enable --now {unit}"
 
 
@@ -1022,7 +1023,8 @@ _PACKAGE_NAMES: "dict[str, dict[str, str | None]]" = {
     # is right depends on the host's firewall backend. That is a decision, not
     # a name lookup, so BOB does not make it.
     "apparmor-utils":    {"apt": "apparmor-utils"},
-    "apparmor-profiles": {"apt": "apparmor-profiles apparmor-profiles-extra"},
+    # apk: measured on Alpine 3.24 (0.25.1 field pass) — one package, no -extra.
+    "apparmor-profiles": {"apt": "apparmor-profiles apparmor-profiles-extra", "apk": "apparmor-profiles"},
     "aide":              {"apt": "aide", "dnf": "aide"},
     "iptables":          {"apt": "iptables", "pacman": "iptables", "apk": "iptables"},
     "auto-updates":      {"apt": "unattended-upgrades"},

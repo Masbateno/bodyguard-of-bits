@@ -183,10 +183,11 @@
   },
   "prerequisites": {
     "ufw_installed": "UFW is installed",
-    "firewall_missing": "No active firewall — neither UFW nor firewalld is installed, and the netfilter layer is not filtering inbound traffic"
+    "firewall_missing": "No active firewall — neither UFW nor firewalld is installed, and the netfilter layer is not filtering inbound traffic",
+    "firewall_missing_firewalld_stopped": "No active firewall — firewalld is installed but not running, and the netfilter layer is not filtering inbound traffic"
   },
   "firewall": {
-    "firewalld_keeps_ssh_detail": "The command keeps SSH allowed in the default zone and in every active zone: with no firewall it answered from everywhere, so this closes nothing it reached. It is a starting point, not a segmentation — afterwards, remove ssh from the zones that should not offer it (firewall-cmd --permanent --zone=<zone> --remove-service=ssh, then --reload). SSH is written into the permanent configuration before firewalld starts — the default zone, the zones NetworkManager gives active connections, and the zones with an interface or source bound — so the first ruleset it loads already allows it: measured on Fedora, 0 new SSH logins refused, against 3 to 4 when ssh was added after the start. A zone bound some other way gets ssh after the start, with the reload.",
+    "firewalld_keeps_ssh_detail": "The command keeps SSH allowed in the default zone and in every active zone: with no firewall it answered from everywhere, so this closes nothing it reached. It is a starting point, not a segmentation — afterwards, remove ssh from the zones that should not offer it (firewall-cmd --permanent --zone=<zone> --remove-service=ssh, then --reload). SSH is written into the permanent configuration before firewalld starts — the default zone, the zones NetworkManager gives active connections, and the zones with an interface or source bound — so the first ruleset it loads already allows it: measured on Fedora and openSUSE, 0 new SSH logins refused, against 3 to 4 on Fedora when ssh was added after the start. A zone bound some other way gets ssh after the start, with the reload.",
     "ssh_ports_unknown_detail": "BOB could not tell which ports sshd answers on — `ss -tulnp` could not be run, or named no process (BOB was not run as root) — so it gives no command that turns filtering on: one that kept port 22 alone would cut an sshd listening elsewhere. Allow the port your SSH session uses first, then turn filtering on.",
     "active": "UFW firewall is active",
     "netfilter_active": "No active firewall front-end (UFW/firewalld), but the netfilter layer is filtering inbound traffic — audited in the iptables/nftables section",
@@ -276,7 +277,7 @@
     "uncovered_bound_address_netfilter": "Port {port} — bound to {address} only — governed by the nftables/iptables ruleset (inbound default: refuse; a rule may still allow this port — BOB reads the default policy, not every rule, and does not establish reachability), not a UFW rule",
     "system_port": "Internal system port — no risk (legitimate OS service, no UFW rule needed): {port} ({service})",
     "unreadable": "Listening ports could not be determined",
-    "unreadable_detail": "`ss -tulnp` could not be run \u2014 the binary is absent (iproute2 is not installed on minimal images and many containers) or it failed. Its stdout is empty either way, which is indistinguishable from a host with nothing listening, so BOB reports the gap instead of claiming zero open ports. Check with: ss -tulnp",
+    "unreadable_detail": "`ss -tulnp` could not be run — the binary is absent (iproute2 is not installed on minimal images and many containers) or it failed. Its stdout is empty either way, which is indistinguishable from a host with nothing listening, so BOB reports the gap instead of claiming zero open ports. Check with: ss -tulnp",
     "listening_count": "{count} listening port(s) detected on this system",
     "listening_detail": "Listening ports detail:",
     "listening_verbose_hint": "Use -v to display the full port table",
@@ -284,6 +285,7 @@
     "uncovered_default_deny": "Port {port} listening on all interfaces — no explicit UFW rule, but covered by default deny policy",
     "uncovered_ufw_inactive": "Port {port} listening on all interfaces — no active firewall to filter it",
     "uncovered_firewalld": "Port {port} listening on all interfaces — governed by the firewalld zone of the interface it is reached on, not a UFW rule",
+    "uncovered_firewalld_docker": "Port {port} listening on all interfaces — published by Docker: with Docker's iptables management on (the default), the firewalld zone does not filter it (measured on Fedora; see the Docker section)",
     "uncovered_netfilter": "Port {port} listening on all interfaces — governed by the nftables/iptables ruleset (inbound default: refuse; a rule may still allow this port — BOB reads the default policy, not every rule, and does not establish reachability), not a UFW rule"
   },
   "logs": {
@@ -326,15 +328,15 @@
   "docker": {
     "not_installed": "Docker not installed — section skipped",
     "iptables_disabled": "Docker configured with iptables disabled (daemon.json). UFW rules apply normally.",
-    "iptables_bypass": "Docker may bypass UFW rules — iptables is not disabled in daemon.json",
-    "no_containers": "No running Docker containers detected",
+    "iptables_bypass": "Docker may bypass the host firewall (UFW, firewalld) — iptables is not disabled in daemon.json",
+    "no_containers": "No running Docker container publishes a port",
     "no_public_ports": "Running Docker containers detected — no publicly exposed ports",
     "exposed_ports": "Ports exposed by Docker",
-    "iptables_bypass_detail1": "This is an architectural choice, not a simple fix — three options:",
+    "iptables_bypass_detail1": "This is an architectural choice, not a simple fix — two options:",
     "iptables_bypass_detail2": "  1. Disable Docker iptables (advanced): set {\"iptables\": false} in daemon.json — you manage networking yourself",
-    "iptables_bypass_detail3": "  2. Add explicit UFW rules for your container ports (safer, recommended)",
+    "iptables_bypass_detail3": "  2. Keep it: publish a port that should stay on the host on 127.0.0.1 (-p 127.0.0.1:8080:8080), and to limit who reaches a published port, filter in the DOCKER-USER chain of Docker's iptables backend (bob --explain docker.exposed_port) — a host firewall rule does not filter it",
     "iptables_bypass_docs": "  → Read before acting: https://docs.docker.com/network/iptables/",
-    "exposed_bypass_ufw": "bypasses UFW via iptables"
+    "exposed_bypass_ufw": "bypasses the host firewall via iptables"
   },
   "scoring": {
     "score_label": "Security score",
@@ -366,11 +368,11 @@
       "firewall_domain_low": "raised by posture: firewall domain low"
     },
     "breakdown_title": "Score breakdown",
-    "cap_note": "Score capped at {max} (firewall inactive)",
+    "cap_note": "Firewall & Network domain capped at {max}/10 (firewall inactive)",
     "target_label": "Target",
-      "duration_label": "Duration",
-      "duration_seconds": "{seconds} s",
-      "duration_minutes": "{minutes} min {seconds} s",
+    "duration_label": "Duration",
+    "duration_seconds": "{seconds} s",
+    "duration_minutes": "{minutes} min {seconds} s",
     "target_reached": "{target}/10 — target reached",
     "target_unverifiable": "{target}/10 — the score clears it, but it is a ceiling: not verifiable",
     "target_gap": "{target}/10 — +{gap} pt(s) needed"
@@ -508,12 +510,13 @@
     "invalid_days": "No valid day specified",
     "preview": "→ Schedule: {schedule}",
     "prompt_time": "Execution time (HH:MM, default 03:00)",
-    "mta_missing": "No sendmail on this host, so notification emails cannot leave it. Either install an MTA (postfix, or msmtp to relay through an existing mail account) and check it with bob --test-email, or drop the email and use a webhook instead: bob --webhook=URL",
+    "mta_missing": "No sendmail on this host, so notification emails cannot leave it. Either install an MTA (postfix, or msmtp to relay through an existing mail account) and check it with bob --test-email, or drop the email and give the job a webhook: append --webhook URL to the bob line of its script (/usr/local/bin/bob-<name>).",
     "mta_found": "Mail transport: {mta} (sendmail is present). Presence is not delivery — a Postfix installed and never configured passes this test and delivers nothing. Prove it with: bob --test-email",
-    "reports_nobody": "This job will notify nobody: no address was entered, and no webhook is saved in root's config. It will still write its report to the log directory — you would have to go and read it. Add an address, or set a webhook with bob --webhook=URL (as root).",
-    "reports_webhook": "No address entered. The job will report through the webhook saved in root's config — check it now with bob --test-webhook.",
+    "reports_nobody": "This job will notify nobody: no address was entered, and no webhook is saved in root's config. It will still write its report to the log directory — you would have to go and read it. Add an address, or give the job a webhook: append --webhook URL to the bob line of its script (/usr/local/bin/bob-<name>). sudo bob --webhook=URL would save the URL in your own configuration, which this job does not read.",
+    "reports_webhook": "No address entered. The job will report through the webhook saved in root's config (/root/.config/bob/config.conf) — check that URL now with bob --test-webhook --webhook=URL.",
     "reports_webhook_offline": "No address entered, and the webhook saved in root's config will not fire either: you chose an offline audit, which suppresses the POST. As it stands this job will notify nobody. Choose an online audit, or add an address.",
     "no_log_dir": "No log location configured — set it first with: {cmd}",
+    "no_cron_d": "This host has no {path}, the directory BOB writes its cron jobs to (BusyBox crond, on Alpine, reads /etc/crontabs/ instead). No job was installed. To schedule an audit here, add a line running bob --quiet --detailed to root's crontab (sudo crontab -e).",
     "overwrite": "A cron already exists ({path}). Overwrite? [y/N]",
     "script_written": "Script created: {path}",
     "cron_written": "Cron installed: {path}",
@@ -539,7 +542,8 @@
     "network_online": "Enabled — look up the public IP address",
     "network_offline": "Disabled — no HTTP calls (--offline)",
     "invalid_network": "Unrecognised choice",
-    "audit_command": "Scheduled command: {command}"
+    "audit_command": "Scheduled command: {command}",
+    "bob_binary_missing": "The script calls {path}, which does not exist on this host, so every scheduled run would fail. Run sudo ~/.local/bin/bob --install-completion first (it creates /usr/local/bin/bob), then install the job again."
   },
   "manage_cron": {
     "title": "BOB CRON MANAGEMENT",
@@ -608,8 +612,8 @@
     "skipped_unsafe_shell": "unsafe shell syntax in command",
     "auto_mode_banner": "AUTO-FIX MODE — {count} fix(es) will be applied automatically",
     "auto_summary_title": "AUTO-FIX SUMMARY",
-      "count_manual_only": "{count} finding(s) — none automatically fixable",
-      "diagnostic_items_title": "Not automatic — BOB can only show you where to look:",
+    "count_manual_only": "{count} finding(s) — none automatically fixable",
+    "diagnostic_items_title": "Not automatic — BOB can only show you where to look:",
     "manual_items_title": "Manual actions required (no automatic fix available):",
     "done_summary": "{applied} of {total} fix(es) applied.",
     "dry_run_hint": "Dry run — use {cmd} to execute fixes",
@@ -921,8 +925,8 @@
     "swappiness_ok": "swappiness={value} — well tuned for this system",
     "swappiness_ssd_wear": "Swap on SSD with swappiness={value} — unnecessary SSD wear",
     "swappiness_unknown": "vm.swappiness could not be read — swap tuning was not assessed",
-      "swap_zram": "Swap is zram (compressed RAM), swappiness={value} — swapping to it is cheap and by design",
-      "swap_zram_detail": "zram is a compressed block device in RAM, not a disk. There is no SSD wear to avoid, and swapping to it trades a little CPU for more usable RAM — which is the point. The swappiness values that suit a slow disk (lower is better) are inverted here: zram benefits from a high swappiness. BOB reports the value and does not recommend lowering it.",
+    "swap_zram": "Swap is zram (compressed RAM), swappiness={value} — swapping to it is cheap and by design",
+    "swap_zram_detail": "zram is a compressed block device in RAM, not a disk. There is no SSD wear to avoid, and swapping to it trades a little CPU for more usable RAM — which is the point. The swappiness values that suit a slow disk (lower is better) are inverted here: zram benefits from a high swappiness. BOB reports the value and does not recommend lowering it.",
     "swappiness_ssd_detail": "High swappiness on an SSD causes premature wear. Recommended: vm.swappiness={recommended}",
     "swappiness_unjustified": "Swap in use ({swap_pct}%) while {ram_pct}% of RAM is still free — swappiness={value} is too aggressive",
     "swappiness_unjustified_detail": "The kernel is swapping out pages despite available RAM. Lowering swappiness reduces unnecessary I/O. Recommended: vm.swappiness={recommended}",
@@ -994,7 +998,7 @@
       "check_list": "  --check=list shows every available name",
       "skip": "Skip these checks (comma-separated; mutually exclusive with --check)",
       "output_dir": "Save detailed report to PATH (overrides saved config)",
-      "verbose": "Show detailed port exposure for each service",
+      "verbose": "Each finding's detail, command, CIS ref; the listening ports",
       "detailed": "Save full audit report to a log file",
       "quiet": "Suppress all output — use exit code to detect issues",
       "no_color": "Disable colour output (alias --no-colour)",
@@ -1008,7 +1012,7 @@
       "min_level": "Only show findings at or above: warn | alert (run context stays)",
       "fix": "Preview available fixes (dry run — nothing is executed)",
       "apply": "Execute fixes interactively (requires --fix)",
-      "yes": "Auto-confirm all fixes with audit trail (requires --fix --apply)",
+      "yes": "Apply every fix unasked, list them at the end (needs --fix --apply)",
       "webhook": "POST audit result as JSON to URL after audit",
       "webhook_format": "Webhook format: auto (default), generic, or slack",
       "test_email": "Send a real test message through the cron transport and exit",
@@ -1057,7 +1061,8 @@
       "2": "Alerts present — action required",
       "3": "Technical error",
       "4": "--target N missed, or the score could not be fully verified"
-    }
+    },
+    "python_deprecated": "Python {running} is deprecated: BOB supports it until at least {until}, then a BREAKING release will require {next} or later."
   },
   "cli": {
     "list": {
@@ -1074,17 +1079,18 @@
       "added": "Ignored key added: {requested}",
       "added_file": "File: {path}",
       "already_present": "Key already present: {requested}",
-    "unknown_key": "Ignore key '{requested}' matches no finding BOB can emit — it will never suppress anything. Did you mean: {suggestion}",
+      "unknown_key": "Ignore key '{requested}' matches no finding BOB can emit — it will never suppress anything. Did you mean: {suggestion}",
+      "legacy_key": "'{requested}' is a former name that BOB still honours: it suppresses {covered} (their current names).",
       "removed": "Ignored key removed: {requested}",
       "not_present": "Key not present in the ignore list: {requested}"
     },
     "reconfigure": {
-        "nothing": "No saved configuration to reset.",
-        "about_to": "This will delete the saved configuration: {path}",
-        "confirm": "Delete it? [y/N]",
-        "aborted": "Cancelled — nothing was changed.",
-        "done": "Configuration deleted: {path}",
-        "failed": "Could not delete the configuration: {error}"
+      "nothing": "No saved configuration to reset.",
+      "about_to": "This will delete the saved configuration: {path}",
+      "confirm": "Delete it? [y/N]",
+      "aborted": "Cancelled — nothing was changed.",
+      "done": "Configuration deleted: {path}",
+      "failed": "Could not delete the configuration: {error}"
     },
     "baseline": {
       "deleted": "Baseline deleted: {path}",
@@ -1159,7 +1165,7 @@
   },
   "watch": {
     "header": "bob --watch  │  Interval: {interval}s  │  Ctrl+C to quit",
-    "score": "Score {score}/10",
+    "score": "Score {score}",
     "baseline_established": "Baseline established",
     "next_check": "Next check in {interval}s (at {time})",
     "stopped": "Watch mode stopped."
@@ -1190,11 +1196,12 @@
     "kernel_state_unknown_detail": "/proc/sys/net/ipv6 exists but conf/all/disable_ipv6 could not be read, so BOB cannot say whether the IPv6 stack is active. It does not assume either way. The findings below are computed as if IPv6 were enabled, which is the cautious reading. Check with: sysctl net.ipv6.conf.all.disable_ipv6"
   },
   "audit": {
-    "report_unavailable": "Detailed report could not be written to {path} ({error}) \u2014 the audit below is complete, only the file is missing",
+    "report_unavailable": "Detailed report could not be written to {path} ({error}) — the audit below is complete, only the file is missing",
     "section_unavailable": "Section not evaluated ({section}) — an internal error prevented this check from running",
     "starting": "Starting audit",
+    "python_deprecated": "Running on Python {running}, deprecated: BOB supports it until at least {until}, then a BREAKING release will require {next} or later.",
     "audit_profile": "Audit profile: {profile}",
-    "profile_autodetected_desktop": "Desktop environment detected — using the 'desktop' profile (relaxes backup/auditd/mac_policy). Override with --profile server.",
+    "profile_autodetected_desktop": "Desktop environment detected — using the 'desktop' profile (it reports a missing backup, auditd rules, AppArmor without an enforcing profile and SSH password logins as INFO, among others). Override with --profile server.",
     "profile_not_found": "Profile '{profile}' not found — using default (server)",
     "profile_search_blocked": "Profile '{profile}' could not be looked for — {dirs} unreadable — using default (server)",
     "profile_shadow_unchecked": "Profile '{profile}' read from {path} — {dirs} could not be searched and may hold a profile of the same name",
@@ -1220,9 +1227,9 @@
     "config_unreadable_detail": "Every directive below would fall back to OpenSSH's compiled-in default rather than to this host's setting, so a config holding `PermitRootLogin yes` would be reported as restricted. BOB analyses no directive at all instead. Check with: sudo sshd -T",
     "not_installed": "SSH server (sshd) is not installed",
     "not_installed_detail": "If SSH access is needed: {cmd}",
-        "active_unknown": "SSH server state could not be determined",
-    "active_unknown_detail": "systemd did not report a state for the ssh/sshd unit \u2014 `systemctl is-active` returned nothing usable, so the daemon may well be running. BOB withholds the verdict rather than warning that a running sshd is stopped. Check with: systemctl is-active ssh   # 'sshd' on Arch/Fedora/RHEL/openSUSE; on Alpine/OpenRC use rc-service",
-"not_active": "SSH server is installed but not running",
+    "active_unknown": "SSH server state could not be determined",
+    "active_unknown_detail": "systemd did not report a state for the ssh/sshd unit — `systemctl is-active` returned nothing usable, so the daemon may well be running. BOB withholds the verdict rather than warning that a running sshd is stopped. Check with: systemctl is-active ssh   # 'sshd' on Arch/Fedora/RHEL/openSUSE; on Alpine/OpenRC use rc-service",
+    "not_active": "SSH server is installed but not running",
     "not_active_detail": "The service is disabled — enable it if SSH access is needed.",
     "active": "SSH server is active",
     "permit_root_login": "Root login via SSH is permitted (PermitRootLogin = {value})",
@@ -1308,9 +1315,9 @@
     "ssh_host_key_perms_detail": "Host private keys must be readable only by root. Fix: sudo chmod 600 {path}",
     "ssh_host_key_perms_reason": "SSH host key permissions too open: {path}",
     "sudoers_unreadable": "Sudoers rules could not be read",
-    "sudoers_unreadable_detail": "A file under /etc/sudoers or /etc/sudoers.d exists but could not be opened, so BOB skipped it. Any NOPASSWD grant it holds is invisible to this audit \u2014 the \"no risky sudo rule found\" verdict is withheld rather than stated. Check with: sudo visudo -c",
-    "ssh_host_keys_unreadable": "SSH host key permissions could not be checked \u2014 /etc/ssh was not readable",
-    "ssh_host_keys_unreadable_detail": "/etc/ssh exists but BOB was refused entry, so the permissions of the SSH host private keys could not be read. A world-readable host key would be invisible to this audit \u2014 the all-clear on host key permissions is withheld rather than stated. Check with: sudo ls -l /etc/ssh/ssh_host_*_key",
+    "sudoers_unreadable_detail": "A file under /etc/sudoers or /etc/sudoers.d exists but could not be opened, so BOB skipped it. Any NOPASSWD grant it holds is invisible to this audit — the \"no risky sudo rule found\" verdict is withheld rather than stated. Check with: sudo visudo -c",
+    "ssh_host_keys_unreadable": "SSH host key permissions could not be checked — /etc/ssh was not readable",
+    "ssh_host_keys_unreadable_detail": "/etc/ssh exists but BOB was refused entry, so the permissions of the SSH host private keys could not be read. A world-readable host key would be invisible to this audit — the all-clear on host key permissions is withheld rather than stated. Check with: sudo ls -l /etc/ssh/ssh_host_*_key",
     "sudoers_nopasswd_all": "NOPASSWD:ALL in sudoers — unrestricted passwordless sudo: {line}",
     "sudoers_nopasswd_all_empty_group": "NOPASSWD:ALL in sudoers — unrestricted passwordless sudo: {line} (group '{group}' is empty — latent: no members yet, but any user added to it gets instant passwordless root)",
     "sudoers_nopasswd_all_detail": "NOPASSWD:ALL grants full root access without password. Restrict to specific commands if possible.",
@@ -2227,9 +2234,9 @@
     },
     "docker": {
       "iptables_bypass": {
-        "title": "Docker is set to write its own iptables rules (`iptables=true`), bypassing UFW",
-        "why": "Docker's default behaviour is to insert its own ACCEPT rules into the DOCKER and DOCKER-USER chains, evaluated BEFORE UFW's chains. Any container `-p` flag exposes its port directly to the world — UFW deny rules for that port silently do nothing. Operators routinely discover this only when a production database or admin panel is reachable from the public internet despite UFW reporting it as blocked. The mitigation is to either set Docker's `iptables=false` in /etc/docker/daemon.json (and accept that Docker port exposure is now manual) or to bind containers explicitly to 127.0.0.1 / a private interface.",
-        "how": "Pick one approach:\nOption A — keep Docker's iptables management but bind containers to localhost or a specific interface:\n   docker run -p 127.0.0.1:8080:8080 my-app\n   # or via docker-compose:\n   ports:\n     - \"127.0.0.1:8080:8080\"\nOption B — disable Docker's iptables management entirely and write the rules yourself:\n   sudo nano /etc/docker/daemon.json\n   {\"iptables\": false}\n   sudo systemctl restart docker\n   # NOTE: containers will no longer have outbound network until you add NAT rules manually.\nOption C — leave Docker's iptables management on but add explicit UFW rules in the DOCKER-USER chain (more advanced, see Docker docs).",
+        "title": "Docker is set to write its own iptables rules (`iptables=true`), bypassing the host firewall (UFW, firewalld)",
+        "why": "Docker's default behaviour is to insert its own ACCEPT rules into the DOCKER and DOCKER-USER chains, evaluated BEFORE UFW's chains. Any container `-p` flag exposes its port directly to the world — UFW deny rules for that port silently do nothing. Operators routinely discover this only when a production database or admin panel is reachable from the public internet despite UFW reporting it as blocked. On a firewalld host the zones do not stop it either: measured on Fedora 44 (Docker 29.8.2), a published port answered from the LAN while the interface's zone did not allow it, and a host service on a port next to it was refused. The mitigation is to either set Docker's `iptables=false` in /etc/docker/daemon.json (and accept that Docker port exposure is now manual) or to bind containers explicitly to 127.0.0.1 / a private interface.",
+        "how": "Pick one approach:\nOption A — keep Docker's iptables management but bind containers to localhost or a specific interface:\n   docker run -p 127.0.0.1:8080:8080 my-app\n   # or via docker-compose:\n   ports:\n     - \"127.0.0.1:8080:8080\"\nOption B — disable Docker's iptables management entirely and write the rules yourself:\n   sudo nano /etc/docker/daemon.json\n   {\"iptables\": false}\n   sudo systemctl restart docker\n   # NOTE: containers will no longer have outbound network until you add NAT rules manually.\nOption C — leave Docker's iptables management on but add your own iptables rules to the DOCKER-USER chain (more advanced: see docker.exposed_port). That chain belongs to Docker's iptables backend; with its nftables backend there is none (measured on Docker 29.1.3).",
         "server": {
           "why": "On a server, this is one of the most common Docker security incidents — a container intended to be LAN-only ends up internet-exposed. Audit every `docker run -p` or `ports:` declaration and bind to a specific interface (127.0.0.1 or a private IP) unless the container is explicitly meant to be public."
         },
@@ -2241,9 +2248,9 @@
         }
       },
       "exposed_port": {
-        "title": "Docker container exposes a port (UFW is bypassed; still LAN-reachable)",
-        "why": "The container is publishing a port via `-p HOST_PORT:CONTAINER_PORT` or a `ports:` declaration. Because Docker manages iptables (see docker.iptables_bypass), this port is reachable from at least the LAN and possibly the public internet depending on the publish address (default 0.0.0.0 = all interfaces). UFW deny rules for this port have no effect. Whether this is a problem depends on what the container offers: a self-hosted dashboard, a database admin UI, or a redis with no auth are all classic Docker exposure incidents.",
-        "how": "1. Audit what the container exposes:\n   docker ps\n   docker inspect <container> | jq '.[0].NetworkSettings.Ports'\n2. If the service is internal-only, restrict the publish address:\n   docker run -p 127.0.0.1:8080:8080 ...   # localhost only\n   docker run -p 192.168.1.10:8080:8080 ... # specific LAN IP only\n3. If the container must be reachable but only from specific clients, add an iptables rule in the DOCKER-USER chain:\n   sudo iptables -I DOCKER-USER -s <trusted-ip> -j ACCEPT\n   sudo iptables -A DOCKER-USER -j DROP",
+        "title": "Docker container exposes a port (the host firewall is bypassed; LAN-reachable)",
+        "why": "The container is publishing a port via `-p HOST_PORT:CONTAINER_PORT` or a `ports:` declaration. Because Docker manages iptables (see docker.iptables_bypass), this port is reachable from at least the LAN and possibly the public internet depending on the publish address (default 0.0.0.0 = all interfaces). UFW deny rules for this port have no effect, and neither does a firewalld zone that does not allow it (measured on Fedora 44). Whether this is a problem depends on what the container offers: a self-hosted dashboard, a database admin UI, or a redis with no auth are all classic Docker exposure incidents.",
+        "how": "1. Audit what the container exposes:\n   docker ps\n   docker inspect <container> | jq '.[0].NetworkSettings.Ports'\n2. If the service is internal-only, restrict the publish address:\n   docker run -p 127.0.0.1:8080:8080 ...   # localhost only\n   docker run -p 192.168.1.10:8080:8080 ... # specific LAN IP only\n3. If the container must be reachable but only from specific clients, filter in the DOCKER-USER chain (Docker's iptables backend; its nftables backend has none), letting replies to the containers' own connections through first. This DROP hits every new connection the host forwards from that interface, not only Docker's ports: on a host that also routes other networks, narrow it first. Run in this order (-I inserts at the top, so RETURN ends up first):\n   sudo iptables -I DOCKER-USER -i <external-interface> ! -s <trusted-ip> -j DROP\n   sudo iptables -I DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN\n   Measured on Ubuntu 26.04, Docker 29.1.3: other LAN hosts refused, the trusted one answered, the containers kept DNS and internet (their new connections enter from the Docker bridge, not that interface). Without RETURN, or with a bare DROP at the end, they lost both. It stops new connections from other sources; one already established may go on until it closes. Not measured: that, IPv6 (ip6tables has its own DOCKER-USER) and a routing host.",
         "server": {
           "why": "On a server, every exposed Docker port is potentially internet-facing. Treat each `-p` declaration as a public-port decision, not a local-port decision."
         },
@@ -2255,11 +2262,11 @@
         }
       },
       "exposed_bypass_ufw": {
-        "title": "Docker container port is exposed AND Docker iptables management is bypassing UFW",
-        "why": "Two issues combined: the container is publishing a port (`-p`) and Docker is configured to write iptables rules that bypass UFW. The result is that the port is fully reachable on whatever publish address was specified (default 0.0.0.0 = every interface, including the public one), with UFW totally unable to block it. This is the worst-case Docker exposure pattern — visible in the wild every time a developer ships a 'just for testing' container to a public-IP VPS. CVEs in the exposed application are now public-facing.",
-        "how": "Two simultaneous fixes needed:\n1. Restrict the publish address of the offending container:\n   - Stop and recreate the container with -p 127.0.0.1:HOST_PORT:CONTAINER_PORT\n   - Or edit docker-compose.yml: 'ports: [\"127.0.0.1:HOST_PORT:CONTAINER_PORT\"]'\n2. Decide on the Docker / UFW integration (see docker.iptables_bypass for the long form):\n   - Bind explicitly (simpler): keep iptables=true, always specify the publish address\n   - Or disable Docker's iptables (advanced): /etc/docker/daemon.json {\"iptables\": false}\n3. Re-verify with:\n   sudo iptables -L DOCKER-USER -n\n   ss -tlnp | grep <port>",
+        "title": "Docker container port is exposed AND Docker iptables management is bypassing the host firewall",
+        "why": "Two issues combined: the container is publishing a port (`-p`) and Docker is configured to write iptables rules that bypass the host firewall (UFW, or the firewalld zones). The result is that the port is fully reachable on whatever publish address was specified (default 0.0.0.0 = every interface, including the public one), with the host firewall unable to block it. This is the worst-case Docker exposure pattern — visible in the wild every time a developer ships a 'just for testing' container to a public-IP VPS. CVEs in the exposed application are now public-facing.",
+        "how": "Two simultaneous fixes needed:\n1. Restrict the publish address of the offending container:\n   - Stop and recreate the container with -p 127.0.0.1:HOST_PORT:CONTAINER_PORT\n   - Or edit docker-compose.yml: 'ports: [\"127.0.0.1:HOST_PORT:CONTAINER_PORT\"]'\n2. Decide on the Docker / host firewall integration (see docker.iptables_bypass for the long form):\n   - Bind explicitly (simpler): keep iptables=true, always specify the publish address\n   - Or disable Docker's iptables (advanced): /etc/docker/daemon.json {\"iptables\": false}\n3. Re-verify with:\n   sudo iptables -L DOCKER-USER -n\n   ss -tlnp | grep <port>",
         "server": {
-          "why": "On a public-facing server, this combination means a container is internet-exposed despite UFW saying otherwise. Fix immediately — rotate any credentials that may have been exposed."
+          "why": "On a public-facing server, this combination means a container is internet-exposed despite the host firewall saying otherwise. Fix immediately — rotate any credentials that may have been exposed."
         },
         "desktop": {
           "why": "Even behind NAT, this combination exposes the container to the entire local network including untrusted devices on shared Wi-Fi. The fix is the same as on a server."
@@ -2304,7 +2311,7 @@
         "installed_inactive_critical": {
           "title": "A service the registry rates high-risk is installed, stopped and disabled",
           "why": "BOB measured three things: the package is installed, its unit is not running, and it is not enabled at boot. Nothing is listening on its behalf.\n\nThat is reported and not scored. Calling a stopped service an attack vector requires a path BOB cannot see — someone starting it, an upgrade enabling it, a compromise reaching it. Enumerating attacker paths is what BOB says it does not do, so it does not deduct for one. What is measurable is stated; what would have to be assumed is left to you.\n\nIt is still worth knowing. An installed daemon is one systemctl away from listening, and every one of these is high-risk once it does. If you do not use it, removing the package removes the question.",
-          "how": "1. Confirm what BOB measured:\n   systemctl is-active <service> ; systemctl is-enabled <service>\n   sudo ss -tulnp | grep -w <port>\n2. If you do not use this service, remove it rather than leaving it dormant:\n   Debian / Ubuntu / Mint / Kali \u2192  sudo apt purge <package>\n   Fedora / RHEL                 \u2192  sudo dnf remove <package>\n   openSUSE                      \u2192  sudo zypper remove <package>\n   Arch                          \u2192  sudo pacman -Rs <package>\n3. If you do use it, the exposure findings for it apply once it runs — start it deliberately and re-audit:\n   sudo systemctl enable --now <service> && bob\nNote: BOB will not tell you which of the two to pick. Whether this host needs the service is not something the machine can answer.",
+          "how": "1. Confirm what BOB measured:\n   systemctl is-active <service> ; systemctl is-enabled <service>\n   sudo ss -tulnp | grep -w <port>\n2. If you do not use this service, remove it rather than leaving it dormant:\n   Debian / Ubuntu / Mint / Kali →  sudo apt purge <package>\n   Fedora / RHEL                 →  sudo dnf remove <package>\n   openSUSE                      →  sudo zypper remove <package>\n   Arch                          →  sudo pacman -Rs <package>\n3. If you do use it, the exposure findings for it apply once it runs — start it deliberately and re-audit:\n   sudo systemctl enable --now <service> && bob\nNote: BOB will not tell you which of the two to pick. Whether this host needs the service is not something the machine can answer.",
           "server": {
             "why": "On a server, a stopped high-risk daemon is inventory, not exposure. Decide whether it belongs in the image at all: the ones you keep will be audited for real once they run."
           },
@@ -2316,10 +2323,10 @@
           }
         },
         "inactive_enabled": {
-                  "title": "A service set to start at boot is not running",
-                  "why": "Two facts, both read from the service manager: the machine is configured to start this service, and the service is not started.\n\nThat disagreement is the finding. Nothing here says why it happened — a crash, a start that failed on a bad config file, a dependency that never came up, or someone stopping it by hand and not undoing it. From outside they look identical, and every one of them means the service will stay missing until a person looks.\n\nIt is the mirror of *running but not enabled*, which BOB reports beside it: that one loses the service at the next reboot, this one has lost it already. Whether it matters is yours to judge — a service stopped deliberately during maintenance looks exactly the same as one that died.",
-                  "how": "1. Ask the service manager what it says. It usually explains itself:\n   systemd  →  systemctl status <unit> ; journalctl -u <unit> -b\n   OpenRC   →  rc-service <name> status\n2. If it failed to start, fix that before restarting it — a service that dies on boot will die again.\n3. If it should be running, start it and check it stays up:\n   systemd  →  sudo systemctl start <unit>\n   OpenRC   →  sudo rc-service <name> start\n4. If it should not be running, say so, so this stops being a surprise every audit:\n   systemd  →  sudo systemctl disable <unit>\n   OpenRC   →  sudo rc-update del <name> default"
-                }
+          "title": "A service set to start at boot is not running",
+          "why": "Two facts, both read from the service manager: the machine is configured to start this service, and the service is not started.\n\nThat disagreement is the finding. Nothing here says why it happened — a crash, a start that failed on a bad config file, a dependency that never came up, or someone stopping it by hand and not undoing it. From outside they look identical, and every one of them means the service will stay missing until a person looks.\n\nIt is the mirror of *running but not enabled*, which BOB reports beside it: that one loses the service at the next reboot, this one has lost it already. Whether it matters is yours to judge — a service stopped deliberately during maintenance looks exactly the same as one that died.",
+          "how": "1. Ask the service manager what it says. It usually explains itself:\n   systemd  →  systemctl status <unit> ; journalctl -u <unit> -b\n   OpenRC   →  rc-service <name> status\n2. If it failed to start, fix that before restarting it — a service that dies on boot will die again.\n3. If it should be running, start it and check it stays up:\n   systemd  →  sudo systemctl start <unit>\n   OpenRC   →  sudo rc-service <name> start\n4. If it should not be running, say so, so this stops being a surprise every audit:\n   systemd  →  sudo systemctl disable <unit>\n   OpenRC   →  sudo rc-update del <name> default"
+        }
       }
     },
     "rootkit": {
@@ -2626,7 +2633,7 @@
         "why": "Expired accounts may still be usable depending on PAM configuration and the value of INACTIVE in /etc/shadow. More importantly, they indicate accounts that are not actively maintained — forgotten accounts accumulate over time and represent a persistent attack surface if credentials are ever leaked.",
         "how": "1. List expired accounts:\n   sudo chage -l <username>  →  check 'Password expired'\n2. Renew the password if the account is active:\n   sudo passwd <username>\n3. Lock the account if it is no longer in use:\n   sudo passwd -l <username>  # or: sudo usermod -e 1 <username>\n4. Audit all accounts regularly:\n   sudo chage --list <username> for each login user"
       },
-    "no_shadow": {
+      "no_shadow": {
         "title": "/etc/shadow not readable — account security checks incomplete",
         "why": "/etc/shadow stores hashed passwords and account aging data. Without read access, bob cannot verify empty passwords, expiry policies, or UID 0 anomalies. This finding is informational only and means the audit is running without full privilege for account checks.",
         "how": "1. This is not a configuration problem — run the full audit as root:\n   sudo bob\n2. Ensure /etc/shadow has correct permissions (640, root:shadow):\n   sudo chmod 640 /etc/shadow\n   sudo chown root:shadow /etc/shadow"
@@ -2999,7 +3006,7 @@
     },
     "prerequisites": {
       "firewall_missing": {
-        "title": "No active firewall (no UFW, no firewalld, no filtering netfilter ruleset)",
+        "title": "No active firewall (no UFW, no running firewalld, no filtering netfilter ruleset)",
         "why": "Without a host firewall, every listening service on the machine is exposed to whatever network it is connected to. There is no per-service allow/deny policy, no inbound default-deny, and no rule audit trail. On an internet-exposed host this is a critical gap; on a LAN-only host it still leaves the system trivially reachable by any compromised peer. This fires only when BOB found no managed front-end AND the raw netfilter layer was not filtering inbound traffic — a host protected by a plain nftables default-deny ruleset is credited instead, not flagged here.",
         "how": "BOB audits two front-ends and the raw netfilter layer; pick whichever your distribution ships. The finding itself carries the install command built for this host's package manager (ufw on the Debian/Arch/Alpine families, firewalld on Fedora/RHEL/openSUSE).\n\nUFW (Debian, Ubuntu, Arch, Alpine):\n1. Install it:\n   sudo apt install ufw\n2. Safe default policy:\n   sudo ufw default deny incoming\n   sudo ufw default allow outgoing\n3. (If you use SSH) allow it before enabling:\n   sudo ufw allow 22/tcp\n4. Enable:\n   sudo ufw enable\n\nfirewalld (Fedora, RHEL, openSUSE):\n1. Install and enable:\n   sudo dnf install firewalld   # or: sudo zypper install firewalld\n   sudo systemctl enable --now firewalld\n2. Verify:\n   sudo firewall-cmd --state\n\nOr a plain nftables ruleset with a default-deny inbound policy — BOB credits that layer too (audited in the iptables/nftables section)."
       }
@@ -3151,10 +3158,10 @@
         "how": "1. Identify all SUID binaries:\n   find / -perm -4000 -type f 2>/dev/null\n2. For each unexpected binary, investigate its origin:\n   dpkg -S /path/to/binary\n3. Remove the SUID bit if not required:\n   sudo chmod u-s /path/to/binary\n4. If the binary is unknown or suspicious:\n   sha256sum /path/to/binary\n   # Compare with known-good hash from the vendor"
       },
       "unowned_suid": {
-              "title": "A root-owned SUID binary that no package ships",
-              "why": "Every SUID binary a distribution installs is accounted for: the package manager can name what put it there. These cannot be accounted for that way — the manager was asked and answered that no package owns them.\n\nThat is the shape a left-behind privilege escalation takes. A binary owned by root with the setuid bit runs as root for whoever executes it, and one that arrived outside the package system arrived by some other means: an attacker, an installer that bypasses packaging, or a hand-made `chmod u+s`.\n\nIt is not proof of compromise. Locally compiled software, vendor installers and deliberate administrative choices all produce binaries no package owns. BOB cannot tell those apart from the other kind, and does not try — it reports the fact and leaves the judgement where the knowledge is.\n\nA binary whose ownership could not be established is not reported here. Silence from the package manager is not evidence about the file.",
-              "how": "1. Look at each one, and at when it arrived:\n   stat <path>\n2. Ask whether you put it there. Software you built or installed outside the package manager will show up in this list, and belongs there.\n3. If you did not put it there, treat the host as suspect before touching the file — its timestamps are evidence.\n4. If it is yours and the setuid bit is not needed, remove it:\n   sudo chmod u-s <path>\n5. If it is yours and the bit is needed, add the basename to your whitelist so this stays a short list worth reading."
-            },
+        "title": "A root-owned SUID binary that no package ships",
+        "why": "Every SUID binary a distribution installs is accounted for: the package manager can name what put it there. These cannot be accounted for that way — the manager was asked and answered that no package owns them.\n\nThat is the shape a left-behind privilege escalation takes. A binary owned by root with the setuid bit runs as root for whoever executes it, and one that arrived outside the package system arrived by some other means: an attacker, an installer that bypasses packaging, or a hand-made `chmod u+s`.\n\nIt is not proof of compromise. Locally compiled software, vendor installers and deliberate administrative choices all produce binaries no package owns. BOB cannot tell those apart from the other kind, and does not try — it reports the fact and leaves the judgement where the knowledge is.\n\nA binary whose ownership could not be established is not reported here. Silence from the package manager is not evidence about the file.",
+        "how": "1. Look at each one, and at when it arrived:\n   stat <path>\n2. Ask whether you put it there. Software you built or installed outside the package manager will show up in this list, and belongs there.\n3. If you did not put it there, treat the host as suspect before touching the file — its timestamps are evidence.\n4. If it is yours and the setuid bit is not needed, remove it:\n   sudo chmod u-s <path>\n5. If it is yours and the bit is needed, add the basename to your whitelist so this stays a short list worth reading."
+      },
       "writable_suid": {
         "title": "A SUID/SGID binary writable by group or other",
         "why": "A set-id binary runs with elevated privileges — a SUID binary as its file owner (for SUID-root, that is root), a SGID binary with its file group. If the file is also writable by its group or by everyone, anyone with that write access can replace its contents.\n\nWhat they cannot do is keep the privilege: writing the file makes the kernel clear its SUID/SGID bit (and any file capability), so the attacker running the rewritten binary gets only their own rights — measured on Linux 6.12. The escalation is the next run by someone else: root typing `passwd`, a cron job, a service, an administrator using the tool — each runs the attacker's code with their own privileges. For a SUID-root binary that people and jobs run as root, that is a root compromise waiting for its trigger; for a SGID binary, the same path towards whoever runs it.\n\nThe write bit is also evidence: a packaged binary does not become group/other-writable on its own. It is reported even for whitelisted names — an expected binary that has become writable is not safe because its name is expected.",
@@ -3632,8 +3639,8 @@
     "legacy_account": "The default '{user}' account exists and can log in",
     "legacy_account_reason": "A universally known username halves the work of a password attack",
     "legacy_account_detail": "Raspberry Pi OS shipped with a '{user}' account until 2022, and every guide written before then still tells people to use it. The account here has a password set and a login shell, so it is usable. BOB does not test whether the password is still the distribution's historical default — that needs a crypt implementation, and crypt was removed from the Python standard library in 3.13. Check it yourself, and prefer an account whose name an attacker has to discover.",
-    "account_unknown": "Could not read /etc/shadow — the default account's state was not established",
-    "account_unknown_detail": "Whether the '{user}' account can log in is decided by its password field, and /etc/shadow could not be read. Run BOB as root to establish it. Nothing is being claimed either way."
+    "account_unknown": "Could not read /etc/passwd or /etc/shadow — the default account's state was not established",
+    "account_unknown_detail": "Whether the '{user}' account can log in is decided by its login shell (/etc/passwd) and its password field (/etc/shadow), and one of them could not be read. Run BOB as root to establish it. Nothing is being claimed either way."
   },
   "grub": {
     "not_present": "No GRUB bootloader config found — nothing to check here",
@@ -3907,7 +3914,7 @@
   "mac_policy": {
     "apparmor_off_in_kernel": "AppArmor is built into the kernel but not enabled at boot — no profile is enforced",
     "apparmor_off_in_kernel_reason": "No mandatory access control is in force, and starting the service cannot change that",
-    "apparmor_off_in_kernel_detail": "The kernel reports AppArmor as built in but not enabled (/sys/module/apparmor/parameters/enabled is N, and /sys/kernel/security/apparmor does not exist), so no profile is enforced. apparmor.service carries ConditionSecurity=apparmor, so systemd skips it: enabling or starting it changes nothing. Only the kernel command line can: add apparmor=1 security=apparmor to the parameters your bootloader passes — typically GRUB_CMDLINE_LINUX in /etc/default/grub — and reboot. BOB offers no command because it has not measured your bootloader.",
+    "apparmor_off_in_kernel_detail": "The kernel reports AppArmor as built in but not enabled (/sys/module/apparmor/parameters/enabled is N, and /sys/kernel/security/apparmor does not exist), so no profile is enforced. The AppArmor service cannot change that: systemd skips apparmor.service (it carries ConditionSecurity=apparmor), and OpenRC's apparmor service starts without loading anything. Only the kernel command line can: add apparmor=1 security=apparmor to the parameters your bootloader passes — typically GRUB_CMDLINE_LINUX in /etc/default/grub — and reboot. BOB offers no command because it has not measured your bootloader.",
     "apparmor_off_in_kernel_detail_pi": "The kernel reports AppArmor as built in but not enabled (/sys/module/apparmor/parameters/enabled is N, and /sys/kernel/security/apparmor does not exist), so no profile is enforced — this is how the stock Raspberry Pi kernel ships it. apparmor.service carries ConditionSecurity=apparmor, so systemd skips it: enabling or starting it changes nothing. Adding apparmor=1 security=apparmor to cmdline.txt and rebooting enables it. Measured on a Pi Zero W: 121 profiles loaded, 22 in enforce mode. The first boot afterwards took about a minute and a half longer while AppArmor compiled and cached its profiles; the boots after it took the same time as before, about 3 min 15 s from shutdown to SSH. The command keeps cmdline.txt on one line and does nothing if the parameter is already there.",
     "apparmor_ok": "AppArmor enforcing — {enforcing} profile(s) enforce, {complain} complain",
     "apparmor_complain_profiles": "{complain} AppArmor profile(s) in complain mode — violations are logged but not blocked",
@@ -3917,6 +3924,7 @@
     "apparmor_no_enforce_reason": "AppArmor active but no profiles enforcing",
     "apparmor_no_profiles": "AppArmor active but no profiles loaded — the framework is running with nothing to enforce",
     "apparmor_no_profiles_detail": "AppArmor is enabled in the kernel but neither enforce nor complain mode contains any profile. The MAC framework is effectively inert. Install profile packages (apparmor-profiles, apparmor-profiles-extra) and run aa-enforce to put them in enforce mode.",
+    "apparmor_profiles_not_loaded_detail": "AppArmor is live in the kernel and {count} profile file(s) sit in /etc/apparmor.d, but none is loaded: the apparmor service, which loads them at boot, is not running. Installing profile packages would change nothing. Start the service and add it to the boot sequence so the profiles are in place before the services they confine start.",
     "apparmor_no_profiles_reason": "AppArmor active but no profiles loaded",
     "apparmor_inactive": "AppArmor installed but service is not active",
     "apparmor_inactive_detail": "The AppArmor module is present but the service is not running. Without an active MAC framework, exploited processes run with full privileges.",
@@ -3967,7 +3975,7 @@
   "systemd_timers": {
     "no_systemctl": "systemctl not found — cannot audit systemd timers",
     "unreadable": "systemd timers could not be listed",
-    "unreadable_detail": "`systemctl list-timers` failed, so BOB cannot tell whether this host schedules any timer. A failed listing prints nothing, which is indistinguishable from a host with no timers at all \u2014 reported as unknown rather than as \"none\". Check with: systemctl list-timers --all",
+    "unreadable_detail": "`systemctl list-timers` failed, so BOB cannot tell whether this host schedules any timer. A failed listing prints nothing, which is indistinguishable from a host with no timers at all — reported as unknown rather than as \"none\". Check with: systemctl list-timers --all",
     "no_timers": "No active systemd timers found",
     "pipe_to_shell": "{count} systemd timer(s) contain a curl/wget pipe-to-shell in ExecStart",
     "pipe_to_shell_detail": "Timers that download and execute code at runtime are a supply-chain attack vector. Review and rewrite these ExecStart commands: {entries}",
@@ -4001,8 +4009,8 @@
     "seccomp_unknown_detail": "/proc/self/status did not report a Seccomp line. The kernel emits it only when built with CONFIG_SECCOMP, so its absence usually means the kernel has no seccomp support at all — the container's syscalls are unfiltered. BOB does not claim seccomp is active or inactive here, only that it could not read the answer. Check with: grep Seccomp /proc/self/status"
   },
   "socket_units": {
-     "orphan_exposed": "{count} socket unit(s) hold a non-loopback port open while the service behind them is broken",
-     "orphan_exposed_detail": "systemd accepts the connection on that port and then fails to hand it to anything. The port answers, which is enough to appear in a scan and to mislead whoever finds it. Disable the socket unit, or repair the service it triggers.",
+    "orphan_exposed": "{count} socket unit(s) hold a non-loopback port open while the service behind them is broken",
+    "orphan_exposed_detail": "systemd accepts the connection on that port and then fails to hand it to anything. The port answers, which is enough to appear in a scan and to mislead whoever finds it. Disable the socket unit, or repair the service it triggers.",
     "no_tool": "systemctl not available — socket-unit analysis skipped",
     "clean": "All {total} systemd socket unit(s) have a healthy backing service — none orphaned or failed",
     "summary": "{orphans} orphaned + {failed} failed systemd socket unit(s) ({exposed} listening on a non-loopback address)",
@@ -4011,7 +4019,7 @@
     "failed": "Failed socket {name} (listen {addr}{net}) — unit is in failed state (trigger: {trigger})"
   },
   "cloud_context": {
-     "userdata_world_readable_detail": "cloud-init user-data routinely carries passwords, API tokens and SSH keys, and it is written 0600 by default. Group- or world-readable means every local account can read whatever was passed at instance creation.",
+    "userdata_world_readable_detail": "cloud-init user-data routinely carries passwords, API tokens and SSH keys, and it is written 0600 by default. Group- or world-readable means every local account can read whatever was passed at instance creation.",
     "detected": "Detected {provider} cloud instance — auditing host-side cloud exposure",
     "detected_generic": "Cloud instance detected (cloud-init present) — auditing host-side cloud exposure",
     "imds_reachable": "Instance metadata service ({addr}) is reachable on-link",
@@ -4032,7 +4040,7 @@
   },
   "log_rotation": {
     "logrotate_dir_unreadable": "/etc/logrotate.d could not be listed",
-    "logrotate_dir_unreadable_detail": "The rule directory would not open, so BOB cannot tell whether logs are rotated. A directory that will not list counts zero rules, exactly like an empty one \u2014 reported as unknown rather than as \"no rules configured\". Check with: sudo ls /etc/logrotate.d/",
+    "logrotate_dir_unreadable_detail": "The rule directory would not open, so BOB cannot tell whether logs are rotated. A directory that will not list counts zero rules, exactly like an empty one — reported as unknown rather than as \"no rules configured\". Check with: sudo ls /etc/logrotate.d/",
     "journald_conf_unreadable": "journald storage could not be determined",
     "journald_conf_newer_than_service": "journald.conf was modified at {changed}, after systemd-journald last applied its configuration at {applied} — the journald findings below describe the file, not the running journal",
     "journald_conf_unreadable_detail": "/etc/systemd/journald.conf exists but would not open, so Storage= reads as unset. Unset means journald's \"auto\" default, which is persistent when /var/log/journal exists — but a config setting Storage=volatile would look identical here, and its logs are lost on reboot. Check with: sudo grep -i storage /etc/systemd/journald.conf",
@@ -4057,7 +4065,7 @@
     "remote_syslog_none_detail": "Forwarding logs to a remote syslog server (e.g. via rsyslog @@host:514) ensures logs are preserved even if the local system is compromised or wiped. Optional but recommended for servers."
   },
   "exposure": {
-    "ssh_config_unknown": "unknown \u2014 sshd_config could not be read",
+    "ssh_config_unknown": "unknown — sshd_config could not be read",
     "section_title": "ATTACK SURFACE",
     "internet_facing": "Internet-facing",
     "internet_facing_detail": "machine has a direct public IP",
@@ -4070,7 +4078,7 @@
     "firewall_policy_backend": "active ({backend}) — default {policy} incoming",
     "firewall_policy_unread": "active ({backend}) — default inbound policy not read",
     "open_ports": "Listening ports",
-    "open_ports_unknown": "unknown \u2014 `ss` could not be run",
+    "open_ports_unknown": "unknown — `ss` could not be run",
     "no_open_ports": "none on all-interfaces",
     "ssh": "SSH",
     "ssh_not_installed": "not installed",
@@ -4219,7 +4227,7 @@
     "socket_mounted_detail": "Mounting /var/run/docker.sock inside a container grants root-equivalent control over the host. Any process in the container can create new privileged containers or escape the sandbox.",
     "socket_mounted_reason": "{count} container(s) with the runtime control socket mounted",
     "userns_not_configured": "User namespace remapping not configured (userns-remap)",
-    "userns_not_configured_detail": "Without userns-remap, a container process running as UID 0 maps directly to root on the host. Enable userns-remap in /etc/docker/daemon.json to remap container UIDs away from root. The command below only creates the file when it does not exist — if you already have a /etc/docker/daemon.json, do NOT overwrite it: back it up and merge the \"userns-remap\": \"default\" key into it, then restart docker. Once remapping is on, Docker keeps its images and containers under a new directory (/var/lib/docker/<uid>.<gid>): the existing ones no longer appear and must be pulled or re-created (measured on Alpine).",
+    "userns_not_configured_detail": "Without userns-remap, a container process running as UID 0 maps directly to root on the host. Enable userns-remap in /etc/docker/daemon.json to remap container UIDs away from root. The command below only creates the file when it does not exist — if you already have a /etc/docker/daemon.json, do NOT overwrite it: back it up and merge the \"userns-remap\": \"default\" key into it, then restart docker. Once remapping is on, Docker keeps its images and containers under a new directory (/var/lib/docker/<uid>.<gid>): the existing ones no longer appear and must be pulled or re-created (measured on Alpine and Fedora).",
     "userns_configured": "User namespace remapping enabled (userns-remap)",
     "root_containers": "{count} container(s) running as root (UID 0): {containers}",
     "root_containers_detail": "Running containers as root increases the blast radius of a container escape. Set a non-root USER in the Dockerfile or pass --user at runtime.",
@@ -4283,7 +4291,7 @@
     "symlink_failed": "Failed to create symlink: {error}",
     "symlink_skipped_missing": "Symlink skipped — bob not found in ~/.local/bin (pipx install?)",
     "symlink_up_to_date": "Symlink already in place: {dst} → {src}",
-    "symlink_skipped_no_sudo": "Symlink skipped — run via sudo to detect user binary",
+    "symlink_skipped_no_sudo": "Symlink skipped — run via sudo or doas to detect user binary",
     "reload_title": "Not active in this shell yet — the completion is loaded when a shell starts.",
     "reload_how": "Open a new terminal, or run: source /etc/bash_completion.d/bob",
     "enable_hint": "Tip — enable tab-completion (run once): {cmd}",

@@ -98,20 +98,56 @@ class TestExplainFigures:
 
 
 class TestProfileVariantCount:
+    """The sentence names which profile sections exist, and for how many keys.
+
+    It used to say "71 keys × 3 profiles" while two of the 71 had no container
+    section (v0.25.1). The figure was right and the multiplication was not, so
+    the guard reads every number in the sentence and the mix it names. Since
+    v0.25.1 the two keys whose only prose is `container` are rendered too
+    (after the generic text), so they are counted.
+    """
+
     @pytest.mark.parametrize("rel,pattern", [
-        ("DOCUMENTS/README_DEV.md",    r"profile variants \((\d+) keys × 3 profiles\)"),
-        ("DOCUMENTS/README_DEV_FR.md", r"variantes par profil \((\d+) clés × 3 profils\)"),
-    ])
+        ("DOCUMENTS/README_DEV.md",
+         r"per-profile prose for (\d+) keys \(server, desktop and container "
+         r"sections for (\d+) of them, server and desktop for (\d+), "
+         r"container only for (\d+)"),
+        ("DOCUMENTS/README_DEV_FR.md",
+         r"prose par profil pour (\d+) clés \(sections server, desktop et "
+         r"container pour (\d+) d'entre elles, server et desktop pour (\d+), "
+         r"container seule pour (\d+)"),
+    ], ids=["en", "fr"])
     def test_it_matches_the_real_mechanism(self, rel, pattern):
         from bob import i18n
-        from bob.explain import EXPLAIN_KEYS, _has_profile_variants
+        from bob.explain import EXPLAIN_KEYS
         i18n.init("en")
-        real = sum(1 for k in EXPLAIN_KEYS if _has_profile_variants(k, i18n.t))
+
+        def written(key, profile):
+            path = f"explain.{key}.{profile}.why"
+            return i18n.t(path) not in (path, f"[{path}]")
+
+        profiles = ("server", "desktop", "workstation", "container")
+        mixes = {k: tuple(p for p in profiles if written(k, p)) for k in EXPLAIN_KEYS}
+        mixes = {k: m for k, m in mixes.items() if m}
+        named = {("server", "desktop", "container"): 1, ("server", "desktop"): 2, ("container",): 3}
+        unnamed = sorted(k for k, m in mixes.items() if m not in named)
+        assert not unnamed, (
+            f"{unnamed} carry a mix of profile sections the sentence does not name")
+        real = (len(mixes),) + tuple(
+            sum(1 for m in mixes.values() if named[m] == i) for i in (1, 2, 3))
         m = re.search(pattern, _read(rel))
         assert m, f"{rel}: no profile-variant figure matching {pattern!r}"
-        assert int(m.group(1)) == real, (
-            f"{rel} states {m.group(1)} keys with profile variants, "
-            f"the mechanism reports {real}")
+        stated = tuple(int(g) for g in m.groups())
+        assert stated == real, (
+            f"{rel} states {stated} (keys with prose; three sections; server and "
+            f"desktop; container only), the mechanism reports {real}")
+
+    def test_container_only_prose_is_rendered(self, capsys):
+        from bob import i18n
+        from bob.explain import run_explain
+        i18n.init("en")
+        run_explain("hardening.protected_fifos_disabled", i18n.t)
+        assert "Host kernel setting" in capsys.readouterr().out
 
 
 class TestServiceRegistryCount:

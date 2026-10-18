@@ -16,10 +16,11 @@ from datetime import datetime
 from pathlib import Path
 
 from bob._atomic import atomic_write
+from bob._privilege import with_privilege
 from bob._tty import prompt_wizard, safe_input
 from bob.config import _EMAIL_RE  # M-1 (v0.5.5): single source of truth
 
-from ._io import build_script_content
+from ._io import build_script_content, resolve_audit_binary
 from ._options import CRON_LANGS, CRON_PROFILES, build_audit_options, default_dimensions
 from ._parse import (
     CRON_DIR,
@@ -169,7 +170,7 @@ def _run_install_cron_plain(user_config, config, t) -> int:
 
     log_dir_str = user_config.get("log_dir")
     if not log_dir_str:
-        print(f"  ✖ {t('install_cron.no_log_dir', cmd=output.command('sudo bob -d'))}")
+        print(f"  ✖ {t('install_cron.no_log_dir', cmd=output.command(with_privilege('sudo bob -d')))}")
         return 1
     log_dir = Path(log_dir_str)
 
@@ -302,7 +303,7 @@ def _run_install_cron_plain(user_config, config, t) -> int:
     # and cron's bare $LANG — a different audit from the operator's, on the
     # same host. Each dimension is a closed set, pre-selected from the
     # installing session.
-    def_profile, def_lang, def_offline = default_dimensions(config)
+    def_profile, def_lang, def_offline = default_dimensions(config, user_config)
 
     idx = _prompt_choice(
         t, "install_cron.prompt_profile",
@@ -360,9 +361,12 @@ def _run_install_cron_plain(user_config, config, t) -> int:
 
     print()
     print(f"  {t('install_cron.audit_command', command=f'bob --quiet --detailed {audit_options}')}")
+    _bin, _bin_exists = resolve_audit_binary()
+    if not _bin_exists:
+        _print_wrapped(f"⚠ {with_privilege(t('install_cron.bob_binary_missing', path=_bin))}")
 
     _glyph, _key, _kw = describe_reporting(notify_emails, sel_offline)
-    _print_wrapped(f"{_glyph} {t(_key, **_kw)}")
+    _print_wrapped(f"{_glyph} {with_privilege(t(_key, **_kw))}")
 
     # I-1 (v0.6.1): atomic_write on creation paths. v0.5.7 #I-3 closed the
     # mutation path (apply_cron_schedule) but the install paths kept raw
@@ -389,6 +393,11 @@ def _run_install_cron_plain(user_config, config, t) -> int:
         atomic_write(cron_path, cron_content, mode=0o640)
     except OSError as exc:
         print(f"  ✖ Cannot write {cron_path}: {exc}")
+        # v0.25.1: do not leave a script no cron entry will ever run.
+        try:
+            script_path.unlink()
+        except OSError:
+            pass
         return 1
 
     print(f"  ✔ {t('install_cron.cron_written', path=str(cron_path))}")
@@ -412,6 +421,13 @@ class _CronQuit(Exception):
 def run_install_cron(user_config, config, t) -> int:
     """Dispatcher: curses TUI in a TTY, plain text fallback otherwise."""
     import sys as _sys
+    # v0.25.1 — measured on Alpine 3.24: BusyBox crond reads /etc/crontabs/,
+    # there is no /etc/cron.d, and the wizard asked every question, wrote the
+    # script, then failed on the cron file and left the script behind. Refuse
+    # before the first question instead.
+    if not CRON_DIR.is_dir():
+        print(f"  ✖ {with_privilege(t('install_cron.no_cron_d', path=str(CRON_DIR)))}", file=_sys.stderr)
+        return 1
     if not _sys.stdout.isatty():
         return _run_install_cron_plain(user_config, config, t)
     import curses as _curses

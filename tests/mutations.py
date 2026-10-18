@@ -136,8 +136,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="explain/how-to-fix-not-indented",
         file="bob/explain.py",
-        old='            print(_indent(t("explain.ui.how_title")))',
-        new='            print(t("explain.ui.how_title"))',
+        old='            print(_indent(t("explain.ui.how_title")))\n            print(_indent(_DIVIDER_SHORT))\n            print(_how_block(phow))',
+        new='            print(t("explain.ui.how_title"))\n            print(_indent(_DIVIDER_SHORT))\n            print(_how_block(phow))',
         kills=(f"{_EXPLAIN}::TestRunExplainUniform",),
         reason="the remedy would sit flush with the prose above it again",
     ),
@@ -896,12 +896,303 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/locale-key-total-stale",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="locale auto-detect (POSIX), 2928 keys EN/FR",
-        new="locale auto-detect (POSIX), 2927 keys EN/FR",
+        old="locale auto-detect (POSIX), 2936 keys EN/FR",
+        new="locale auto-detect (POSIX), 2935 keys EN/FR",
         kills=(f"{_LIVECOUNT}::test_no_document_misstates_the_locale_key_total",),
         reason="the locale total sat at '2014 keys' against files holding 2595 "
                "because '2014' reads as a year and the sweep's noun set had no "
                "locale entry",
+    ),
+    Mutation(
+        id="docs/profile-prose-mix-overstated",
+        file="DOCUMENTS/README_DEV.md",
+        old="server, desktop and container sections for 69 of them, server and desktop for 2, container only",
+        new="server, desktop and container sections for 71 of them, server and desktop for 2, container only",
+        kills=("tests/test_v0151_doc_prose_figures.py::TestProfileVariantCount"
+               "::test_it_matches_the_real_mechanism[en]",),
+        reason="the module table said 71 keys times 3 profiles while two of "
+               "them had no container section at all",
+    ),
+    Mutation(
+        id="docs/fr-elliptic-section-count-unwatched",
+        file="DOCUMENTS/README_DEV_FR.md",
+        old="pour chaque section (57 filtrables + 10 toujours actives)",
+        new="pour chaque section (56 filtrables + 10 toujours actives)",
+        kills=("tests/test_v0170_doc_counters_sweep.py"
+               "::test_no_counter_in_a_current_state_document_is_stale"
+               "[DOCUMENTS/README_DEV_FR.md]",),
+        reason="the French flow wrote the section count without its noun, and "
+               "the sweep watched only the English elliptic form",
+    ),
+    Mutation(
+        id="docs/dated-line-hides-current-figure",
+        file="tests/_doc_dating.py",
+        old="    return [seg for seg in _SEPARATOR.split(line) if not DATING_MARKER.search(seg)]",
+        new="    return [] if DATING_MARKER.search(line) else [line]",
+        kills=("tests/test_v0251_counter_dating.py::test_a_figure_beside_a_dated_note_is_still_read",),
+        reason="skipping every line that named a release left 218 keys and 61 prefixes "
+               "unread beside a v0.9.0 note while the code held 226 and 62",
+    ),
+    Mutation(
+        id="docs/explain-count-stale-beside-dated-note",
+        file="DOCUMENTS/SNAPSHOT.md",
+        old="`--explain` TUI + `EXPLAIN_KEYS` (226 keys, 62 prefixes) + `EXPLAIN_KEY_ALIASES`",
+        new="`--explain` TUI + `EXPLAIN_KEYS` (226 keys, 61 prefixes) + `EXPLAIN_KEY_ALIASES`",
+        kills=(f"{_SWEEP}::test_no_counter_in_a_current_state_document_is_stale[DOCUMENTS/SNAPSHOT.md]",),
+        reason="a stale prefix count on a SNAPSHOT row that also cites a release "
+               "was invisible to the sweep for several releases",
+    ),
+    Mutation(
+        id="locale/fr-key-order-drifts",
+        file="bob/locales/fr.json",
+        old='    "clean": "Votre configuration est saine. Aucune action requise.",\n    "warnings": "Configuration globalement saine pour ce type de système. Quelques améliorations sont recommandées pour renforcer la robustesse.",\n',
+        new='    "warnings": "Configuration globalement saine pour ce type de système. Quelques améliorations sont recommandées pour renforcer la robustesse.",\n    "clean": "Votre configuration est saine. Aucune action requise.",\n',
+        kills=("tests/test_v0251_locale_key_order.py::test_fr_keys_follow_the_en_order",),
+        reason="a French key appended out of the English order breaks the "
+               "line-by-line comparison 0.25.0 restored, and no guard said so",
+    ),
+    Mutation(
+        id="ignore/legacy-name-called-dead",
+        file="bob/__main__.py",
+        old="        _covered = _legacy_ignore_coverage(config.ignore_key, _known)\n",
+        new="        _covered = []\n",
+        kills=("tests/test_v0251_ignore_legacy_key.py::test_a_former_name_is_reported_as_honoured",),
+        reason="--ignore told the operator a former key name would never suppress "
+               "anything while the engine went on honouring it",
+    ),
+    Mutation(
+        id="locale/cap-note-claims-the-headline",
+        file="bob/locales/en.json",
+        old='"cap_note": "Firewall & Network domain capped at {max}/10 (firewall inactive)",',
+        new='"cap_note": "Score capped at {max} (firewall inactive)",',
+        kills=("tests/test_v0251_cap_note_names_the_domain.py::test_the_note_names_the_domain_in_both_languages",),
+        reason="the breakdown said the score was capped at 3 above a summary "
+               "showing seven out of ten for the same audit",
+    ),
+    Mutation(
+        id="locale/cron-webhook-advice-misses-the-job",
+        file="bob/locales/en.json",
+        old="Add an address, or give the job a webhook: append --webhook URL to the bob line of its script (/usr/local/bin/bob-<name>). sudo bob --webhook=URL would save the URL in your own configuration, which this job does not read.",
+        new="Add an address, or set a webhook with bob --webhook=URL (as root).",
+        kills=("tests/test_v0251_cron_webhook_advice.py::test_the_advice_points_at_the_job_script_not_at_sudo_bob_webhook",),
+        reason="the wizard told a sudo operator to save a webhook in a configuration "
+               "the scheduled root job never reads",
+    ),
+    Mutation(
+        id="cron/saved-profile-not-preselected",
+        file="bob/cron/_options.py",
+        old='    profile = getattr(config, "profile", "") or saved or "server"',
+        new='    profile = getattr(config, "profile", "") or "server"',
+        kills=("tests/test_v0161_cron_audit_options.py::TestSavedProfileIsPreselected::test_the_saved_profile_is_used_when_no_flag_is_given",),
+        reason="an operator who had saved desktop saw the cron profile screen "
+               "open on server and scheduled a stricter audit than their own",
+    ),
+    Mutation(
+        id="cron/script-calls-an-assumed-bob",
+        file="bob/cron/_io.py",
+        old='        if running.name == "bob" and running.exists():\n            return str(running.absolute()), True\n',
+        new='        pass\n',
+        kills=("tests/test_v0251_cron_binary_path.py::test_the_running_bob_is_used_when_path_has_none",),
+        reason="a job installed by the launcher's full path called a /usr/local/bin/bob "
+               "that did not exist and failed on every scheduled run",
+    ),
+    Mutation(
+        id="sysinfo/doas-user-ignored",
+        file="bob/sysinfo.py",
+        old='    for var in ("SUDO_USER", "DOAS_USER"):',
+        new='    for var in ("SUDO_USER",):',
+        kills=("tests/test_v0251_doas_invoking_user.py::test_doas_user_resolves_the_home",),
+        reason="run through doas, BOB kept the operator's settings, ignore list "
+               "and history in root's home and skipped the sudo-path link",
+    ),
+    Mutation(
+        id="webhook/slack-hides-the-ceiling",
+        file="bob/webhook.py",
+        old="    score_display = score_out_of_ten(engine)\n",
+        new='    score_display = f"{engine.score}/10"\n',
+        kills=("tests/test_v0251_slack_and_watch_bound.py::test_slack_shows_the_ceiling",),
+        reason="a Slack channel read a plain eight out of ten for a run that could "
+               "not read part of the host",
+    ),
+    Mutation(
+        id="help/verbose-undersells",
+        file="bob/locales/en.json",
+        old="\"verbose\": \"Each finding's detail, command, CIS ref; the listening ports\",",
+        new="\"verbose\": \"Show detailed port exposure for each service\",",
+        kills=("tests/test_v0251_verbose_help.py::test_the_help_names_the_per_finding_detail",),
+        reason="the help described -v as port detail while it adds the detail, "
+               "command and CIS reference of every finding",
+    ),
+    Mutation(
+        id="explain/container-only-prose-hidden",
+        file="bob/explain.py",
+        old="        for _profile, _pwhy, _phow in _extra_profile_prose(norm, t):\n            print(_profile_header(_profile))\n",
+        new="        for _profile, _pwhy, _phow in []:\n            print(_profile_header(_profile))\n",
+        kills=("tests/test_v0151_doc_prose_figures.py::TestProfileVariantCount::test_container_only_prose_is_rendered",),
+        reason="two container explanations were written and translated and never "
+               "shown, because only the server prose decided the layout",
+    ),
+    Mutation(
+        id="guards/eager-snapshot-guard-blind-to-digits",
+        file="tests/test_v0141_robustness.py",
+        old="""            m = re.match(r'\\s*_sec\\(\\s*"([a-z0-9_]+)",\\s*([a-z_]\\w*)\\s*[,)]', line)""",
+        new="""            m = re.match(r'\\s*_sec\\(\\s*"([a-z_]+)",\\s*([a-z_]\\w*)\\s*[,)]', line)""",
+        kills=("tests/test_v0141_robustness.py::TestSectionFaultBarrier::test_no_sec_call_site_collects_its_snapshot_eagerly",),
+        reason="the eager-snapshot guard never examined ipv6 or fail2ban because "
+               "its section pattern read no digit",
+    ),
+    Mutation(
+        id="locale/autodesktop-notice-overstates",
+        file="bob/locales/en.json",
+        old="(it reports a missing backup, auditd rules, AppArmor without an enforcing profile and SSH password logins as INFO, among others).",
+        new="(relaxes backup/auditd/mac_policy).",
+        kills=("tests/test_v0251_autodesktop_notice.py::test_every_finding_named_is_downgraded_by_desktop_conf",),
+        reason="the notice said the desktop profile relaxed the MAC policy when it "
+               "relaxes one of its seven deductions",
+    ),
+    Mutation(
+        id="raspberry_pi/unreadable-passwd-reads-as-no-account",
+        file="bob/checks/raspberry_pi.py",
+        old="        # same \"not established\" as an unreadable shadow (unknown ≠ clean).\n        return False, False",
+        new="        # same \"not established\" as an unreadable shadow (unknown ≠ clean).\n        return False, True",
+        kills=("tests/test_v0170_raspberry_pi.py::test_an_unreadable_passwd_is_not_established",),
+        reason="an /etc/passwd BOB could not read was reported as a board with no "
+               "default account, a clean verdict from a file never seen",
+    ),
+    Mutation(
+        id="python/310-deprecation-unannounced",
+        file="bob/_python_support.py",
+        old='    (3, 10): ("2027-04-01", "3.11"),   # EoL 2026-10-01 + 6 months',
+        new='',
+        kills=("tests/test_v0251_python310_deprecation.py::test_only_310_is_deprecated",),
+        reason="Python 3.10 passed its end of life with no release announcing the "
+               "deprecation the v0.7.0 ladder promised",
+    ),
+    Mutation(
+        id="cron/install-without-cron-d-not-refused",
+        file="bob/cron/_install.py",
+        old="    if not CRON_DIR.is_dir():\n        print(f\"  ✖ {with_privilege(t('install_cron.no_cron_d', path=str(CRON_DIR)))}\", file=_sys.stderr)\n        return 1\n",
+        new="",
+        kills=("tests/test_v0251_cron_on_busybox_alpine.py::test_no_cron_d_is_refused_before_any_question",),
+        reason="on Alpine the wizard asked every question, wrote the script and then "
+               "failed on an /etc/cron.d BusyBox crond never reads",
+    ),
+    Mutation(
+        id="privilege/finding-prose-keeps-sudo",
+        file="bob/scoring.py",
+        old="        message, detail, note = with_privilege(message), with_privilege(detail), with_privilege(note)\n",
+        new="",
+        kills=("tests/test_v0251_explain_host_prefix.py::test_finding_prose_names_doas_on_a_doas_only_host",),
+        reason="on Alpine a finding's detail kept telling the operator to run sudo "
+               "chmod while its command said doas",
+    ),
+    Mutation(
+        id="privilege/every-text-asks-the-host",
+        file="bob/_privilege.py",
+        old="    if not cmd or not _SUDO_WORD.search(cmd):\n        return cmd\n",
+        new="    if not cmd:\n        return cmd\n",
+        kills=("tests/test_v0251_explain_host_prefix.py::test_a_text_without_sudo_never_asks_the_host",),
+        reason="every finding text resolved the host's prefix, which crashes inside "
+               "the plugin sandbox where os is restricted",
+    ),
+    Mutation(
+        id="mac_policy/unloaded-profiles-read-as-missing",
+        file="bob/checks/mac_policy.py",
+        old="        if snapshot.apparmor_profiles_on_disk and snapshot.apparmor_service_state != \"active\":",
+        new="        if False:",
+        kills=("tests/test_v0251_apparmor_profiles_not_loaded.py::test_unloaded_profiles_ask_for_the_service",),
+        reason="on Alpine the profile files sat in /etc/apparmor.d while the service "
+               "was stopped, and BOB told the operator to install packages already installed",
+    ),
+    Mutation(
+        id="packages/apk-apparmor-profiles-unknown",
+        file="bob/checks/_run.py",
+        old="\"apparmor-profiles\": {\"apt\": \"apparmor-profiles apparmor-profiles-extra\", \"apk\": \"apparmor-profiles\"},",
+        new="\"apparmor-profiles\": {\"apt\": \"apparmor-profiles apparmor-profiles-extra\"},",
+        kills=("tests/test_v0251_apparmor_profiles_not_loaded.py::test_the_apk_package_name_is_known",),
+        reason="apk ships apparmor-profiles under that name yet BOB said it did not know "
+               "the package on Alpine",
+    ),
+    Mutation(
+        id="firewalld-stopped/read-as-absent",
+        file="bob/checks/firewall.py",
+        old="        _fwd_installed = firewalld is not None and firewalld.installed",
+        new="        _fwd_installed = False",
+        kills=("tests/test_v0251_firewalld_stopped.py::TestTheAlert::test_stopped_firewalld_is_named_installed",
+               "tests/test_v0251_firewalld_stopped.py::TestTheAlert::test_the_fix_does_not_install_what_is_there"),
+        reason="on openSUSE with firewalld stopped the alert said firewalld was not installed "
+               "and the fix began by installing it",
+    ),
+    Mutation(
+        id="firewalld-stopped/collection-forgets-the-client",
+        file="bob/checks/_firewalld.py",
+        old="        return cls(active=False, installed=True, readable=True)",
+        new="        return cls(active=False, readable=True)",
+        kills=("tests/test_v0251_firewalld_stopped.py::TestCollection::test_a_stopped_daemon_with_its_client_is_installed",),
+        reason="a stopped firewalld whose client answers not running must still be "
+               "collected as installed",
+    ),
+    Mutation(
+        id="firewalld-stopped/nft-remedy-names-a-missing-file",
+        file="bob/checks/iptables_nftables.py",
+        old="        elif firewalld is not None and firewalld.installed:",
+        new="        elif False:",
+        kills=("tests/test_v0251_firewalld_stopped.py::TestTheNftablesRemedy::test_a_stopped_firewalld_is_the_remedy",),
+        reason="the nftables finding told an openSUSE host to load /etc/nftables.conf, "
+               "a file it does not have, while firewalld sat stopped",
+    ),
+    Mutation(
+        id="docker-firewalld/proxy-port-follows-the-zone",
+        file="bob/checks/ports.py",
+        old='if lport.process == "docker-proxy"',
+        new='if lport.process == "docker-proxy-never"',
+        kills=("tests/test_v0251_docker_beside_firewalld.py::test_a_docker_proxy_port_is_not_said_to_follow_the_zone",),
+        reason="on Fedora a port docker-proxy held answered from the LAN while BOB said "
+               "the firewalld zone governed it",
+    ),
+    Mutation(
+        id="docker-firewalld/no-port-read-as-no-container",
+        file="bob/locales/en.json",
+        old='"no_containers": "No running Docker container publishes a port"',
+        new='"no_containers": "No running Docker containers detected"',
+        kills=("tests/test_v0251_docker_beside_firewalld.py::test_no_published_port_is_not_no_container",),
+        reason="two containers ran with no published port and BOB said no container "
+               "was running",
+    ),
+    Mutation(
+        id="docker-firewalld/three-options-two-listed",
+        file="bob/locales/fr.json",
+        old="pas une correction simple — deux options :",
+        new="pas une correction simple — trois options :",
+        kills=("tests/test_v0251_docker_beside_firewalld.py::test_the_options_announced_are_the_options_listed",),
+        reason="the detail announced three options and listed two, in both languages "
+               "since the finding was written",
+    ),
+    Mutation(
+        id="docker-firewalld/bypass-says-ufw",
+        file="bob/locales/en.json",
+        old='"iptables_bypass": "Docker may bypass the host firewall (UFW, firewalld)',
+        new='"iptables_bypass": "Docker may bypass UFW rules (UFW, firewalld)',
+        kills=("tests/test_v0251_docker_beside_firewalld.py::test_the_bypass_names_the_host_firewall",),
+        reason="on a firewalld host without ufw the warning said Docker bypassed UFW rules",
+    ),
+    Mutation(
+        id="cron/path-bob-before-the-running-one",
+        file="bob/cron/_io.py",
+        old='    import shutil\n    import sys\n    if sys.argv and sys.argv[0]:',
+        new='    import shutil\n    import sys\n    if shutil.which("bob"):\n        return shutil.which("bob"), True\n    if sys.argv and sys.argv[0]:',
+        kills=("tests/test_v0251_cron_binary_path.py::test_the_running_bob_wins_over_another_on_path",),
+        reason="another bob on root's PATH would run the options the installing version "
+               "wrote into the script",
+    ),
+    Mutation(
+        id="docker-firewalld/docker-user-example-cuts-the-containers",
+        file="bob/locales/fr.json",
+        old="   sudo iptables -I DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN\\n   Mesuré",
+        new="   sudo iptables -A DOCKER-USER -j DROP\\n   Mesuré",
+        kills=("tests/test_v0251_docker_beside_firewalld.py::test_the_docker_user_example_keeps_the_containers_network",),
+        reason="the former DOCKER-USER example with a bare DROP cut the containers' DNS "
+               "and internet access, measured on Ubuntu with Docker 29.1.3",
     ),
     Mutation(
         id="docs/cis-kubernetes-count-stale",
@@ -4811,15 +5102,15 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id='privilege/doas-first',
         file='bob/_privilege.py',
-        old='    if shutil.which("sudo"):\n        return "sudo"\n    if shutil.which("doas"):\n        return "doas"\n',
-        new='    if shutil.which("doas"):\n        return "doas"\n    if shutil.which("sudo"):\n        return "sudo"\n',
+        old='        if shutil.which("sudo"):\n            return "sudo"\n        if shutil.which("doas"):\n            return "doas"\n',
+        new='        if shutil.which("doas"):\n            return "doas"\n        if shutil.which("sudo"):\n            return "sudo"\n',
         kills=('tests/test_v0250_privilege_prefix.py::TestWhichPrefix::test_the_prefix',),
         reason='a host with both keeps sudo, as every fix BOB printed so far',
     ),
     Mutation(
         id='privilege/visudo-mangled',
         file='bob/_privilege.py',
-        old='_SUDO_WORD = re.compile(r"(?<![\\w./-])sudo(?=\\s)")',
+        old='_SUDO_WORD = re.compile(r"(?<![\\w./-])sudo(?=\\s|\\)|[.,;:](?!\\w)|$)")',
         new='_SUDO_WORD = re.compile(r"sudo")',
         kills=('tests/test_v0250_privilege_prefix.py::TestTheCommandWords::test_words_that_only_contain_sudo_are_left',),
         reason='visudo and /etc/sudoers are names, not the command word',
@@ -5013,8 +5304,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id='enable-keeps-ssh/nft-bare',
         file='bob/checks/iptables_nftables.py',
-        old='            cmd=_ufw.enable_cmd(ssh_ports, ipv6_off=ufw_ipv6_off) if ufw_installed else',
-        new='            cmd="sudo ufw enable" if ufw_installed else',
+        old='            _nft_no_input_cmd = _ufw.enable_cmd(ssh_ports, ipv6_off=ufw_ipv6_off)',
+        new='            _nft_no_input_cmd = "sudo ufw enable"',
         kills=('tests/test_v0244_enable_keeps_ssh.py::TestEveryEnableKeepsSsh::test_nft_with_no_input_filter',),
         reason='the nft no-input-filter fix enabled ufw bare as well',
     ),
@@ -6294,5 +6585,13 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         new='',
         kills=('tests/test_v0250_kubernetes_node.py::TestWhatWasNotSeen::test_each_blind_spot_counts_as_reduced_visibility',),
         reason='containers left uninspected make the score an upper bound',
+    ),
+    Mutation(
+        id='explain/host-prefix-dropped',
+        file='bob/explain.py',
+        old='    t = _host_texts(t)\n    key = key.strip()\n',
+        new='    key = key.strip()\n',
+        kills=('tests/test_v0251_explain_host_prefix.py::test_doas_only_host_explain_names_doas',),
+        reason='on a doas-only host, --explain would keep telling the operator to run sudo',
     ),
 )

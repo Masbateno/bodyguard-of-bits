@@ -254,7 +254,8 @@ def build_slack_payload(engine: "ScoreEngine", sys_info: "SystemInfo",
     """
     from bob.scoring import FindingLevel
 
-    score_display = f"{engine.score}/10"
+    from bob.scoring import score_out_of_ten
+    score_display = score_out_of_ten(engine)
 
     if engine.alert_count > 0:
         color = _SLACK_COLOR_ALERT

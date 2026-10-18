@@ -21,7 +21,7 @@ Le wizard vous guide en 7 étapes :
    - Certains jours du mois (ex : `1 15` pour le 1er et le 15)
    - Expression cron personnalisée (ex : `0 3 * * 1`)
 3. **Heure** — heure d'exécution au format `HH:MM` (défaut : `03:00`). Non affichée pour les expressions personnalisées.
-4. **Email** — adresse de notification optionnelle. Laissez vide pour désactiver.
+4. **Email** — adresse(s) de notification facultative(s) : choisissez-en dans le carnet d'adresses, saisissez-en une nouvelle, ou `0` pour aucune (voir *Plusieurs emails de notification* plus bas).
 5. **Profil** — `server`, `desktop`, `workstation` ou `container`.
 6. **Langue** — anglais ou français, pour le rapport comme pour l'e-mail de notification.
 7. **Sondes sortantes** — actives, ou désactivées (`--offline`).
@@ -43,9 +43,11 @@ Ce n'était pas qu'une question de cosmétique : le profil décide quels constat
 déduisent, donc le nombre d'avertissements, donc le code de sortie, donc si
 l'e-mail de notification part ou non.
 
-Chacun des trois écrans s'ouvre sur la valeur de la session qui installe le
-cron : `sudo bob -p desktop --french --install-cron` ne demande que trois
-touches. La ligne de commande résultante est affichée avant toute écriture :
+Chacun des trois écrans s'ouvre sur la valeur donnée à la commande qui
+installe le cron — son `-p`, sa langue (`--french` / `--lang`, sinon le `$LANG`
+détecté) et son `--offline` : `sudo bob -p desktop --french --install-cron` ne
+demande que trois touches. Sans `-p`, l'écran du profil s'ouvre sur votre profil
+enregistré (depuis la 0.25.1 ; il s'ouvrait sur `server` avant), sinon sur `server`. La ligne de commande résultante est affichée avant toute écriture :
 
 ```
   Commande programmée : bob --quiet --detailed --profile desktop --french
@@ -62,6 +64,10 @@ Une mise à jour ne touche pas les crons existants — leur script conserve la
 ligne de commande avec laquelle il a été généré. Relancez
 `sudo bob --install-cron` avec le même nom pour en régénérer un.
 
+### Hôtes sans `/etc/cron.d`
+
+BOB écrit ses tâches dans `/etc/cron.d`, le répertoire que lisent cronie, cron et les dérivés de Vixie-cron. BusyBox crond (Alpine) lit `/etc/crontabs/` et n'a pas de `/etc/cron.d` : depuis la 0.25.1, l'assistant y refuse avant la première question et indique d'ajouter une ligne lançant `bob --quiet --detailed` à la crontab de root (`crontab -e` en root). Avant, il posait toutes les questions, écrivait le script, échouait sur le fichier cron et laissait le script derrière lui (mesuré sur Alpine 3.24).
+
 ### Fichiers créés
 
 - `/usr/local/bin/bob-{nom}` — script wrapper
@@ -75,14 +81,29 @@ ligne de commande avec laquelle il a été généré. Relancez
 sudo bob --manage-cron
 ```
 
-Liste tous les crons installés avec leur planning et leur email de notification. Le menu boucle jusqu'à ce que vous quittiez explicitement :
+Liste tous les crons installés avec leur planning et leur email de notification.
+Dans un terminal, c'est un écran curses (les touches communes ci-dessous, plus
+`Entrée` pour modifier un cron, `Espace` / `a` pour en marquer un ou tous, `d`
+pour supprimer les marqués, `m` pour le carnet d'adresses, `l` pour la langue
+et `q` pour quitter) ; quand stdout n'est pas un terminal, c'est le menu texte
+ci-dessous. Les deux bouclent jusqu'à ce que vous quittiez :
 
 ```
   1. nightly              tous les jours à 03:00
      → email: vous@exemple.com
   2. weekly-monday        tous les lundi à 02:00
 
-  Numéro pour modifier, 'e:N' pour l'email, 'd:N' / 'd:1,3' / 'd:1-3' / 'd:all' pour supprimer, 'm' pour le carnet, Entrée pour quitter
+  Gérer vos crons :
+
+    1        modifier le cron n°1
+    e:1      modifier l'email de notification du cron n°1
+    d:1      supprimer le cron n°1
+    d:1,3    supprimer les crons n°1 et n°3
+    d:1-3    supprimer les crons n°1 à n°3
+    d:all    supprimer tous les crons
+    m        gérer le carnet d'adresses email
+
+  Entrée ou 'q' pour quitter.
   >
 ```
 
@@ -103,13 +124,9 @@ Après chaque action, le menu se réaffiche pour enchaîner plusieurs opération
 
 ## Supprimer un cron
 
-Entrez `d:N` pour supprimer un cron, ou utilisez liste, plage ou `all` pour une suppression en lot :
+Dans le menu texte, entrez `d:N` pour supprimer un cron, ou utilisez liste, plage ou `all` pour une suppression en lot :
 
 ```
-  1. nightly              tous les jours à 03:00
-  2. weekly               tous les lundi à 02:00
-
-  Numéro pour modifier, 'e:N' pour l'email, 'd:N' / 'd:1,3' / 'd:1-3' / 'd:all' pour supprimer, 'm' pour le carnet, Entrée pour quitter
   > d:1
   Supprimer le cron 'nightly' ? [y/N] y
   ✔ Cron 'nightly' supprimé
@@ -137,9 +154,19 @@ Le carnet d'adresses (`m`) permet de gérer les adresses de notification enregis
   1. vous@exemple.com
   2. admin@exemple.com
 
-  Numéro à supprimer, '1,3' ou '1-3' pour une sélection, 'all' pour tout supprimer, 'a' pour ajouter, Entrée pour quitter
+  Gérer vos adresses email enregistrées :
+
+    1        supprimer l'adresse n°1
+    1,3      supprimer les adresses n°1 et n°3
+    1-3      supprimer les adresses n°1 à n°3
+    all      supprimer toutes les adresses
+    a        ajouter une nouvelle adresse
+
+  Entrée ou 'q' pour quitter.
   >
 ```
+
+Dans un terminal, le carnet est lui aussi un écran curses : `Espace` / `a` marquent une adresse ou toutes, `n` en ajoute une, `d` supprime les marquées, `Échap` revient en arrière.
 
 | Commande | Action |
 |----------|--------|
@@ -195,7 +222,7 @@ gestionnaire de paquets.
 `--install-cron` détecte votre MTA (Postfix, Exim, msmtp, ssmtp) et dit lequel
 il a trouvé. **Détecter n'est pas délivrer.** Tout ce qu'il établit, c'est
 l'existence d'un binaire `sendmail`, ce à quoi satisfait aussi un Postfix
-installé et jamais pourvu d'un relais, qui jette pourtant chaque message —
+installé et jamais configuré, qui ne délivre pourtant rien —
 voyez la configuration de relais plus bas, c'est elle qui fait réellement
 sortir le courrier de l'hôte.
 
@@ -209,7 +236,7 @@ quand `sendmail` refuse le message. Une sortie zéro signifie que le MTA l'a
 *accepté* — un relais ou un filtre anti-spam peut encore le jeter, vérifiez donc
 la boîte de réception une fois.
 
-La notification est envoyée **uniquement si l'audit détecte des alertes ou des avertissements** (code de sortie > 0). Si votre configuration est saine, vous ne recevez rien.
+La notification est envoyée **uniquement quand l'audit sort en non-zéro** — avertissements, alertes, erreur technique ou `--target` manqué. Si votre configuration est saine, vous ne recevez rien : le silence seul ne prouve donc pas que la route du mail fonctionne, c'est le rôle de `bob --test-email`.
 
 ---
 
@@ -218,7 +245,7 @@ La notification est envoyée **uniquement si l'audit détecte des alertes ou des
 Chaque fichier cron inclut des métadonnées en commentaires pour l'identification. Les emails multiples sont stockés séparés par des virgules :
 
 ```
-# BOB cron — généré par bob --install-cron
+# BOB cron — generated 2026-10-16 by bob --install-cron
 # name: nightly
 # email: admin@exemple.com,securite@exemple.com
 SHELL=/bin/bash
@@ -258,10 +285,11 @@ sudo bob --webhook URL --webhook-format=generic  # force JSON générique
 
 Le message Slack inclut :
 
-- Une ligne d'en-tête avec l'hôte, le score et le niveau de risque
-- Les sous-scores par domaine
-- La liste des constats ALERT et WARN (tronquée à 10 au-delà)
-- Des attachments color-coded (rouge / orange / vert selon le score)
+- Une ligne de synthèse : version de BOB, hôte, score, niveau de risque, et nombre d'alertes et d'avertissements
+- La liste des constats ALERT et WARN, chacun avec son détail, coupée à 2500 caractères (une ellipse marque la coupe)
+- Une pièce jointe colorée : rouge s'il y a une alerte, orange s'il n'y a que des avertissements, vert sinon
+
+Il ne porte aucun score par domaine, et son score est le nombre brut — il n'affiche pas le `≤` d'un score qui n'est qu'un plafond ; l'enveloppe générique ci-dessous a les champs qui le disent.
 
 ### Enveloppe JSON générique
 
@@ -270,32 +298,35 @@ Le payload générique est volontairement minimal et stable :
 ```json
 {
   "source": "bob",
-  "version": "0.21.0",
+  "version": "0.25.0",
   "host": "example.local",
   "timestamp": "2026-06-11T18:42:01+00:00",
   "score": 8,
+  "score_is_upper_bound": false,
+  "score_low": 8,
+  "score_high": 8,
+  "unscored_domains": [],
+  "unverified": [],
   "max_score": 10,
   "risk": "low",
   "alerts": 1,
   "warnings": 2,
   "profile": "server",
   "degraded_sections": [],
-  "score_is_upper_bound": false,
-  "unverified": [],
-  "domain_scores": {"ssh": 8, "firewall": 10},
+  "domain_scores": {"firewall_network": 10, "exposure_services": 9, "access_control": 7, "system_hardening": 8, "health_resilience": 9, "detection": 8},
   "findings": [
-    {"level": "ALERT", "key": "ssh.permit_root_login", "message": "Connexion root autorisée via SSH", "detail": "", "note": ""}
+    {"level": "ALERT", "key": "ssh.permit_root_login", "message": "Connexion root autorisée via SSH", "qualified_by": [], "detail": "", "note": ""}
   ]
 }
 ```
 
-Cette enveloppe générique a son **propre** contrat plat (distinct du schéma d'audit `bob --json`) : clés top-level `source`/`max_score`/`timestamp` et une map plate `domain_scores` de `{domaine: score}`. `alerts` et `warnings` sont des **compteurs (entiers)** ; le tableau `findings` énumère toujours les constats de niveau ALERT et WARN (chacun avec `level`/`key`/`message`/`detail`/`note`). `risk` est le niveau **effectif** (avec escalade de posture), en minuscules (`"low"` / `"medium"` / `"high"` / `"critical"`). Note : le webhook garde les noms `alerts`/`warnings` — seul le schéma d'audit `bob --json` les a renommés en `alert_count`/`warning_count` en v0.12.0 (F9).
+Cette enveloppe générique a son **propre** contrat plat (distinct du schéma d'audit `bob --json`) : clés top-level `source`/`max_score`/`timestamp` et une map plate `domain_scores` de `{domaine: score}` sur les six clés de domaine. `alerts` et `warnings` sont des **compteurs (entiers)** ; le tableau `findings` énumère toujours les constats de niveau ALERT et WARN (chacun avec `level`/`key`/`message`/`qualified_by`/`detail`/`note`). `risk` est le niveau **effectif** (avec escalade de posture), en minuscules (`"low"` / `"medium"` / `"high"` / `"critical"`). Note : le webhook garde les noms `alerts`/`warnings` — seul le schéma d'audit `bob --json` les a renommés en `alert_count`/`warning_count` en v0.12.0 (F9).
 
-**Deux champs ajoutés en v0.14.1**, tous deux additifs — les récepteurs existants ne sont pas affectés :
+**Champs ajoutés depuis la v0.14.1**, tous additifs — les récepteurs existants ne sont pas affectés :
 
   - **`profile`** — le profil d'audit qui a produit ces chiffres. Depuis la v0.14.0 le profil change les sévérités des constats, `warnings` et donc le code de sortie : deux payloads du même hôte peuvent légitimement diverger, et sans ce champ rien ne l'explique. À utiliser pour regrouper ou comparer des hôtes.
-  - **`degraded_sections`** — les sections dont le check a levé une exception et qui ont été dégradées sur place au lieu d'interrompre l'audit (liste vide sur une exécution saine). **C'est le champ sur lequel alerter.** Un récepteur voyant `score: 9, alerts: 0` ne peut pas distinguer autrement un hôte sain d'un hôte où deux sections n'ont jamais tourné ; le code de sortie reste délibérément piloté par les constats réels, donc l'incomplétude n'est visible qu'ici (et via les constats INFO `<section>.unavailable`, que l'enveloppe générique n'énumère pas — elle ne porte que les ALERT et WARN).
-  - **`score_is_upper_bound`** — vrai quand un check n'a pas pu lire son entrée. Les déductions qu'il n'a pas faites sont **inconnues, pas nulles**, donc `score` est un plafond. Un audit lancé sans les privilèges nécessaires affiche un score *plus élevé* qu'un audit complet : une règle de supervision portant sur `score` seul peut donc passer au vert sur une exécution plus aveugle. **`unverified`** liste les clés de constat qui l'expliquent. Depuis la v0.16.0, `--target N` échoue aussi fermé sur un score borné : un portail ne peut pas être satisfait par un plafond.
+  - **`degraded_sections`** — les sections dont le check a levé une exception et qui ont été dégradées sur place au lieu d'interrompre l'audit (liste vide sur une exécution saine). **C'est le champ sur lequel alerter.** Un récepteur voyant `score: 9, alerts: 0` ne peut pas distinguer autrement un hôte sain d'un hôte où deux sections n'ont jamais tourné ; le code de sortie reste délibérément piloté par les constats réels (sauf avec `--target`), donc un récepteur voit l'incomplétude ici — les constats INFO `<section>.unavailable` ne figurent pas dans l'enveloppe, qui ne porte que les ALERT et WARN.
+  - **`score_is_upper_bound`** — vrai quand un check n'a pas pu lire son entrée. Les déductions qu'il n'a pas faites sont **inconnues, pas nulles**, donc `score` est un plafond. Un audit lancé sans les privilèges nécessaires affiche un score *plus élevé* qu'un audit complet : une règle de supervision portant sur `score` seul peut donc passer au vert sur une exécution plus aveugle. **`unverified`** liste les clés de constat qui l'expliquent, et (v0.16.2) `score_low` / `score_high` encadrent le vrai score tandis que `unscored_domains` nomme les domaines que l'aveuglement a retirés de la moyenne. Depuis la v0.16.0, `--target N` échoue aussi fermé sur un score borné : un portail ne peut pas être satisfait par un plafond.
 
 Une règle de supervision raisonnable est donc « alerter sur `alerts > 0`, et avertir séparément dès que `degraded_sections` est non vide » — la seconde condition signifie que c'est l'audit lui-même qui est en mauvaise santé, pas l'hôte.
 
@@ -308,13 +339,15 @@ Une règle de supervision raisonnable est donc « alerter sur `alerts > 0`, et a
 
 ### Combinaison avec cron
 
-Le script wrapper cron généré par `--install-cron` n'inclut actuellement pas de flag `--webhook`. Pour lancer un audit planifié avec livraison webhook, éditer le wrapper généré à `/usr/local/bin/bob-{name}` et ajouter le flag à l'invocation `bob` :
+Le script wrapper cron généré par `--install-cron` n'inclut pas de flag `--webhook`. Un audit programmé tourne en root et déclenche le webhook enregistré dans la configuration de **root** (`/root/.config/bob/config.conf`) ; `sudo bob --webhook=URL` ne l'y met pas — sous `sudo`, BOB enregistre l'URL dans la configuration de l'utilisateur qui l'a lancé. Le moyen direct est d'éditer le wrapper généré à `/usr/local/bin/bob-{name}` et d'ajouter le flag à l'invocation `bob` :
 
 ```bash
 sudo nano /usr/local/bin/bob-nightly
-# remplacer :  /usr/local/bin/bob ... -d
-# par :        /usr/local/bin/bob ... -d --webhook https://hooks.slack.com/...
+# remplacer :  /usr/local/bin/bob --quiet --detailed --profile server --english
+# par :        /usr/local/bin/bob --quiet --detailed --profile server --english --webhook https://hooks.slack.com/...
 ```
+
+Relancer `--install-cron` avec le même nom régénère le script et efface la modification.
 
 ---
 
@@ -330,7 +363,7 @@ Relance l'audit toutes les `N` secondes jusqu'à interruption avec `Ctrl-C` :
 sudo bob --watch=60
 ```
 
-Chaque passe redessine le terminal sur place. Les deltas de score (vs la passe précédente) sont mis en évidence pour que les changements soient faciles à repérer. Cas d'usage :
+Chaque passe affiche une ligne — heure, score, barre de score et niveau de risque — puis *Aucun changement détecté depuis le dernier audit* ou les constats apparus ou résolus depuis la passe précédente, puis l'heure de la passe suivante ; la première passe ne fait que fixer le point de comparaison. La sortie défile ; rien n'est redessiné sur place. L'intervalle est d'au moins 10 s. Cas d'usage :
 
 - Observer un changement de durcissement prendre effet (`sudo sysctl -w ...` → la passe suivante voit le WARN disparaître)
 - Démontrer l'audit en live en réunion
@@ -346,7 +379,7 @@ Compare l'audit courant au précédent et n'affiche que le delta :
 sudo bob --diff
 ```
 
-Après les lignes de score et de compteurs, une ligne par clé ALERT/WARN apparue ou résolue :
+Après les lignes de score et de compteurs, une ligne par clé ALERT/WARN apparue ou résolue — ou qui n'a pas pu être comparée parce que sa section n'a pas été lue cette fois (*Non réévalué*) :
 
 ```
 ⚠ [ATTENTION] Nouveau constat : clamav.scan_old
@@ -412,7 +445,7 @@ Dans un terminal interactif, une interface TUI curses s'ouvre. Un mode texte de 
 
 ### Mode TUI (terminal interactif)
 
-L'interface à curseur affiche tous les rapports avec leur date, taille et score. Un graphique d'historique des scores est affiché en haut.
+Elle s'ouvre sur un **sélecteur de dossiers** : le répertoire de rapports courant et chaque répertoire antérieur que BOB suit encore, chacun avec ce qu'il contient. `Entrée` parcourt un dossier, `c` change (ou ajoute) le répertoire où vont les nouveaux rapports, `d` oublie un dossier suivi (ses fichiers sont conservés). Dans un dossier, la liste montre chaque rapport avec sa date, sa taille et son score, sous un graphique d'historique des scores.
 
 **Le socle commun** — depuis la v0.16.3, tous les écrans curses de BOB
 acceptent la même navigation, et un **bandeau orange** en bas d'écran énumère
@@ -449,7 +482,7 @@ atterrir dans un assistant anglais sans l'avoir choisi. L'indication nomme la
 langue vers laquelle on va — `l Français` en anglais, `l English` en français —
 et tout l'écran bascule à chaud.
 
-**Ce que cet écran ajoute :**
+**Ce que la liste des rapports ajoute** (elle est imbriquée : `Échap` revient au sélecteur de dossiers) :
 
 | Touche | Action |
 |--------|--------|
@@ -457,7 +490,6 @@ et tout l'écran bascule à chaud.
 | `a` | Marquer tous les rapports |
 | `d` | Supprimer les rapports marqués (confirmation requise) |
 | `u` | Démarquer tout — affiché seulement une fois quelque chose de marqué |
-| `c` | Changer l'emplacement de stockage |
 
 ### Visualiseur de rapport
 
@@ -495,7 +527,7 @@ Déplacer 28 rapport(s) vers le nouvel emplacement ? [y/N]
 
 ### Vue multi-répertoires
 
-Si vous avez changé l'emplacement sans déplacer les rapports, tous les répertoires connus sont affichés ensemble dans une liste unifiée :
+Dans le mode texte de repli, si vous avez changé l'emplacement sans déplacer les rapports, tous les répertoires connus sont affichés ensemble dans une liste unifiée (l'écran curses les montre plutôt comme dossiers dans son sélecteur) :
 
 ```
   Rapports dans : /var/log/bob-audits  [actuel]
@@ -529,7 +561,7 @@ Pendant l'installation, un wizard interactif s'affiche :
 
 ### Étape 2 — Configurer un relais SMTP
 
-Postfix ne peut pas envoyer directement sur internet depuis un desktop ou un serveur domestique (les FAI bloquent le port 25). Il faut passer par un fournisseur SMTP externe.
+Un desktop ou un serveur domestique ne peut généralement pas envoyer directement sur internet : beaucoup de FAI bloquent le port 25 en sortie. Passez par un fournisseur SMTP externe.
 
 **Exemple avec Mailo :**
 
@@ -626,7 +658,7 @@ Pour Gmail, assurez-vous d'utiliser un **App Password** et non votre mot de pass
 
 ### Notes techniques
 
-- Le script généré exporte automatiquement `PYTHONPATH` pour les imports Python
+- Le script généré n'exporte `PYTHONPATH` que lorsque le paquet `bob` ne peut pas être importé sans lui (installation hors pip ; depuis la v0.16.2)
 - L'enveloppe SMTP utilise `sendmail -t -f` pour contrôler l'adresse d'expéditeur
 - Pas de dépendances externes (HTML généré en pur Python)
 

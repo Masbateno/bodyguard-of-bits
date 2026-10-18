@@ -41,7 +41,7 @@ _bob() {
     fi
 
     # Authoritative list of filterable sections — keep in sync with
-    # bob/runner.py::_ALL_SECTIONS (38 entries; matches `bob --check=list`).
+    # bob/runner.py::_ALL_SECTIONS (`bob --check=list` prints the same names).
     # Core checks (firewall, ports, services, logs) always run and are
     # intentionally absent from this list.
     local _SECTIONS="auditd auth_log backup clamav cloud_context container_security core_dumps cpu_security cron crypto_policy cups desktop_apps dev_privileged disk disk_encryption docker_hardening fail2ban faillock file_capabilities file_integrity file_perms firewall_iptables firmware grub hardening ipv6 kernel_hardening kernel_modules kexec_lockdown kubernetes log_rotation mac_policy memory module_blacklist mount_hardening ntp package_authenticity package_integrity password_policy polkit raspberry_pi root_path rootkit samba secure_boot services_health smtp socket_units ssh ssl_certs suid_audit systemd_hardening systemd_timers umask updates user_accounts world_writable"

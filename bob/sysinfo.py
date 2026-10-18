@@ -23,9 +23,29 @@ _log = logging.getLogger(__name__)
 # User home
 # ---------------------------------------------------------------------------
 
+_USER_NAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{1,256}$")
+
+
+def invoking_user_name() -> str:
+    """The account behind ``sudo`` or ``doas``, as the elevating tool names it.
+
+    ``sudo`` sets ``SUDO_USER``; OpenBSD doas and OpenDoas (Alpine's doas) set
+    ``DOAS_USER``. v0.25.1: until then only ``SUDO_USER`` was read, so a run
+    through doas kept its settings, ignore list, baseline and history in
+    root's home and ``--install-completion`` skipped the ``/usr/local/bin``
+    link. A value of the wrong shape is ignored, and every caller still checks
+    it against the password database before using it.
+    """
+    for var in ("SUDO_USER", "DOAS_USER"):
+        value = os.environ.get(var, "")
+        if value and _USER_NAME_RE.match(value):
+            return value
+    return ""
+
+
 def get_user_home() -> Path:
-    """Return the real user home directory, respecting SUDO_USER."""
-    sudo_user = os.environ.get("SUDO_USER", "")
+    """Return the real user home directory, respecting SUDO_USER / DOAS_USER."""
+    sudo_user = invoking_user_name()
     if sudo_user and re.match(r"^[a-zA-Z0-9_.-]{1,256}$", sudo_user):
         import pwd
         try:
@@ -43,8 +63,8 @@ def chown_fd_to_sudo_user(fd: int) -> None:
     chown. Operating on the descriptor the caller already holds removes both
     problems — it is the same object that was opened under ``O_NOFOLLOW``.
     """
-    sudo_user = os.environ.get("SUDO_USER", "")
-    if not sudo_user or not re.match(r"^[a-zA-Z0-9_.-]{1,256}$", sudo_user):
+    sudo_user = invoking_user_name()
+    if not sudo_user:
         return
     try:
         import pwd
@@ -62,8 +82,8 @@ def chown_to_sudo_user(path: Path) -> None:
     (the call needs root privileges). Used after creating user-config files/directories
     so the real user can still read/edit them in non-sudo sessions.
     """
-    sudo_user = os.environ.get("SUDO_USER", "")
-    if not sudo_user or not re.match(r"^[a-zA-Z0-9_.-]{1,256}$", sudo_user):
+    sudo_user = invoking_user_name()
+    if not sudo_user:
         return
     try:
         import pwd
@@ -102,8 +122,8 @@ def audit_user() -> str:
     """
     import pwd  # local, as in get_user_home above — the module is POSIX-only
 
-    sudo_user = os.environ.get("SUDO_USER", "")
-    if sudo_user and re.match(r"^[a-zA-Z0-9_.-]{1,256}$", sudo_user):
+    sudo_user = invoking_user_name()
+    if sudo_user:
         try:
             pwd.getpwnam(sudo_user)
             return sudo_user

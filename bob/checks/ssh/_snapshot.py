@@ -296,7 +296,8 @@ class SSHSnapshot:
                 _apply_config_drift(snap, seen, _resolved_unit)
 
         # --- resolve the real user behind sudo ---
-        sudo_user = os.environ.get("SUDO_USER", "")
+        from bob.sysinfo import invoking_user_name
+        sudo_user = invoking_user_name()   # sudo or (v0.25.1) doas
         snap.sudo_user = sudo_user
         if sudo_user:
             try:

@@ -321,3 +321,23 @@ class TestCursesWizardCarriesTheOptions:
                 "curses build_script_content call dropped the audit options — "
                 "the scheduled audit would silently revert to root's profile"
             )
+
+
+class TestSavedProfileIsPreselected:
+    """v0.25.1 — the saved profile pre-selects the wizard's profile screen."""
+
+    class _UC:
+        def __init__(self, profile):
+            self._p = profile
+
+        def get_profile(self):
+            return self._p
+
+    def test_the_saved_profile_is_used_when_no_flag_is_given(self):
+        assert default_dimensions(_Cfg("", "en", False), self._UC("desktop"))[0] == "desktop"
+
+    def test_an_explicit_flag_still_wins(self):
+        assert default_dimensions(_Cfg("container", "en", False), self._UC("desktop"))[0] == "container"
+
+    def test_an_unknown_saved_profile_falls_back_to_server(self):
+        assert default_dimensions(_Cfg("", "en", False), self._UC("bogus"))[0] == "server"

@@ -78,10 +78,14 @@ opérateur Fedora) n'est pas une remédiation.
 ### 7. Le score est une borne supérieure
 
 Le score reflète ce que BOB a pu **voir**. Quand un check est aveuglé — un fichier
-qu'il ne peut lire, une section qui échoue — le score ne monte pas pour combler le
-trou ; l'incertitude est portée dans le résultat (`score_is_upper_bound`), et
-aveugler un check peut *baisser* le score, jamais le monter. Un score élevé sur un
-système à moitié lu est un mensonge que BOB refuse de dire.
+qu'il ne peut lire, une section qui échoue — les déductions qu'il n'a pas pu faire
+sont inconnues, pas nulles : le nombre est donc affiché comme le plafond qu'il est
+(`≤ N/10`, `score_is_upper_bound`) ; mesuré en v0.16.0, masquer `sshd_config` a
+retiré quatre déductions et fait passer le nombre brut de 7 à 8. Quand
+l'aveuglement retire un domaine entier de la moyenne, le nombre peut bouger dans
+les deux sens, et BOB donne alors l'intervalle (`score_low` / `score_high`). Un score
+élevé sur un système à moitié lu est un mensonge que BOB refuse de dire, et
+`--target` échoue fermé dessus.
 
 ### 8. Un verdict reproductible, indépendant du contexte de lancement
 
@@ -96,19 +100,24 @@ l'environnement n'est pas une mesure de l'hôte.
 
 Pour tout ce qui est risqué ou difficile à annuler — piles PAM, `fstab`, chiffrement
 de disque, un binaire set-id root modifiable par autrui — BOB **décrit** le correctif
-et ne l'applique jamais. L'auto-application native (`--fix --apply`) est réservée aux
-changements sûrs, réversibles et vérifiables, et elle ne prétend jamais à une
-réussite qu'elle n'a pas confirmée. Un symptôme de compromission est à enquêter
+et ne l'applique jamais. `--fix --apply` n'exécute que les commandes qu'il peut lancer
+sans surveillance (aucun opérateur shell, aucun éditeur), une par une, après
+confirmation ou sous `-y` ; la voie native des sysctl relit la valeur avant de dire
+*appliqué*, tandis qu'une commande est dite appliquée sur son propre code de retour
+— c'est l'audit suivant qui montre le constat disparu. Un symptôme de compromission est à enquêter
 avant de retourner un bit, pas un bit à retourner.
 
 ### 10. BOB ne téléphone pas à la maison
 
-Un outil de sécurité qui exfiltre est une contradiction. BOB tourne **sans télémétrie
-et sans trafic sortant** par défaut ; les seuls appels réseau qu'il fait sont une
-résolution d'IP publique et, si l'opérateur en a configuré un, un webhook de résultat
-— tous deux coupés par `--offline`, une garantie globale dure sur laquelle reposent
-les sandboxes de build air-gap. Ce que BOB lit de l'hôte reste sur l'hôte, dans le
-répertoire de rapports de l'opérateur.
+Un outil de sécurité qui exfiltre est une contradiction. BOB n'envoie **aucune
+télémétrie**. Ses seuls appels sortants sont la recherche d'IP publique qui classe le
+contexte réseau (active par défaut ; `api.ipify.org`, puis `ifconfig.me`, puis
+`icanhazip.com`) et, si l'opérateur en a configuré un, un webhook de résultat — tous
+deux coupés par `--offline`, une garantie globale dure sur laquelle reposent les
+sandboxes de build air-gap. Les sondes de services locaux (le kubelet sur
+`127.0.0.1`) restent sur l'hôte. Ce que BOB lit de l'hôte reste sur l'hôte, dans le
+répertoire de rapports de l'opérateur, sauf si l'opérateur l'envoie par webhook ou
+par e-mail.
 
 ### 11. Un check bruyant est pire que pas de check
 
@@ -189,9 +198,10 @@ recommande un check qui serait du bruit, est déclinée et le raisonnement conse
 
 ### 20. La documentation est auditée comme le code
 
-Chaque affirmation chiffrable de la doc (compteurs de clés, de sections, totaux
-locale) est épinglée par une garde, car un nombre gelé est un mensonge qui attend de
-se produire. La justesse documentaire suit la même règle que l'audit lui-même
+Les affirmations chiffrables de la doc (compteurs de clés, de sections, totaux
+locale) sont épinglées par des gardes partout où une machine peut les lire, car un
+nombre gelé est un mensonge qui attend de se produire — et celles que les gardes
+n'atteignent pas sont ce que la passe de conformité documentaire remesure. La justesse documentaire suit la même règle que l'audit lui-même
 (principe 1) : n'affirmer que le mesurable, et laisser une machine attraper la
 dérive.
 

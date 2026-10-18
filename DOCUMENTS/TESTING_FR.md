@@ -13,6 +13,7 @@ Deux parties complémentaires :
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| 0.25.1 | 14021 | **Correctif — ce que l'hôte a : doas, le cron d'Alpine, AppArmor sous OpenRC, un firewalld arrêté, Docker à côté de firewalld.** `test_v0251_*.py` (16 fichiers) : doas dans les textes et `DOAS_USER` (`test_v0251_doas_invoking_user.py`, `test_v0251_explain_host_prefix.py`), le cron sans `/etc/cron.d`, le `bob` du script et le conseil webhook, des profils AppArmor non chargés, un firewalld arrêté, Docker à côté de firewalld, l'avis Python 3.10, la datation des compteurs par segment et l'ordre des clés EN/FR. |
 | 0.25.0 | 13828 | **Mineur — un nœud Kubernetes audité, les données à côté d'une racine chiffrée, et des correctifs qui s'exécutent tels qu'écrits sur l'hôte.** `test_v0250_*.py` : les verbes et endpoints du kubelet (`test_v0250_kubernetes_node.py`), le chiffrement au-delà de `/`, les correctifs CUPS, Docker, chrony et AppArmor selon l'init, la fenêtre hors ligne de firewalld, la taille des locales. |
 | 0.24.4 | 13306 | **Correctif — une campagne de terrain : vingt défauts dans les contrôles de services et dans les corrections qu'imprime BOB, chacun mesuré puis rejoué.** `test_v0244_enable_keeps_ssh.py` (l'autorisation avant chaque enable ; les ports sur lesquels sshd répond — non standard, loopback, activation par socket via `systemctl show -p Listen`, écoutes illisibles ou sans nom qui ne donnent aucune commande, dropbear ; un chemin SSH IPv6 sous `IPV6=no` ; la branche firewalld, sa commande imprimée exécutée contre un `firewall-cmd` de substitution qui répond pour chaque zone active, la fenêtre de démarrage dite ; `enable-keeps-ssh/*`) ; `test_v0244_default_deny_keeps_ssh.py` (la chaîne qu'utilise chaque hook — celle d'iptables-nft telle que nft la nomme sur stderr, nftables natif, aucune ; chaque chaîne de base IPv4 du hook, une règle qui accepte tout, une chaîne ip6 ; accept ajoutés après les règles déjà présentes, ICMPv6 pour inet/ip6, aucune commande derrière une règle qui accepte tout ou avec des ports inconnus ; l'entrée explain ; ufw là où il est installé ; détails « en cours seulement » et « pas de promesse SSH » ; jamais sans surveillance ; `default-deny/*`) ; `test_v0244_sysctl_durable.py` (les fichiers de démarrage lus comme systemd-sysctl, le fichier qui l'emporte, la valeur en cours qu'ils défont ; `sysctl-durable/*`, `sysctl-drift/*`) ; `test_v0244_fail2ban_blind_jail.py` (ce que lit la jail, une FIFO laissée fermée, le dernier message de sshd du journal et le dernier échec de chaque type, le démarrage de rsyslog daté contre le message, syslog-ng et l'absence de journal non vérifiés, la portée que dit l'OK, l'ordre du fichier de surcharge ; `fail2ban-blind/*`, `fail2ban-fed/*`) ; `test_v0244_auditd_field.py` (couverture par répertoire et forme syscall, règles qui ne journalisent rien, les deux ABI sur un noyau qui exécute des programmes 32 bits et comment BOB le sait, filtres restrictifs, `-S` à côté de `perm` tel que chargé, règles verrouillées, le démon par son pid ; `auditd-field/*`, `auditd-negative/*`, `auditd-compat/*`, `auditd-filter/*`) ; `test_v0244_clamd_unit.py` (l'unité que livre chaque famille, le socket et la base de Fedora, qui peut joindre le socket de clamd avec de vrais sockets et modes, un clamd en marche sans systemd ; `clamd-unit/*`, `clamd-socket/*`, `clamd-openrc/*`) ; `test_v0244_ntp_openrc.py` (`ntp-openrc/*`). Chaque cas qui change un verdict a été mesuré avant d'être codé — contre la réponse du service lui-même (compteurs fail2ban, journal d'audit, `systemd-analyze security`) ou un port sondé de l'extérieur — et chaque correction appliquée telle que BOB l'imprime. Terrain : hôtes réels Raspberry Pi Zero W, Mint 22.3, Fedora 44 et Alpine 3.24, une VM Fedora 43 (zones et fenêtre firewalld, ABI et filtres auditd, règles du pare-feu brut), conteneurs Alpine/Debian/Ubuntu/Arch/openSUSE/Fedora (unités et sockets ClamAV, syslog-ng). Une garde affirmait une forme que le terrain n'avait pas (l'avertissement d'iptables-nft dans stdout — nft l'écrit sur stderr) et a été réécrite sur la sortie mesurée ; deux anciens tests ClamAV lisaient le `clamd.conf` de l'hôte et en ont été isolés. Mutations 465 → **600**. **12513 → 13306**. |
 | 0.24.3 | 12513 | **Correctif — firewalld jugé par les zones des interfaces, les policies vers l'hôte, les sources et la famille d'adresses ; « IPv6 bloqué » seulement prouvé.** `test_v0243_firewalld_zones.py` (règles globales selon leurs sélecteurs — `log` / `audit` / `limit`, rejet limité en débit, mot inconnu, priorités égales ; l'ordre des policies et de la zone, un test par ligne mesurée sur Fedora 44 ; interfaces adossées à une carte via bridge / bond / VLAN ; zones de sources — famille entière, préfixes additionnés dans une zone et entre zones, priorité d'entrée dans les deux sens, MAC / ipset ; une famille d'adresses à la fois ; listes non lues comme limite de visibilité ; la correction par cause, plusieurs causes tour à tour, ssh d'abord ; messages rendus EN/FR ; mutations `firewalld-zones/*`, `firewalld-order/*`, `firewalld-catch-all/*`, `firewalld-fix/*`, `firewalld-unread/*`, `firewalld-policies/*`, `firewalld-sources/*`, `firewalld-family/*`) ; `test_v0243_ipv6_chain_rules.py` (forme ufw-init contre toute autre règle, l'INFO link-local « ni l'un ni l'autre », le lecteur de chaîne ; `ipv6-chain/*`). Chaque cas qui change un verdict a été mesuré sur Fedora 44 avant d'être codé. Une garde a été trouvée inerte par le banc de mutations (`trust` correspondait au nom de zone `trusted`) et resserrée. Terrain : Fedora 44 (la correction de chaque alerte appliquée, firewalld redémarré, sondé depuis le réseau local) et Mint 22.3 (quatre formes de chaîne IPv6, voisin en netns). Mutations 409 → **465**. **12170 → 12513**. |
@@ -1856,7 +1857,6 @@ sudo bob
 
 > **Note :** `openssh-server` doit être installé et actif (`sudo apt install openssh-server && sudo systemctl enable --now ssh`). Si inactif/désactivé, le service est en INFO uniquement sans vérification d'exposition des ports.
 
-> **Remédiation à tester :** `sudo ufw delete allow 22/tcp && sudo ufw allow from 192.168.1.0/24 to any port 22 proto tcp` → passe en OPEN_LOCAL (AVERTISSEMENT et non ALERTE, sans déduction).
 
 ---
 
@@ -2022,21 +2022,33 @@ sudo ufw status numbered
 
 > **Note :** Certaines distributions (ou VMs avec `IPV6=no` dans `/etc/default/ufw`) n'ajoutent pas de règles IPv6. Si toutes les règles sont déjà couplées (IPv4 + IPv6), utiliser `sudo ufw --force reset` et re-ajouter uniquement les règles IPv4.
 
+```bash
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow 22/tcp   # Ne pas laisser UFW créer des règles (v6) — requiert IPV6=no
+sudo ufw enable
+```
+
 | Attendu | Résultat |
 |----------|----------|
-| `⚠ [AVERTISSEMENT]` Règles IPv6 manquantes — seules des règles IPv4 présentes | ✔ unit test |
-| Déduction score `-1` | ✔ unit test |
-| Test direct | ✔ v0.1.0.0 |
+| `⚠ [AVERTISSEMENT]` Règles IPv6 manquantes — seules des règles IPv4 présentes | ✔ v0.1.0 live (VM IPV6=no) |
+| Déduction score `-1` | ✔ v0.1.0 live |
+| Test direct | ✔ v0.1.0 |
 
 ---
 
 ### D2 — Règles IPv4 et IPv6 toutes deux présentes (pas d'avertissement)
 
+```bash
+# Baseline avec IPV6=yes (défaut) : 22/tcp et 22/tcp (v6) présents
+sudo bob
+```
+
 | Attendu | Résultat |
 |----------|----------|
-| `✔ [OK]` Règles IPv4 et IPv6 toutes deux présentes | ✔ unit test |
-| Aucune déduction | ✔ unit test |
-| Test direct | ✔ v0.1.0.0 |
+| `✔ [OK]` Règles IPv4 et IPv6 toutes deux présentes | ✔ v0.1.0 live (IPV6=yes, test A1) |
+| Aucune déduction | ✔ v0.1.0 live |
+| Test direct | ✔ v0.1.0 |
 
 ---
 

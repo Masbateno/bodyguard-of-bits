@@ -61,6 +61,32 @@ def _audit_suffix(audit_options: str) -> str:
     return f" {audit_options}"
 
 
+def resolve_audit_binary() -> "tuple[str, bool]":
+    """The ``bob`` the scheduled script will run, and whether it exists.
+
+    v0.25.1. The script used ``shutil.which("bob") or "/usr/local/bin/bob"``
+    without checking the fallback: an operator who installed the job by the
+    full path (``sudo ~/.local/bin/bob --install-cron``, before
+    ``--install-completion`` created the link) got a script calling a file
+    that did not exist, and every run failed. The program actually running
+    comes first: it is the version that writes the script's options, and
+    another ``bob`` on root's PATH (a distribution package, an older install)
+    may not know them. Then ``which``, then the assumed path — and the caller
+    is told when the result does not exist so it can say so.
+    """
+    import shutil
+    import sys
+    if sys.argv and sys.argv[0]:
+        running = Path(sys.argv[0])
+        if running.name == "bob" and running.exists():
+            return str(running.absolute()), True
+    found = shutil.which("bob")
+    if found:
+        return found, True
+    fallback = Path("/usr/local/bin/bob")
+    return str(fallback), fallback.exists()
+
+
 def build_script_content(notify_email: str, log_dir: "Path | str",
                          audit_options: str = "") -> str:
     """Build the bash script content for a BOB cron job.
@@ -73,8 +99,7 @@ def build_script_content(notify_email: str, log_dir: "Path | str",
             reproduces the pre-v0.16.1 command line, which is what every
             already-installed script carries.
     """
-    import shutil
-    audit_bin = shutil.which("bob") or "/usr/local/bin/bob"
+    audit_bin, _ = resolve_audit_binary()
     now_str   = datetime.now().strftime("%Y-%m-%d")
     try:
         # __file__ resolves to bob/cron/_io.py post-v0.6.0 split → parents[2]

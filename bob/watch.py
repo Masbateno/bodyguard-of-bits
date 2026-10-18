@@ -26,7 +26,7 @@ from bob.compare import (
 from bob.ignore import load_ignore_keys
 from bob.report import AuditReport
 from bob.runner import run_checks
-from bob.scoring import ScoreEngine
+from bob.scoring import ScoreEngine, score_out_of_ten
 from bob.sysinfo import detect_network_context
 
 if TYPE_CHECKING:
@@ -134,7 +134,9 @@ def run_watch(
             effective_level = getattr(engine, "effective_level", engine.level)
             print(
                 f"  [{ts}]  "
-                f"{t('watch.score', score=engine.score)}  "
+                # v0.25.1: score_out_of_ten reads score_is_upper_bound and
+                # the span, as the summary box does.
+                f"{t('watch.score', score=score_out_of_ten(engine))}  "
                 f"{bar}  "
                 f"[{effective_level.value}]"
             )

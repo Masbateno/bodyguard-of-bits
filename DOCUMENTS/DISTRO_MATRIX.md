@@ -30,9 +30,9 @@ rather than guessed.
 ## Coverage legend
 
 - **✓** — BOB handles this correctly, **verified on ≥1 real machine**.
-- **✓ (0.21.3)** — gap closed in code for 0.21.3, **guarded + mutation-tested**, but
-  **field re-verification on the real distro is still pending** (the fix is proven
-  by tests, not yet re-confirmed on the hardware that surfaced it).
+- **✓ (0.21.3)** — gap closed in code for 0.21.3, **guarded + mutation-tested**, then
+  **field-re-verified on real hardware** on 2026-09-26 (all seven; the machine and
+  the oracle replayed are in *Gaps and their resolution*).
 - **⚠** — partial or cosmetic issue (verdict usually right, wording/edge off).
 - **✗** — genuine gap; BOB is wrong or blind here. Each ✗/⚠ names the finding.
 
@@ -40,8 +40,8 @@ rather than guessed.
 0.21.1 corrected, so it holds itself to the same bar):
 
 1. A **✓** must have been verified on at least one real machine, or be marked
-   explicitly as unverified / test-only. A **✓ (0.21.3)** is test-only until a
-   field pass moves it to plain ✓.
+   explicitly as unverified / test-only. A row found by reading the code and not
+   yet seen on a machine says so.
 2. A quirk **not encountered** is never inferred just because it is "known" for a
    distribution. Rows for untested distros (Arch, *BSD) say so.
 
@@ -52,8 +52,10 @@ can ship firewalld yet have it stopped, and a Kali can have nftables/iptables
 available with no firewall actually active. Where the distinction bites, it is
 called out.
 
-**Status verified against BOB 0.21.3.** A ✓ describes 0.21.3, not necessarily a
-later HEAD.
+**Status.** Sections 1–10 were verified against BOB 0.21.3 and are amended where a
+later release changed a row (the amendment names its release); the field-pass
+sections that follow *Gaps and their resolution* record 0.22.0 → 0.25.0. A ✓ is
+only as current as the release it names.
 
 ---
 
@@ -109,9 +111,9 @@ defaults under `/usr/etc/<file>`, with `/etc/<file>` as the *optional* override
   `test_v0213_usr_etc_login_defs_sudoers.py`; mutations
   `ssh/usr-etc-sshd-config-not-read`, `password_policy/login-defs-usr-etc-not-read`,
   `file_perms/sudoers-usr-etc-vendor-not-read`.
-  **Evidence/oracle (field re-verify pending):** on openSUSE Leap 16, forge
-  `PermitRootLogin yes` (`sshd -T` = yes) → BOB must ALERT; forge `permit`/`NOPASSWD`
-  under `/usr/etc/sudoers.d` → must be caught.
+  **Evidence/oracle (field-verified 2026-09-26 on openSUSE Leap 16):** forged
+  `PermitRootLogin yes` (`sshd -T` = yes) → ALERT; a `NOPASSWD` under
+  `/usr/etc/sudoers.d` → caught.
   **Design rule:** for config that a distro may ship under `/usr/etc`, resolve
   `/etc/<f>` then `/usr/etc/<f>` (systemd vendor-config precedence); prefer the
   service's *effective* view (`sshd -T`) where practical.
@@ -123,7 +125,7 @@ defaults under `/usr/etc/<file>`, with `/etc/<file>` as the *optional* override
 
 | Distro | Manager | Security channel | BOB updates query |
 |--------|---------|------------------|-------------------|
-| Debian, Ubuntu, Mint, Pi OS | apt | `*-security` suite (debian-/noble-/jammy-security) | `apt list --upgradable`, classify by suite |
+| Debian, Ubuntu, Mint, Pi OS | apt | `*-security` suite (debian-/noble-/jammy-security) | `apt-get -s dist-upgrade` (fallback `apt list --upgradable`), classify by suite |
 | Kali | apt (**rolling**) | **none** (no `-security` suite) | pending counted, "no security channel to classify" |
 | Fedora | dnf | yes | `dnf updateinfo --security` + `check-update` |
 | openSUSE | zypper | yes | `zypper list-patches --category security` + `list-updates` |
@@ -148,7 +150,7 @@ the tested host is in the last column where it differs.
 | Distro | Default front-end | BOB support | Observed on tested host |
 |--------|-------------------|-------------|-------------------------|
 | Ubuntu, Mint, Debian, Pi OS | ufw / nftables | **✓** ufw active↔inactive, v6 awareness | ufw inactive |
-| Fedora, openSUSE | firewalld | **✓** credited by zone (v0.20.2); rich-rules/forward-ports shown (v0.20.4) | firewalld active |
+| Fedora, openSUSE | firewalld | **✓** credited by zone (v0.20.2); rich-rules/forward-ports shown (v0.20.4); judged by the zones of the interfaces, the policies, the sources and the address family since 0.24.3 (see the 0.24.2 / 0.24.3 field passes) | firewalld active |
 | Kali | nftables (no ufw) | **✓** underlying nft/iptables layer inspected | no active firewall |
 | Alpine | **none by default** (awall available) | **✓** honest "no firewall / unprotected"; **✗** awall front-end not recognised (soft — nft/iptables layer still inspected) | no firewall |
 
@@ -160,10 +162,19 @@ the tested host is in the last column where it differs.
   and the banner reads **"installed (inactive)"** when the version is unobtainable
   but the binary is there. Guard `test_v0213_firewalld_banner_presence.py`,
   mutation `sysinfo/firewalld-stopped-reads-not-installed`. *(The score verdict —
-  ALERT/unprotected — was always correct; only the banner presence line was
-  wrong.)*
-  **Evidence/oracle (field re-verify pending):** on Fedora/openSUSE, `systemctl
-  stop firewalld` → banner must read "installed (inactive)", not "not installed".
+  ALERT/unprotected — was always correct; the banner presence line was the
+  wrong part found then. 0.25.1 found the alert's own wording wrong too — next
+  item.)*
+  **Evidence/oracle (field-verified 2026-09-26 on openSUSE Leap 16 and Fedora 44):**
+  `systemctl stop firewalld` → banner reads "installed (inactive)", not "not installed".
+- **✓ (0.25.1)** the same stopped firewalld, in the alert itself: the message said
+  "neither UFW nor firewalld is installed", the fix began with `zypper install
+  firewalld`, and the nftables finding told the operator to load
+  `/etc/nftables.conf`, which openSUSE Leap 16 does not have. The alert now says
+  firewalld is installed but not running, and both findings carry the firewalld
+  command without the install step; key, level and score unchanged (8 before and
+  after on the test host). Guard `test_v0251_firewalld_stopped.py`, mutations
+  `firewalld-stopped/*` (3).
 
 ## 5. MAC framework (LSM)
 
@@ -172,7 +183,7 @@ the tested host is in the last column where it differs.
 | Debian, Ubuntu, Mint, Kali | AppArmor | Kali ships **0 profiles** (framework active, nothing enforced) |
 | Fedora | SELinux | enforcing by default |
 | **openSUSE Leap 16** | **SELinux** | enforcing (Leap 16 switched from AppArmor to SELinux, but the kernel still has AppArmor **compiled-in but off**) |
-| Alpine | **none** | AppArmor compiled-in but not enabled; no SELinux userspace |
+| Alpine | **none** by default | AppArmor compiled-in but not enabled (not in `CONFIG_LSM`); no SELinux userspace. `apparmor=1 security=apparmor` turns it on; the OpenRC `apparmor` service loads the profiles |
 | Pi OS | AppArmor **compiled-in, off at boot** | needs `apparmor=1 security=apparmor` on the kernel cmdline |
 
 **BOB status:**
@@ -188,11 +199,21 @@ the tested host is in the last column where it differs.
   SELinux-enforcing short-circuits at the top, so only the non-enforcing case
   changed; Alpine's identical AppArmor-off warning stays **correct** — Alpine
   genuinely has no MAC and no SELinux.)*
-  **Evidence/oracle (field re-verify pending):** on openSUSE Leap 16, `setenforce
-  0` → verdict must be the SELinux-permissive one (`setenforce 1`), not "enable
+  **Evidence/oracle (field-verified 2026-09-26 on openSUSE Leap 16 and Fedora 44):**
+  `setenforce 0` → the SELinux-permissive verdict (`setenforce 1`), not "enable
   AppArmor".
   **Design rule:** when a distro ships SELinux as its MAC, AppArmor-compiled-in-off
   is by design, not a finding; the SELinux state is the verdict.
+- **✓ (0.25.1)** AppArmor live in the kernel, profile files in `/etc/apparmor.d`,
+  none loaded because the `apparmor` service is not running: BOB used to ask for the
+  profile packages (already installed) and named no apk package. It now counts the
+  profile files and, when the service is not active, prints the command that starts
+  it (`rc-update add apparmor boot && rc-service apparmor start` on OpenRC,
+  `systemctl enable --now apparmor` on systemd); with no profile file it still asks
+  for the packages, and names `apparmor-profiles` for apk. Guard
+  `test_v0251_apparmor_profiles_not_loaded.py`, mutations
+  `mac_policy/unloaded-profiles-read-as-missing` and
+  `packages/apk-apparmor-profiles-unknown`. Field-verified on Alpine 3.24 (below).
 
 ## 6. Privilege escalation — sudo vs doas
 
@@ -210,10 +231,27 @@ the tested host is in the last column where it differs.
   grants, and a FIFO/denied file reads as unreadable (never a hang). Dedicated
   `--explain file_perms.doas_nopass_all`. Guard `test_v0213_doas_audit.py`,
   mutation `file_perms/doas-nopass-not-flagged`.
-  **Evidence/oracle (field re-verify pending):** on Alpine, forge `permit nopass
-  baduser as root` in `/etc/doas.conf` → BOB must WARN.
+  **Evidence/oracle (field-verified 2026-09-26 on Alpine 3.24):** forged `permit
+  nopass baduser as root` in `/etc/doas.conf` → WARN.
   **Design rule:** privilege-escalation detection abstracts over the backend
   (sudo *and* doas), never assumes sudo.
+- **✓ (0.25.0)** Printed commands use `doas` where there is no `sudo` (17 of 17
+  commands on Alpine 3.24; `bob/_privilege.py`, applied in
+  `CheckResult.add_finding`). The 0.25.1 work tree applies the same word to the
+  `--explain` texts (guarded; not yet field-tested).
+- **✓ (0.25.1, field-verified on Alpine 3.24, 2026-10-17)** BOB found the
+  invoking user's home only through sudo's `SUDO_USER`, so run through `doas` its
+  settings, ignore list, baseline and history went to `/root/.config/bob` and
+  `--install-completion` skipped the `/usr/local/bin/bob` link. It now also reads
+  `DOAS_USER`, which OpenBSD doas and OpenDoas set (`sysinfo.invoking_user_name`;
+  guard `test_v0251_doas_invoking_user.py`, mutation `sysinfo/doas-user-ignored`).
+  **Evidence/oracle (replayed on Alpine 3.24):** `doas env` carries
+  `DOAS_USER=<operator>` and `HOME=/root`; `doas ~/.local/bin/bob --ignore
+  ssh.password_auth` → the key lands in the operator's `~/.config/bob/ignore.yml`
+  (owned by the operator), not root's; `doas ~/.local/bin/bob --install-completion`
+  → `/usr/local/bin/bob` created; a full audit through doas writes history,
+  baseline and recurrence to the operator's `~/.config/bob` and names the operator
+  in the banner, while root's files stay untouched.
 - **✓ (0.21.3)** SUID baseline: `doas` (standard SUID sudo-replacement) and
   `/bin/bbsuid` (busybox-suid) are now in the known-safe SUID set, so they are no
   longer flagged "unexpected" on Alpine. Guard `test_v0213_suid_doas_bbsuid.py`,
@@ -654,8 +692,142 @@ with an automatic rollback first, and access checked between cases.*
 |-----|------|---|------|
 | nftables rules are not evaluated one by one | soft | §1 | BOB reads base-chain policies (family, accept-everything); `input_ok` says reachability is not established. |
 | fail2ban routing is sampled, not proven | soft | §3 | Latest sshd message and latest failure of each kind seen since rsyslog started; OpenRC / syslog-ng jails on files are not verified. |
-| ClamAV socket open to every local user | soft | §5 | INFO without a deduction in this patch; a scored check belongs in a minor release. |
-| `sudo` vs Alpine's `doas` | soft | — | Every printed fix uses `sudo`; left to a release of its own. |
+| ~~ClamAV socket open to every local user~~ | — | §5 | **Resolved in 0.25.0**: WARN −1 (was INFO). |
+| ~~`sudo` vs Alpine's `doas`~~ | — | — | **Resolved in 0.25.0**: `doas` where there is no `sudo` (17 of 17 commands on Alpine). |
+
+
+### 0.25.0 field pass — a Kubernetes node, encryption beyond `/`, fixes as printed
+
+*Measured before the 0.25.0 release (2026-10-16) on Fedora 44, Linux Mint 22.3,
+Alpine 3.24 and Ubuntu Server 26.04 (MicroK8s 1.35), with Fedora 43 and Alpine
+3.22 VMs and Debian 13 / Fedora 43 containers for what those hosts could not
+stage; every fix applied as printed and re-audited. Figures as published in the
+0.25.0 changelog entry (`CHANGELOG_FULL.md`).*
+
+| Host | Measured | Result |
+|------|----------|--------|
+| Alpine 3.24 (OpenRC, doas) | every printed command on a host with `doas` and no `sudo`; Docker user-namespace remapping (Docker 29.8.2); CUPS fix | 17 of 17 commands use `doas`; the remapping fix had stopped Docker (no `useradd`) → now creates `/etc/docker`, the dockremap user and its own ID range, and restarts Docker through OpenRC; CUPS listens on localhost only after the new fix |
+| Alpine 3.22 VM | Docker remapping | dockerd stopped with no `/etc/subuid` while OpenRC said "started" (the old fix) |
+| Fedora 44 Server (firewalld) | turning firewalld on with SSH logins arriving, interface in a NetworkManager zone without ssh; sshd on 22 and 2222; CUPS fix | 10 of 118 new logins refused while firewalld started → ssh now written to the permanent configuration first; the two-port chain completes, 0 of 115 refused; CUPS listens on localhost only |
+| Fedora 43 (VM; container where noted in the changelog) | the 0.24.4 two-port firewalld chain; an iptables-legacy INPUT chain with DROP policy whose first rule accepts everything; LUKS root on LVM; CRI-O pods | 29 of 34 new SSH logins refused until rollback (`--add-service` + `--add-port` in one call refused) → separate calls; port 8080 answered behind the "DROP" chain → −3; root encryption and the data beside it resolved; pods read through `crictl` |
+| Linux Mint 22.3 | Docker remapping (Docker 29.1.3); CUPS fix | the old fix gave dockremap the range another user held → a range after the highest one; CUPS listens on localhost only |
+| Ubuntu Server 26.04 + MicroK8s 1.35 | the kubelet asked anonymously from the host on 10250 / 10255, by HTTP verb; Docker remapping (final command) | commands authorised with reads refused → ALERT −3; commands authorised by `get` alone → ALERT −3; reads only → WARN −1; everything refused → INFO (reachability from the network not tested); remapping up, the finding gone |
+| Debian 13, Fedora 43, Alpine | `cupsctl --no-remote-any` with a hand-written `Listen 0.0.0.0:631` | exits 0 and changes nothing (the reason for the new CUPS fix) |
+
+**Still open:**
+
+| Gap | Sev. | § | Note |
+|-----|------|---|------|
+| nftables rules are not evaluated one by one | soft | §1 | Unchanged since 0.24.4, except the accept-everything first rule of a DROP chain (read above). |
+| ~~Per-user files under `doas`~~ | — | §6 | **Resolved in the 0.25.1 work tree** (`DOAS_USER`), field-verified on Alpine 3.24 (see the 0.25.1 field pass). |
+
+
+### 0.25.1 field pass — doas on Alpine
+
+*Alpine 3.24 (OpenRC, BusyBox, doas, Python 3.14.7), real, 2026-10-17. The 0.25.1
+work tree copied to a dedicated operator account given a temporary
+`permit nopass` doas rule (removed afterwards).*
+
+| Measured | Result |
+|---|---|
+| `doas env` | `DOAS_USER` names the operator; `HOME=/root`, `USER=root` |
+| `--ignore`, `--install-completion`, a full audit — all through doas | everything per-user lands in the operator's `~/.config/bob`, owned by the operator; the `/usr/local/bin/bob` link is created; the banner names the operator; root's own BOB files unchanged |
+| `--explain ssh.password_auth`, a verbose audit through doas | every printed command reads `doas`; no `sudo` command word left in the output (finding prose included, once 0.25.1 applied the host's word to it) |
+| running BOB without doas | "This script must be run as root: doas bob" |
+| `--install-cron` | **Alpine has no `/etc/cron.d`** (BusyBox crond reads `/etc/crontabs/`): the wizard asked every question, wrote `/usr/local/bin/bob-NAME`, then failed on the cron file and left the script. 0.25.1 refuses before the first question, says how to schedule an audit with root's crontab, and removes the script if a cron write still fails |
+
+### 0.25.1 field pass — AppArmor under OpenRC on Alpine
+
+*The same Alpine 3.24 host, 2026-10-17. Kernel cmdline and runlevels restored
+afterwards; the `apparmor` and `apparmor-profiles` packages left installed.*
+
+| Step | Measured |
+|---|---|
+| stock boot | `/sys/kernel/security/lsm` without `apparmor`; BOB: AppArmor off in the kernel, add `apparmor=1 security=apparmor` |
+| that advice applied (GRUB, reboot) | AppArmor live in the kernel, 145 profile files in `/etc/apparmor.d`, **0 loaded**, service stopped. 0.25.0 asked to install the profile packages (installed) and did not know the apk name; 0.25.1 says the files are there and not loaded, and prints `doas rc-update add apparmor boot && doas rc-service apparmor start` |
+| that command applied as printed | 161 profiles loaded; BOB: "AppArmor enforcing — 78 profile(s) enforce, 5 complain" |
+| reboot | the verdict holds (service in the `boot` runlevel) |
+
+The fix holds `&&`, so `--fix --apply` lists it as a manual step rather than running
+it; that is the existing rule for shell operators.
+
+### 0.25.1 field pass — firewalld started from stopped on openSUSE
+
+*openSUSE Leap 16.0 (firewalld 2.1.2, nftables backend, NetworkManager 1.52,
+SELinux enforcing, Python 3.13.14), real, 2026-10-17. firewalld stopped and
+disabled, the wired connection put in a NetworkManager zone `bobzone` that lists
+nothing (no ssh); a rollback armed before each run; SSH logins opened every
+quarter second from the LAN during the command. Original zones, connection and
+service state restored afterwards.*
+
+| Run | Command | New SSH logins refused | After |
+|---|---|---|---|
+| 1–3 | as printed by 0.25.0 (install step included) | 0 / 66, 0 / 75, 0 / 75 | firewalld active, `bobzone` holds ssh in runtime and permanent configuration; re-audit: "firewalld is the active firewall" |
+| 4 | as printed by 0.25.1 (no install step) | 0 / 75 | same |
+
+firewalld started 58 s after the command in run 1 (the first `zypper` call of
+the session), 16 s in runs 2 and 3, 8 s in run 4 without the install step; the
+whole chain ended 8 s after the start each time. Nothing filters before the
+start, so SSH stays reachable during the offline part.
+The loop also gives the `docker` zone ssh (it is active, with `docker0`); its
+target is ACCEPT, so nothing changes there.
+
+### 0.25.1 field pass — Docker beside firewalld on Fedora
+
+*Fedora 44 Server (firewalld, the wired interface in the `FedoraServer` zone
+allowing cockpit, dhcpv6-client and ssh; SELinux enforcing; Python 3.14.3), real,
+2026-10-17. Docker 29.8.2 installed from Fedora's `moby-engine` for the pass
+(firewall backend `iptables+firewalld`), removed afterwards with its zone,
+policy, user and ranges; `runc` stays, required by `containers-common-extra`.*
+
+| Measured | Result |
+|---|---|
+| a container publishing 8099; a host service on 8097; both probed from the LAN | 8099 answered, 8097 refused: the zone does not filter a published port. BOB said Docker "may bypass UFW rules" (no ufw on the host), announced "three options" and listed two, recommended "explicit UFW rules", tagged the port "bypasses UFW", and the ports section said 8099 (docker-proxy) was "governed by the firewalld zone". 0.25.1 names the host firewall, lists two options, the second being to publish on 127.0.0.1 a port that should stay on the host and to filter in DOCKER-USER who reaches the others, and says a docker-proxy port is not filtered by the zone; keys, levels and points unchanged |
+| a container publishing on `127.0.0.1:8096` | answered on the host, refused from the LAN (option 2 holds) |
+| two containers running, no port published | BOB said "No running Docker containers detected" while its Docker hardening section counted 2. The OK fires when no port is published; it now says so |
+| the `userns-remap` fix, applied as printed | `useradd -r -U` created dockremap (uid 388); its range `589824:65536` starts after so6's `524288:65536`; Docker restarted with `userns`; a container's root maps to host uid 589824 under SELinux enforcing; re-audit: "userns-remap enabled". The existing containers and images no longer listed (Docker root `/var/lib/docker/589824.589824`), as the detail warns |
+
+### 0.25.1 field pass — Docker's DOCKER-USER chain on Ubuntu Server
+
+*Ubuntu Server 26.04.1, Docker 29.1.3 (`docker.io`), real, 2026-10-17; a
+container publishing 8099 and one making outbound connections; the trusted
+source set to an address that is not the probing host. Removed afterwards with
+the seven packages it pulled in.*
+
+| Rules in `DOCKER-USER` | 8099 from an untrusted LAN host | the containers' DNS and HTTP out |
+|---|---|---|
+| none | answers | work |
+| `-s <trusted> -j ACCEPT`, then `-A … -j DROP` (the former `--explain` example) | refused | **cut** |
+| `-i enp3s0 ! -s <trusted> -j DROP` | refused | **cut** |
+| `-m conntrack --ctstate RELATED,ESTABLISHED -j RETURN` ahead of the previous rule | refused (the trusted host gets 200) | work |
+| `firewall-backend: nftables` (after removing the iptables backend's leftovers) | — | no IPv4 `DOCKER-USER` chain is created |
+
+Switching to `firewall-backend: nftables` left the iptables backend's `FORWARD -j DOCKER-USER` jump and chain in place, and a rule put there still filtered the published port; the row above was measured once they were removed. The rules were applied in the order the explain prints them (`-I … DROP`, then `-I … RETURN`), and `iptables -S DOCKER-USER` listed RETURN first. IPv6, and a host that forwards other networks through the same interface, were not measured.
+
+### 0.25.1 field pass — a k3s node on Ubuntu Server
+
+*Ubuntu Server 26.04.1 (4 CPUs, 3 GB, ufw installed and inactive, MicroK8s
+installed and disabled), real, 2026-10-17. k3s v1.36.5+k3s1 (containerd
+2.3.4-k3s1, kube-router network policies) installed with the official script for
+the pass and removed with `k3s-uninstall.sh`; three pods in `default`: one
+privileged, one mounting `/etc`, one non-root. No code change came out of it.*
+
+| Measured | Result |
+|---|---|
+| pods read through `ctr` (k3s symlinks `ctr`, `crictl` and `kubectl` to its own binary) | the privileged pod and the `/etc` mount reported, −1 each; the non-root pod not reported |
+| the kubelet asked anonymously from the host (k3s default) | 401 → "kubelet refuses anonymous requests" (OK) |
+| `kubelet-arg: anonymous-auth=true, authorization-mode=AlwaysAllow` | `GET /pods` 200, `POST /run` for a missing pod 404 → ALERT "kubelet authorises anonymous commands"; back to 401 and OK after the revert |
+| `sudo iptables -P FORWARD DROP` (the `forward_accept` fix), applied as printed | DNS through the service IP, pod to pod, pod to the internet and pod to the API service all still answer: k3s accepts its pod traffic in its own FORWARD chains |
+| `sudo ufw allow 22/tcp && sudo ufw enable` (the `firewall.inactive` fix), applied as printed | SSH kept, the four pod probes answer, 6443 no longer answers from the LAN (default deny incoming); restored with `ufw disable` |
+| a full audit while the host's snaps (Rocket.Chat, Nextcloud, Wekan, Prometheus) and k3s's first image pulls ran | 20 min 47 s at load average up to 64, the kubelet unprobed and the pods unread, both reported as not evaluated; 59 s once those snaps were stopped |
+
+**Still open:**
+
+| Gap | Sev. | § | Note |
+|-----|------|---|------|
+| `--install-cron` / `--manage-cron` on BusyBox crond (`/etc/crontabs/`) | soft | §1 | Refused with an explanation in 0.25.1; installing into a crontab is a feature of its own (0.26.0 candidate). |
+| `firewall_drivers.iptables_bypass` deducts 2 for every INPUT rule whose target is ACCEPT, whatever it matches | soft | §4 | Measured on k3s: kube-router's rule accepting only packets it marked as allowed by a network policy (`mark match 0x20000/0x20000`) read as a "raw ACCEPT rule bypassing UFW", with ufw inactive. Changing it changes scores → planned for 0.26.0. |
+| UFW-worded OK lines on hosts without UFW (`firewall_rules.no_duplicates`, `firewall_rules.no_open_any`, `logs.*` "UFW log source", "No UFW BLOCK events") | soft | §4 | Seen again on openSUSE (firewalld, no ufw); first noted on the Pi Zero (v0.18.1). Nothing deducted; they credit an absence of UFW rules on a host that has no UFW. Planned for 0.26.0: the keys emitted on those hosts change. |
 
 ---
 © 2026 Cédric Clauzel

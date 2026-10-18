@@ -75,10 +75,13 @@ remedy.
 ### 7. The score is an upper bound
 
 The score reflects what BOB could **see**. When a check is blinded — a file it
-cannot read, a section that fails — the score does not rise to fill the gap; the
-uncertainty is carried into the result (`score_is_upper_bound`), and blinding a
-check can *lower* the score, never raise it. A high score on a half-read system is
-a lie BOB refuses to tell.
+cannot read, a section that fails — the deductions it could not make are unknown,
+not zero, so the number is shown as the ceiling it is (`≤ N/10`,
+`score_is_upper_bound`); measured in v0.16.0, masking `sshd_config` removed four
+deductions and moved the bare number from 7 to 8. When blindness removes a whole
+domain from the average, the number can move either way, and BOB gives the span
+instead (`score_low` / `score_high`). A high score on a half-read system is a lie
+BOB refuses to tell, and `--target` fails closed on it.
 
 ### 8. A reproducible, launch-independent verdict
 
@@ -93,19 +96,24 @@ not a measurement of the host.
 
 For anything risky or hard to reverse — PAM stacks, `fstab`, disk encryption,
 a world-writable set-id root binary — BOB **describes** the fix and never applies
-it. Native auto-apply (`--fix --apply`) is reserved for changes that are safe,
-reversible and verifiable, and it never claims a success it did not confirm. A
+it. `--fix --apply` runs only the commands it can run unattended (no shell
+operator, no editor), one at a time, after a confirmation or under `-y`; the
+native sysctl path reads the value back before it says *applied*, while a command
+is reported applied on its own exit status — the next audit is what shows the
+finding cleared. A
 compromise symptom is something to investigate before flipping a bit, not a bit to
 flip.
 
 ### 10. BOB does not phone home
 
-A security tool that exfiltrates is a contradiction. BOB runs with **no telemetry
-and no outbound traffic** by default; the only network calls it ever makes are a
-public-IP lookup and, if the operator configured one, a result webhook — both
-suppressed by `--offline`, which is a hard global guarantee the air-gapped build
-sandboxes rely on. What BOB reads about the host stays on the host, in the operator's
-own report directory.
+A security tool that exfiltrates is a contradiction. BOB sends **no telemetry**.
+Its only outbound calls are the public-IP lookup that classifies the network
+context (on by default; `api.ipify.org`, then `ifconfig.me`, then `icanhazip.com`)
+and, if the operator configured one, a result webhook — both suppressed by
+`--offline`, which is a hard global guarantee the air-gapped build sandboxes rely
+on. Probes of local services (the kubelet on `127.0.0.1`) stay on the host. What
+BOB reads about the host stays on the host, in the operator's own report directory,
+unless the operator sends it on by webhook or email.
 
 ### 11. A noisy check is worse than no check
 
@@ -181,10 +189,12 @@ or recommends a check that would be noise, is declined and the reasoning kept.
 
 ### 20. The documentation is audited like the code
 
-Every countable claim in the docs (key counts, section counts, locale totals) is
-pinned by a guard, because a frozen number is a lie waiting to happen. Documentation
-accuracy follows the same rule as the audit itself (principle 1): assert only the
-measurable, and let a machine catch the drift.
+Countable claims in the docs (key counts, section counts, locale totals) are pinned
+by guards wherever a machine can read them, because a frozen number is a lie waiting
+to happen — and the claims the guards do not reach are what the documentation
+conformity pass re-measures. Documentation accuracy follows the same rule as the
+audit itself (principle 1): assert only the measurable, and let a machine catch the
+drift.
 
 ### 21. References come from an authority, not from memory
 

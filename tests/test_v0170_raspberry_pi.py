@@ -451,3 +451,9 @@ class TestNoProbeRidesOnForkOnlyBehaviour:
             if kw.arg == "target" and getattr(kw.value, "id", None) not in top
         ]
         assert found == ["_nested"]
+
+
+def test_an_unreadable_passwd_is_not_established(tmp_path):
+    """v0.25.1 — an unreadable /etc/passwd read as "no pi account" (unknown ≠ clean)."""
+    from bob.checks.raspberry_pi import _legacy_account_state
+    assert _legacy_account_state(tmp_path / "no-such-passwd", tmp_path / "no-such-shadow") == (False, False)

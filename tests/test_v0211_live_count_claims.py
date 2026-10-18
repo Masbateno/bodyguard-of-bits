@@ -28,6 +28,8 @@ import re
 
 import pytest
 
+from tests._doc_dating import undated_segments
+
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 #: Documents that describe the tool as it is now (mirrors the v0170 sweep list;
@@ -41,10 +43,6 @@ _CURRENT_STATE = [
     "man/bob.1",
 ]
 
-#: A line naming a version or quoting a baseline is dating its own figure.
-_DATED = re.compile(
-    r"v0\.[0-9]+\.[0-9]+|Baseline history|Historique de référence|"
-    r"baseline was|since v0\.|BREAKING in v0\.|BREAKING en v0\.|realigned|réalign")
 
 
 def _lines(rel: str):
@@ -108,12 +106,11 @@ def test_no_document_misstates_the_score_domain_count(rel):
     n = len(DOMAINS)
     stale = []
     for lineno, line in _lines(rel):
-        if _DATED.search(line):
-            continue
-        for m in _DOMAIN_RE.finditer(line):
-            if int(m.group(1)) != n:
-                stale.append(f"{rel}:{lineno} claims {m.group(1)} domains, "
-                             f"code has {n}")
+        for seg in undated_segments(line):
+            for m in _DOMAIN_RE.finditer(seg):
+                if int(m.group(1)) != n:
+                    stale.append(f"{rel}:{lineno} claims {m.group(1)} domains, "
+                                 f"code has {n}")
     assert not stale, (
         "the score-domain count drifted (v0.20.0 realigned 7 → 6 and the "
         "summaries kept saying 7):\n  " + "\n  ".join(stale))
@@ -133,18 +130,17 @@ _LOCALE_PARITY_RE = re.compile(r"\b(\d{4,5})\s+EN\s*↔\s*(\d{4,5})\s+FR\b")
 def test_no_document_misstates_the_locale_key_total(rel):
     n = _locale_key_count()
     stale = []
-    for lineno, line in _lines(rel):
-        if _DATED.search(line):
-            continue
-        for m in _LOCALE_RE.finditer(line):
-            if int(m.group(1)) != n:
-                stale.append(f"{rel}:{lineno} claims {m.group(1)} locale keys, "
-                             f"files hold {n}")
-        for m in _LOCALE_PARITY_RE.finditer(line):
-            for g in (1, 2):
-                if int(m.group(g)) != n:
-                    stale.append(f"{rel}:{lineno} claims {m.group(g)} locale "
-                                 f"keys, files hold {n}")
+    for lineno, raw in _lines(rel):
+        for line in undated_segments(raw):
+            for m in _LOCALE_RE.finditer(line):
+                if int(m.group(1)) != n:
+                    stale.append(f"{rel}:{lineno} claims {m.group(1)} locale keys, "
+                                 f"files hold {n}")
+            for m in _LOCALE_PARITY_RE.finditer(line):
+                for g in (1, 2):
+                    if int(m.group(g)) != n:
+                        stale.append(f"{rel}:{lineno} claims {m.group(g)} locale "
+                                     f"keys, files hold {n}")
     assert not stale, (
         "the locale-key total drifted from the .json files:\n  "
         + "\n  ".join(stale))
@@ -206,11 +202,10 @@ def test_the_matchers_read_something_at_all():
     """A pattern that matched nothing would satisfy every assertion above."""
     dom = loc = 0
     for rel in _CURRENT_STATE:
-        for _, line in _lines(rel):
-            if _DATED.search(line):
-                continue
-            dom += len(_DOMAIN_RE.findall(line))
-            loc += len(_LOCALE_RE.findall(line))
+        for _, raw in _lines(rel):
+            for line in undated_segments(raw):
+                dom += len(_DOMAIN_RE.findall(line))
+                loc += len(_LOCALE_RE.findall(line))
     assert dom >= 5, f"the domain matcher found only {dom} figures — pattern broke"
     assert loc >= 4, f"the locale matcher found only {loc} figures — pattern broke"
 

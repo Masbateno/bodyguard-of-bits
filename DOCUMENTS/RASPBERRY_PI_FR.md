@@ -94,9 +94,15 @@ tout le venv proprement — rien ne reste dans le Python système.
 ### Désinstallation
 
 ```bash
+sudo bob --manage-cron                    # d'abord, supprime les audits programmés
 sudo rm -f /usr/local/bin/bob /etc/bash_completion.d/bob
 pipx uninstall bodyguard-of-bits          # retire entièrement le venv isolé
 ```
+
+Tes réglages, ta liste d'exclusions, ta ligne de base, ton historique et tes
+rapports ne sont pas supprimés : ils restent dans `~/.config/bob/` et dans le
+répertoire de rapports (`~/.local/share/bob/logs/` par défaut) jusqu'à ce que tu
+les effaces.
 
 ---
 
@@ -108,9 +114,12 @@ Une fois installé, `bob` est dans ton `PATH` — tu l'appelles depuis **n'impor
 quel dossier**. Pas de `cd`, aucun chemin à taper :
 
 ```bash
-bob -v -d --french     # verbeux (-v), écrit un log daté (-d), sortie française
-bob --help             # toutes les options
+bob --help                        # toutes les options
+bob --explain ssh.password_auth   # expliquer un constat
 ```
+
+Ces deux-là n'ont pas besoin de root. Un audit, si : BOB refuse d'en lancer un
+sans root (*« This script must be run as root: sudo bob »*) — voir plus bas.
 
 Ce qui l'a mis dans le `PATH`, c'est la ligne ajoutée par `pipx ensurepath` dans
 `~/.profile` (sur Raspberry Pi OS, cette ligne est déjà présente dans le
@@ -141,9 +150,9 @@ sudo bob
 
 `sudo` compte davantage sur un Pi qu'ailleurs : lire les fichiers d'identifiants
 de la partition de boot et `/etc/shadow` (pour distinguer une empreinte de mot de
-passe encore active d'une périmée) demande root. Sans lui, BOB tourne quand même
-et dit, pour chaque chose qu'il n'a pu lire, que la réponse **n'a pas été
-établie** — il ne rapporte jamais « propre » sur un fichier qu'il n'a pas vu.
+passe encore active d'une périmée) demande root, et BOB refuse d'auditer sans lui.
+Même en root, un fichier qu'il ne peut lire est rapporté comme **non établi** — il
+ne rapporte jamais « propre » sur un fichier qu'il n'a pas vu.
 
 Pour ne lancer que les vérifications spécifiques au Pi :
 
@@ -225,8 +234,8 @@ quels. Supprimer les fichiers du seed donne à cloud-init la source `None` — u
 *nouvelle* instance — et il ré-exécute tout, ce qui n'est pas voulu sur une carte
 déjà configurée.
 
-Le `--fix --apply` de BOB le fait pour toi et ré-audite ensuite, ou tu peux lancer
-les commandes `sed` ci-dessus à la main.
+Le `--fix --apply` de BOB lance ces commandes pour toi (relance l'audit pour voir
+les constats disparaître), ou tu peux lancer les commandes `sed` ci-dessus à la main.
 
 ---
 
@@ -269,13 +278,13 @@ carte, corrigé, et le correctif y a été vérifié.
 | 7 | *redémarrer sur un noyau plus récent* | proposait le noyau **arm64** à une carte ARMv6 | raisonne dans la saveur du noyau courant |
 | 8 | *swappiness trop agressive, mettre vm.swappiness=1* | le swap est du **zram** (RAM compressée) | reconnaît zram, aucun conseil de réglage disque |
 | 9 | *service de sécurité activé mais pas en cours* (−1) | `apparmor.service` sauté par une condition non remplie | lit `ConditionResult=no` — pas une faille |
-| 10 | `--check=raspberry_pi --fix` lançait aussi `apt install ufw` | le correctif pare-feu est hors du périmètre choisi | `--fix` n'applique que les sections choisies |
+| 10 | `--check=raspberry_pi --fix --apply` lançait aussi `apt install ufw` | le correctif pare-feu est hors du périmètre choisi | `--fix` ne propose et n'applique que les sections choisies |
 
 La remédiation du seed cloud-init (constats 2/3) a été prouvée sur la carte avant
 d'être écrite dans BOB : retirer les seules lignes secrètes et redémarrer a laissé
-Wi-Fi, `/etc/shadow`, netplan et le nom d'hôte inchangés. BOB a ensuite exécuté
-tout l'aller-retour lui-même — deux avertissements, `--fix --apply --yes`,
-ré-audit, feu vert.
+Wi-Fi, `/etc/shadow`, netplan et le nom d'hôte inchangés. L'aller-retour s'est
+ensuite fait avec BOB seul — deux avertissements, `--fix --apply --yes`, un second
+audit, feu vert.
 
 **Ce que cela n'établit *pas*.** Une carte, une architecture (ARMv6), une version
 d'OS (trixie). Un Pi 4/5 en arm64, ou une image plus ancienne qui utilise encore

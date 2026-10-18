@@ -14,22 +14,30 @@ import shutil
 from functools import lru_cache
 
 #: ``sudo`` as a command word — not ``visudo``, ``/etc/sudoers`` or ``sudo.d``.
-_SUDO_WORD = re.compile(r"(?<![\w./-])sudo(?=\s)")
+#: v0.25.1: also before a closing parenthesis or a final punctuation mark
+#: ("run with sudo)", "re-run with sudo."), which prose uses.
+_SUDO_WORD = re.compile(r"(?<![\w./-])sudo(?=\s|\)|[.,;:](?!\w)|$)")
 
 
 @lru_cache(maxsize=1)
 def privilege_prefix() -> str:
     """``sudo`` when it is installed, else ``doas`` when that is, else ``sudo``."""
-    if shutil.which("sudo"):
-        return "sudo"
-    if shutil.which("doas"):
-        return "doas"
+    try:
+        if shutil.which("sudo"):
+            return "sudo"
+        if shutil.which("doas"):
+            return "doas"
+    except Exception:  # noqa: BLE001 — v0.25.1: inside the plugin sandbox
+        pass           # `os` is restricted; keep the text as written
     return "sudo"
 
 
 def with_privilege(cmd: str) -> str:
     """*cmd* with each ``sudo`` command word replaced by the host's prefix."""
-    if not cmd:
+    # v0.25.1: look for the word first. Finding prose now passes through here
+    # too, and a plugin's findings are built inside the sandbox, where `os` is
+    # restricted and `shutil.which` cannot run: most texts never name sudo.
+    if not cmd or not _SUDO_WORD.search(cmd):
         return cmd
     prefix = privilege_prefix()
     return cmd if prefix == "sudo" else _SUDO_WORD.sub(prefix, cmd)

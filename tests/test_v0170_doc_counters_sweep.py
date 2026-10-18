@@ -25,6 +25,8 @@ import re
 
 import pytest
 
+from tests._doc_dating import undated_segments
+
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 #: Documents that describe the tool as it is now. A changelog is a record, not
@@ -38,10 +40,6 @@ _CURRENT_STATE = [
     "DOCUMENTS/AUTOMATION.md", "DOCUMENTS/AUTOMATION_FR.md",
 ]
 
-#: A line that names a version, or says it is quoting history, is dating its own
-#: figure and must be left alone.
-_DATED = re.compile(
-    r"v0\.[0-9]+\.[0-9]+|Baseline history|Historique de référence|baseline was|since v0\.")
 
 #: Counted noun (in either locale) → the name of the live value it must equal.
 _NOUNS = {
@@ -50,6 +48,7 @@ _NOUNS = {
     "CIS references": "cis_refs", "références CIS": "cis_refs",
     "check sections": "sections", "sections de vérification": "sections",
     "filterable": "sections", "sections filtrables": "sections",
+    "filtrables": "sections",
     "check modules": "check_modules", "modules de vérification": "check_modules",
 }
 #: Phrases carrying a number that equals a live counter, and which this sweep
@@ -122,8 +121,9 @@ _COINCIDENCES = {
     # sample text, not a counter.
     "blocked attempt",
     "tentative",
-    # AUTOMATION: "the last 50 audit scores" is history.jsonl's retention
-    # length. It equals the explain-prefix count today and will stop doing so
+    # AUTOMATION: "the last 50 audit scores" is the --history sparkline length
+    # (history.jsonl itself keeps 1000 lines). It once equalled the
+    # explain-prefix count and will stop doing so
     # the next time a prefix is added; neither figure constrains the other.
     "audit",
     "derniers",
@@ -181,14 +181,13 @@ def test_no_counter_in_a_current_state_document_is_stale(rel):
     stale = []
     for lineno, line in enumerate(
             (_ROOT / rel).read_text(encoding="utf-8").splitlines(), 1):
-        if _DATED.search(line):
-            continue
-        for m in _PATTERN.finditer(line):
-            name = _NOUNS[m.group(2)]
-            if int(m.group(1)) != live[name]:
-                stale.append(
-                    f"{rel}:{lineno} claims {m.group(1)} {m.group(2)}, "
-                    f"code says {live[name]}")
+        for seg in undated_segments(line):
+            for m in _PATTERN.finditer(seg):
+                name = _NOUNS[m.group(2)]
+                if int(m.group(1)) != live[name]:
+                    stale.append(
+                        f"{rel}:{lineno} claims {m.group(1)} {m.group(2)}, "
+                        f"code says {live[name]}")
     assert not stale, "documented counters drifted from the code:\n  " + "\n  ".join(stale)
 
 
@@ -213,23 +212,22 @@ def test_the_vocabulary_covers_the_phrasings_actually_used():
     for rel in _CURRENT_STATE:
         for lineno, line in enumerate(
                 (_ROOT / rel).read_text(encoding="utf-8").splitlines(), 1):
-            if _DATED.search(line):
-                continue
-            for m in loose.finditer(line):
-                if int(m.group(1)) not in values:
-                    continue
-                # Watched already? Compare positions, not words: the loose
-                # matcher takes a two-word window and "sections de vérification"
-                # is three, so comparing strings would report a phrase the
-                # vocabulary does cover.
-                if any(w.start() == m.start() for w in _PATTERN.finditer(line)):
-                    continue
-                noun = m.group(2)
-                # The loose window takes two words ("clés sur", "keys in"),
-                # so a decision recorded on the head word covers its variants.
-                if noun in _COINCIDENCES or noun.split()[0] in _COINCIDENCES:
-                    continue
-                unwatched.append(f"{rel}:{lineno}  '{m.group(1)} {noun}'")
+            for seg in undated_segments(line):
+                for m in loose.finditer(seg):
+                    if int(m.group(1)) not in values:
+                        continue
+                    # Watched already? Compare positions, not words: the loose
+                    # matcher takes a two-word window and "sections de
+                    # vérification" is three, so comparing strings would report
+                    # a phrase the vocabulary does cover.
+                    if any(w.start() == m.start() for w in _PATTERN.finditer(seg)):
+                        continue
+                    noun = m.group(2)
+                    # The loose window takes two words ("clés sur", "keys in"),
+                    # so a decision recorded on the head word covers its variants.
+                    if noun in _COINCIDENCES or noun.split()[0] in _COINCIDENCES:
+                        continue
+                    unwatched.append(f"{rel}:{lineno}  '{m.group(1)} {noun}'")
     assert not unwatched, (
         "these read like counters and match a live value, but no rule watches "
         "them — add the noun to _NOUNS, or the phrase to _COINCIDENCES with a "

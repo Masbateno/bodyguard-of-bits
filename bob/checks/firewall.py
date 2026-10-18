@@ -179,7 +179,8 @@ def resolve_firewall_posture(
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def _firewall_install_fix(_t, ssh_ports: "list[int] | None" = None):
+def _firewall_install_fix(_t, ssh_ports: "list[int] | None" = None,
+                          firewalld_installed: bool = False):
     """``(cmd, detail)`` for "no firewall front-end is active".
 
     Backend-neutral by distribution rather than UFW-specific: ufw is the
@@ -195,15 +196,21 @@ def _firewall_install_fix(_t, ssh_ports: "list[int] | None" = None):
     bound to one, is judged by that zone. Every active zone gets it — with no
     firewall, SSH answered from everywhere, so this leaves it reachable where it
     was and filters the rest; nothing ends up more open than before.
+
+    v0.25.1 — *firewalld_installed*: the package is there and stopped. The
+    command no longer starts by installing it, and firewalld is the front-end
+    advised whatever the package manager (measured on openSUSE Leap 16).
     """
     if ssh_ports is None:
         # Which ports sshd answers on is unknown: a command keeping 22 alone
         # would cut an sshd on another port. No command, the reason said.
         return None, _t("firewall.ssh_ports_unknown_detail")
     base = _MANAGER_ALIASES.get(detect_install_manager(), detect_install_manager())
-    if base in ("dnf", "yum", "zypper"):
+    if firewalld_installed or base in ("dnf", "yum", "zypper"):
         ports = sorted(set(ssh_ports))
         if not ports:
+            if firewalld_installed:
+                return "sudo systemctl enable --now firewalld", ""
             return install_fix(_t, None, "firewalld", then="sudo systemctl enable --now firewalld")
         items = ["--add-service=ssh" if p == 22 else f"--add-port={p}/tcp" for p in ports]
         # v0.25.0 — ssh goes into the permanent configuration before firewalld
@@ -238,6 +245,8 @@ def _firewall_install_fix(_t, ssh_ports: "list[int] | None" = None):
               f"xargs -rI{{}} sudo firewall-cmd --permanent --zone={{}} {i}" for i in items),
             "sudo firewall-cmd --reload",
         ])
+        if firewalld_installed:
+            return then, _t("firewall.firewalld_keeps_ssh_detail")
         return install_fix(_t, _t("firewall.firewalld_keeps_ssh_detail"), "firewalld", then=then)
     return install_fix(_t, None, "ufw", then=_ufw.enable_cmd(ssh_ports))
 
@@ -477,9 +486,11 @@ def check_firewall(
 
     # --- UFW installed ---
     if not status.installed:
-        _cmd, _detail = _firewall_install_fix(_t, ssh_ports)
+        _fwd_installed = firewalld is not None and firewalld.installed
+        _cmd, _detail = _firewall_install_fix(_t, ssh_ports, firewalld_installed=_fwd_installed)
         result.alert(
-            message=_t("prerequisites.firewall_missing"),
+            message=_t("prerequisites.firewall_missing_firewalld_stopped" if _fwd_installed
+                       else "prerequisites.firewall_missing"),
             detail=_detail,
             nature="action",
             cmd=_cmd,

@@ -34,7 +34,7 @@ class AuditConfig:
     """Interface language: 'en' or 'fr'."""
 
     verbose: bool = False
-    """-v / --verbose: show detailed port exposure per service."""
+    """-v / --verbose: each finding's detail, command, note and CIS reference, the listening-port table and `ufw status verbose`."""
 
     detailed: bool = False
     """-d / --detailed: write full report to a log file."""
@@ -979,6 +979,15 @@ def print_help(t, version: str) -> None:
     section("exit_codes")
     for _code in range(5):
         print(f"  {_code}   {t(f'help.exit.{_code}')}")
+
+    from bob._python_support import deprecation_for
+    _dep = deprecation_for()
+    if _dep:
+        import textwrap
+        print()
+        for _i, _line in enumerate(textwrap.wrap(t("help.python_deprecated", running=_dep["running"],
+                                          until=_dep["until"], next=_dep["next"]), 94)):
+            print(("  ⚠ " if _i == 0 else "    ") + _line)
 
     print()
     print("Documentation: https://github.com/Masbateno/bodyguard-of-bits")

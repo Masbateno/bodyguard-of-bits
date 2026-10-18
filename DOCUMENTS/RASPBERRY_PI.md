@@ -92,9 +92,14 @@ nothing is left behind in the system Python.
 ### Uninstall
 
 ```bash
+sudo bob --manage-cron                    # first, delete any scheduled audit
 sudo rm -f /usr/local/bin/bob /etc/bash_completion.d/bob
 pipx uninstall bodyguard-of-bits          # removes the isolated venv entirely
 ```
+
+Your settings, ignore list, baseline, history and reports are not removed: they
+stay in `~/.config/bob/` and in the report directory (`~/.local/share/bob/logs/`
+by default) until you delete them.
 
 ---
 
@@ -106,9 +111,12 @@ Once installed, `bob` is on your `PATH` — you call it from **any directory**.
 There is no `cd`, and no path to type:
 
 ```bash
-bob -v -d --french     # verbose (-v), write a dated log (-d), French output
-bob --help             # every option
+bob --help                        # every option
+bob --explain ssh.password_auth   # explain a finding
 ```
+
+Those two need no root. An audit does: BOB refuses to run one without root
+(*"This script must be run as root: sudo bob"*) — see below.
 
 What put it on the `PATH` is the line `pipx ensurepath` added to `~/.profile`
 (on Raspberry Pi OS that line ships in the stock `~/.profile` already). It takes
@@ -139,8 +147,8 @@ sudo bob
 
 `sudo` matters more on a Pi than elsewhere: reading the credential files on the
 boot partition and `/etc/shadow` (to tell a live password hash from a stale one)
-needs root. Without it BOB still runs and says, for each thing it could not read,
-that the answer was **not established** — it never reports "clean" about a file
+needs root, and BOB refuses to audit without it. Even as root, a file it cannot
+read is reported as **not established** — it never reports "clean" about a file
 it never saw.
 
 To run only the Pi-specific checks:
@@ -220,8 +228,8 @@ netplan and the hostname stay exactly as they are. Deleting the seed files hands
 cloud-init the `None` datasource — a *new* instance — and it re-runs everything,
 which is not what you want on a configured board.
 
-BOB's `--fix --apply` will do this for you and re-audit afterwards, or you can run
-the `sed` commands above by hand.
+BOB's `--fix --apply` will run those commands for you (run the audit again to see
+the findings clear), or you can run the `sed` commands above by hand.
 
 ---
 
@@ -263,12 +271,12 @@ and the fix verified there.
 | 7 | *reboot into a newer kernel* | offered the **arm64** kernel to an ARMv6 board | reasons within the running kernel's flavour |
 | 8 | *swappiness too aggressive, set vm.swappiness=1* | swap is **zram** (compressed RAM) | recognises zram, no disk-tuning advice |
 | 9 | *security service enabled but not running* (−1) | `apparmor.service` skipped by an unmet condition | reads `ConditionResult=no` — not a gap |
-| 10 | `--check=raspberry_pi --fix` also ran `apt install ufw` | the firewall fix is outside the selected scope | `--fix` applies only the selected sections |
+| 10 | `--check=raspberry_pi --fix --apply` also ran `apt install ufw` | the firewall fix is outside the selected scope | `--fix` offers and applies only the selected sections |
 
 The cloud-init seed remedy (finding 2/3) was proven on the board before it was
 written into BOB: removing only the secret lines and rebooting kept Wi-Fi,
-`/etc/shadow`, netplan and the hostname unchanged. BOB then ran the whole round
-trip itself — two warnings, `--fix --apply --yes`, re-audit, all-clear.
+`/etc/shadow`, netplan and the hostname unchanged. The round trip then ran through
+BOB alone — two warnings, `--fix --apply --yes`, a second audit, all-clear.
 
 **What this does *not* establish.** One board, one architecture (ARMv6), one OS
 release (trixie). A Pi 4/5 on arm64, or an older image that still uses

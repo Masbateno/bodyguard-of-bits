@@ -34,7 +34,8 @@ _SINKS = (
     "bob/markdown_output.py",  # --format=markdown
     "bob/html_output.py",      # --format=html
     "bob/csv_output.py",       # --format=csv
-    "bob/webhook.py",          # -w / --webhook
+    "bob/webhook.py",          # -w / --webhook (generic fields + Slack text)
+    "bob/watch.py",            # --watch score line (v0.25.1)
 )
 
 _RENDERS_SCORE = re.compile(r"engine\.score\b(?!_)")
@@ -211,7 +212,6 @@ def test_no_sink_renders_the_score_without_being_listed():
         "bob/history.py",     # appends the integer to history.jsonl
         "bob/scoring.py",     # defines the property
         "bob/runner.py",      # orchestration, renders nothing
-        "bob/watch.py",       # re-runs the audit; rendering is delegated
         "bob/breakdown.py",   # renders deductions, not the score
         "bob/domain_scores.py",  # per-domain sub-scores, not the global one
     }

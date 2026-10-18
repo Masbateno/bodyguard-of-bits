@@ -8,7 +8,6 @@ option that *was* in the installed file looked missing.
 
 from __future__ import annotations
 
-import os
 import shutil
 import sys
 from pathlib import Path
@@ -69,7 +68,8 @@ def install_completion() -> int:
             ok = False
 
     dst_bin   = _DST_BIN
-    sudo_user = os.environ.get("SUDO_USER")
+    from bob.sysinfo import invoking_user_name
+    sudo_user = invoking_user_name() or None   # v0.25.1: DOAS_USER too
     bin_src   = None
     # I-2 (v0.7.3): validate SUDO_USER format AND catch pwd.getpwnam
     # KeyError before consuming the value. Pre-v0.7.3 a malformed or

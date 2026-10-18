@@ -254,7 +254,7 @@ def run_fixes(engine, config, t) -> None:
         findings = [f for f in findings if _selected(f)]
     actionable   = [f for f in findings if f.nature == "action"]
     # v0.18.0: a finding carrying a `fix_action` is applicable whatever its
-    # displayed command looks like. The thirteen sysctl fixes read as shell
+    # displayed command looks like. The sysctl fixes (thirteen in v0.18.0) read as shell
     # one-liners because that is how a human writes a two-step change; BOB
     # applies them through its own code instead — see bob/_sysctl_apply.py.
     auto_items   = [(f.message, f.cmd, f.fix_action) for f in actionable

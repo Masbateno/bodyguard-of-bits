@@ -6,8 +6,8 @@ Used by i18n.py and registry.py to locate locale and service data files.
 Environment variable contract
 -----------------------------
 ``BOB_SHARE`` — absolute path to the directory containing BOB's shipped data
-(locales/, data/, …). Set by the installer entry point (typically to
-``/usr/local/share/bob`` or ``/usr/share/bob`` for distro packages).
+(locales/, data/, …). Optional: nothing in BOB's own packaging sets it, and
+when it is unset or invalid the data bundled inside the package is used.
 
 The legacy ``UFW_AUDIT_SHARE`` alias was deprecated in v0.5.4 and removed
 in v0.6.0 (this release). Installers still setting it will see no effect —

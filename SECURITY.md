@@ -207,7 +207,7 @@ BOB crosses three trust boundaries during a run:
 |--------------------------------|--------------------------------------|------------------------------------------------------------------|
 | **User-controlled config**     | `~/.config/bob/config.conf`, `services.d/*.json`, `checks.d/*.py`, `profiles/*.conf` | Strict JSON Schema validation (`bob/data/schemas/`), ANSI sanitization (`bob.plugin_checks`), file size limits, Python identifier check on `config_key` |
 | **System file content**        | `/etc/ssh/sshd_config`, `/var/log/auth.log`, cron files, sudoers… | Bounded reads (`errors='replace'`, size caps, max-line counts), regex never anchors on user content, `_C_LOCALE_ENV` for subprocess to avoid locale-dependent parsing |
-| **Subprocess output**          | `ufw status`, `ss -tulnp`, `iptables -L`, `journalctl`, `openssl x509` … | All subprocess calls have `timeout=`, capture mode (no shell=True except in `--fix` where commands are explicitly user-approved), output never `eval`'d or interpolated into another command |
+| **Subprocess output**          | `ufw status`, `ss -tulnp`, `iptables -L`, `journalctl`, `openssl x509` … | All subprocess calls have `timeout=`, capture mode, no `shell=True` anywhere — `--fix` runs each command as an argv list and refuses one that needs a shell — output never `eval`'d or interpolated into another command |
 
 ### Out of scope
 
@@ -309,10 +309,11 @@ What it does **NOT** stop:
   - Attacks that exploit BOB's own input-parsing surface (a malicious
     `sshd_config` BOB tries to audit).
 
-**Real adversarial isolation requires an OS-level boundary.** BOB ships
-an AppArmor profile (`packaging/apparmor/bob.profile`) that confines the
-BOB process itself; this is the actual boundary against malicious
-plugins. Distros that ship BOB inside a confined runtime (snap, flatpak,
+**Real adversarial isolation requires an OS-level boundary.** The Debian
+package ships an AppArmor profile (`debian/apparmor.d/bob`) that confines the
+BOB process itself once enforced. It is in complain mode by default (it logs and
+does not block), so the boundary against malicious plugins exists only after
+`aa-enforce`. Distros that ship BOB inside a confined runtime (snap, flatpak,
 container) inherit their runtime's isolation.
 
 If you are running BOB unconfined under `sudo`, **you must code-review
@@ -407,7 +408,7 @@ BOB never phones home.
   - **Reports**: Detailed `-d` reports are written to the user-configured
     log directory (default: `~/.local/share/bob/logs/`). File permissions
     are `0600` (owner-only; chowned back to `$SUDO_USER` when invoked under
-    sudo). The report name is fully predictable (`bob_%Y%m%d_%H%M%S.log`)
+    sudo, or `$DOAS_USER` under doas since 0.25.1). The report name is fully predictable (`bob_%Y%m%d_%H%M%S.log`)
     and the file is created as root under sudo, so since **v0.14.1** it is
     opened with `O_NOFOLLOW` and chowned through the descriptor already held
     (`os.fchown`) rather than by name: without that, anyone able to write in
@@ -433,8 +434,8 @@ BOB never phones home.
     exhausted memory, and a FIFO blocked the process **forever** — a cron
     job that hangs instead of failing, on every subsequent run.
 
-When BOB is invoked via `sudo`, files in `~/.config/bob/` are automatically
-chowned back to `$SUDO_USER` (since v0.3.6) so they remain readable/editable
+When BOB is invoked via `sudo` (or `doas`, since 0.25.1), files in `~/.config/bob/` are automatically
+chowned back to `$SUDO_USER` (since v0.3.6) or `$DOAS_USER` so they remain readable/editable
 without sudo afterwards.
 
 ## Defense-in-depth recommendations (for packagers)

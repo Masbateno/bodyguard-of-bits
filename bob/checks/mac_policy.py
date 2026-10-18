@@ -32,7 +32,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from bob.checks._run import install_fix, TranslationFunc, _command_exists, _identity_t, _run, path_exists, service_enable_cmd
+from bob.checks._run import install_fix, TranslationFunc, _command_exists, _identity_t, _run, path_exists, service_enable_cmd, unit_active_state
+from bob._fs import strict_is_file
 from bob.scoring import CheckResult
 
 # Regex: "   N profiles are in enforce mode."
@@ -75,6 +76,13 @@ class MacPolicySnapshot:
     # The file that carries the kernel command line when BOB can name it —
     # the Raspberry Pi's cmdline.txt. "" when it cannot: then no command.
     kernel_cmdline_file: str = ""
+    # v0.25.1 — profiles installed but not loaded. Measured on Alpine 3.24:
+    # AppArmor live in the kernel, 145 profiles in /etc/apparmor.d, none
+    # loaded, because the `apparmor` service (which loads them) was not
+    # started — and BOB told the operator to install the profile packages
+    # that were already there.
+    apparmor_profiles_on_disk: int = 0
+    apparmor_service_state: "str | None" = None
     selinux_installed:  bool = False
     selinux_mode:       str  = ""
 
@@ -155,6 +163,15 @@ class MacPolicySnapshot:
             snap.apparmor_profiles_readable = counts is not None
             if counts is not None:
                 _, snap.apparmor_enforcing, snap.apparmor_complain = counts
+
+        if snap.apparmor_active and snap.apparmor_enforcing == 0 and snap.apparmor_complain == 0:
+            try:
+                snap.apparmor_profiles_on_disk = sum(
+                    1 for p in Path("/etc/apparmor.d").iterdir()
+                    if not p.name.startswith(".") and strict_is_file(p))
+            except OSError:
+                snap.apparmor_profiles_on_disk = 0
+            snap.apparmor_service_state = unit_active_state("apparmor")
 
         # v0.18.1 — whatever aa-status said, the kernel has the last word.
         # On a Raspberry Pi Zero W, as root, aa-status printed "apparmor
@@ -273,8 +290,15 @@ def check_mac_policy(
         and snapshot.apparmor_enforcing == 0
         and snapshot.apparmor_complain == 0
     ):
-        _cmd, _detail = install_fix(
-            _t, _t("mac_policy.apparmor_no_profiles_detail"), "apparmor-profiles")
+        if snapshot.apparmor_profiles_on_disk and snapshot.apparmor_service_state != "active":
+            # The profiles are there; the service that loads them is not
+            # running. Installing packages would change nothing.
+            _cmd = service_enable_cmd("apparmor", runlevel="boot")
+            _detail = _t("mac_policy.apparmor_profiles_not_loaded_detail",
+                         count=snapshot.apparmor_profiles_on_disk)
+        else:
+            _cmd, _detail = install_fix(
+                _t, _t("mac_policy.apparmor_no_profiles_detail"), "apparmor-profiles")
         if profile_name == "desktop":
             result.info(
                 message=_t("mac_policy.apparmor_no_profiles"),

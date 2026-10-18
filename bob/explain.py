@@ -46,6 +46,7 @@ import sys
 # passed in). A headless bob-core build stays importable.
 from bob.tui import _keys
 from bob.cis_refs import cis_benchmark_url, get_cis_ref
+from bob._privilege import with_privilege
 
 logger = logging.getLogger(__name__)
 
@@ -571,6 +572,27 @@ def _has_profile_variants(key: str, t) -> bool:
     return probe not in (bare_key, bracketed_key)
 
 
+def _extra_profile_prose(key: str, t) -> "list[tuple[str, str, str | None]]":
+    """``(profile, why, how-or-None)`` for profiles that carry their own prose
+    on a key that has no ``server`` prose.
+
+    v0.25.1. ``_has_profile_variants`` asks only for ``server.why``, so the
+    ``container`` text of ``hardening.protected_fifos_disabled`` and
+    ``hardening.protected_regular_disabled`` was written, translated, and never
+    shown. Such a key keeps its generic WHY / HOW; these sections follow it.
+    """
+    out = []
+    for profile in _EXPLAIN_PROFILES:
+        wkey = f"explain.{key}.{profile}.why"
+        why = t(wkey)
+        if why in (wkey, f"[{wkey}]"):
+            continue
+        hkey = f"explain.{key}.{profile}.how"
+        how = t(hkey)
+        out.append((profile, why, None if how in (hkey, f"[{hkey}]") else how))
+    return out
+
+
 def profile_override_notes(key: str, t) -> list[str]:
     """Derived lines about every shipped profile that treats *key* specially.
 
@@ -821,6 +843,21 @@ def _benchmark_rows(key: str) -> "list[tuple[str, str, str]]":
             for label in sorted(refs)]
 
 
+def _host_texts(t):
+    """The translation function, with the host's privilege word in explain texts.
+
+    The explain entries name ``sudo`` in their commands (232 of them, in both
+    languages). Where only ``doas`` is installed they must name ``doas``, as
+    the printed fixes do (v0.25.1). Only ``explain.*`` keys are rewritten.
+    """
+    def host_t(key, *args, **kwargs):
+        out = t(key, *args, **kwargs)
+        if isinstance(out, str) and str(key).startswith("explain."):
+            return with_privilege(out)
+        return out
+    return host_t
+
+
 def run_explain(key: str, t) -> bool:
     """
     Print a structured explanation for *key*.
@@ -836,6 +873,7 @@ def run_explain(key: str, t) -> bool:
         *key* is unknown (F4, v0.12.0 — the caller maps this to a non-zero
         exit code so scripts can distinguish "explained" from "no such key").
     """
+    t = _host_texts(t)
     key = key.strip()
 
     # ---- list mode ---------------------------------------------------------
@@ -957,6 +995,16 @@ def run_explain(key: str, t) -> bool:
             else:
                 print(f"  {_note}")
         print()
+        for _profile, _pwhy, _phow in _extra_profile_prose(norm, t):
+            print(_profile_header(_profile))
+            print(_DIVIDER_SHORT)
+            print(_pwhy)
+            print()
+            if _phow:
+                print(_indent(t("explain.ui.how_title")))
+                print(_indent(_DIVIDER_SHORT))
+                print(_how_block(_phow))
+                print()
 
     _explain_scoring(norm, t)
     return True
@@ -1100,7 +1148,7 @@ def _profile_override_note(profile: str, key: str, t) -> str:
 def _detail_screen(stdscr, key: str, t) -> None:
     """
     Display the full explanation for *key* inside curses.
-    ESC, q, or Enter returns to the picker.
+    Esc returns to the picker (the screen is nested; q does not quit here).
     The text is word-wrapped to the terminal width and scrollable with ↑↓/PgUp/PgDn.
     """
     import curses
@@ -1203,6 +1251,21 @@ def _detail_screen(stdscr, key: str, t) -> None:
                 for wrapped in textwrap.wrap("\u24d8  " + _line, w - 4) or [""]:
                     lines.append((f"  {wrapped}", yellow_attr))
             lines.append(("", normal))
+            for _profile, _pwhy, _phow in _extra_profile_prose(norm, t):
+                lines.append((f"  [ {_profile} ]", prof_attr))
+                lines.append(("  " + "─" * 10, dim))
+                for para in _pwhy.split("\n"):
+                    for wrapped in textwrap.wrap(para, w - 4) or [""]:
+                        lines.append((f"  {wrapped}", normal))
+                lines.append(("", normal))
+                if _phow:
+                    lines.append(("      " + t("explain.ui.how_title"), bold))
+                    lines.append(("      " + "─" * 10, dim))
+                    for para in _phow.split("\n"):
+                        _a = cmd_attr if _is_verbatim_line(para) else normal
+                        for wrapped in textwrap.wrap(para, w - 8) or [""]:
+                            lines.append((f"      {wrapped}", _a))
+                    lines.append(("", normal))
         return lines
 
     scroll = 0
@@ -1551,6 +1614,7 @@ def run_explain_interactive(t) -> None:
     Falls back to plain `--explain list` output when stdout is not a TTY
     or when curses is unavailable (e.g. inside a pipe or SSH without TERM).
     """
+    t = _host_texts(t)
     import curses
 
     if not sys.stdout.isatty():

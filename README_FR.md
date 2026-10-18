@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.25.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.25.1-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -65,7 +65,7 @@ Un mode CIS strict (sans modulation contextuelle) est prévu sur la roadmap.
 
 ## Installation
 
-> **Sécurité d'exécution** : BOB est en lecture seule. Il n'exécute que des commandes inoffensives (`ss`, `dpkg-query`, `systemctl status`, `sysctl -n`, `ufw status`, etc.) et n'écrit qu'à `~/.config/bob` et son répertoire de logs. Le mode optionnel `--fix --apply` demande confirmation avant chaque correction, et seulement pour les commandes que BOB peut exécuter sans surveillance — un diagnostic comme `smartctl -a` est affiché, jamais exécuté. Ajouter `--yes` supprime les confirmations ; rien d'autre ne modifie l'état du système. Un audit prend quelques secondes et **annonce sa propre durée** depuis la v0.16.4, sans qu'il faille te fier à nous — la valeur exacte dépend de la machine et du nombre de checks actifs.
+> **Sécurité d'exécution** : BOB est en lecture seule. Un audit n'exécute que des commandes en lecture seule (`ss`, `dpkg-query`, `systemctl status`, `sysctl -n`, `ufw status`, etc.) et n'écrit que dans `~/.config/bob` et son répertoire de journaux. Les modifications du système passent uniquement par des commandes explicites : `--install-completion`, `--install-cron` et `--fix --apply`. Le mode `--fix --apply` demande confirmation avant chaque correction, et seulement pour les commandes que BOB peut exécuter sans surveillance — un diagnostic comme `smartctl -a` est affiché, jamais exécuté. `--yes` supprime les demandes de confirmation. Un audit prend de quelques secondes à quelques minutes selon l'hôte, et **indique sa propre durée** depuis la v0.16.4 : inutile donc de le croire sur parole.
 
 ### Prérequis
 
@@ -105,20 +105,26 @@ Après cette étape, `sudo bob` fonctionne normalement et `bob --<TAB>` complèt
 ## Désinstaller
 
 ```bash
+sudo bob --manage-cron                    # d'abord, supprimer les audits programmés
+sudo rm -f /usr/local/bin/bob /etc/bash_completion.d/bob
 pipx uninstall bodyguard-of-bits
 ```
+
+Vos réglages, votre liste d'exclusions, votre ligne de base, votre historique et vos
+rapports restent dans `~/.config/bob/` et dans le répertoire de rapports
+(`~/.local/share/bob/logs/` par défaut) jusqu'à ce que vous les supprimiez.
 
 ---
 
 ## Démarrage rapide
 
 ```
-sudo bob                          # audit complet, profil serveur
+sudo bob                          # audit complet (profil server, ou desktop si un gestionnaire d'affichage est actif)
 sudo bob --verbose                # refs CIS et commandes de remédiation par résultat
 sudo bob --french                 # sortie en français
 sudo bob -d                       # enregistre le rapport complet dans un fichier
 sudo bob --profile workstation    # profil workstation (MÉMORISÉ comme défaut)
-sudo bob --check ssh,hardening    # uniquement les domaines sélectionnés
+sudo bob --check ssh,hardening    # uniquement les sections sélectionnées (voir bob --check=list)
 sudo bob --format json > out.json # sortie machine
 bob --explain ssh.password_auth   # expliquer un résultat (sans sudo)
 ```
@@ -133,7 +139,7 @@ $ sudo bob -d
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.25.0  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.25.1  │  Auditeur de durcissement Linux                              ║
 ║  Système       : Linux Mint 22.3                                             ║
 ║  Noyau         : 6.17.0-23-generic                                           ║
 ║  UFW           : 0.36.2                                                      ║
@@ -205,10 +211,10 @@ Sans sudo. Entièrement hors ligne — aucun appel externe ni collecte de donné
 
 | Profil | Cas d'usage |
 |--------|------------|
-| `server` | Par défaut — strict sur SSH, pare-feu, services |
-| `desktop` | Assoupli pour les systèmes desktop — auth SSH par mot de passe tolérée, apps GUI non signalées, mécanismes de mise à jour manuels acceptés (~35 surcharges étendant `server`) |
+| `server` | Par défaut — chaque constat à sa pleine sévérité. Utilisé quand aucun profil n'est défini, sauf si BOB trouve un gestionnaire d'affichage actif : il prend alors `desktop` et le dit dans une ligne INFO |
+| `desktop` | Assoupli pour les machines personnelles — étend `server` et ramène 35 constats en INFO, dont l'authentification SSH par mot de passe et les redirections SSH, les mises à jour automatiques, l'absence de sauvegarde, auditd, AppArmor sans profil en mode enforce, Secure Boot, et la fraîcheur des analyses rootkit / ClamAV / intégrité des fichiers |
 | `workstation` | Profil business first-class depuis v0.8.1 (plus un alias vers `desktop`) — garde backup / auditd / MAC-enforce au niveau WARN tout en relâchant la même ergonomie SSH / clamav / rootkit / file-integrity que `desktop` |
-| `container` | Étend `desktop` et saute les vérifications niveau hôte (modules noyau, durcissement noyau, secure boot, auditd, suid_audit, docker_audit, intégrité fichiers, rootkit) |
+| `container` | Étend `desktop` et saute 17 sections propres à l'hôte : durcissement sysctl, modules noyau et durcissement noyau, Secure Boot, Raspberry Pi, auditd, suid_audit, Docker-in-Docker, disque et mémoire, fail2ban, ClamAV, NTP, politique MAC, sauvegarde, et les outils de détection d'intrusion et d'intégrité (rootkit, intégrité des fichiers) |
 
 ```
 sudo bob --profile workstation
@@ -270,16 +276,22 @@ sudo bob --watch=60               # relancer toutes les 60 secondes
 
 ## Services personnalisés
 
-Déposez un fichier `.json` dans `~/.config/bob/services.d/` pour étendre le registre de services :
+Déposez un fichier `.json` — un tableau JSON d'entrées de service — dans `~/.config/bob/services.d/` pour étendre le registre de services :
 
 ```json
-{
-  "id": "my_app",
-  "name": "My App",
-  "port": "9000/tcp",
-  "risk": "medium"
-}
+[
+  {
+    "id": "my_app",
+    "label": "My App",
+    "packages": ["my-app"],
+    "services": ["my-app"],
+    "ports": ["9000/tcp"],
+    "risk": "medium"
+  }
+]
 ```
+
+Une entrée que BOB ne peut pas utiliser est ignorée et le reste du fichier se charge quand même ; `BOB_DEBUG=1` affiche pourquoi une entrée a été ignorée.
 
 ---
 
@@ -335,7 +347,7 @@ Optionnel : `geoip2` pour la géolocalisation IP (`pipx inject bodyguard-of-bits
 
 **Le Raspberry Pi** est reconnu depuis la v0.17.0. BOB lit le nom de la carte dans le device tree et rapporte ce qu'un PC n'a pas : les identifiants de provisionnement laissés sur la partition FAT de boot — le `userconf.txt` de l'Imager sous Bookworm et, sous trixie, l'amorçage cloud-init, dont `user-data` contient l'empreinte du mot de passe du compte et `network-config` la clé Wi-Fi, sur un système de fichiers sans notion de propriétaire — le marqueur `ssh` de premier démarrage, et le compte `pi` historique de la distribution quand il peut réellement se connecter. Les concepts firmware x86 dégradent au lieu de déduire : le microcode ne s'applique pas, et Secure Boot rapporte qu'aucun UEFI n'a été trouvé plutôt que d'affirmer un BIOS que la carte n'a pas. BOB ne teste **pas** si le compte `pi` a gardé le mot de passe par défaut : il faudrait `crypt`, que Python a retiré de la bibliothèque standard en 3.13. La section a été testée sur `aarch64` émulé (qemu-user) : la carte y est lue dans le device tree, la partition de boot se résout en `/boot/firmware` (chemin Bookworm), le hash yescrypt de l'imager est reconnu et le round trip `--fix --apply` supprime le fichier et efface le constat. L'émulation n'est pas du matériel, et elle n'y est pas non plus silencieusement équivalente : `setrlimit(RLIMIT_AS)` y retourne un succès sans rien appliquer, ce qui est précisément ainsi qu'on a surpris le bac à sable des plugins à revendiquer un plafond mémoire jamais obtenu. Un job arm64 tourne sur chaque PR : il refuse de passer si `uname -m` ne répond pas réellement `aarch64`, puis vérifie que l'audit sort proprement, que le microcode dégrade, qu'un UEFI absent n'est pas annoncé comme un BIOS, et que la section Raspberry Pi se déclenche sur une carte simulée. **v0.18.1 est la première version auditée sur un Pi physique** — un Zero W sous Raspbian 13 trixie — et elle a trouvé ce que l'émulation ne pouvait pas trouver : le contrôle de la partition de boot cherchait un fichier que trixie n'écrit plus, pendant que l'amorçage cloud-init d'à côté contenait l'empreinte actuelle du compte sudo, et la détection de force brute SSH était aveugle à OpenSSH ≥ 9.8. Une carte n'est pas une matrice : les retours sur d'autres modèles valent toujours plus que n'importe quel nombre d'exécutions émulées.
 
-Sur les distributions non-apt (Fedora, RHEL, openSUSE, Arch, Alpine), les checks qui s'appuient sur les métadonnées `apt` (ex. mises à jour de sécurité en attente) émettent INFO au lieu de WARN — BOB ne consomme pas les métadonnées de mise à jour de `dnf`/`zypper`/`pacman`. Les références CIS Ubuntu 22.04 restent émises quand le contrôle sous-jacent (flags sysctl, config SSH, permissions de fichiers) est indépendant de l'OS.
+Les mises à jour en attente sont lues par le gestionnaire de paquets de l'hôte — apt, dnf, zypper, pacman ou apk. Les mises à jour de sécurité en attente coûtent 2 points là où le gestionnaire sait distinguer un correctif de sécurité d'une mise à jour ordinaire (apt avec une suite `-security`, dnf, zypper). pacman, apk et une distribution apt « rolling » sans suite `-security` (Kali) ne le savent pas : BOB y signale les paquets en attente en INFO et dit qu'il ne peut pas les classer, plutôt que de lire « aucune mise à jour de sécurité » comme « à jour ». Le contrôle unattended-upgrades est propre à apt. Les références CIS Ubuntu 22.04 restent émises quand le contrôle sous-jacent (flags sysctl, config SSH, permissions de fichiers) est indépendant de l'OS.
 
 **Les commandes de remédiation sont choisies pour votre gestionnaire de paquets** depuis la v0.17.0. Auparavant, chaque constat « installez ceci » affichait `sudo apt install …` sur tous les hôtes, avec les noms de paquets de Debian — or `sudo dnf install auditd` n'installe rien, Fedora l'appelant `audit`. Les noms ont été mesurés en conteneur, pas récités ; et là où BOB n'a pas de nom mesuré pour votre gestionnaire, il le dit au lieu d'inventer une commande : une instruction qui n'installe rien est pire qu'un aveu, puisque vous n'avez aucune raison d'en douter.
 

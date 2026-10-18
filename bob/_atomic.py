@@ -114,7 +114,7 @@ def atomic_write(path: Path, content: str, *, mode: int = 0o600) -> None:
         OSError: on filesystem errors. The caller decides whether to swallow
                  (best-effort persistence) or surface to the user.
     """
-    # M-7 (v0.7.2): use tempfile.NamedTemporaryFile to generate a per-call
+    # M-7 (v0.7.2): use tempfile.mkstemp to generate a per-call
     # unique tmp name in the destination directory. Pre-v0.7.2 the tmp
     # name was the fixed pattern ``path.suffix + ".tmp"``: two concurrent
     # ``bob`` invocations (cron + manual + watch can coincide) raced on

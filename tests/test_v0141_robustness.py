@@ -91,18 +91,24 @@ class TestSectionFaultBarrier:
     def test_no_sec_call_site_collects_its_snapshot_eagerly(self):
         """Every ``_sec`` call must pass a factory, not a pre-built snapshot.
 
-        ``hardening_snapshot`` is the one documented exception — it also feeds
-        ``ChecksResult`` for the --json-full sysctl block, so it stays eager.
+        ``hardening_snapshot`` and ``ipv6_snapshot`` are the documented
+        exceptions — both are returned in ``ChecksResult`` for --json-full, so
+        they stay eager, collected inside a ``_core`` barrier instead.
+
+        v0.25.1: the section pattern was ``[a-z_]+`` and read no digit, so
+        the ``ipv6`` call site was never examined; the guard now checks it saw it.
         """
         import re
         src = (REPO / "bob" / "runner.py").read_text().splitlines()
         offenders = []
+        seen = set()
         for line in src:
-            m = re.match(r'\s*_sec\(\s*"([a-z_]+)",\s*([a-z_]\w*)\s*[,)]', line)
+            m = re.match(r'\s*_sec\(\s*"([a-z0-9_]+)",\s*([a-z_]\w*)\s*[,)]', line)
             if not m:
                 continue
             section, var = m.group(1), m.group(2)
-            if var == "hardening_snapshot":
+            seen.add(section)
+            if var in ("hardening_snapshot", "ipv6_snapshot"):
                 continue
             # a bare local name assigned from *.from_system() above = eager
             if any(re.match(rf'\s*{re.escape(var)}\s*=.*from_system\(', x) for x in src):
@@ -110,6 +116,7 @@ class TestSectionFaultBarrier:
         assert not offenders, (
             f"these sections collect their snapshot outside the fault barrier: {offenders}"
         )
+        assert {"ipv6", "hardening"} <= seen, f"the pattern missed a bare-variable call site: {sorted(seen)}"
 
     def test_checks_result_exposes_degraded_sections(self):
         from bob.runner import ChecksResult

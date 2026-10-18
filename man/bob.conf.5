@@ -1,5 +1,5 @@
 .\" Manpage for ~/.config/bob/config.conf
-.TH BOB.CONF 5 "2026-10-16" "BOB 0.25.0" "File Formats"
+.TH BOB.CONF 5 "2026-10-18" "BOB 0.25.1" "File Formats"
 .SH NAME
 bob.conf \- BOB user configuration file
 .
@@ -7,8 +7,10 @@ bob.conf \- BOB user configuration file
 .I ~/.config/bob/config.conf
 .PP
 .I /root/.config/bob/config.conf
-(when invoked as actual root without
-.BR SUDO_USER )
+(when invoked as actual root, with neither
+.B SUDO_USER
+nor
+.BR DOAS_USER )
 .
 .SH DESCRIPTION
 .B bob
@@ -21,10 +23,14 @@ text format with one entry per line. Lines starting with
 are comments. Order does not matter.
 .PP
 When invoked via
-.BR sudo ,
+.BR sudo
+or
+.BR doas ,
 .B bob
 honors
 .B SUDO_USER
+or
+.B DOAS_USER
 and resolves the path against the invoking user's home, not
 .IR /root/ .
 The file is owned by that user with mode
@@ -32,11 +38,13 @@ The file is owned by that user with mode
 .PP
 The file is created the first time
 .B bob
-persists a setting — a
+persists a setting — a valid
 .B \-\-profile
-or
+or a
 .B \-\-webhook
-passed on the command line, or a log directory chosen in
+passed on the command line, the log directory saved by the first
+.B \-d
+run, or one chosen in
 .BR \-\-manage\-logs .
 .RB ( \-\-reconfigure
 deletes it.) It is safe to edit by hand.
@@ -54,6 +62,23 @@ and falls back to the well-known port when no directive is found.
 Earlier revisions of this page documented
 .IR ssh_port " and " samba_ports
 keys here. No code has ever read them: writing one has no effect.
+.SS Audit profile
+.TP
+.B audit_profile = \fINAME\fR
+The profile used when no
+.B \-\-profile
+is given. Written by a valid
+.BR "\-p " \fINAME\fR;
+an invalid name is never saved. When the key is absent,
+.B bob
+picks
+.B desktop
+if
+.B display-manager.service
+is active, else
+.BR server .
+A cron job does not read it: its script carries its own
+.BR \-\-profile .
 .SS Log directory
 .TP
 .B log_dir = \fIPATH\fR
@@ -62,6 +87,11 @@ Directory where
 writes detailed audit reports. Default:
 .I ~/.local/share/bob/logs/
 (under the invoking user, even via sudo).
+.TP
+.B log_dirs_extra = \fIJSON list\fR
+Earlier report directories that
+.B \-\-manage\-logs
+still tracks (written by BOB; a directory is dropped when you forget it there).
 .SS SUID whitelist (since v0.3.2)
 .TP
 .B suid_whitelist = \fIPATTERN[,PATTERN,...]\fR
@@ -102,9 +132,11 @@ One of
 keeps a separate
 .I ~/.config/bob/emails
 file (also mode 0600) for the email-store wizard used by
-.BR \-\-install\-cron .
-One address per line, comment lines start with
-.BR # .
+.B \-\-install\-cron
+and
+.BR \-\-manage\-cron .
+One address per line. There is no comment syntax: every non-empty line is read
+as an address.
 This is NOT part of
 .IR config.conf .
 .

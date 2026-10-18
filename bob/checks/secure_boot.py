@@ -11,6 +11,9 @@ Score impact:
   - Secure Boot enabled:              OK
   - Secure Boot disabled on server:   INFO  (no deduction — less common, VMs)
   - Secure Boot disabled on desktop:  WARN  −1 pt  (bootkits, physical access)
+    — emitted for a profile named desktop or workstation, whose shipped
+    .conf then downgrades secure_boot.disabled to INFO: no shipped profile
+    deducts it (measured, v0.25.1 doc pass)
 
 Detection strategy (in order):
   1. ``mokutil --sb-state``  — most reliable on Ubuntu/Debian

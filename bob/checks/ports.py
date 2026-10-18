@@ -378,8 +378,13 @@ def check_ports(
                 # check that just credited firewalld. The port is governed by
                 # firewalld's default zone, not by an absent UFW rule.
                 if firewalld_active:
+                    # v0.25.1 — a port docker-proxy holds is one Docker
+                    # published: measured on Fedora 44 (firewalld, Docker
+                    # 29.8.2), it answered from the LAN while the interface's
+                    # zone allowed only cockpit, dhcpv6-client and ssh.
                     result.info(
-                        message=_t("ports.uncovered_firewalld", port=pp_info),
+                        message=_t("ports.uncovered_firewalld_docker" if lport.process == "docker-proxy"
+                                   else "ports.uncovered_firewalld", port=pp_info),
                         key="ports.uncovered_firewalld",
                     )
                     continue

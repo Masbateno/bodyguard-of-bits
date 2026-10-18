@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.25.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.25.1-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -24,10 +24,10 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 
 ### Core audit
 
-- **ASCII banner** with system information — distro, hostname, UFW version, user, date
+- **ASCII banner** with system information — distro, host, kernel, the firewall tools' versions (UFW, firewalld, iptables, nftables), init system, user, date
 - **Firewall status check** — UFW, firewalld (default zone and its target) or a raw nftables/iptables default-deny ruleset: active/inactive, default incoming policy; a firewalld default zone whose target is ACCEPT is an ALERT −3, like UFW's ALLOW default (v0.24.2)
 - **UFW rule analysis** — duplicate rules, unrestricted `allow from any`, IPv6 consistency
-- **Contextual scoring** — network context detection (direct public IP vs NAT); penalties are heavier on internet-exposed machines (an uncovered open port goes 1 → 2 points; a high/critical exposed service 2 → 3); firewall inactive caps score at 3/10
+- **Contextual scoring** — network context detection (direct public IP or an active DDNS client vs NAT); penalties are heavier on internet-exposed machines — a public IP or DDNS (an uncovered open port goes 1 → 2 points; a high/critical exposed service 2 → 3); firewall inactive caps score at 3/10
 - **Security score** 0–10 with risk level: LOW / MEDIUM / HIGH / CRITICAL; findings split into *Action required* / *Possible improvements* / *Normal configuration*
 - **Audit profiles** — `server` (default), `desktop`, `workstation`, `container`; active profile shown in the summary box. **v0.8.1 BREAKING**: `workstation` is no longer an alias for `desktop` and ships its own business-tier overrides (backup / auditd / mac_policy kept at WARN while desktop relaxes them to INFO)
 - **CIS compliance mapping inline** — each finding shows its CIS code `[CIS:X.Y.Z]` in the summary box; full reference text in `--verbose` mode; 226 entries (117 formal CIS, 98 best-practice, 7 Docker, 4 Kubernetes)
@@ -38,7 +38,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 
 - **38 known network services** detected with UFW exposure analysis and two-axis risk context (exposure + threat) for critical and high-risk services; installed but inactive CRITICAL/HIGH services emit ⚠ + risk context block
 - **Services panorama** — compact table of all 38 known services after the audit: SERVICE / STATUS / PORT(S) / UFW; non-installed services shown dimmed. States come from systemd, or — since v0.18.0 — from OpenRC on hosts without it (Alpine, Gentoo, Devuan), where `rc-service status` exit codes are read and existence is settled by `/etc/init.d/<name>`, so a probe that could not run is never read as a stopped daemon. A service **enabled but not running** is reported and scored like its mirror, *running but not enabled*
-- **iptables/nftables audit** — when UFW is inactive: detects active backend (iptables vs nftables); checks INPUT and FORWARD default policies; verifies conntrack stateful filtering; WARN −1 pt per permissive policy
+- **iptables/nftables audit** — when UFW is inactive: detects active backend (iptables vs nftables); checks INPUT and FORWARD default policies, the loopback rule and the ESTABLISHED/RELATED rule: INPUT accepting everything — by its policy, or (v0.25.0) by a first rule that accepts all behind a DROP policy — → ALERT −3 pts, with no command (which rule to keep is the operator's); an nftables ruleset that filters no inbound traffic, or no firewall backend at all → WARN −3 pts; FORWARD policy ACCEPT, no loopback rule or no ESTABLISHED/RELATED rule → WARN −1 pt each
 - **Docker analysis** — iptables bypass detection and list of ports exposed by running containers
 - **Virtualisation analysis** — detects active hypervisors (libvirt/KVM, VirtualBox, VMware, LXD/LXC) and Snap network packages that may create bridge interfaces and bypass UFW
 - **Listening ports analysis** — unified single-pass; ephemeral and system ports silently skipped; NetBIOS handled with contextual warning
@@ -47,21 +47,21 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 - **IPv6 consistency check** — detects IPv6 listeners not covered by a matching UFW v6 rule; conflict detection when IPv6 is disabled globally but listeners are present; link-local/ULA-only addresses downgraded to INFO (still named reachable from the LAN, UFW not filtering them — v0.24.1); on a host without UFW the listeners are attributed to the filter that governs them, with no claim about which address families a raw ruleset covers (v0.24.1); with UFW set to IPV6=no, BOB reads the IPv6 INPUT policy — UFW then drops all IPv6, so the listeners are reported blocked, not exposed (v0.24.2); under firewalld the default zone's target decides for IPv6 as for IPv4 (v0.24.2)
 - **UFW logging level check** — `off` → ALERT −2 pts (no visibility into blocked traffic); `low`/`medium` → OK; `high`/`full` → INFO
 - **Port exposure grouping** — groups exposed listening services by interface scope and risk level; system daemons on known OS ports classified separately from user-space apps
-- **CUPS print service** — flags a CUPS daemon listening beyond localhost (`Listen`/`Port` on a non-loopback address) → WARN −1 pt with `cupsctl --no-remote-any`; `Browsing On` (network printer advertisement) → INFO; localhost- or socket-only reads OK; no `cupsd.conf` → not audited (v0.21.0)
+- **CUPS print service** — flags a CUPS daemon listening beyond localhost (`Listen`/`Port` on a non-loopback address) → WARN −1 pt; the fix removes exactly the `Listen`/`Port` lines BOB read, keeps a `Listen localhost:<port>` and restarts CUPS through the host's init system (v0.25.0 — `cupsctl --no-remote-any` exited 0 and changed nothing on a hand-written `Listen`); `Browsing On` (network printer advertisement) → INFO; localhost- or socket-only reads OK; no `cupsd.conf` → not audited (v0.21.0)
 
 ### System hardening
 
 - **Network & filesystem sysctls** — rp_filter, ICMP redirects (IPv4 accept/send, IPv6 accept), source routing, SYN cookies and `fs.protected_hardlinks`/`symlinks`/`fifos`/`regular` → WARN −1 pt each when weakened (rp_filter and send_redirects relaxed to INFO by the desktop/workstation profiles); log_martians and ICMP broadcast echo → INFO. Automatic updates belong to the updates audit, AppArmor/SELinux to the MAC policy audit
 - **SSH security audit** — full `sshd_config` analysis (12 directives with value rules, plus AllowUsers/AllowGroups/DenyUsers/DenyGroups access lists and weak Ciphers/MACs/KEX); private key audit (type, size, passphrase); `authorized_keys` inspection; `~/.ssh/config` client-side check; `known_hosts` entry count; distro-aware install hints; `Include`d drop-ins parsed in order. **Remediation targets the file sshd reads first** (11 directives): `/etc/ssh/sshd_config.d/00-bob-hardening.conf` when `sshd_config` includes that directory (it sorts before cloud-init's `50-cloud-init.conf`, and sshd keeps the first value it reads), otherwise the *top* of `sshd_config` — never appended, where a trailing `Match` block would capture it. Every earlier assignment of the directive is deleted first (any case, space or `=`), so a fix is idempotent; `sshd -t` must accept the result before the restart (`systemctl` with the distribution's unit name, `rc-service` on OpenRC); the commands run under GNU and BusyBox `sed` alike (v0.24.1, measured on Debian, Fedora with SELinux enforcing, and Alpine)
-- **Sensitive files & sudoers** — permissions audit on `/etc/passwd`, `/etc/shadow`, `/etc/gshadow`, `/etc/group`, `/etc/sudoers`; SSH host private key permissions; `NOPASSWD:ALL` detection across sudoers and sudoers.d
+- **Sensitive files & sudoers** — permissions audit on `/etc/passwd`, `/etc/shadow`, `/etc/gshadow`, `/etc/group`, `/etc/sudoers`; SSH host private key permissions; `NOPASSWD:ALL` detection across sudoers and sudoers.d, and doas `permit nopass` rules (v0.21.3)
 - **SUID/SGID audit** — root-owned SUID and SGID binaries outside the expected set (whitelistable in `config.conf`) → WARN −1 pt. Since v0.18.0 each one is also **attributed to its package** (`dpkg -S`, `rpm -qf`, `pacman -Qo`, `apk info --who-owns`): a root-owned SUID binary that **no package ships** is its own finding → ALERT −2 pts — the shape a left-behind privilege escalation takes. A query that answers about itself rather than the file (a locked database, a missing manager) produces no finding, so it never becomes an accusation
 - **System updates audit** (cross-distro since v0.19.0) — pending security packages (−2 pts flat) via the host's package manager: `apt-get -s dist-upgrade`, `dnf updateinfo --security`, or `zypper list-patches --category security`; `pacman`/`apk` have no security channel so every pending package is a regular INFO. Absent `unattended-upgrades` combined with pending security updates (−1 pt compound, apt only); regular updates → INFO only; the remediation command is per-manager
-- **System umask audit** — reads umask from `/etc/login.defs`, PAM, `/etc/profile`, shell RC files, and current process; permissive umask (0002/0000) → WARN −1 pt; conflicting sources → WARN −1 pt
-- **Secure Boot** — UEFI state via `mokutil --sb-state` / `efivars` / `bootctl`; WARN −1 pt if disabled on desktop; INFO if disabled on server/VM or BIOS/unknown
+- **System umask audit** — reads umask from `/etc/login.defs`, PAM, `/etc/profile`, shell RC files, and current process; a group-writable umask `002` → WARN −1 pt; a world-writable `000` → ALERT −2 pts; conflicting definitions across sources → INFO
+- **Secure Boot** — UEFI state via `mokutil --sb-state` / `efivars` / `bootctl`; disabled → INFO on every shipped profile (on server by design — VMs, cloud, custom kernels; desktop and workstation relax the check's WARN to INFO since v0.8.1 — NVIDIA drivers, dual boot, custom kernels); Setup Mode (no Platform Key enrolled: any bootloader runs) → WARN −1 pt on the server profile, INFO on desktop/workstation; no UEFI or unknown → INFO
 - **Firmware & microcode audit** — `fwupdmgr` pending device firmware; CPU microcode package (Intel/AMD); WARN −1 pt if absent or outdated
 - **GRUB bootloader** — `grub.cfg` permission audit: world/group-readable → WARN −1 pt, escalated in wording when a `password_pbkdf2` hash is present (an offline-crackable secret exposed) or the file is writable; no GRUB superuser password → INFO; no GRUB config at all (a non-GRUB boot such as a Raspberry Pi) → INFO, never a false finding (v0.21.0, CIS 1.4.1)
 - **Mount hardening** — effective `nodev`/`nosuid`/`noexec` on `/tmp`, `/var/tmp`, `/dev/shm` read from `/proc/self/mounts`: a separate mount missing `nodev`/`nosuid` → WARN −1 pt; missing only `noexec` → INFO; a scratch area that is *not* its own mount is INFO, never penalised — the CIS "must be a separate partition" trap is deliberately avoided (v0.21.0, CIS 1.1); `/proc` without `hidepid` → INFO, never scored (v0.24.0)
-- **Disk encryption (LUKS)** — reports whether the root filesystem is on a LUKS/dm-crypt device, walking the device-mapper stack so LVM-on-LUKS is recognised, not just a bare crypt mount; profile-gated and never binary: an unencrypted root → WARN −1 pt on desktop/workstation (portable, physically exposed), INFO on a server (remote-unlock tooling needed, locked-rack threat model), not-applicable in a container, unknown when the root device cannot be resolved; BOB never enables encryption — a destructive, one-way operation (v0.21.0)
+- **Disk encryption (LUKS)** — reports whether the root filesystem is on a LUKS/dm-crypt device, walking the device-mapper stack so LVM-on-LUKS is recognised, not just a bare crypt mount; profile-gated and never binary: an unencrypted root → WARN −1 pt on desktop/workstation (portable, physically exposed), INFO on a server (remote-unlock tooling needed, locked-rack threat model), not-applicable in a container, unknown when the root device cannot be resolved; BOB never enables encryption — a destructive, one-way operation (v0.21.0). Since v0.25.0, with the root encrypted, the other local filesystems on a block device and the swap on disk are resolved the same way (zram, `/boot`, the EFI partition, snaps, ISO images and removable media skipped): data or swap in clear → `disk_encryption.data_unencrypted`, WARN −1 pt on desktop/workstation, INFO on a server; a loop, RAID or ZFS volume is reported undecided, never counted as encrypted
 - **PAM account lockout** — flags a missing `pam_faillock` (or legacy `pam_tally2`) in the auth stack: WARN −1 pt on a server, INFO on desktop/workstation (where mass account lockout is itself a DoS lever); complementary to fail2ban (network layer) — faillock covers local logins, su and sudo; an unreadable/absent PAM stack reads unknown, not clean; BOB never auto-edits PAM (v0.21.0, CIS 5.3.2)
 - **polkit authorization** — a polkit `.rules`/`.pkla` file (or its `rules.d` directory) writable by a non-root user is a direct privilege-escalation path, since polkit evaluates its rules as root → WARN −1 pt with a `chown`/`chmod` fix; a legacy `.pkla` granting `ResultAny=yes` → INFO; the rules' JavaScript is deliberately not parsed for over-broad `YES` returns (a false-positive machine) (v0.21.0)
 - **Core dumps** — `kernel.core_pattern`, systemd-coredump `Storage=`, and `hard core 0` limits; reports whether crash dumps could persist a privileged process's memory (written to disk / piped to a handler such as apport / handled by systemd-coredump) or are disabled; INFO-only, no deduction (v0.21.0)
@@ -73,7 +73,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 - **Password policy** — no `pam_pwquality`/`pam_cracklib`, or a weak `minlen` → WARN −1 pt (INFO under the desktop/workstation profiles); password aging → INFO; a weak hashing algorithm (MD5/DES/bigcrypt) in `login.defs` or any `pam_unix` stack → WARN −1 pt (v0.24.0); BusyBox `passwd`, which reads neither, is reported as built-in
 - **Root PATH** (v0.22.0) — root's configured PATH (`ENV_SUPATH`, sudoers `secure_path`) with a world-writable, `.` or relative component → WARN −1 pt
 - **Privileged `/dev` nodes** (v0.22.0) — world access on `/dev/mem`, `/dev/kmem`, `/dev/port` or raw block devices, stat-only → INFO
-- **File capabilities** (v0.24.0) — `security.capability` read directly on the SUID scan roots: a root-equivalent capability on a binary outside the grants measured on real distributions → WARN −1 pt; any other capability → INFO
+- **File capabilities** (v0.24.0) — `security.capability` read directly on the SUID scan roots: a root-equivalent capability on a binary outside the grants measured on real distributions → WARN −1 pt; any other capability → INFO. On an RPM host (v0.25.0) the package database decides (one `rpm -qf` for all files): a file no package owns, or carrying more than its package ships, is not a known grant whatever its name, and the detail says which
 - **CPU security** (v0.24.0) — the kernel's own verdict in `/sys/devices/system/cpu/vulnerabilities`: "Vulnerable" → WARN −1 pt; mitigated-but-SMT-exposed, "Unknown", mitigation-disabling boot switches and an inactive IOMMU (x86) → INFO; a kernel that reports nothing (ARMv6) → INFO, not blindness
 - **Package authenticity** (v0.24.0) — written-down switches that disable package authentication (apt `trusted=yes`/`AllowUnauthenticated`, dnf/zypper `gpgcheck=0`, pacman `SigLevel Never`/`Optional`, apk `allow-untrusted`) → WARN −1 pt, worded per manager (apt authenticates its signed index, not each `.deb`)
 - **Crypto policy** (v0.24.0) — crypto-policies' *applied* policy: `LEGACY` → WARN −1 pt; a weakening module, a dated or unknown policy, configured ≠ applied → INFO; no crypto-policies on the host → INFO
@@ -82,6 +82,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 - **Systemd timers security** — curl/wget piped to a shell in ExecStart → WARN −2 pts; world-writable scripts in ExecStart → WARN −1 pt; user-created root timers without `User=` → INFO
 - **Service hardening (`systemd-analyze security`)** — surfaces the systemd exposure score of running services (NoNewPrivileges, ProtectSystem, capability bounding, namespacing…); INFO-only summary (counts by predicate + least-hardened running services + pointer to `systemd-analyze security <unit>`), **no deduction** — a high default exposure is the normal state of a Linux host, not a chosen misconfiguration (v0.13.0)
 - **Container security posture** — when BOB runs *inside* a container, reads the container's own isolation from kernel interfaces (capability bounding set → privileged / CAP_SYS_ADMIN detection, seccomp mode, user namespace mapping, writable rootfs); the whole section is suppressed on a non-container host. the fast-follow promised in v0.13.0 landed in **v0.15.4**, validated against four real podman containers: privileged −3, CAP_SYS_ADMIN −2, seccomp switched off −1. Runtime defaults (writable rootfs, root without a user namespace) stay INFO — an operator choice is penalised, an editor default is not (v0.13.0, teeth v0.15.4)
+- **Kubernetes node** (v0.25.0) — runs where a kubelet runs (upstream `kubelet`, MicroK8s' `kubelite`, k3s) and audits the node, with no cluster credentials. Containers are read through `ctr` (`microk8s.ctr`, `k3s ctr`, `ctr`), else `crictl` (CRI-O): every Linux capability in a container's bounding set, in a pod outside `kube-system` → WARN −1 pt; a sensitive hostPath mount (`/`, `/etc`, `/root`, `/var/lib/kubelet`, a container runtime's socket) outside `kube-system` → WARN −1 pt; a pod in the host's network, PID or IPC namespace → INFO; `kube-system` pods with those rights listed, not deducted (INFO). The kubelet is asked from the host itself on 127.0.0.1 with no credentials: `GET /pods` 401 → OK, 403 → INFO; `POST /run` (create) and `GET /exec` (get) for an upper-case namespace and pod name that cannot identify a valid pod — either one authorised → ALERT −3 pts, whether or not the reads are allowed; pod specifications readable and no command endpoint shown to be authorised → WARN −1 pt; a 405 (debugging endpoints off) or a 5xx is not an authorisation; the read-only port 10255 answering → WARN −1 pt. The node, not the cluster; reachability from the network is not tested; k3s is not measured
 - **Systemd socket units** — flags `.socket` units that are still active while their backing service is gone (masked / not-found) or that are in a failed state — a listening socket with no working consumer, usually the leftover of a removed/renamed package; marks ones bound to a non-loopback address. Empty-trigger systemd internals are never flagged. **v0.15.4**: an orphan bound to a non-loopback address deducts −1 — the port answers and then fails the connection; the same breakage on loopback stays INFO (v0.13.1, teeth v0.15.4)
 - **Cloud context (host-side)** — only on a cloud instance (conservative detection: a SMBIOS/DMI-identified provider, or cloud-init corroborated by an on-link metadata route — a bare cloud-init install on a Proxmox/VMware/homelab VM is *not* treated as cloud): surfaces host-visible cloud exposure — instance metadata service reachable on-link (IMDSv2 reminder), world-readable persisted user-data — strictly host-side, no cloud API/credentials. **v0.15.4**: world-readable user-data deducts −2 (cloud-init writes it 0600, so any other mode is a choice). IMDS reachability stays INFO: whether IMDSv2 is enforced is a property of the instance's metadata options and cannot be read from the host (v0.13.1, teeth v0.15.4)
 
@@ -90,26 +91,26 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 - **UFW log analysis** — parses `/var/log/ufw.log` over a configurable period (`--log-days=N`, default 7 days); total blocked attempts, top source IPs with geolocation, top targeted ports, bruteforce detection (>10 attempts/60 s), attempts on installed service ports
 - **SSH auth.log analysis** — parses `/var/log/auth.log`; brute-force detection (≥50 failed attempts across the whole analysed period, all sources combined → WARN, no deduction); last successful logins; top failed-login sources
 - **IP geolocation** — source IPs enriched with country and operator via GeoIP2 (optional, `python3-geoip2` + GeoLite2 database); private ranges identified as local network; results cached per session
-- **IoT/local source dominance** — detects when a single private IP accounts for ≥ 70 % of all blocked UFW traffic over ≥ 50 log entries (WARN, −1 pt); typical of LAN-scanning IoT devices
+- **IoT/local source dominance** — detects when a single private IP accounts for ≥ 70 % of all blocked UFW traffic over ≥ 50 log entries (INFO, no deduction — usually benign mDNS/SSDP/UPnP noise); typical of LAN-scanning IoT devices
 - **NTP time synchronisation** — systemd-timesyncd, chronyd, or ntpd; WARN −1 pt if disabled or not synchronised
 - **Fail2ban intrusion prevention** — installation, service status, active jails, SSH jail detection; WARN −1 pt if inactive or no jails
 - **Rootkit & integrity scan** — rkhunter/chkrootkit detection; WARN −1 pt for outdated database (≥7 days), missing or stale scan (>30 days)
-- **Linux Audit Framework (auditd)** — installation, service status, loaded rules, coverage of `/etc/passwd`, `/etc/shadow`, `/etc/sudoers`; WARN −1 pt each for inactive service, no rules, uncovered sensitive files (server profile only)
+- **Linux Audit Framework (auditd)** — installation, service status, loaded rules, coverage of `/etc/passwd`, `/etc/shadow`, `/etc/sudoers`; WARN −1 pt each for inactive service, no rules, uncovered sensitive files (server and workstation profiles; INFO on desktop; skipped in a container)
 - **File integrity monitoring (AIDE/Tripwire)** — installation, database existence, last check recency; WARN −1 pt if no database or no recent check (>30 days)
 - **Samba security audit** — SMB1 protocol (ALERT −2 pts); null passwords (ALERT −3 pts); server signing disabled (WARN −1 pt); guest-writable/readable shares; dedicated `samba` domain
-- **ClamAV antivirus audit** — installation, virus database freshness via mtime (WARN/ALERT based on age), daemon status, last scan date parsed from standard log paths
+- **ClamAV antivirus audit** — installation, virus database freshness via mtime (WARN/ALERT based on age), daemon status, last scan date parsed from standard log paths; clamd's local socket reachable by every local user (any of them can send SHUTDOWN) → WARN −1 pt, with no command — which clients keep access is the operator's call (v0.25.0)
 - **SMTP local exposure** — detects MTA (Postfix, Exim, Sendmail) listening on all interfaces vs localhost only; WARN −1 pt when publicly exposed
 - **Signal correlation engine** — 6 compound-risk rules (root+no-fail2ban, password-auth+brute-force, root+password, NOPASSWD+SUID, security-updates-pending+no-fail2ban, logging-off+no-fail2ban+no-auditd); evaluated post-audit on active ALERT+WARN findings
 - **Recurring finding tracker** — consecutive-audit appearance counter per ALERT/WARN key; stored at `~/.config/bob/recurrence.json`
-- **Desktop application detection** — known GUI apps (Steam, Discord, Zoom, Signal, VLC, Spotify, Slack, Telegram, Chrome, Firefox…) running as processes; INFO findings, no deduction
+- **Desktop application detection** — known GUI apps (Steam, Discord, Zoom, Signal, Slack, Telegram, Chromium, Firefox, Thunderbird, Wireshark…) running as processes; INFO findings, no deduction
 
 ### Output & UX
 
 - **Bilingual interface** — auto-detected from `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX); falls back to English when locale is `C`/`POSIX` or unsupported. Override with `--french` / `--english` (or `--lang=fr` / `--lang=en`)
 - **Colour handling** — auto-detected since v0.14.0: ANSI is emitted only when stdout is a terminal, so redirecting to a file or a pipe is clean without any flag. `--no-color` (or `NO_COLOR=1`) forces it off; `FORCE_COLOR=1` forces it on for `less -R` or a deliberately coloured log
-- **Fix mode** — interactive section after the summary; each automatable fix requires `[y/N]` confirmation; `--fix` alone shows a preview without executing; `--fix --apply --yes` auto-confirms all with audit trail. **Only a command BOB can run unattended is counted as automatic**: `cmd_type="fix"` (a diagnostic like `smartctl -a` is not a remediation), no shell operators, no interactive editor. Everything else appears under its own heading with its command shown but not run — the count above the prompt is a promise BOB can keep, since v0.17.1. Install commands carry `-y`, because a fix that stops to ask cannot be applied by a mode whose whole point is not asking. Since v0.18.0 the sysctl hardenings are applied **by BOB's own code, not by a shell**: set, persisted with exactly one line per key, then **read back** before BOB claims anything — the one-liner on screen is unchanged for a human to paste. Two unattended applications are refused outright because they can take a remote host away from you — a default-deny firewall policy (`iptables -P INPUT DROP` and its `ip6tables`, `-nft`, `-legacy` and `nft … policy drop` spellings) — and a fix that grants access (`ufw allow`) always runs before one that withdraws it (`ufw enable`)
+- **Fix mode** — interactive section after the summary; each automatable fix requires `[y/N]` confirmation; `--fix` alone shows a preview without executing; `--fix --apply --yes` confirms them all and lists the applied commands at the end (on screen — no file is written). **Only a command BOB can run unattended is counted as automatic**: `cmd_type="fix"` (a diagnostic like `smartctl -a` is not a remediation), no shell operators, no interactive editor. Everything else appears under its own heading with its command shown but not run — the count above the prompt is a promise BOB can keep, since v0.17.1. Install commands carry `-y`, because a fix that stops to ask cannot be applied by a mode whose whole point is not asking. Since v0.18.0 the sysctl hardenings are applied **by BOB's own code, not by a shell**: set, persisted with exactly one line per key, then **read back** before BOB claims anything — the one-liner on screen is unchanged for a human to paste. Two unattended applications are refused outright because they can take a remote host away from you — a default-deny firewall policy (`iptables -P INPUT DROP` and its `ip6tables`, `-nft`, `-legacy` and `nft … policy drop` spellings) — and a fix that grants access (`ufw allow`) always runs before one that withdraws it (`ufw enable`)
 - **`--explain KEY`** — structured per-finding explanation (WHY IT IS A RISK / HOW TO FIX / CIS reference); 226 explainable keys across 62 prefixes; 119 of them render a section per profile — 71 with prose written for it, the rest with a note derived from the profile file — and 107 apply equally to every profile; interactive TUI; no root required; the per-key view adds an **Also cited in** block listing the same control's number in every other benchmark that covers it; `--explain list` and the wizard group all keys as a three-level folder tree — CIS distribution (CIS Ubuntu, CIS Debian, CIS Docker, CIS Red Hat, Best practice) → benchmark version (Ubuntu 22.04/24.04, Debian 12/13) → type section — and each CIS family shows a link to its online CIS benchmark page
-- **Domain scores** — per-domain 0–10 sub-scores, one per on-screen group (Firewall & Network / Exposure & Services / Access Control / System Hardening / Health & Resilience / Threat Detection); global score = mean of active domain scores (a domain becomes active as soon as any check from it emits `OK`, `WARN`, or `ALERT` — `INFO`-only domains stay hidden; `OK` was added to the active set in v0.4.6 to fix a scoring inversion after remediation); tool caps prevent double-penalty (rootkit, ClamAV, file integrity each capped at 1 pt deduction); bar chart after audit; included in JSON output and webhook payload
+- **Domain scores** — per-domain 0–10 sub-scores, one per on-screen group (Firewall & Network / Exposure & Services / Access Control / System Hardening / Health & Resilience / Threat Detection); global score = mean of active domain scores (a domain becomes active as soon as any check from it emits `OK`, `WARN`, or `ALERT` — `INFO`-only domains are left out of the mean and shown with their reason instead of a score: "reported, not scored" since v0.25.0, "no action needed" before; `OK` was added to the active set in v0.4.6 to fix a scoring inversion after remediation); tool caps prevent double-penalty (rootkit, ClamAV, file integrity each capped at 1 pt deduction); bar chart after audit; included in JSON output and webhook payload
 - **Webhooks** — `--webhook URL` POSTs audit result as JSON; generic and Slack formats (auto-detected by URL); `--webhook-format=auto|generic|slack`
 - **`--html` HTML export** — self-contained HTML file (no JS, no external resources); colored score circle; ALERT/WARN/INFO/OK badges; deductions table; XSS-safe
 - **`--format=FORMAT`** — unified output flag: `json | json-full | csv | markdown | html`; legacy flags kept as silent aliases. Since v0.18.0 the CSV's last column is `key`, the finding's stable identifier — the same one `--explain`, `--ignore` and the JSON carry; the fifteen columns before it keep their positions
@@ -156,7 +157,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 | Gitea                            | 3000/tcp             | Medium   | Git forge; disable public registration if not needed                                 |
 | Avahi (local network discovery)  | 5353/udp             | Low      | LAN-only mDNS; no data access, discovery only                                        |
 | CUPS (network printing)          | 631/tcp              | Low      | Listens on localhost by default; negligible if not exposed                           |
-| Syncthing                        | 8384/tcp, 22000/tcp  | Low      | Web UI on localhost by default; sync port may be internet-facing                     |
+| Syncthing                        | 8384/tcp, 22000/tcp  | Medium   | Web UI on localhost by default; sync port may be internet-facing                     |
 | Telnet Server                    | 23/tcp               | Critical | Cleartext protocol; credentials and traffic fully visible on the network             |
 | RDP / xRDP                       | 3389/tcp             | Critical | Remote desktop; targeted by brute-force and BlueKeep-type exploits                  |
 | MongoDB                          | 27017/tcp            | Critical | No auth by default in older versions; full DB access if exposed                      |
@@ -183,7 +184,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 - Linux — the platform badge covers eight names, on three different kinds of evidence:
   - **daily-driven**: Linux Mint 22.3, Debian 13.4.0
   - **real hardware** (stress-tested across the v0.20.x–v0.22.x cycles): Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, no systemd — what the OpenRC support was written against), Kali Rolling — plus the two daily-driven hosts above; see the support-tier table in the main README
-  - **CI-validated** (containers, every push): Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (emulated). Earlier releases were also hand-audited on throwaway VMs (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — since retired, those families are now on real hardware above
+  - **CI-validated** (containers, every push to `main` and every pull request to it): Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (emulated). Earlier releases were also hand-audited on throwaway VMs (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — since retired, those families are now on real hardware above
   - **Raspberry Pi**: audited on real hardware for the first time in v0.18.1 — a Pi Zero W (ARMv6, 426 MB) on Raspbian 13 trixie. Full audits took 71–108 s. The pass found BOB's SSH brute-force detection blind on OpenSSH ≥ 9.8 and the boot-partition check looking for the wrong provisioning file; both are fixed and replayed on the board. It is one board and one OS release, not a matrix
 - Python 3.10+
 - `ss` recommended (`iproute2` package) — available by default on modern systems
@@ -199,7 +200,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 - Linux — the platform badge covers eight names, on three different kinds of evidence:
   - **daily-driven**: Linux Mint 22.3, Debian 13.4.0
   - **real hardware** (stress-tested across the v0.20.x–v0.22.x cycles): Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, no systemd — what the OpenRC support was written against), Kali Rolling — plus the two daily-driven hosts above; see the support-tier table in the main README
-  - **CI-validated** (containers, every push): Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (emulated). Earlier releases were also hand-audited on throwaway VMs (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — since retired, those families are now on real hardware above
+  - **CI-validated** (containers, every push to `main` and every pull request to it): Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (emulated). Earlier releases were also hand-audited on throwaway VMs (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — since retired, those families are now on real hardware above
   - **Raspberry Pi**: audited on real hardware for the first time in v0.18.1 — a Pi Zero W (ARMv6, 426 MB) on Raspbian 13 trixie. Full audits took 71–108 s. The pass found BOB's SSH brute-force detection blind on OpenSSH ≥ 9.8 and the boot-partition check looking for the wrong provisioning file; both are fixed and replayed on the board. It is one board and one OS release, not a matrix
 - pipx *(isolated Python app installer)*:
 
@@ -293,7 +294,7 @@ sudo bob --manage-cron
 sudo bob --install-completion
 ```
 
-> Email notifications require a working Postfix setup. See [AUTOMATION.md](AUTOMATION.md) for step-by-step configuration (installation, SMTP relay, sender rewriting, testing).
+> Email notifications need a working sendmail-compatible mail transport — BOB recognises Postfix, Exim, msmtp and ssmtp. See [AUTOMATION.md](AUTOMATION.md) for a step-by-step Postfix configuration (installation, SMTP relay, sender rewriting, testing).
 
 Options can be combined:
 
@@ -305,7 +306,7 @@ sudo bob -v -d --fix
 
 ## Saved configuration
 
-`~/.config/bob/config.conf` (mode `0600`) holds the audit profile, the webhook URL and format, the SUID whitelist and the log directories chosen through `--manage-logs`. Nothing else is persisted: **service ports are not saved and never were** — BOB reads each service's own configuration files at audit time (`sshd_config`, `nginx.conf`, `smb.conf`, …) and falls back to the well-known port when no directive is found. Earlier revisions of this page described a prompt that offered to remember a non-standard port; no such prompt exists in the code.
+`~/.config/bob/config.conf` (mode `0600`) holds the audit profile, the webhook URL and format, the SUID whitelist and the log directories chosen through `--manage-logs`. Nothing else is stored in it (BOB's other state files sit beside it: `last_baseline.json`, `history.jsonl`, `ignore.yml`, `recurrence.json`, and `emails` — the address book of the cron notifications); **service ports are not saved and never were** — BOB reads each service's own configuration files at audit time (`sshd_config`, `nginx.conf`, `smb.conf`, …) and falls back to the well-known port when no directive is found. Earlier revisions of this page described a prompt that offered to remember a non-standard port; no such prompt exists in the code.
 
 To delete the saved configuration and start from defaults (asks for confirmation):
 
@@ -319,7 +320,7 @@ sudo bob --reconfigure
 
 BOB supports custom audit checks written in Python. Drop a `*.py` file under `~/.config/bob/checks.d/` and BOB picks it up at the next run. Each plugin is executed inside a **sandboxed subprocess** (introduced in v0.7.0 T3) — RLIMIT_AS 256 MiB, a 5 s wall-clock timeout, RLIMIT_CPU 10 s, restricted import allowlist, denied filesystem writes, blocked reads on sensitive paths (`/etc/shadow`, `~/.ssh/id_*`, `/dev/mem`, …). A misbehaving plugin **cannot** abort the audit, and any output is ANSI-sanitised.
 
-> **Threat model note:** in-process Python sandboxing is defence-in-depth, not a hard security boundary (PEP 416 consensus). Use the shipped AppArmor profile for actual isolation. See SECURITY.md → "Plugin checks" section.
+> **Threat model note:** in-process Python sandboxing is defence-in-depth, not a hard security boundary (PEP 416 consensus). The Debian package ships an AppArmor profile (`debian/apparmor.d/bob`) that gives actual isolation once enforced — it is in complain mode by default (`aa-enforce` switches it). See SECURITY.md → "Plugin checks" section.
 
 ### Contract
 
@@ -362,11 +363,11 @@ def run_check(t=None) -> CheckResult:
 
 - `result.ok(message=...)` — green checkmark, no score impact
 - `result.info(message=..., key=...)` — neutral notice, no deduction
-- `result.warn(message=..., key=..., points=..., nature=...)` — yellow warning
-- `result.alert(message=..., key=..., points=..., nature=...)` — red alert
-- `result.warn_with_deduction(...)` / `result.alert_with_deduction(...)` — combined helpers
+- `result.warn(message=..., key=..., nature=...)` — yellow warning, no deduction
+- `result.alert(message=..., key=..., nature=...)` — red alert, no deduction
+- `result.warn_with_deduction(key, message=..., points=...)` / `result.alert_with_deduction(key, message=..., points=...)` — a warning or an alert that removes `points` from the score; `warn` and `alert` take no `points` argument
 
-Use `key=` so your finding can be silenced with `bob --ignore custom.my_key` if needed. Choose `key` strings under a `custom.*` prefix so they cannot collide with BOB's built-in keys (the `_KNOWN_PREFIXES` invariant test rejects unknown prefixes for built-in EXPLAIN_KEYS but not for plugin output).
+Use `key=` so your finding can be silenced with `bob --ignore custom.my_key` if needed. Choose `key` strings under a `custom.*` prefix so they cannot collide with BOB's built-in keys (the `KNOWN_PREFIXES` invariant of `tests/test_explain_naming_convention.py` rejects unknown prefixes for built-in EXPLAIN_KEYS but not for plugin output).
 
 ### What plugins CANNOT do
 
@@ -397,7 +398,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.25.0  │  Linux hardening auditor                                     ║
+║  BOB 0.25.1  │  Linux hardening auditor                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -523,16 +524,16 @@ The report opens with a 62-char ASCII art header and contains: system informatio
 | `--format=FORMAT`       | Unified output flag: `json \| json-full \| csv \| markdown \| html` |
 | `--json`                | Export summary as JSON (alias for `--format=json`)                |
 | `--json-full`           | Export full audit details as JSON (alias for `--format=json-full`)|
-| `--explain=KEY`         | Print structured explanation for a finding key (`--explain list` shows all) |
+| `-e`, `--explain=KEY`   | Print structured explanation for a finding key (`--explain list` shows all) |
 | `-B`, `--breakdown`     | Silent audit — show full score computation path (deductions, tool caps, domain scores, final) |
-| `--diff`                | Silent audit — show only the baseline delta                        |
-| `--webhook=URL`         | POST audit result as JSON to URL after each audit                  |
+| `-D`, `--diff`          | Silent audit — show only the baseline delta                        |
+| `-w`, `--webhook=URL`   | POST audit result as JSON to URL after each audit                  |
 | `--webhook-format=FMT`  | Webhook payload format: `auto` (default), `generic`, or `slack`   |
 | `--log-days=N`          | Analyse logs over N days (default: 7)                              |
 | `-o`, `--offline`       | Skip external IP lookup and webhook call (no HTTP calls)           |
-| `--exhaustive`          | Also run slow full-coverage checks (package integrity) held out of the default run |
-| `--manage-logs`         | Interactive UI to list, preview, and delete saved report files     |
-| `--install-cron`        | Set up an automated nightly audit (cron)                           |
+| `--exhaustive`          | Also run slow full-coverage checks held out of the default run: package integrity, world-writable and unowned files |
+| `-m`, `--manage-logs`   | Interactive UI to list, preview, and delete saved report files     |
+| `-c`, `--install-cron`  | Set up a scheduled audit (cron wizard: daily, chosen days or a cron expression) |
 | `--install-completion`  | Install bash completion and create sudo PATH symlink               |
 | `-p`, `--profile=NAME`  | Audit profile: `server` (default), `desktop`, `workstation`, `container` |
 | `--check=LIST`          | Run only these checks (comma-separated); `--check=list` shows every available name |
@@ -575,19 +576,19 @@ The report opens with a 62-char ASCII art header and contains: system informatio
 | `bob_YYYYMMDD_HHMMSS.log`          | Detailed report (created with `-d`, in the configured directory)     |
 
 > **Plugin directory and `sudo`:** since v0.3.6 BOB resolves `~/.config/bob/` against the
-> invoking user's home (via `SUDO_USER`), so plugins dropped in `/home/<you>/.config/bob/services.d/`
+> invoking user's home (via `SUDO_USER`, or `DOAS_USER` since 0.25.1), so plugins dropped in `/home/<you>/.config/bob/services.d/`
 > are loaded correctly under `sudo bob`. Files written by BOB under sudo are auto-chowned back to the user.
 >
-> **Plugin file shape:** each `*.json` plugin file is a JSON array of service objects.
-> The formal contract is published as `bob/data/schemas/service.schema.json` (Draft 2020-12 JSON Schema)
-> and `bob/data/schemas/services-list.schema.json` for the array wrapper. See "Service plugin schema" below.
+> **Plugin file shape:** each `*.json` plugin file is a JSON array of service objects, or the wrapped form `{"schema_version": 1, "services": [...]}`.
+> The contract is published as `bob/data/schemas/service.schema.json` (one entry, Draft 2020-12 JSON Schema),
+> `services-list.schema.json` (the raw array) and `plugin-file.schema.json` (a plugin file, either form). See "Service plugin schema" below.
 >
 > **Future `.deb` packaging:** the system-wide directory `/etc/bob/services.d/` will be added as an
 > additional load path (without removing the per-user one) for the standard Debian convention.
 
 ### Service plugin schema
 
-Service definitions are validated against `bob/data/schemas/service.schema.json` (Draft 2020-12, shipped with the package). Both the bundled `services.json` and user plugins follow the same per-entry shape:
+The per-entry contract is `bob/data/schemas/service.schema.json` (Draft 2020-12, shipped with the package). The test suite validates the bundled `services.json` against it (`jsonschema` is a test-only dependency); at run time BOB checks user plugins in Python, as listed below. Both follow the same per-entry shape:
 
 ```json
 {
@@ -607,12 +608,18 @@ Service definitions are validated against `bob/data/schemas/service.schema.json`
 
 **Required fields:** `id`, `label`, `packages`, `services`, `ports`, `risk`. **Optional:** `detection`. `risk` ∈ `{"low", "medium", "high", "critical"}`. `config_key` is `"fixed"`, `"ask"`, `"auto"`, or a Python identifier. **Port range 1–65535** (strict).
 
-**Business constraints enforced by the schema:**
+**Checked by BOB at run time.** An entry that fails is skipped while the rest of the file still loads; the reason is logged, and only `BOB_DEBUG=1` shows it — a normal run is silent about a skipped entry:
 
-- A service must declare at least one port **or** a `detection.config_files` entry to parse ports from. Declaring neither is refused: its ports could never be determined.
-- `config_key` was retired in v0.15.4. It is still accepted so existing `~/.config/bob/services.d/*.json` keep validating, but it is ignored.
-- A service must be detectable: at least one of `packages`, `services`, or `detection.{binary|snap}` must be non-empty.
-- An empty `detection: {}` block is rejected (it adds no signal).
+- the required fields, `risk`, the port format and range;
+- at least one port, or a `detection.config_files` entry to parse ports from — declaring neither is refused: its ports could never be determined;
+- an `id` unique across the bundled services and every plugin (a duplicate is skipped).
+
+**Checked by the schema only** (external validation — BOB does not reject these at run time):
+
+- a service must be detectable: at least one of `packages`, `services`, or `detection.{binary|snap}` non-empty;
+- an empty `detection: {}` block is refused (it adds no signal).
+
+`config_key` was retired in v0.15.4. It is still accepted so existing `~/.config/bob/services.d/*.json` keep validating, but it is ignored.
 
 **Plugin file shape.** A user plugin file under `~/.config/bob/services.d/*.json` may use either of two equivalent forms:
 
@@ -781,10 +788,11 @@ Domain keys are stable: `firewall_network`, `exposure_services`, `access_control
 
 | `reason` | Meaning |
 |---|---|
-| `info_only` | The checks ran and reported, but only informational notices — nothing to act on. |
+| `info_only` | The checks ran and produced only notices: they are reported and, by design, not scored — which does not mean nothing needs doing (shown as "reported, not scored" since v0.25.0). |
 | `profile_skipped` | The active audit profile skips every section feeding this domain (e.g. `disk` under the `container` profile). |
 | `filtered` | Excluded by a `--check` / `--skip` filter on this run. |
 | `not_installed` | The checks ran and found the component absent. |
+| `unreadable` | BOB could not read the input of the checks feeding this domain (v0.16.2); the domain is left out of the average. |
 
 For an active domain, `reason` is `null`. This lets a consumer **reproduce the headline**: `score = round(mean(score for active domains))`, capped at 9 when any deduction exists (the F1 "10 means a flawless audit" rule — see v0.12.0).
 
@@ -870,25 +878,29 @@ Baseline history: v0.7.0 audit = 117 keys / 30 prefixes / 100 % naming conforman
 
 ## Python support policy
 
-> **Stable public commitment** — these rules govern when BOB drops support for an older Python.
+> **What is true today** (re-measured 2026-10-17). The rules written in v0.7.0 are kept below as written, with what has and has not happened since.
 
-BOB supports the **N and N-2** Python versions, where **N** is the current upstream stable. As of v0.7.0:
+`pyproject.toml` requires Python **≥ 3.10**, and CI runs the full suite on **3.10, 3.11, 3.12, 3.13 and 3.14** (`tests.yml`; `publish.yml` repeats the same matrix before a release). The linters run on 3.12.
 
 | Python | Status |
 |---|---|
-| 3.14 | ✅ supported (added in v0.7.0 — ladder step 1 for 3.10 drop) |
-| 3.13 | ✅ supported |
-| 3.12 | ✅ supported (current development target, CI default) |
-| 3.11 | ✅ supported |
-| 3.10 | ✅ supported (oldest — drop planned post-upstream EOL 2026-10) |
-| 3.9  | ❌ end of life (dropped in v0.2.3) |
+| 3.14 | ✅ supported, in CI (added in v0.7.0) |
+| 3.13 | ✅ supported, in CI |
+| 3.12 | ✅ supported, in CI (also runs the lint jobs) |
+| 3.11 | ✅ supported, in CI |
+| 3.10 | ⚠ **deprecated** (announced in 0.25.1), in CI — upstream end of life 2026-10-01 (PEP 619; 3.10.22 was the last release); **supported until 2027-04-01** |
+| 3.9  | ❌ dropped in v0.2.3 |
 
-Python 3.10 deprecation ladder (in progress as of v0.7.0):
-- **v0.7.0 — Ladder step 1** ✓ : both 3.10 and 3.14 in CI for forward-compatibility validation.
-- **Next minor BOB release — Ladder step 2** : announce 3.10 deprecation in the changelog and `--help` banner.
-- **Following minor BOB release (post-2026-10) — Ladder step 3** : drop 3.10 from CI, bump `requires-python` in `pyproject.toml`.
+The v0.7.0 text said BOB supports "the **N and N-2** versions". It does not: N being 3.14, N-2 is 3.12, and BOB supports five versions. What it actually does is test every CPython release from 3.10 up.
 
-The intent: at least 6 months of advance notice before any drop, mirrored to distros (Debian stable freezes etc.). Packagers can rely on this policy to plan rebuilds.
+The Python 3.10 deprecation ladder written in v0.7.0:
+- **Step 1** — 3.10 and 3.14 both in CI: ✓ done in v0.7.0.
+- **Step 2** — announce the 3.10 deprecation in the changelog and the `--help` banner, in the next minor release: **not done** — no release since v0.7.0 announced it.
+- **Step 3** — after the upstream end of life, in the minor release following the announcement: drop 3.10 from CI and raise `requires-python`. Not reached, since step 2 never happened.
+
+**The rule since 0.25.1.** A Python version stays supported for **6 months after its official upstream end of life**. The deprecation is announced from the first release after that end of life — in the changelog, in `--help` and, when BOB runs on that version, in an INFO line at the start of the audit — and it is dropped (CI matrix and `requires-python`) only by a release labelled **BREAKING** — under the project's SemVer rule a minor bump while BOB is in 0.x, a major from 1.0 — the first such release after the 6 months; a patch release or an ordinary minor release never drops a Python version. The versions concerned and their dates live in `bob/_python_support.py`.
+
+**For Python 3.10:** end of life 2026-10-01, announced in 0.25.1 (step 2 of the old ladder), supported until **2027-04-01**, dropped by the first BREAKING release after that date. Ubuntu 22.04 LTS ships 3.10 as its system Python (the one `pipx` uses), with standard support until May 2027, and `ubuntu:22.04` is in BOB's distro CI matrix: on that release, BOB after the drop needs another Python (22.04 also packages 3.11).
 
 ## Packaging (since v0.4.2)
 

@@ -73,15 +73,25 @@ def build_audit_options(profile: str, lang: str, offline: bool) -> str:
     return opts
 
 
-def default_dimensions(config) -> "tuple[str, str, bool]":
+def default_dimensions(config, user_config=None) -> "tuple[str, str, bool]":
     """Pick the wizard's pre-selected values from the installing session.
 
     The operator running ``sudo bob --install-cron`` has already expressed a
-    profile, a language and a network stance on that very command line (or in
-    their saved config); the wizard opens on those rather than on BOB's own
-    defaults, so the common case is three times Enter.
+    profile, a language and a network stance on that very command line, and a
+    profile in their saved config; the wizard opens on those rather than on
+    BOB's own defaults, so the common case is three times Enter.
+
+    v0.25.1: the saved profile is read too (``user_config``, which under sudo
+    is the invoking user's). Before, only ``-p`` counted, so an operator who
+    had saved ``desktop`` saw the profile screen open on ``server``.
     """
-    profile = getattr(config, "profile", "") or "server"
+    saved = ""
+    if user_config is not None:
+        try:
+            saved = user_config.get_profile() or ""
+        except (AttributeError, OSError, ValueError):
+            saved = ""
+    profile = getattr(config, "profile", "") or saved or "server"
     if profile in ("default", ""):
         profile = "server"
     if profile not in CRON_PROFILES:

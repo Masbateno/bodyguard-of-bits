@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from bob.tui import _chrome, _keys
 from bob.tui._palette import marked_attr
+from bob._privilege import with_privilege
 from datetime import datetime
 from enum import IntEnum
 from typing import NamedTuple
@@ -40,6 +41,7 @@ from bob.cron import (
     cron_to_human,
     build_schedule_expr,
     build_script_content,
+    resolve_audit_binary,
     make_slug,
     suggest_name,
     _validate_custom_cron,
@@ -801,7 +803,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
     if not log_dir_str:
         # curses: plain text — an ANSI escape would print as garbage here.
         _curses_status_flash(stdscr, t,
-                             f"✖ {t('install_cron.no_log_dir', cmd='sudo bob -d')}")
+                             f"✖ {t('install_cron.no_log_dir', cmd=with_privilege('sudo bob -d'))}")
         return 1
     log_dir = _Path(log_dir_str)
 
@@ -823,7 +825,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
         slug = ""
         schedule_expr = ""
         notify_email = ""
-        sel_profile, sel_lang, sel_offline = default_dimensions(config)
+        sel_profile, sel_lang, sel_offline = default_dimensions(config, user_config)
         audit_options = ""
 
         # Inner state machine
@@ -927,7 +929,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
                 _curses_status_flash(stdscr, t, t(
                     "install_cron.audit_command",
                     command=f"bob --quiet --detailed {audit_options}",
-                ) + "\n\n" + f"{_glyph} {t(_key, **_kw)}")
+                ) + "\n\n" + f"{_glyph} {with_privilege(t(_key, **_kw))}")
                 step = STEP_OVERWRITE
 
             elif step == STEP_OVERWRITE:
@@ -986,6 +988,10 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
             _atomic_write(cron_path, cron_content, mode=0o640)
         except OSError as exc:
             _curses_status_flash(stdscr, t, f"✖ {t('cron_ui.cannot_write', path=cron_path, error=exc)}")
+            try:
+                script_path.unlink()   # v0.25.1: no orphan script
+            except OSError:
+                pass
             return 1
 
         root_config_path = _Path("/root/.config/bob/config.conf")
@@ -997,7 +1003,11 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
         except OSError:
             pass
 
-        _curses_status_flash(stdscr, t, f"✔ {t('install_cron.done_schedule', name=raw_name, schedule=human)}")
+        _done = f"✔ {t('install_cron.done_schedule', name=raw_name, schedule=human)}"
+        _bin, _bin_exists = resolve_audit_binary()
+        if not _bin_exists:
+            _done += f"\n\n⚠ {with_privilege(t('install_cron.bob_binary_missing', path=_bin))}"
+        _curses_status_flash(stdscr, t, _done)
         # Continue outer loop → refresh suggestion and return to LANDING
 
 

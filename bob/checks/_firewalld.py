@@ -316,6 +316,7 @@ class FirewalldStatus:
 
     Args:
         active:        True if ``firewall-cmd --state`` reports it running.
+        installed:     True if ``firewall-cmd`` is present (running or not).
         default_zone:  The default zone name (e.g. "FedoraServer", "public"), or "".
         services:      Named services allowed in the default zone (e.g. ssh, cockpit).
         ports:         Raw port rules allowed in the default zone (e.g. "8080/tcp").
@@ -329,6 +330,10 @@ class FirewalldStatus:
                        (a refusal is not "no firewall").
     """
     active:        bool = False
+    #: v0.25.1 — firewall-cmd is present, running or not. Measured on openSUSE
+    #: Leap 16 with firewalld stopped: the alert said "neither UFW nor firewalld
+    #: is installed" and the fix began by installing it.
+    installed:     bool = False
     default_zone:  str = ""
     services:      list[str] = field(default_factory=list)
     ports:         list[str] = field(default_factory=list)
@@ -490,7 +495,7 @@ class FirewalldStatus:
             # is loaded); ``--list-all`` describes the running zone.
             m = _TARGET_LINE.search(run_result("firewall-cmd", "--list-all").stdout or "")
             bindings, policies = _read_bindings(), _read_host_policies()
-            return cls(active=True, default_zone=zone,
+            return cls(active=True, installed=True, default_zone=zone,
                        services=services, ports=ports,
                        rich_rules=rich, forward_ports=fwd, sources=sources,
                        target=m.group(1) if m else "",
@@ -499,8 +504,8 @@ class FirewalldStatus:
                        zones_read=bindings is not None and policies is not None)
         if not text and not state.ok:
             # firewall-cmd present but said nothing and failed — refused, not off.
-            return cls(active=False, readable=False)
-        return cls(active=False, readable=True)
+            return cls(active=False, installed=True, readable=False)
+        return cls(active=False, installed=True, readable=True)
 
 
 def _parse_active_zones(text: str) -> "dict[str, list[str]]":

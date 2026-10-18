@@ -99,7 +99,8 @@ EXIT_TARGET_MISSED = 4  # --target N and score < N, or anything could not be rea
 
 def require_root() -> None:
     if os.geteuid() != 0:
-        raise PermissionError("This script must be run as root: sudo bob")
+        from bob._privilege import with_privilege
+        raise PermissionError(with_privilege("This script must be run as root: sudo bob"))
 
 
 # v0.8.2: helper hoisted to ``bob/_i18n_safe.py`` so other entry points
@@ -221,7 +222,16 @@ def _run(argv=None) -> int:
         # still writes, because an ignore list may legitimately name a key for
         # a component absent from this host.
         _known = _known_finding_keys()
-        if _known and config.ignore_key not in _known:
+        _covered = _legacy_ignore_coverage(config.ignore_key, _known)
+        if _covered:
+            # v0.25.1 — a former name the engine still honours is not "a key
+            # that will never suppress anything": ssh.x11_forwarding silences
+            # both halves of its v0.10.1 split. Say what it covers instead.
+            print("ℹ  " + i18n.t("cli.ignore.legacy_key",
+                                 requested=config.ignore_key,
+                                 covered=", ".join(_covered)),
+                  file=sys.stderr)
+        elif _known and config.ignore_key not in _known:
             import difflib
             _near = difflib.get_close_matches(config.ignore_key, sorted(_known), n=1, cutoff=0.6)
             print("⚠  " + i18n.t("cli.ignore.unknown_key",
@@ -656,6 +666,13 @@ def _run(argv=None) -> int:
                              "iptables", "nftables", "init", "user", "date")},
                 )
                 output.print_info(t("audit.starting"))
+                from bob._python_support import deprecation_for
+                _dep = deprecation_for()
+                if _dep:
+                    # v0.25.1 — step 2 of the 3.10 ladder: say it where the
+                    # operator running 3.10 will read it.
+                    output.print_info(t("audit.python_deprecated", running=_dep["running"],
+                                        until=_dep["until"], next=_dep["next"]))
                 output.print_info(t("audit.audit_profile", profile=active_profile.name))
                 if config.check_only or config.skip_checks:
                     _active = [s for s in _ALL_SECTIONS if _se(s, config, active_profile)]
@@ -943,6 +960,25 @@ def _run(argv=None) -> int:
     finally:
         if _devnull is not None:
             _devnull.close()
+
+
+def _legacy_ignore_coverage(key: str, known: "set[str]") -> "list[str]":
+    """The current keys a former name in ignore.yml still suppresses, or [].
+
+    v0.25.1. ``ScoreEngine.apply`` honours two migration maps — the v0.10.0
+    sub-check split (``SUBCHECK_RENAMES_V100``, a glob) and the v0.16.0 rename
+    (``FINDING_RENAMES_V0160``) — so ``--ignore`` must not tell the operator
+    that such a name matches nothing.
+    """
+    import fnmatch
+    from bob._v0160_renames import FINDING_RENAMES_V0160
+    from bob._v100_subcheck_renames import SUBCHECK_RENAMES_V100
+    if key in SUBCHECK_RENAMES_V100:
+        pattern = SUBCHECK_RENAMES_V100[key]
+        return sorted(k for k in known if fnmatch.fnmatch(k, pattern))
+    if key in FINDING_RENAMES_V0160:
+        return [FINDING_RENAMES_V0160[key]]
+    return []
 
 
 def _known_finding_keys() -> "set[str]":

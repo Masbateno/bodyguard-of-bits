@@ -155,7 +155,7 @@ BOB traverse trois frontières de confiance pendant une exécution :
 |---------------------------------|------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Config user-contrôlée**       | `~/.config/bob/config.conf`, `services.d/*.json`, `checks.d/*.py`, `profiles/*.conf`                       | Validation JSON Schema stricte (`bob/data/schemas/`), sanitization ANSI (`bob.plugin_checks`), limites de taille de fichier, vérification d'identifiant Python sur `config_key`                                                                                                   |
 | **Contenu de fichiers système** | `/etc/ssh/sshd_config`, `/var/log/auth.log`, fichiers cron, sudoers…                                       | Lectures bornées (`errors='replace'`, plafonds de taille, max lignes), les regex ne s'ancrent jamais sur du contenu user, `_C_LOCALE_ENV` pour subprocess afin d'éviter le parsing dépendant de la locale                                                                          |
-| **Sortie de subprocess**        | `ufw status`, `ss -tulnp`, `iptables -L`, `journalctl`, `openssl x509` …                                   | Tous les appels subprocess ont `timeout=`, mode capture (pas de `shell=True` sauf dans `--fix` où les commandes sont explicitement approuvées par l'utilisateur), la sortie n'est jamais `eval`uée ni interpolée dans une autre commande                                            |
+| **Sortie de subprocess**        | `ufw status`, `ss -tulnp`, `iptables -L`, `journalctl`, `openssl x509` …                                   | Tous les appels subprocess ont `timeout=`, mode capture, aucun `shell=True` nulle part — `--fix` lance chaque commande comme liste d'arguments et refuse celle qui exige un shell — la sortie n'est jamais `eval`uée ni interpolée dans une autre commande                                            |
 
 ### Hors périmètre
 
@@ -248,10 +248,10 @@ Ce qu'il **n'arrête PAS** :
   - Les attaques exploitant la propre surface de parsing de BOB (un `sshd_config`
     malveillant que BOB tente d'auditer).
 
-**Une isolation réellement adverse exige une frontière au niveau de l'OS.** BOB
-livre un profil AppArmor (`packaging/apparmor/bob.profile`) qui confine le
-processus BOB lui-même ; c'est *la* véritable frontière contre les plugins
-malveillants. Les distributions qui livrent BOB dans un runtime confiné (snap,
+**Une isolation réellement adverse exige une frontière au niveau de l'OS.** Le paquet Debian
+livre un profil AppArmor (`debian/apparmor.d/bob`) qui confine le processus BOB
+lui-même une fois appliqué. Il est en mode complain par défaut (il journalise sans
+bloquer) : la frontière contre les plugins malveillants n'existe qu'après `aa-enforce`. Les distributions qui livrent BOB dans un runtime confiné (snap,
 flatpak, conteneur) héritent de l'isolation de ce runtime.
 
 Si vous exécutez BOB non confiné sous `sudo`, **vous devez relire le code de vos
@@ -342,14 +342,14 @@ Pas de télémétrie, pas d'analytics, pas de vérification de mise à jour auto
 
 ## Manipulation des données
 
-  - **Rapports** : Les rapports détaillés `-d` sont écrits vers le répertoire de log configuré par l'utilisateur (par défaut : `~/.local/share/bob/logs/`). Les permissions de fichier sont `0600` (propriétaire uniquement ; chownés de retour vers `$SUDO_USER` quand l'invocation passe par sudo). Le nom du rapport est entièrement prédictible (`bob_%Y%m%d_%H%M%S.log`) et le fichier est créé en root sous sudo : depuis la **v0.14.1** il est donc ouvert avec `O_NOFOLLOW` et chowné via le descripteur déjà détenu (`os.fchown`) plutôt que par son nom. Sans cela, quiconque peut écrire dans le répertoire cible — cas atteignable dès qu'un opérateur pointe `--output-dir` vers un emplacement partagé — pourrait pré-planter un lien symbolique et faire tronquer par root, puis lui céder la propriété d', un fichier arbitraire.
+  - **Rapports** : Les rapports détaillés `-d` sont écrits vers le répertoire de log configuré par l'utilisateur (par défaut : `~/.local/share/bob/logs/`). Les permissions de fichier sont `0600` (propriétaire uniquement ; chownés de retour vers `$SUDO_USER` quand l'invocation passe par sudo, ou `$DOAS_USER` par doas depuis la 0.25.1). Le nom du rapport est entièrement prédictible (`bob_%Y%m%d_%H%M%S.log`) et le fichier est créé en root sous sudo : depuis la **v0.14.1** il est donc ouvert avec `O_NOFOLLOW` et chowné via le descripteur déjà détenu (`os.fchown`) plutôt que par son nom. Sans cela, quiconque peut écrire dans le répertoire cible — cas atteignable dès qu'un opérateur pointe `--output-dir` vers un emplacement partagé — pourrait pré-planter un lien symbolique et faire tronquer par root, puis lui céder la propriété d', un fichier arbitraire.
   - **Les écritures de rapport sont best-effort** (v0.14.1). Le rapport est un artefact secondaire et ne doit jamais entraîner l'audit dans sa chute : à la première erreur d'E/S il se désactive, le signale une fois sur stderr, et l'audit se termine normalement. Avant la v0.14.1, un système de fichiers plein coûtait l'exécution entière — exit 3 et aucun audit.
   - **Config** : `~/.config/bob/config.conf` est `0600` (propriétaire uniquement).
   - **Baseline** : `~/.config/bob/last_baseline.json` est `0600`. Contient uniquement des clés de constats, scores, et listes de ports — pas de secrets, pas de contenus de fichiers, pas de PII autre que le nom d'hôte.
   - **Historique** : `~/.config/bob/history.jsonl` est `0600`. Une ligne par audit : timestamp + score + niveau. Rotation à 1000 entrées.
   - **Toutes les lectures d'état sont bornées** (v0.14.1). Chaque fichier d'état, ainsi que le `--diff=CHEMIN` fourni par l'opérateur, passe par `bob._atomic.read_text_capped()`, qui refuse tout ce qui n'est pas un fichier régulier et borne la lecture. Auparavant, un chemin pointant vers un périphérique caractère (`--diff=/dev/zero`, ou `ignore.yml` lié vers lui) épuisait la mémoire, et un FIFO bloquait le processus **indéfiniment** — un cron qui reste suspendu au lieu d'échouer, et à chaque exécution suivante.
 
-Quand BOB est invoqué via `sudo`, les fichiers dans `~/.config/bob/` sont automatiquement chownés de retour vers `$SUDO_USER` (depuis v0.3.6) afin qu'ils restent lisibles/éditables sans sudo par la suite.
+Quand BOB est invoqué via `sudo` (ou `doas`, depuis la 0.25.1), les fichiers dans `~/.config/bob/` sont automatiquement chownés de retour vers `$SUDO_USER` (depuis v0.3.6) ou `$DOAS_USER` afin qu'ils restent lisibles/éditables sans sudo par la suite.
 
 ## Recommandations de défense en profondeur (pour les packageurs)
 

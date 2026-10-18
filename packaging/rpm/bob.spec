@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.25.0
+Version:        0.25.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,11 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun Oct 18 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.25.1-1
+- Patch, no score change: doas and DOAS_USER honoured in texts and per-user
+  files; --install-cron refused without /etc/cron.d; AppArmor profiles
+  started under OpenRC; a stopped firewalld started without reinstalling it;
+  Docker texts beside firewalld; Python 3.10 deprecated.
 * Fri Oct 16 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.25.0-1
 - Minor, BREAKING (scores): a Kubernetes node audited, the kubelet asked per
   verb (measured on MicroK8s 1.35.6); encryption checked beyond the root

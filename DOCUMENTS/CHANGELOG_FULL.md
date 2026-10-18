@@ -6,6 +6,228 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.25.1] — 2026-10-18
+
+**A patch: commands, findings and advice as the host in front of BOB has them —
+`doas` where there is no `sudo`, Alpine's cron, AppArmor under OpenRC, a stopped
+firewalld, Docker beside firewalld — measured on real Alpine 3.24, openSUSE
+Leap 16, Fedora 44 and Ubuntu Server 26.04 (k3s 1.36).**
+No scoring-formula, JSON-schema or CSV-column change; no finding key is added,
+renamed or removed, and no point changes; one level changes, an OK that becomes
+INFO: neither level carries points, and its domain keeps other findings, so the
+domain stays in the average and no score moves. Two message variants are new
+(`prerequisites.firewall_missing_firewalld_stopped`,
+`ports.uncovered_firewalld_docker`): they are texts of existing findings, under
+the existing keys. Outputs that change: the messages, details and `--explain`
+texts listed below; four printed fixes (§3); the `--install-cron` flow on a host
+without `/etc/cron.d` (§2); one OK that becomes INFO (§4, an unreadable
+`/etc/passwd` on a Raspberry Pi); an INFO line at the start of an audit run on
+Python 3.10 (§5); the score as Slack and `--watch` print it (§4).
+
+### 1. `doas` where there is no `sudo`
+
+0.25.0 printed `doas` in fix commands on a host with `doas` and no `sudo`. The
+prose around them still said `sudo`. Now the host's word is used in:
+
+- the `--explain` texts, which name `sudo` throughout, in the terminal and in the
+  interactive picker;
+- a finding's message, detail and note ("Fix: sudo chmod 600 …", "run with
+  sudo");
+- the cron wizard's messages and the "This script must be run as root" error.
+
+The rewrite only runs when the text contains the word: on a `sudo` host nothing
+changes, and the plugin sandbox, which cannot look up binaries, is not asked.
+
+`DOAS_USER` is read as `SUDO_USER` is, and validated the same way. Under `doas`,
+the ignore list, `--install-completion`, the audit state and the SSH client
+snapshot use the operator's home and ownership, and the banner names the
+operator, instead of root's. Measured on Alpine 3.24 (`doas env`: `DOAS_USER`
+set, `HOME=/root`): everything per-user landed in the operator's
+`~/.config/bob`, owned by them; root's own files were unchanged; a verbose audit
+and `--explain` printed no `sudo` command word.
+
+### 2. Scheduling an audit
+
+- **A host without `/etc/cron.d`.** Alpine has none: BusyBox crond reads
+  `/etc/crontabs/`. `--install-cron` asked every question, wrote
+  `/usr/local/bin/bob-<name>`, then failed on the cron file and left the script.
+  It now refuses before the first question, in the terminal and in the curses
+  wizard, and says how to schedule an audit with root's crontab. Where the cron
+  write still fails, the script is removed. Installing into a crontab is not
+  done; it is planned for 0.26.0.
+- **The `bob` the script runs.** The script called `which bob`, else
+  `/usr/local/bin/bob` without checking it existed: a job installed as
+  `sudo ~/.local/bin/bob --install-cron`, before `--install-completion` created
+  the link, failed on every run. It now uses the `bob` being run — the version
+  that writes the script's options, which another `bob` on root's `PATH` may
+  not know — else `which bob`, else `/usr/local/bin/bob`, and the wizard warns
+  when that file does not exist.
+- **The saved profile.** The profile screen opened on `server` unless `-p` was
+  given; it now opens on the profile saved in the operator's configuration.
+- **Reporting advice.** With no address and no saved webhook, the wizard said to
+  "set a webhook with bob --webhook=URL (as root)". Under `sudo` that saves the
+  URL in the operator's own configuration, which the job does not read. The
+  advice now names the job's script (`/usr/local/bin/bob-<name>`) and the
+  `--webhook URL` to append to it, and the root configuration file a saved
+  webhook is read from.
+
+### 3. Findings and fixes, as measured on the host
+
+- **AppArmor profiles on disk, none loaded** (Alpine 3.24, OpenRC). With
+  AppArmor turned on in the kernel (`apparmor=1 security=apparmor`, BOB's own
+  advice when it is off), 145 files sat in `/etc/apparmor.d` and no profile
+  was loaded: the `apparmor` service, which loads them, was not running. BOB
+  said to install the profile packages, which were installed, and did not know
+  apk's package name. It now counts the profile files and, when the service is
+  not active, prints the command that starts it — `rc-update add apparmor boot
+  && rc-service apparmor start` on OpenRC, `systemctl enable --now apparmor` on
+  systemd. Applied as printed, the service loaded the profiles and BOB read
+  "AppArmor enforcing — 78 profile(s) enforce, 5 complain", unchanged after a reboot (not
+  every file in that directory has to become a loaded profile). With no profile file, the advice is still to install
+  the packages, now with apk's `apparmor-profiles`. The detail for AppArmor off
+  in the kernel no longer names systemd only.
+- **firewalld installed and stopped** (openSUSE Leap 16, firewalld 2.1.2). The
+  alert said "neither UFW nor firewalld is installed" while the banner said
+  "firewalld: installed (inactive)"; the fix began with `zypper install
+  firewalld`; the nftables finding told the operator to load
+  `/etc/nftables.conf`, which the host does not have. The alert now says
+  firewalld is installed but not running, and both findings print the firewalld
+  command without the install step (also on an apt host that has firewalld).
+  That command was run as printed with SSH logins opened every quarter second
+  and the interface in a NetworkManager zone without ssh: 0 refused in four runs
+  (66, 75, 75 and 75 logins) — on that host, under those conditions; it does
+  not show there is no window elsewhere (0.25.0 measured one on Fedora and closed
+  it). Score 8 before and after.
+- **Docker beside firewalld** (Fedora 44, Docker 29.8.2 from `moby-engine`,
+  SELinux enforcing). Measured from the LAN: a port a container published
+  answered while the interface's zone allowed only cockpit, dhcpv6-client and
+  ssh; a host service on the port next to it was refused; a port published on
+  `127.0.0.1` was refused. BOB's texts said otherwise in five places, now
+  corrected:
+  - "Docker may bypass UFW rules", on a host without ufw → "the host firewall
+    (UFW, firewalld)"; the exposed-port alert's "bypasses UFW" likewise;
+  - "three options:" above two → "two options:";
+  - option 2, "Add explicit UFW rules for your container ports (safer,
+    recommended)", which BOB's own `--explain` contradicted ("UFW deny rules
+    for that port silently do nothing") → publish on `127.0.0.1` a port that
+    should stay on the host (measured above), and filter in the `DOCKER-USER`
+    chain of Docker's iptables backend who reaches the others (its nftables
+    backend has no such chain, measured on Docker 29.1.3) — publishing on one
+    address limits where the port listens, not who reaches it;
+  - "No running Docker containers detected", printed when no container
+    publishes a port — two were running → "No running Docker container
+    publishes a port";
+  - for a port whose listener is `docker-proxy`, the ports section said it was
+    "governed by the firewalld zone of the interface it is reached on" → it says
+    the port was published by Docker and, with Docker managing iptables as it
+    does by default, remained reachable from the LAN although the interface's
+    zone did not allow it; the test does not establish the packet path; Docker had also added its own firewalld
+    zone (`docker`) and forwarding policy (`docker-forwarding`).
+  The three Docker `--explain` entries name the host firewall, and their
+  "explicit UFW rules in the DOCKER-USER chain" became iptables rules in that
+  chain. The `userns-remap` fix was applied as printed on that host: Docker
+  restarted remapped (`dockremap` created by `useradd`, range 589824:65536
+  after the operator's 524288:65536; a container's root is host uid 589824
+  under SELinux enforcing), and the existing containers and images no longer
+  listed, as the detail already warned.
+- **The `DOCKER-USER` example** (Ubuntu Server 26.04, Docker 29.1.3, iptables
+  backend). `--explain docker.exposed_port` gave `iptables -I DOCKER-USER -s
+  <trusted-ip> -j ACCEPT` then `iptables -A DOCKER-USER -j DROP`. Measured: it
+  refused the other LAN hosts, and also cut the containers' own DNS and internet
+  access; so did a DROP of everything arriving on the external interface from
+  another source (`-i <interface> ! -s <trusted-ip> -j DROP`), since the replies
+  to the containers' connections arrive there too. The example is now that
+  interface-bound DROP with `-m conntrack --ctstate RELATED,ESTABLISHED -j RETURN`
+  ahead of it: a container's new outgoing connection enters the chain from the
+  Docker bridge, not the external interface, so the DROP does not match it, and
+  its replies, established, meet the RETURN, which hands them back to the
+  forwarding rules that follow — Docker's included. Measured with DNS queries and HTTP
+  connections opened after the rules were in place: the port refused the other
+  hosts and answered the trusted one, and the containers kept their network.
+  The two commands are printed in the order that leaves the RETURN rule first
+  (`-I` inserts at the top), as `iptables -S DOCKER-USER` showed. The explain
+  now also says that the DROP applies to everything the host forwards from that
+  interface, so a host routing other networks must narrow it, that it stops
+  new connections while one already established may go on until it closes, and
+  that the example covers IPv4 only. The IPv4 example was measured; a host
+  routing other networks, an already established connection and IPv6 were not.
+- 0.25.0 listed two things as not measured: the firewalld offline step on
+  openSUSE and the Docker fix on Fedora's Docker. Both are measured above.
+- **k3s** (Ubuntu Server 26.04, k3s 1.36.5, kube-router). No change needed:
+  pods read through k3s's `ctr` (privileged and `/etc` mount −1 each, a non-root
+  pod not reported); the kubelet refused anonymous requests (401, OK) and, with
+  `anonymous-auth=true` and `AlwaysAllow`, `GET /pods` 200 and a command request
+  for a missing pod 404 → ALERT. `iptables -P FORWARD DROP` and `ufw allow
+  22/tcp && ufw enable`, applied as printed, left DNS, pod-to-pod,
+  pod-to-internet and pod-to-API traffic working; SSH stayed up.
+
+### 4. Other texts
+
+- `--ignore` with a former key name (the sub-check splits, the 0.16.0 renames)
+  said it "will never suppress anything"; the engine still honours
+  those names. It now says which current keys the name suppresses.
+- The cap note read "Score capped at 3 (firewall inactive)"; the cap is on the
+  Firewall & Network domain, and the note now says so.
+- Slack and `--watch` printed the bare score; they now print it as the summary
+  does: `≤ N/10` when the score is an upper bound, `~ N/10 (L–H)` when it is a
+  span.
+- `--help`: `-v` lists what it adds (each finding's detail, command and CIS
+  reference, the listening ports); `-y` says it applies every fix unasked and
+  lists them at the end.
+- The INFO for an auto-detected desktop said the profile "relaxes
+  backup/auditd/mac_policy"; it now names what it reports as INFO.
+- Raspberry Pi: an unreadable `/etc/passwd` was read as "no default account"
+  (OK); it is now "not established" (INFO), as an unreadable `/etc/shadow`
+  already was, and the message names both files.
+- `--explain` shows the profile-specific text of an entry that has no
+  server-profile text: `hardening.protected_fifos_disabled` and
+  `hardening.protected_regular_disabled` carried a `container` text that was
+  never displayed.
+- `--install-completion`, when it skips the `/usr/local/bin/bob` link, says to
+  run it through `sudo` or `doas` (it said `sudo` only).
+
+### 5. Python 3.10: end of life upstream, support deprecated in BOB
+
+Python 3.10 reached its upstream end of life on 2026-10-01. BOB keeps supporting
+a Python version for at least six months after that date, and drops one only in
+a release labelled BREAKING (a minor in 0.x). Run on 3.10, BOB now says so at the
+start of an audit (INFO) and at the end of `--help`: 3.10 is supported through at
+least 2027-04-01; the release that drops it will be labelled BREAKING and require
+3.11 or later, which is the version to move to. The policy is written in `README_TECH` and `CONVENTIONS` §8.
+
+### 6. Documentation
+
+- **What the documents misstated, corrected** after a pass over every document
+  against the code and real runs (README, README_TECH, README_DEV, TUTORIAL,
+  AUTOMATION, SNAPSHOT, DISTRO_MATRIX, CONVENTIONS, DOCTRINE, RASPBERRY_PI,
+  SECURITY, the three man pages, both languages). Among them: the Python policy
+  ("N and N−2" while five versions were supported); the README's plugin example,
+  a single object that the loader ignores; `bob.1` without `doas`, `DOAS_USER`,
+  the cron flow or the JSON schema version; counters the guards could not see.
+- **Guards tightened.** A counter is exempt only in the part of a line that
+  carries a version or a history marker, not on the whole line (a quoted
+  paragraph is history as a whole only when it names a release); the EN and FR
+  locale files must keep their keys in the same order.
+- `DISTRO_MATRIX.md` records each field pass above.
+
+### Counters
+
+Tests 13828 → **14021**, mutations 670 → **703**, locale keys 2928 → 2936 per
+language; `--explain` keys (226), CIS references (226) and sections (57)
+unchanged.
+
+### Guards
+
+`test_v0251_doas_invoking_user.py`, `test_v0251_explain_host_prefix.py`,
+`test_v0251_cron_on_busybox_alpine.py`, `test_v0251_cron_binary_path.py`,
+`test_v0251_cron_webhook_advice.py`, `test_v0251_apparmor_profiles_not_loaded.py`,
+`test_v0251_firewalld_stopped.py`, `test_v0251_docker_beside_firewalld.py`,
+`test_v0251_ignore_legacy_key.py`, `test_v0251_cap_note_names_the_domain.py`,
+`test_v0251_slack_and_watch_bound.py`, `test_v0251_verbose_help.py`,
+`test_v0251_autodesktop_notice.py`, `test_v0251_python310_deprecation.py`,
+`test_v0251_counter_dating.py`, `test_v0251_locale_key_order.py`. Every guard
+has a mutation that brings its defect back.
+
 ## [0.25.0] — 2026-10-16
 
 **A minor release: BOB now audits a Kubernetes node, looks at the data beside an
@@ -9527,7 +9749,7 @@ Total: **+7 tests** (6261 → 6268). 0 regression.
 - **Tests 6261 → 6268** (+7). 0 regression.
 - 1 production code file modified ([bob/scoring.py](../bob/scoring.py)) — 1 line changed in the comparison literal + 7 lines of context comment.
 - 1 new test file ([tests/test_v0102_posture_iptables_key.py](../tests/test_v0102_posture_iptables_key.py)) — 7 tests.
-- All release surface (pyproject + man × 3 + 2 README_TECH shields + debian + rpm + 4 CHANGELOG + TESTING + memory note) bumped per convention.
+- All release surface (pyproject + man × 3 + 2 README_TECH shields + debian + rpm + 4 CHANGELOG + TESTING + maintainer note) bumped per convention.
 
 ### Upgrade
 
@@ -9574,7 +9796,7 @@ v0.7.1 (post-v0.7.0), v0.8.1 (post-v0.8.0 + multi-pass), v0.9.1 (hotfix v0.9.0 F
 
 ### Why this single split, why now
 
-The v0.10.x conservative workflow (proposed in the v0.10.0 ship + memory note) applies "gain × risque = STOP" from [[feedback_conservative_refactor]] to the 8 D-4 ranked candidates from the sub-agent audit. The filter:
+The v0.10.x conservative workflow (proposed in the v0.10.0 ship + maintainer note) applies "gain × risque = STOP" from [[feedback_conservative_refactor]] to the 8 D-4 ranked candidates from the sub-agent audit. The filter:
 
 | Item | Measurable gain | User signal | Risk | Verdict |
 |---|---|---|---|---|
@@ -9723,7 +9945,7 @@ Plus 9 other tests updated for the rename (`test_total_keys_match_audit_count` c
 - 1 bash completion file modified ([bob/data/bob.bash-completion](../bob/data/bob.bash-completion)) — `_EXPLAIN_KEYS` regenerated.
 - 1 new test file ([tests/test_v0101_ssh_x11_client.py](../tests/test_v0101_ssh_x11_client.py)) — 10 tests.
 - 4 existing test files modified for the rename ([test_explain.py](../tests/test_explain.py), [test_explain_naming_convention.py](../tests/test_explain_naming_convention.py), [test_cis_refs.py](../tests/test_cis_refs.py), [test_ssh.py](../tests/test_ssh.py), [test_profiles.py](../tests/test_profiles.py)).
-- All release surface (pyproject + man + shields + debian + rpm + 4 CHANGELOG + TESTING + memory note) bumped per convention.
+- All release surface (pyproject + man + shields + debian + rpm + 4 CHANGELOG + TESTING + maintainer note) bumped per convention.
 
 ### Upgrade
 
@@ -9850,7 +10072,7 @@ The one-screen view banner was updated from `bob v0.8.0 ~30.7 kLoC` to `bob v0.1
 - 1 new module ([bob/_v100_subcheck_renames.py](../bob/_v100_subcheck_renames.py)) — 90 lines.
 - 1 production code file modified ([bob/scoring.py](../bob/scoring.py)) — `_is_ignored` helper + `any_legacy_ignore_matches` consultation, ~15 lines changed.
 - 1 documentation file modified ([DOCUMENTS/SNAPSHOT.md](../DOCUMENTS/SNAPSHOT.md)) — 3 paragraphs added (v0.7.4 → v0.9.2 drift + v0.10.0 preparation + version banner bump).
-- 4 changelog surfaces + TESTING.md + man pages + debian + rpm + memory note bumped per convention.
+- 4 changelog surfaces + TESTING.md + man pages + debian + rpm + maintainer note bumped per convention.
 
 ### Upgrade
 
@@ -10477,7 +10699,7 @@ A future contributor who adds another defensive re-import inside ``main()`` fail
 - **Tests 6244 → 6246** (+2 guard). 0 regression.
 - 1 production code file modified ([bob/__main__.py](../bob/__main__.py)).
 - 1 new test file ([tests/test_v083_main_scope_guard.py](../tests/test_v083_main_scope_guard.py)).
-- All 4 changelog surfaces + memory note + this section updated for traceability.
+- All 4 changelog surfaces + maintainer note + this section updated for traceability.
 
 ### Upgrade
 
@@ -10917,7 +11139,7 @@ The 5 patch cycles v0.7.1 → v0.7.4 accumulated silent doc/packaging drift: 5 s
 - **10. Orphan `bob/checks/__init__.py::__version__ = "1.14.0"` removal** — v0.1.0 copy-paste, never consumed. Free cleanup, zero risk.
 - **11. `BOB_DEBUG` documented in `SECURITY.md`** — env var trap door (`bob/__main__.py:471`) previously undocumented alongside `BOB_SHARE` / `BOB_WEBHOOK_ALLOW_INSECURE` / `BOB_SANDBOX_LEGACY`.
 
-### Framing actions (anti-sur-claim)
+### Framing actions (anti-overclaim)
 
 External ChatGPT critique 2026-06-02 on a v0.7.4 audit: "relevant as technical diagnostic tool but not reliable as an absolute security scoring system". The correct diagnostic was about **framing** (BOB doesn't say strongly enough that it audits under hypotheses), not about the engine. Two Tier 1 actions shipped:
 

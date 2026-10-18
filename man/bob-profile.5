@@ -1,5 +1,5 @@
 .\" Manpage for BOB audit profile files
-.TH BOB-PROFILE 5 "2026-10-16" "BOB 0.25.0" "File Formats"
+.TH BOB-PROFILE 5 "2026-10-18" "BOB 0.25.1" "File Formats"
 .SH NAME
 bob-profile \- BOB audit profile file format (severity overrides per finding key)
 .
@@ -37,7 +37,9 @@ The
 .B [profile]
 section declares metadata; the
 .B [overrides]
-section maps finding keys to new severity levels.
+section maps finding keys to new severity levels; the
+.B [skip_sections]
+section lists whole sections not to run.
 .PP
 A profile may
 .B extend
@@ -57,13 +59,15 @@ profile-loading log messages).
 .TP
 .B extends
 .RB ( optional )
-Name of a parent profile to inherit from. Up to 8 levels of inheritance are
-allowed (see
+Name of a parent profile to inherit from (its overrides and skipped sections).
+Up to 8 levels of inheritance are allowed (see
 .B _MAX_EXTENDS_DEPTH
 in
-.BR bob/profiles.py );
-cycles are detected and rejected at load time with a
-.B RecursionError .
+.BR bob/profiles.py ).
+A cycle or a deeper chain makes the profile fail to load:
+.B bob
+warns and runs that audit with
+.BR server .
 .SS [overrides]
 One line per override:
 .PP
@@ -92,7 +96,17 @@ for this key.
 .PP
 Keys not listed in
 .B [overrides]
-keep their default severity.
+keep their default severity. A key must match exactly: an override written
+under a former name of a key has no effect (unlike
+.IR ignore.yml ,
+which still honours the former names it knows).
+.SS [skip_sections]
+One section name per line (the names
+.B bob \-\-check=list
+prints). A listed section does not run at all, so none of its findings or
+deductions appear. The built-in
+.B container
+profile uses this section.
 .
 .SH EXAMPLE
 .PP
@@ -106,9 +120,9 @@ description = Server with no GUI: ignore desktop-only findings
 extends     = server
 
 [overrides]
-ssh.x11_forwarding             = skip
+ssh.x11.forwarding.server      = skip
 ssh.allow_tcp_forwarding       = info
-hardening.dmesg_restrict       = warn
+kernel_hardening.dmesg_exposed = alert
 .EE
 .RE
 .
@@ -130,21 +144,29 @@ The first match wins.
 .SH SHIPPED PROFILES (overview)
 .TP
 .B server
-Default. Strict on SSH, kernel hardening, auditd. Standard for internet-facing
-infrastructure.
+Default. No overrides: every finding at its full severity. Used when no profile
+is given or saved, unless
+.B display-manager.service
+is active (then
+.BR desktop ).
 .TP
 .B desktop
-Relaxed: tolerant of X11 forwarding, ports bound to localhost only,
-.B fail2ban
-not enforced.
+Extends
+.B server
+and downgrades 35 findings to INFO, among them SSH password authentication,
+X11 and TCP forwarding, MaxAuthTries and LoginGraceTime, automatic updates, a
+missing backup, auditd, AppArmor without an enforcing profile, Secure Boot,
+the freshness of rootkit / ClamAV / file-integrity scans, and services exposed
+on the local network.
 .TP
 .B container
 Extends
 .B desktop
-and skips host-level checks (kernel modules, kernel hardening, secure boot,
-auditd, suid_audit, docker_audit, file integrity, rootkit) — meant for
-container images and CI environments where filesystem and kernel state
-are not auditable.
+and skips 17 host-level sections (hardening, kernel_modules, kernel_hardening,
+secure_boot, raspberry_pi, auditd, suid_audit, docker_hardening, rootkit,
+file_integrity, disk, memory, fail2ban, clamav, ntp, mac_policy, backup) \(em
+meant for container images and CI environments where filesystem and kernel
+state are not auditable.
 .TP
 .B workstation
 First-class business-tier profile since v0.8.1 (no longer an alias to

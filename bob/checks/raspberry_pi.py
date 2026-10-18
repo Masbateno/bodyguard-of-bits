@@ -233,7 +233,9 @@ def _legacy_account_state(passwd: Path, shadow: Path) -> "tuple[bool, bool]":
     try:
         entries = read_text_capped(passwd, encoding="utf-8", errors="replace").splitlines()
     except OSError:
-        return False, True
+        # v0.25.1: an unreadable passwd is not "no pi account" either — the
+        # same "not established" as an unreadable shadow (unknown ≠ clean).
+        return False, False
     shells = {}
     for line in entries:
         parts = line.split(":")

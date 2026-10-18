@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.25.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.25.1-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -24,10 +24,10 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 ### Audit principal
 
-- **Bannière ASCII** avec informations système — distro, hôte, version UFW, utilisateur, date
+- **Bannière ASCII** avec informations système — distro, hôte, noyau, versions des outils de pare-feu (UFW, firewalld, iptables, nftables), système d'init, utilisateur, date
 - **Vérification du statut du pare-feu** — UFW, firewalld (zone par défaut et sa cible) ou jeu de règles nftables/iptables brut en refus par défaut : actif/inactif, politique par défaut entrante ; une zone par défaut firewalld dont la cible est ACCEPT est une ALERT −3, comme la politique ALLOW par défaut d'UFW (v0.24.2)
 - **Analyse des règles UFW** — règles en doublon, `allow from any` sans restriction de port, cohérence IPv6
-- **Score contextuel** — détection du contexte réseau (IP publique directe vs NAT) ; pénalités plus lourdes sur les machines exposées sur internet (un port ouvert non couvert passe de 1 à 2 points ; un service critique exposé de 2 à 3) ; pare-feu inactif plafonne le score à 3/10
+- **Score contextuel** — détection du contexte réseau (IP publique directe ou client DDNS actif vs NAT) ; pénalités plus lourdes sur les machines exposées sur internet — IP publique ou DDNS (un port ouvert non couvert passe de 1 à 2 points ; un service à risque élevé ou critique exposé de 2 à 3) ; pare-feu inactif plafonne le score à 3/10
 - **Score de sécurité** 0–10 avec niveau de risque : FAIBLE / MOYEN / ÉLEVÉ / CRITIQUE ; constats répartis en *Action requise* / *Améliorations possibles* / *Configuration normale*
 - **Profils d'audit** — `server` (défaut), `desktop`, `workstation`, `container` ; profil actif affiché dans la boîte de synthèse. **v0.8.1 BREAKING** : `workstation` n'est plus un alias de `desktop` et livre ses propres overrides business-tier (backup / auditd / mac_policy restent à WARN alors que desktop les relâche à INFO)
 - **Cartographie CIS inline** — chaque constat affiche son code CIS `[CIS:X.Y.Z]` dans la boîte de synthèse ; référence complète en mode `--verbose` ; 226 entrées (117 CIS formels, 98 best-practice, 7 Docker, 4 Kubernetes)
@@ -38,7 +38,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 - **38 services réseau connus** détectés avec analyse d'exposition UFW et contexte de risque à deux axes (exposition + menace) pour les services critiques et élevés ; services CRITICAL/HIGH installés mais inactifs émettent ⚠ + bloc de contexte de risque
 - **Panorama des services** — tableau compact des 38 services après l'audit : SERVICE / STATUT / PORT(S) / UFW ; services non installés affichés en grisé. Les états viennent de systemd ou — depuis la v0.18.0 — d'OpenRC sur les machines qui n'en ont pas (Alpine, Gentoo, Devuan) : les codes de retour de `rc-service status` sont lus et l'existence est établie par `/etc/init.d/<nom>`, si bien qu'une sonde qui n'a pas pu tourner n'est jamais lue comme un démon arrêté. Un service **activé mais arrêté** est signalé et compté comme son miroir, *en marche mais non activé*
-- **Audit iptables/nftables** — quand UFW est inactif : détecte le backend actif (iptables vs nftables) ; vérifie les politiques par défaut INPUT et FORWARD ; contrôle la présence du conntrack stateful ; WARN −1 pt par politique permissive
+- **Audit iptables/nftables** — quand UFW est inactif : détecte le backend actif (iptables vs nftables) ; vérifie les politiques par défaut INPUT et FORWARD, la règle loopback et la règle ESTABLISHED/RELATED : une chaîne INPUT qui accepte tout — par sa politique, ou (v0.25.0) par une première règle qui accepte tout derrière une politique DROP — → ALERT −3 pts, sans commande (la règle à garder relève de l'opérateur) ; un jeu de règles nftables qui ne filtre aucun trafic entrant, ou aucun backend de pare-feu → WARN −3 pts ; politique FORWARD ACCEPT, absence de règle loopback ou de règle ESTABLISHED/RELATED → WARN −1 pt chacune
 - **Docker** — détection du contournement iptables et liste des ports exposés par les containers en cours d'exécution
 - **Virtualisation** — détecte les hyperviseurs actifs (libvirt/KVM, VirtualBox, VMware, LXD/LXC) et les paquets Snap réseau susceptibles de créer des interfaces bridge et de contourner UFW
 - **Ports en écoute** — passe unique unifiée ; ports éphémères et système ignorés proprement ; NetBIOS géré avec avertissement contextuel
@@ -47,21 +47,21 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Cohérence IPv6** — détecte les ports IPv6 actifs sans règle UFW v6 correspondante ; IPv6 désactivé globalement mais ports en écoute présents ; adresses link-local/ULA uniquement → INFO (toujours dites joignables depuis le LAN, sans filtrage par UFW — v0.24.1) ; sur un hôte sans UFW, les ports sont attribués au filtre qui les régit, sans rien affirmer des familles d'adresses que couvre un jeu de règles brut (v0.24.1) ; avec UFW réglé sur IPV6=no, BOB lit la politique IPv6 INPUT — UFW bloque alors tout l'IPv6, et les ports sont rapportés bloqués, non exposés (v0.24.2) ; sous firewalld, la cible de la zone par défaut décide pour IPv6 comme pour IPv4 (v0.24.2)
 - **Contrôle niveau de journalisation UFW** — `off` → ALERT −2 pts (aucune visibilité sur le trafic bloqué) ; `low`/`medium` → OK ; `high`/`full` → INFO
 - **Regroupement exposition des ports** — regroupe les services en écoute exposés par portée d'interface et niveau de risque ; démons OS connus sur ports système classifiés séparément des apps utilisateur
-- **Service d'impression CUPS** — signale un démon CUPS en écoute au-delà de localhost (`Listen`/`Port` sur une adresse non-loopback) → WARN −1 pt avec `cupsctl --no-remote-any` ; `Browsing On` (annonce d'imprimante réseau) → INFO ; localhost- ou socket-only lit OK ; pas de `cupsd.conf` → non audité (v0.21.0)
+- **Service d'impression CUPS** — signale un démon CUPS en écoute au-delà de localhost (`Listen`/`Port` sur une adresse non-loopback) → WARN −1 pt ; la correction retire exactement les lignes `Listen`/`Port` que BOB a lues, garde un `Listen localhost:<port>` et redémarre CUPS avec le système d'init de l'hôte (v0.25.0 — `cupsctl --no-remote-any` sortait en 0 sans rien changer sur un `Listen` écrit à la main) ; `Browsing On` (annonce d'imprimante réseau) → INFO ; localhost- ou socket-only lit OK ; pas de `cupsd.conf` → non audité (v0.21.0)
 
 ### Durcissement système
 
 - **Sysctls réseau & système de fichiers** — rp_filter, redirections ICMP (IPv4 acceptées/envoyées, IPv6 acceptées), routage par la source, SYN cookies et `fs.protected_hardlinks`/`symlinks`/`fifos`/`regular` → WARN −1 pt chacun s'ils sont affaiblis (rp_filter et send_redirects ramenés à INFO par les profils desktop/workstation) ; log_martians et écho ICMP broadcast → INFO. Les mises à jour automatiques relèvent de l'audit des mises à jour, AppArmor/SELinux de l'audit de politique MAC
 - **Audit de sécurité SSH** — analyse complète de `sshd_config` (12 directives à règle de valeur, plus les listes d'accès AllowUsers/AllowGroups/DenyUsers/DenyGroups et les Ciphers/MACs/KEX faibles) ; audit des clés privées (type, taille, passphrase) ; inspection `authorized_keys` ; vérification côté client `~/.ssh/config` ; comptage `known_hosts` ; suggestions d'installation adaptées à la distro; drop-ins `Include`s analysés dans l'ordre. **La remédiation vise le fichier que sshd lit en premier** (11 directives) : `/etc/ssh/sshd_config.d/00-bob-hardening.conf` quand `sshd_config` inclut ce répertoire (il passe avant le `50-cloud-init.conf` de cloud-init, et sshd garde la première valeur lue), sinon le *haut* de `sshd_config` — jamais en fin de fichier, où un bloc `Match` final la capturerait. Toute affectation antérieure de la directive est d'abord supprimée (toute casse, espace ou `=`), si bien qu'un correctif est idempotent ; `sshd -t` doit accepter le résultat avant le redémarrage (`systemctl` avec le nom d'unité de la distribution, `rc-service` sous OpenRC) ; les commandes tournent aussi bien sous `sed` GNU que BusyBox (v0.24.1, mesuré sur Debian, Fedora en SELinux enforcing et Alpine)
-- **Fichiers sensibles & sudoers** — audit des permissions de `/etc/passwd`, `/etc/shadow`, `/etc/gshadow`, `/etc/group`, `/etc/sudoers` ; permissions des clés hôtes SSH ; détection de `NOPASSWD:ALL` dans sudoers et sudoers.d
+- **Fichiers sensibles & sudoers** — audit des permissions de `/etc/passwd`, `/etc/shadow`, `/etc/gshadow`, `/etc/group`, `/etc/sudoers` ; permissions des clés hôtes SSH ; détection de `NOPASSWD:ALL` dans sudoers et sudoers.d, et des règles doas `permit nopass` (v0.21.3)
 - **Audit SUID/SGID** — binaires SUID et SGID appartenant à root hors de l'ensemble attendu (liste blanche dans `config.conf`) → WARN −1 pt. Depuis la v0.18.0, chacun est aussi **attribué à son paquet** (`dpkg -S`, `rpm -qf`, `pacman -Qo`, `apk info --who-owns`) : un binaire SUID root qu'**aucun paquet ne fournit** est un constat à part entière → ALERT −2 pts — la forme que prend une élévation de privilèges laissée derrière soi. Une requête qui répond sur elle-même plutôt que sur le fichier (base verrouillée, gestionnaire absent) ne produit aucun constat, et ne devient donc jamais une accusation
 - **Audit des mises à jour système** (cross-distro depuis v0.19.0) — paquets de sécurité en attente (−2 pts fixe) via le gestionnaire de paquets de l'hôte : `apt-get -s dist-upgrade`, `dnf updateinfo --security` ou `zypper list-patches --category security` ; `pacman`/`apk` n'ont pas de canal sécurité, tout paquet en attente est un INFO régulier. Absence de `unattended-upgrades` combinée à des mises à jour de sécurité en attente (−1 pt composé, apt seul) ; mises à jour régulières → INFO uniquement ; la commande de remédiation est par gestionnaire
-- **Audit umask système** — lit le umask depuis `/etc/login.defs`, PAM, `/etc/profile`, RC shells et processus courant ; umask permissif (0002/0000) → WARN −1 pt ; sources conflictuelles → WARN −1 pt
-- **Secure Boot** — état UEFI via `mokutil --sb-state` / `efivars` / `bootctl` ; WARN −1 pt si désactivé sur desktop ; INFO sur server/VM ou BIOS/inconnu
+- **Audit umask système** — lit le umask depuis `/etc/login.defs`, PAM, `/etc/profile`, RC shells et processus courant ; un umask `002` (écriture groupe) → WARN −1 pt ; un umask `000` (écriture pour tous) → ALERT −2 pts ; des définitions contradictoires entre sources → INFO
+- **Secure Boot** — état UEFI via `mokutil --sb-state` / `efivars` / `bootctl` ; désactivé → INFO sur tous les profils livrés (sur server par conception — VM, cloud, noyaux personnalisés ; desktop et workstation ramènent le WARN du contrôle à INFO depuis la v0.8.1 — pilotes NVIDIA, dual boot, noyaux personnalisés) ; Setup Mode (aucune Platform Key enrôlée : n'importe quel chargeur démarre) → WARN −1 pt en profil server, INFO en desktop/workstation ; pas d'UEFI ou état inconnu → INFO
 - **Audit firmware & microcode** — `fwupdmgr` firmware device en attente ; paquet microcode CPU (Intel/AMD) ; WARN −1 pt si absent ou obsolète
 - **Bootloader GRUB** — audit des permissions de `grub.cfg` : lisible par le monde/groupe → WARN −1 pt, escaladé dans le libellé si un hash `password_pbkdf2` est présent (un secret crackable hors-ligne exposé) ou si le fichier est inscriptible ; pas de mot de passe superutilisateur GRUB → INFO ; aucune config GRUB du tout (un boot non-GRUB comme un Raspberry Pi) → INFO, jamais un faux constat (v0.21.0, CIS 1.4.1)
 - **Durcissement des montages** — options effectives `nodev`/`nosuid`/`noexec` sur `/tmp`, `/var/tmp`, `/dev/shm` lues depuis `/proc/self/mounts` : un montage séparé sans `nodev`/`nosuid` → WARN −1 pt ; sans seulement `noexec` → INFO ; une zone scratch qui n'est *pas* son propre montage est INFO, jamais pénalisée — le piège CIS « doit être une partition séparée » est délibérément évité (v0.21.0, CIS 1.1) ; `/proc` sans `hidepid` → INFO, jamais scoré (v0.24.0)
-- **Chiffrement du disque (LUKS)** — indique si le système de fichiers racine est sur un périphérique LUKS/dm-crypt, en parcourant la pile device-mapper pour reconnaître LVM-sur-LUKS, pas seulement un montage crypt nu ; filtré par profil et jamais binaire : une racine non chiffrée → WARN −1 pt sur desktop/workstation (portable, physiquement exposé), INFO sur un serveur (déverrouillage distant requis, modèle de menace baie verrouillée), non-applicable dans un conteneur, inconnu quand le périphérique racine n'est pas résolu ; BOB n'active jamais le chiffrement — opération destructive à sens unique (v0.21.0)
+- **Chiffrement du disque (LUKS)** — indique si le système de fichiers racine est sur un périphérique LUKS/dm-crypt, en parcourant la pile device-mapper pour reconnaître LVM-sur-LUKS, pas seulement un montage crypt nu ; filtré par profil et jamais binaire : une racine non chiffrée → WARN −1 pt sur desktop/workstation (portable, physiquement exposé), INFO sur un serveur (déverrouillage distant requis, modèle de menace baie verrouillée), non-applicable dans un conteneur, inconnu quand le périphérique racine n'est pas résolu ; BOB n'active jamais le chiffrement — opération destructive à sens unique (v0.21.0). Depuis la v0.25.0, la racine étant chiffrée, les autres systèmes de fichiers locaux sur un périphérique bloc et le swap sur disque sont résolus de la même manière (zram, `/boot`, la partition EFI, les snaps, les images ISO et les supports amovibles sont ignorés) : des données ou du swap en clair → `disk_encryption.data_unencrypted`, WARN −1 pt sur desktop/workstation, INFO sur un serveur ; un volume loop, RAID ou ZFS est signalé comme indécidable, jamais compté comme chiffré
 - **Verrouillage de compte PAM** — signale l'absence de `pam_faillock` (ou l'ancien `pam_tally2`) dans la pile auth : WARN −1 pt sur un serveur, INFO sur desktop/workstation (où le verrouillage massif de comptes est lui-même un levier de DoS) ; complémentaire de fail2ban (couche réseau) — faillock couvre les logins locaux, su et sudo ; une pile PAM illisible/absente lit inconnu, pas propre ; BOB n'auto-édite jamais PAM (v0.21.0, CIS 5.3.2)
 - **Autorisation polkit** — un fichier `.rules`/`.pkla` polkit (ou son répertoire `rules.d`) inscriptible par un non-root est un chemin d'escalade de privilèges direct, puisque polkit évalue ses règles en tant que root → WARN −1 pt avec un correctif `chown`/`chmod` ; un `.pkla` legacy accordant `ResultAny=yes` → INFO ; le JavaScript des règles n'est délibérément pas parsé pour des `YES` trop larges (une machine à faux positifs) (v0.21.0)
 - **Core dumps** — `kernel.core_pattern`, `Storage=` de systemd-coredump, et les limites `hard core 0` ; indique si les crash dumps pourraient persister la mémoire d'un processus privilégié (écrits sur disque / pipés vers un handler comme apport / gérés par systemd-coredump) ou sont désactivés ; INFO seulement, sans déduction (v0.21.0)
@@ -73,7 +73,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Politique de mots de passe** — pas de `pam_pwquality`/`pam_cracklib`, ou un `minlen` faible → WARN −1 pt (INFO sous les profils desktop/workstation) ; vieillissement des mots de passe → INFO ; un algorithme de hachage faible (MD5/DES/bigcrypt) dans `login.defs` ou une pile `pam_unix` → WARN −1 pt (v0.24.0) ; le `passwd` BusyBox, qui ne lit ni l'un ni l'autre, est signalé comme intégré
 - **PATH de root** (v0.22.0) — PATH configuré de root (`ENV_SUPATH`, `secure_path` de sudoers) avec un composant modifiable par tous, `.` ou relatif → WARN −1 pt
 - **Nœuds `/dev` privilégiés** (v0.22.0) — accès « tous » sur `/dev/mem`, `/dev/kmem`, `/dev/port` ou les périphériques bloc bruts, par stat seulement → INFO
-- **Capabilities de fichiers** (v0.24.0) — `security.capability` lu directement sur les racines du scan SUID : une capability équivalente à root sur un binaire hors des droits mesurés sur de vraies distributions → WARN −1 pt ; toute autre capability → INFO
+- **Capabilities de fichiers** (v0.24.0) — `security.capability` lu directement sur les racines du scan SUID : une capability équivalente à root sur un binaire hors des droits mesurés sur de vraies distributions → WARN −1 pt ; toute autre capability → INFO. Sur un hôte RPM (v0.25.0), la base de paquets décide (un seul `rpm -qf` pour tous les fichiers) : un fichier qu'aucun paquet ne possède, ou qui porte plus que ce que son paquet livre, n'est pas un droit connu, quel que soit son nom, et le détail dit lequel
 - **Sécurité CPU** (v0.24.0) — le verdict du noyau dans `/sys/devices/system/cpu/vulnerabilities` : « Vulnerable » → WARN −1 pt ; mitigée mais exposée par SMT, « Unknown », options de démarrage qui désactivent une mitigation et IOMMU inactif (x86) → INFO ; un noyau qui ne rapporte rien (ARMv6) → INFO, pas un aveuglement
 - **Authenticité des paquets** (v0.24.0) — options écrites qui désactivent l'authentification des paquets (apt `trusted=yes`/`AllowUnauthenticated`, dnf/zypper `gpgcheck=0`, pacman `SigLevel Never`/`Optional`, apk `allow-untrusted`) → WARN −1 pt, formulé par gestionnaire (apt authentifie son index signé, pas chaque `.deb`)
 - **Politique crypto** (v0.24.0) — la politique crypto-policies *appliquée* : `LEGACY` → WARN −1 pt ; module affaiblissant, politique datée ou inconnue, configurée ≠ appliquée → INFO ; pas de crypto-policies sur l'hôte → INFO
@@ -82,6 +82,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Sécurité timers systemd** — curl/wget pipé vers un shell dans ExecStart → WARN −2 pts ; scripts world-writable dans ExecStart → WARN −1 pt ; timers root créés par l'utilisateur sans `User=` → INFO
 - **Durcissement des services (`systemd-analyze security`)** — remonte le score d'exposition systemd des services en cours (NoNewPrivileges, ProtectSystem, capability bounding, namespacing…) ; résumé INFO uniquement (compte par prédicat + services en cours les moins durcis + pointeur `systemd-analyze security <unit>`), **aucune déduction** — une exposition élevée par défaut est l'état normal d'un hôte Linux, pas une mauvaise configuration choisie (v0.13.0)
 - **Posture de sécurité du conteneur** — quand BOB tourne *dans* un conteneur, lit l'isolation du conteneur depuis les interfaces noyau (jeu de capabilities → détection privilégié / CAP_SYS_ADMIN, mode seccomp, mapping user namespace, rootfs en écriture) ; la section entière est supprimée hors conteneur. INFO uniquement en v0.13.0 ; le fast-follow qu'elle annonçait a atterri en **v0.15.4**, validé contre quatre conteneurs podman réels : privileged −3, CAP_SYS_ADMIN −2, seccomp désactivé −1. Les défauts du runtime (racine inscriptible, root sans espace de noms utilisateur) restent INFO — un choix opérateur est pénalisé, un défaut éditeur ne l'est pas (v0.13.0, dents v0.15.4)
+- **Nœud Kubernetes** (v0.25.0) — s'exécute là où tourne un kubelet (`kubelet` en amont, `kubelite` de MicroK8s, k3s) et audite le nœud, sans identifiants de cluster. Les conteneurs sont lus par `ctr` (`microk8s.ctr`, `k3s ctr`, `ctr`), sinon par `crictl` (CRI-O) : toutes les capacités Linux dans l'ensemble englobant d'un conteneur, dans un pod hors de `kube-system` → WARN −1 pt ; un montage hostPath sensible (`/`, `/etc`, `/root`, `/var/lib/kubelet`, le socket d'un runtime de conteneurs) hors de `kube-system` → WARN −1 pt ; un pod dans l'espace de noms réseau, PID ou IPC de l'hôte → INFO ; les pods de `kube-system` qui ont ces droits sont listés, non déduits (INFO). Le kubelet est interrogé depuis l'hôte lui-même sur 127.0.0.1, sans identifiants : `GET /pods` 401 → OK, 403 → INFO ; `POST /run` (create) et `GET /exec` (get) pour un namespace et un nom de pod en majuscules, qui ne peuvent désigner aucun pod valide — l'une ou l'autre autorisée → ALERT −3 pts, que les lectures soient permises ou non ; spécifications des pods lisibles et aucun point d'accès de commande montré autorisé → WARN −1 pt ; un 405 (endpoints de débogage désactivés) ou un 5xx n'est pas une autorisation ; le port en lecture seule 10255 qui répond → WARN −1 pt. Le nœud, pas le cluster ; la joignabilité depuis le réseau n'est pas testée ; k3s n'est pas mesuré
 - **Unités socket systemd** — signale les unités `.socket` encore actives alors que leur service backing a disparu (masqué / introuvable) ou en état failed — une socket en écoute sans consommateur fonctionnel, typiquement le résidu d'un paquet supprimé/renommé ; marque celles liées à une adresse non-loopback. Les internes systemd à trigger vide ne sont jamais flaguées. **v0.15.4** : une orpheline liée à une adresse non-loopback déduit −1 — le port répond puis fait échouer la connexion ; la même panne sur loopback reste INFO (v0.13.1, dents v0.15.4)
 - **Contexte cloud (côté hôte)** — uniquement sur une instance cloud (détection conservatrice : un fournisseur identifié via SMBIOS/DMI, ou cloud-init corroboré par une route de métadonnées on-link — un simple cloud-init installé sur une VM Proxmox/VMware/homelab n'est *pas* considéré comme du cloud) : remonte l'exposition cloud visible depuis l'hôte — service de métadonnées joignable on-link (rappel IMDSv2), user-data persistée lisible par tous — strictement côté hôte, aucune API/identifiant cloud. **v0.15.4** : le user-data lisible par tous déduit −2 (cloud-init l'écrit en 0600, donc tout autre mode est un choix). L'accessibilité de l'IMDS reste INFO : savoir si IMDSv2 est imposé est une propriété des metadata options de l'instance et ne se lit pas depuis l'hôte (v0.13.1, dents v0.15.4)
 
@@ -90,32 +91,32 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Logs UFW** — parse `/var/log/ufw.log` sur une période configurable (`--log-days=N`, défaut 7 jours) ; total des tentatives bloquées, top IPs sources avec géolocalisation, top ports ciblés, détection bruteforce (>10 tentatives/60 s), tentatives sur ports de services installés
 - **Analyse auth.log SSH** — parse `/var/log/auth.log` ; détection brute-force (≥50 tentatives échouées sur toute la période analysée, toutes sources confondues → WARN, sans déduction) ; dernières connexions réussies ; top sources d'échec
 - **Géolocalisation IP** — IPs sources enrichies avec pays et opérateur via GeoIP2 (optionnel, `python3-geoip2` + base GeoLite2) ; plages privées identifiées comme réseau local ; résultats mis en cache par session
-- **Dominance source locale IoT** — détecte quand une seule IP privée représente ≥ 70 % du trafic UFW bloqué sur ≥ 50 entrées de log (WARN, −1 pt) ; typique des appareils IoT qui scannent le LAN
+- **Dominance source locale IoT** — détecte quand une seule IP privée représente ≥ 70 % du trafic UFW bloqué sur ≥ 50 entrées de log (INFO, sans déduction — le plus souvent du bruit mDNS/SSDP/UPnP bénin) ; typique des appareils IoT qui scannent le LAN
 - **Synchronisation NTP** — systemd-timesyncd, chronyd ou ntpd ; WARN −1 pt si désactivé ou non synchronisé
 - **Prévention d'intrusion Fail2ban** — installation, état du service, jails actifs, présence d'un jail SSH ; WARN −1 pt si inactif ou aucun jail
 - **Scan rootkit & intégrité** — détection rkhunter/chkrootkit ; WARN −1 pt pour base obsolète (≥7 jours), scan absent ou trop ancien (>30 jours)
-- **Linux Audit Framework (auditd)** — installation, état du service, règles chargées, couverture de `/etc/passwd`, `/etc/shadow`, `/etc/sudoers` ; WARN −1 pt chacun pour service inactif, aucune règle, fichiers non couverts (profil server uniquement)
+- **Linux Audit Framework (auditd)** — installation, état du service, règles chargées, couverture de `/etc/passwd`, `/etc/shadow`, `/etc/sudoers` ; WARN −1 pt chacun pour service inactif, aucune règle, fichiers non couverts (profils server et workstation ; INFO en desktop ; ignoré dans un conteneur)
 - **Intégrité des fichiers (AIDE/Tripwire)** — installation, existence de la base, récence du dernier check ; WARN −1 pt si base absente ou check absent/trop ancien (>30 jours)
 - **Audit sécurité Samba** — SMB1 (ALERT −2 pts) ; mots de passe nuls (ALERT −3 pts) ; signature serveur désactivée (WARN −1 pt) ; partages accessibles en écriture/lecture par l'invité ; domaine `samba` dédié
-- **Audit antivirus ClamAV** — installation, fraîcheur de la base virus via mtime (WARN/ALERT selon ancienneté), statut démon, date du dernier scan
+- **Audit antivirus ClamAV** — installation, fraîcheur de la base virus via mtime (WARN/ALERT selon ancienneté), statut démon, date du dernier scan lue dans les chemins de journaux standard ; le socket local de clamd accessible à tout utilisateur local (chacun peut envoyer SHUTDOWN) → WARN −1 pt, sans commande — les clients qui gardent l'accès relèvent de l'opérateur (v0.25.0)
 - **Exposition SMTP locale** — détecte les MTA (Postfix, Exim, Sendmail) en écoute sur toutes les interfaces vs localhost uniquement ; WARN −1 pt si exposition publique
 - **Moteur de corrélation de signaux** — 6 règles de risque composé (root+sans-fail2ban, auth-password+brute-force, root+password, NOPASSWD+SUID, maj-sécurité-en-attente+sans-fail2ban, logging-off+sans-fail2ban+sans-auditd) ; évalué post-audit sur les constats ALERT+WARN actifs
 - **Suivi des constats récurrents** — compteur d'apparitions consécutives par clé ALERT/WARN ; stocké dans `~/.config/bob/recurrence.json`
-- **Détection d'applications de bureau** — applis GUI connues (Steam, Discord, Zoom, Signal, VLC, Spotify, Slack, Telegram, Chrome, Firefox…) en cours d'exécution ; constats INFO, sans déduction
+- **Détection d'applications de bureau** — applis GUI connues (Steam, Discord, Zoom, Signal, Slack, Telegram, Chromium, Firefox, Thunderbird, Wireshark…) en cours d'exécution ; constats INFO, sans déduction
 
 ### Sortie & UX
 
 - **Interface bilingue** — détection automatique depuis `$LC_ALL`/`$LC_MESSAGES`/`$LANG` (POSIX) ; retombe sur l'anglais quand la locale est `C`/`POSIX` ou non supportée. Forcer avec `--french` / `--english` (ou `--lang=fr` / `--lang=en`)
 - **Gestion de la couleur** — auto-détectée depuis la v0.14.0 : l'ANSI n'est émis que si stdout est un terminal, donc rediriger vers un fichier ou un pipe est propre sans aucune option. `--no-color` (ou `NO_COLOR=1`) la force à off ; `FORCE_COLOR=1` la force à on pour `less -R` ou un log volontairement coloré
-- **Mode fix** — section interactive après le résumé ; chaque correction automatisable demande une confirmation `[y/N]` ; `--fix` seul affiche un aperçu sans exécuter ; `--fix --apply --yes` confirme tout avec journal d'audit **Seule une commande que BOB peut exécuter sans surveillance est comptée comme automatique** : `cmd_type="fix"` (un diagnostic comme `smartctl -a` n'est pas une remédiation), aucun opérateur shell, aucun éditeur interactif. Tout le reste apparaît sous son propre titre, commande affichée mais non exécutée — le compteur au-dessus de l'invite est une promesse tenable, depuis la v0.17.1. Les commandes d'installation portent `-y`, car un correctif qui s'arrête pour poser une question ne peut pas être appliqué par un mode dont tout l'objet est de ne pas en poser.. Depuis la v0.18.0, les durcissements sysctl sont appliqués **par le code de BOB, pas par un shell** : la valeur est posée, persistée avec exactement une ligne par clé, puis **relue** avant que BOB n'affirme quoi que ce soit — la commande affichée reste la même pour qui veut la coller. Deux applications sans surveillance sont refusées d'office parce qu'elles peuvent vous faire perdre une machine distante — une politique de pare-feu de refus par défaut (`iptables -P INPUT DROP` et ses variantes `ip6tables`, `-nft`, `-legacy` et `nft … policy drop`) — et un correctif qui ouvre un accès (`ufw allow`) passe toujours avant celui qui en retire (`ufw enable`)
+- **Mode fix** — section interactive après le résumé ; chaque correction automatisable demande une confirmation `[y/N]` ; `--fix` seul affiche un aperçu sans exécuter ; `--fix --apply --yes` les confirme toutes et liste à la fin les commandes appliquées (à l'écran — aucun fichier n'est écrit). **Seule une commande que BOB peut exécuter sans surveillance est comptée comme automatique** : `cmd_type="fix"` (un diagnostic comme `smartctl -a` n'est pas une remédiation), aucun opérateur shell, aucun éditeur interactif. Tout le reste apparaît sous son propre titre, commande affichée mais non exécutée — le compteur au-dessus de l'invite est une promesse tenable, depuis la v0.17.1. Les commandes d'installation portent `-y`, car un correctif qui s'arrête pour poser une question ne peut pas être appliqué par un mode dont tout l'objet est de ne pas en poser. Depuis la v0.18.0, les durcissements sysctl sont appliqués **par le code de BOB, pas par un shell** : la valeur est posée, persistée avec exactement une ligne par clé, puis **relue** avant que BOB n'affirme quoi que ce soit — la commande affichée reste la même pour qui veut la coller. Deux applications sans surveillance sont refusées d'office parce qu'elles peuvent vous faire perdre une machine distante — une politique de pare-feu de refus par défaut (`iptables -P INPUT DROP` et ses variantes `ip6tables`, `-nft`, `-legacy` et `nft … policy drop`) — et un correctif qui ouvre un accès (`ufw allow`) passe toujours avant celui qui en retire (`ufw enable`)
 - **`--explain KEY`** — explication structurée par constat (POURQUOI / COMMENT CORRIGER / référence CIS) ; 226 clés sur 62 préfixes ; 119 d'entre elles rendent une section par profil — 71 avec une prose écrite pour lui, les autres avec une note dérivée du fichier de profil — et 107 s'appliquent identiquement à tous les profils ; TUI interactif ; sans droit root ; la vue par clé ajoute un bloc **Aussi référencé dans** listant le numéro du même contrôle dans chaque autre benchmark qui le couvre ; `--explain list` et le wizard groupent toutes les clés en arborescence de dossiers à trois niveaux — distribution CIS (CIS Ubuntu, CIS Debian, CIS Docker, CIS Red Hat, Bonne pratique) → version de benchmark (Ubuntu 22.04/24.04, Debian 12/13) → section de type — et chaque famille CIS affiche un lien vers sa page de benchmark CIS en ligne
-- **Scores par domaine** — sous-scores 0–10, un par groupe affiché (Pare-feu & Réseau / Exposition & Services / Contrôle d'accès / Durcissement système / Santé & Résilience / Détection des menaces) ; score global = moyenne des scores de domaine actifs (un domaine devient actif dès qu'un check émet `OK`, `WARN` ou `ALERT` — les domaines `INFO`-only restent cachés ; `OK` a été ajouté au set actif en v0.4.6 pour corriger une inversion de score après remédiation) ; plafonds par outil pour éviter la double pénalité (rootkit, ClamAV, intégrité fichiers plafonnés à 1 pt de déduction chacun) ; barre █/░ après l'audit ; inclus dans JSON et webhook
+- **Scores par domaine** — sous-scores 0–10, un par groupe affiché (Pare-feu & Réseau / Exposition & Services / Contrôle d'accès / Durcissement système / Santé & Résilience / Détection des menaces) ; score global = moyenne des scores de domaine actifs (un domaine devient actif dès qu'un check émet `OK`, `WARN` ou `ALERT` — les domaines `INFO`-only sont exclus de la moyenne et affichés avec leur raison à la place d'un score : « signalé, non noté » depuis la v0.25.0, « aucune action requise » avant ; `OK` a été ajouté au set actif en v0.4.6 pour corriger une inversion de score après remédiation) ; plafonds par outil pour éviter la double pénalité (rootkit, ClamAV, intégrité fichiers plafonnés à 1 pt de déduction chacun) ; barre █/░ après l'audit ; inclus dans JSON et webhook
 - **Webhooks** — `--webhook URL` envoie le résultat en JSON ; formats générique et Slack (auto-détecté) ; `--webhook-format=auto|generic|slack`
 - **Export HTML `--html`** — fichier HTML autosuffisant (sans JS, sans ressources externes) ; cercle de score coloré ; badges ALERT/WARN/INFO/OK ; tableau déductions ; protection XSS
 - **`--format=FORMAT`** — flag unifié : `json | json-full | csv | markdown | html` ; anciens flags conservés comme aliases. Depuis la v0.18.0, la dernière colonne du CSV est `key`, l'identifiant stable du constat — le même que portent `--explain`, `--ignore` et le JSON ; les quinze colonnes précédentes gardent leur position
-- **`--check LIST` / `--skip LIST`** — n'exécuter que les checks nommés ou les exclure ; mutuellement exclusifs ; `--check=list` affiche les 67 noms de sections — les 57 sections filtrables, plus les 10 toujours actives qu'il liste aussi
+- **`--check LIST` / `--skip LIST`** — n'exécuter que les checks nommés (`--check=ssh,firewall`) ou les exclure (`--skip=clamav,rootkit`) ; mutuellement exclusifs ; `--check=list` affiche les 67 noms de sections — les 57 sections filtrables, plus les 10 toujours actives qu'il liste aussi
 - **`--output-dir PATH`** — surcharger le répertoire de sauvegarde pour l'exécution courante ; sans persistance
-- **Rapport comparatif** — baseline enregistrée après chaque audit ; au prochain lancement : delta de score, variations alertes/avertissements, ports apparus/fermés, services démarrés/arrêtés ; clés ALERT+WARN nouvelles et résolues suivies séparément. Un fichier qui n'est pas une baseline BOB (sans `timestamp` ni `score`) est refusé nommément au lieu d'être comparé comme une baseline à zéro
+- **Rapport comparatif** — baseline enregistrée après chaque audit (`~/.config/bob/last_baseline.json`) ; au prochain lancement : delta de score, variations alertes/avertissements, ports apparus/fermés, services démarrés/arrêtés ; clés ALERT+WARN nouvelles et résolues suivies séparément. Un fichier qui n'est pas une baseline BOB (sans `timestamp` ni `score`) est refusé nommément au lieu d'être comparé comme une baseline à zéro
 - **Historique des scores** — `--history` affiche les N derniers scores en sparkline (▁▂▃▄▅▆▇█) avec dates ; rotation automatique à 1000 entrées. Une ligne dont BOB ne sait lire ni le score ni l'horodatage est ignorée, jamais réparée en un chiffre qu'il n'a pas mesuré
 - **Liste d'exceptions** — `--ignore KEY` ajoute une clé dans `ignore.yml` ; `--show-ignored` lance l'audit et affiche en gris les constats supprimés à côté de la sortie normale (ce n'est pas une commande de listing) ; les constats correspondants sont masqués sans être scorés
 - **Mode `--diff`** — lance l'audit silencieusement et affiche uniquement le delta (score, alertes, avertissements, INFO)
@@ -156,7 +157,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 | Gitea                            | 3000/tcp             | Moyen    | Forge Git ; désactiver l'inscription publique si non nécessaire                    |
 | Avahi (découverte réseau local)  | 5353/udp             | Faible   | mDNS LAN uniquement ; pas d'accès aux données, découverte seulement                |
 | CUPS (impression réseau)         | 631/tcp              | Faible   | Écoute sur localhost par défaut ; risque négligeable si non exposé                 |
-| Syncthing                        | 8384/tcp, 22000/tcp  | Faible   | UI web sur localhost par défaut ; port de sync potentiellement exposé              |
+| Syncthing                        | 8384/tcp, 22000/tcp  | Moyen    | UI web sur localhost par défaut ; port de sync potentiellement exposé              |
 | Telnet Server                    | 23/tcp               | Critique | Protocole en clair ; credentials et trafic visibles sur le réseau                  |
 | RDP / xRDP                       | 3389/tcp             | Critique | Bureau à distance ; ciblé par brute-force et exploits de type BlueKeep             |
 | MongoDB                          | 27017/tcp            | Critique | Pas d'auth par défaut (versions anciennes) ; accès DB complet si exposé            |
@@ -183,7 +184,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - Linux — le badge de plateformes couvre huit noms, sur trois natures de preuve différentes :
   - **utilisé au quotidien** : Linux Mint 22.3, Debian 13.4.0
   - **matériel réel** (stress-testé au fil des cycles v0.20.x–v0.22.x) : Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, sans systemd — ce contre quoi le support OpenRC a été écrit), Kali Rolling — plus les deux hôtes quotidiens ci-dessus ; voir la table des tiers de support dans le README principal
-  - **validé en CI** (conteneurs, à chaque push) : Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (émulé). Les releases précédentes ont aussi été auditées à la main sur des VM jetables (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — depuis abandonnées, ces familles sont désormais sur matériel réel ci-dessus
+  - **validé en CI** (conteneurs, à chaque push sur `main` et à chaque pull request vers `main`) : Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (émulé). Les releases précédentes ont aussi été auditées à la main sur des VM jetables (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — depuis abandonnées, ces familles sont désormais sur matériel réel ci-dessus
   - **Raspberry Pi** : audité sur du vrai matériel pour la première fois en v0.18.1 — un Pi Zero W (ARMv6, 426 Mo) sous Raspbian 13 trixie. Un audit complet y prend 71 à 108 s. La passe a montré la détection de force brute SSH aveugle sous OpenSSH ≥ 9.8 et le contrôle de la partition de démarrage cherchant le mauvais fichier de provisionnement ; les deux sont corrigés et rejoués sur la carte. C'est une carte et une version d'OS, pas une matrice
 - Python 3.10+
 - `ss` recommandé (paquet `iproute2`) — disponible par défaut sur les systèmes modernes
@@ -199,7 +200,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - Linux — le badge de plateformes couvre huit noms, sur trois natures de preuve différentes :
   - **utilisé au quotidien** : Linux Mint 22.3, Debian 13.4.0
   - **matériel réel** (stress-testé au fil des cycles v0.20.x–v0.22.x) : Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, sans systemd — ce contre quoi le support OpenRC a été écrit), Kali Rolling — plus les deux hôtes quotidiens ci-dessus ; voir la table des tiers de support dans le README principal
-  - **validé en CI** (conteneurs, à chaque push) : Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (émulé). Les releases précédentes ont aussi été auditées à la main sur des VM jetables (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — depuis abandonnées, ces familles sont désormais sur matériel réel ci-dessus
+  - **validé en CI** (conteneurs, à chaque push sur `main` et à chaque pull request vers `main`) : Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (émulé). Les releases précédentes ont aussi été auditées à la main sur des VM jetables (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — depuis abandonnées, ces familles sont désormais sur matériel réel ci-dessus
   - **Raspberry Pi** : audité sur du vrai matériel pour la première fois en v0.18.1 — un Pi Zero W (ARMv6, 426 Mo) sous Raspbian 13 trixie. Un audit complet y prend 71 à 108 s. La passe a montré la détection de force brute SSH aveugle sous OpenSSH ≥ 9.8 et le contrôle de la partition de démarrage cherchant le mauvais fichier de provisionnement ; les deux sont corrigés et rejoués sur la carte. C'est une carte et une version d'OS, pas une matrice
 - pipx *(installateur d'applications Python isolées)* :
 
@@ -293,7 +294,7 @@ sudo bob --manage-cron
 sudo bob --install-completion
 ```
 
-> Les notifications email nécessitent une configuration Postfix fonctionnelle. Voir [AUTOMATION_FR.md](AUTOMATION_FR.md) pour les instructions pas à pas (installation, relais SMTP, réécriture expéditeur, test).
+> Les notifications email nécessitent un transport de courrier compatible sendmail fonctionnel — BOB reconnaît Postfix, Exim, msmtp et ssmtp. Voir [AUTOMATION_FR.md](AUTOMATION_FR.md) pour une configuration Postfix pas à pas (installation, relais SMTP, réécriture expéditeur, test).
 
 Les options se combinent :
 
@@ -305,7 +306,7 @@ sudo bob --french -v -d -f
 
 ## Configuration enregistrée
 
-`~/.config/bob/config.conf` (mode `0600`) contient le profil d'audit, l'URL et le format du webhook, la liste blanche SUID et les répertoires de journaux choisis via `--manage-logs`. Rien d'autre n'est persisté : **les ports des services ne sont pas enregistrés et ne l'ont jamais été** — BOB lit à chaque audit les fichiers de configuration des services eux-mêmes (`sshd_config`, `nginx.conf`, `smb.conf`, …) et retombe sur le port usuel quand aucune directive n'est trouvée. Des versions antérieures de cette page décrivaient une invite proposant de mémoriser un port non standard ; cette invite n'existe pas dans le code.
+`~/.config/bob/config.conf` (mode `0600`) contient le profil d'audit, l'URL et le format du webhook, la liste blanche SUID et les répertoires de journaux choisis via `--manage-logs`. Rien d'autre n'y est stocké (les autres fichiers d'état de BOB sont à côté : `last_baseline.json`, `history.jsonl`, `ignore.yml`, `recurrence.json`, et `emails` — le carnet d'adresses des notifications cron) ; **les ports des services ne sont pas enregistrés et ne l'ont jamais été** — BOB lit à chaque audit les fichiers de configuration des services eux-mêmes (`sshd_config`, `nginx.conf`, `smb.conf`, …) et retombe sur le port usuel quand aucune directive n'est trouvée. Des versions antérieures de cette page décrivaient une invite proposant de mémoriser un port non standard ; cette invite n'existe pas dans le code.
 
 Pour supprimer la configuration enregistrée et repartir des valeurs par défaut (avec confirmation) :
 
@@ -319,7 +320,7 @@ sudo bob -r
 
 BOB supporte des checks d'audit personnalisés écrits en Python. Posez un fichier `*.py` dans `~/.config/bob/checks.d/` et BOB le picke au run suivant. Chaque plugin est exécuté dans un **sous-processus sandboxé** (introduit en v0.7.0 T3) — RLIMIT_AS 256 MiB, un timeout wall-clock de 5 s, RLIMIT_CPU 10 s, allowlist d'import restreinte, écritures filesystem refusées, lectures bloquées sur chemins sensibles (`/etc/shadow`, `~/.ssh/id_*`, `/dev/mem`, …). Un plugin défaillant **ne peut pas** interrompre l'audit, et toute sortie est ANSI-sanitisée.
 
-> **Note threat model :** le sandboxing Python in-process est de la défense en profondeur, pas une frontière de sécurité dure (consensus PEP 416). Utilisez le profil AppArmor livré pour une vraie isolation. Voir SECURITY_FR.md → section "Plugin checks".
+> **Note threat model :** le sandboxing Python in-process est de la défense en profondeur, pas une frontière de sécurité dure (consensus PEP 416). Le paquet Debian livre un profil AppArmor (`debian/apparmor.d/bob`) qui donne une vraie isolation une fois appliqué — il est en mode complain par défaut (`aa-enforce` le bascule). Voir SECURITY_FR.md → section "Plugin checks".
 
 ### Contrat
 
@@ -362,11 +363,11 @@ def run_check(t=None) -> CheckResult:
 
 - `result.ok(message=...)` — coche verte, pas d'impact score
 - `result.info(message=..., key=...)` — notice neutre, pas de déduction
-- `result.warn(message=..., key=..., points=..., nature=...)` — avertissement jaune
-- `result.alert(message=..., key=..., points=..., nature=...)` — alerte rouge
-- `result.warn_with_deduction(...)` / `result.alert_with_deduction(...)` — helpers combinés
+- `result.warn(message=..., key=..., nature=...)` — avertissement jaune, sans déduction
+- `result.alert(message=..., key=..., nature=...)` — alerte rouge, sans déduction
+- `result.warn_with_deduction(key, message=..., points=...)` / `result.alert_with_deduction(key, message=..., points=...)` — avertissement ou alerte qui retire `points` du score ; `warn` et `alert` ne prennent pas d'argument `points`
 
-Utilisez `key=` pour que votre constat puisse être silencé avec `bob --ignore custom.ma_cle` si besoin. Choisissez des chaînes `key` sous un préfixe `custom.*` pour éviter les collisions avec les clés built-in (le test invariant `_KNOWN_PREFIXES` rejette les préfixes inconnus pour les EXPLAIN_KEYS built-in mais pas pour la sortie plugin).
+Utilisez `key=` pour que votre constat puisse être silencé avec `bob --ignore custom.ma_cle` si besoin. Choisissez des chaînes `key` sous un préfixe `custom.*` pour éviter les collisions avec les clés built-in (l'invariant `KNOWN_PREFIXES` de `tests/test_explain_naming_convention.py` rejette les préfixes inconnus pour les EXPLAIN_KEYS built-in mais pas pour la sortie plugin).
 
 ### Ce que les plugins NE peuvent PAS faire
 
@@ -397,7 +398,7 @@ Exemple (tronqué pour la lisibilité) :
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.25.0  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.25.1  │  Auditeur de durcissement Linux                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -523,16 +524,16 @@ Le rapport s'ouvre avec un en-tête ASCII art sur 62 caractères et contient : i
 | `--format=FORMAT`       | Flag unifié : `json \| json-full \| csv \| markdown \| html`      |
 | `--json`                | Exporter le résumé en JSON (alias `--format=json`)                 |
 | `--json-full`           | Exporter l'audit complet en JSON (alias `--format=json-full`)      |
-| `--explain=KEY`         | Afficher l'explication d'une clé de constat (`--explain list` liste tout) |
+| `-e`, `--explain=KEY`   | Afficher l'explication d'une clé de constat (`--explain list` liste tout) |
 | `-B`, `--breakdown`     | Audit silencieux — afficher le chemin complet de calcul du score (déductions, plafonds, domaines, score final) |
-| `--diff`                | Audit silencieux — afficher uniquement le delta de la baseline      |
-| `--webhook=URL`         | Envoyer le résultat d'audit en JSON à l'URL après chaque audit     |
+| `-D`, `--diff`          | Audit silencieux — afficher uniquement le delta de la baseline      |
+| `-w`, `--webhook=URL`   | Envoyer le résultat d'audit en JSON à l'URL après chaque audit     |
 | `--webhook-format=FMT`  | Format webhook : `auto` (défaut), `generic` ou `slack`            |
 | `--log-days=N`          | Analyser les logs sur N jours (défaut : 7)                         |
 | `-o`, `--offline`       | Désactiver la résolution d'IP publique et l'appel webhook (aucun appel HTTP) |
-| `--exhaustive`          | Lance aussi les checks lents de couverture complète (intégrité des paquets) exclus du run par défaut |
-| `--manage-logs`         | Interface interactive pour lister, prévisualiser et supprimer les rapports |
-| `--install-cron`        | Configurer un audit nocturne automatique (cron)                    |
+| `--exhaustive`          | Lance aussi les checks lents de couverture complète exclus du run par défaut : intégrité des paquets, fichiers modifiables par tous et sans propriétaire |
+| `-m`, `--manage-logs`   | Interface interactive pour lister, prévisualiser et supprimer les rapports |
+| `-c`, `--install-cron`  | Configurer un audit planifié (assistant cron : quotidien, jours choisis ou expression cron) |
 | `--install-completion`  | Installer l'autocomplétion bash et créer le lien symbolique sudo PATH |
 | `-p`, `--profile=NOM`   | Profil d'audit : `server` (défaut), `desktop`, `workstation`, `container` |
 | `--check=LISTE`         | N'exécuter que ces checks (séparés par des virgules) ; `--check=list` affiche tous les noms |
@@ -575,19 +576,19 @@ Le rapport s'ouvre avec un en-tête ASCII art sur 62 caractères et contient : i
 | `bob_YYYYMMDD_HHMMSS.log`          | Rapport détaillé (créé avec `-d`, dans le répertoire configuré)          |
 
 > **Répertoire de plugins et `sudo` :** depuis v0.3.6 BOB résout `~/.config/bob/` vers le home
-> de l'utilisateur invoquant (via `SUDO_USER`), donc les plugins déposés dans `/home/<vous>/.config/bob/services.d/`
+> de l'utilisateur invoquant (via `SUDO_USER`, ou `DOAS_USER` depuis la 0.25.1), donc les plugins déposés dans `/home/<vous>/.config/bob/services.d/`
 > sont correctement chargés sous `sudo bob`. Les fichiers écrits par BOB sous sudo sont automatiquement chownés vers l'utilisateur.
 >
-> **Forme des fichiers plugins :** chaque fichier `*.json` est un tableau JSON d'objets service.
-> Le contrat formel est publié comme `bob/data/schemas/service.schema.json` (JSON Schema Draft 2020-12)
-> et `bob/data/schemas/services-list.schema.json` pour le wrapper tableau. Voir "Schéma de plugin de service" ci-dessous.
+> **Forme des fichiers plugins :** chaque fichier `*.json` est un tableau JSON d'objets service, ou la forme enveloppée `{"schema_version": 1, "services": [...]}`.
+> Le contrat est publié comme `bob/data/schemas/service.schema.json` (une entrée, JSON Schema Draft 2020-12),
+> `services-list.schema.json` (le tableau brut) et `plugin-file.schema.json` (un fichier plugin, sous l'une ou l'autre forme). Voir "Schéma de plugin de service" ci-dessous.
 >
 > **Futur paquet `.deb` :** le répertoire système `/etc/bob/services.d/` sera ajouté comme chemin
 > de chargement additionnel (sans supprimer celui per-user) pour la convention Debian standard.
 
 ### Schéma de plugin de service
 
-Les définitions de services sont validées contre `bob/data/schemas/service.schema.json` (Draft 2020-12, livré avec le paquet). Les deux `services.json` bundled et les plugins utilisateur suivent la même forme par entrée :
+Le contrat par entrée est `bob/data/schemas/service.schema.json` (Draft 2020-12, livré avec le paquet). La suite de tests y valide le `services.json` livré (`jsonschema` est une dépendance de test uniquement) ; à l'exécution, BOB contrôle les plugins utilisateur en Python, comme listé ci-dessous. Les deux suivent la même forme par entrée :
 
 ```json
 {
@@ -607,12 +608,18 @@ Les définitions de services sont validées contre `bob/data/schemas/service.sch
 
 **Champs obligatoires :** `id`, `label`, `packages`, `services`, `ports`, `risk`. **Optionnel :** `detection`. `risk` ∈ `{"low", "medium", "high", "critical"}`. `config_key` vaut `"fixed"`, `"ask"`, `"auto"`, ou un identifier Python. **Plage de port 1–65535** (stricte).
 
-**Contraintes métier appliquées par le schéma :**
+**Contrôlé par BOB à l'exécution.** Une entrée qui échoue est ignorée, le reste du fichier se charge quand même ; la raison est journalisée, et seul `BOB_DEBUG=1` l'affiche — un audit normal ne dit rien d'une entrée ignorée :
 
-- Un service doit déclarer au moins un port **ou** une entrée `detection.config_files` d'où les lire. N'en déclarer aucun est refusé : ses ports ne pourraient jamais être déterminés.
-- `config_key` est retiré en v0.15.4. Il reste accepté pour que les `~/.config/bob/services.d/*.json` existants continuent de valider, mais il est ignoré.
-- Un service doit être détectable : au moins un parmi `packages`, `services`, ou `detection.{binary|snap}` doit être non-vide.
-- Un bloc `detection: {}` vide est rejeté (n'apporte aucun signal).
+- les champs requis, `risk`, le format et la plage des ports ;
+- au moins un port, ou une entrée `detection.config_files` d'où les lire — n'en déclarer aucun est refusé : ses ports ne pourraient jamais être déterminés ;
+- un `id` unique parmi les services livrés et tous les plugins (un doublon est ignoré).
+
+**Contrôlé par le schéma seulement** (validation externe — BOB ne les rejette pas à l'exécution) :
+
+- un service doit être détectable : au moins un parmi `packages`, `services`, ou `detection.{binary|snap}` non vide ;
+- un bloc `detection: {}` vide est refusé (il n'apporte aucun signal).
+
+`config_key` est retiré en v0.15.4. Il reste accepté pour que les `~/.config/bob/services.d/*.json` existants continuent de valider, mais il est ignoré.
 
 **Forme du fichier plugin.** Un fichier plugin utilisateur sous `~/.config/bob/services.d/*.json` peut utiliser l'une des deux formes équivalentes :
 
@@ -781,10 +788,11 @@ Les clés de domaines sont stables : `firewall_network`, `exposure_services`, `a
 
 | `reason` | Signification |
 |---|---|
-| `info_only` | Les checks ont tourné et rapporté, mais seulement de l'informatif — rien à corriger. |
+| `info_only` | Les checks ont tourné et n'ont produit que des remarques : elles sont signalées et, par conception, non notées — ce qui ne veut pas dire qu'il n'y a rien à faire (affiché « signalé, non noté » depuis la v0.25.0). |
 | `profile_skipped` | Le profil d'audit actif saute toutes les sections de ce domaine (ex. `disk` en profil `container`). |
 | `filtered` | Exclu par un filtre `--check` / `--skip` sur ce run. |
 | `not_installed` | Les checks ont tourné et trouvé le composant absent. |
+| `unreadable` | BOB n'a pas pu lire l'entrée des checks qui alimentent ce domaine (v0.16.2) ; le domaine est exclu de la moyenne. |
 
 Pour un domaine actif, `reason` vaut `null`. Cela permet à un consommateur de **reproduire le headline** : `score = round(moyenne(score des domaines actifs))`, plafonné à 9 dès qu'il y a une déduction (règle F1 "10 = audit sans défaut" — voir v0.12.0).
 
@@ -870,25 +878,29 @@ Historique de référence : audit v0.7.0 = 117 clés / 30 préfixes / 100 % de c
 
 ## Politique de support Python
 
-> **Engagement public stable** — ces règles régissent quand BOB abandonne le support d'un ancien Python.
+> **Ce qui est vrai aujourd'hui** (remesuré le 2026-10-17). Les règles écrites en v0.7.0 sont gardées ci-dessous telles quelles, avec ce qui a été fait et ce qui ne l'a pas été depuis.
 
-BOB supporte les versions Python **N et N-2**, où **N** est la stable upstream actuelle. À partir de v0.7.0 :
+`pyproject.toml` exige Python **≥ 3.10**, et la CI lance toute la suite sur **3.10, 3.11, 3.12, 3.13 et 3.14** (`tests.yml` ; `publish.yml` refait la même matrice avant une release). Les linters tournent en 3.12.
 
 | Python | Statut |
 |---|---|
-| 3.14 | ✅ supporté (ajouté en v0.7.0 — ladder étape 1 pour drop 3.10) |
-| 3.13 | ✅ supporté |
-| 3.12 | ✅ supporté (cible de développement actuelle, CI par défaut) |
-| 3.11 | ✅ supporté |
-| 3.10 | ✅ supporté (le plus ancien — drop prévu post-upstream EOL 2026-10) |
-| 3.9  | ❌ end of life (abandonné en v0.2.3) |
+| 3.14 | ✅ supporté, en CI (ajouté en v0.7.0) |
+| 3.13 | ✅ supporté, en CI |
+| 3.12 | ✅ supporté, en CI (fait aussi tourner les linters) |
+| 3.11 | ✅ supporté, en CI |
+| 3.10 | ⚠ **déprécié** (annoncé en 0.25.1), en CI — fin de vie upstream le 2026-10-01 (PEP 619 ; 3.10.22 a été la dernière version) ; **supporté jusqu'au 2027-04-01** |
+| 3.9  | ❌ abandonné en v0.2.3 |
 
-Ladder de dépréciation Python 3.10 (en cours à partir de v0.7.0) :
-- **v0.7.0 — Ladder étape 1** ✓ : 3.10 et 3.14 en CI pour valider la compatibilité avant.
-- **Prochaine release minor BOB — Ladder étape 2** : annonce de la dépréciation 3.10 dans le changelog et bannière `--help`.
-- **Release minor BOB suivante (post-2026-10) — Ladder étape 3** : retrait de 3.10 de la CI, relèvement de `requires-python` dans `pyproject.toml`.
+Le texte de la v0.7.0 disait que BOB supporte « les versions **N et N-2** ». Ce n'est pas le cas : N étant 3.14, N-2 vaut 3.12, et BOB supporte cinq versions. Ce qu'il fait réellement, c'est tester chaque version de CPython à partir de 3.10.
 
-L'intention : au moins 6 mois de préavis avant tout abandon, miroir des gels distros (Debian stable etc.). Les packagers peuvent compter sur cette politique pour planifier leurs rebuilds.
+L'échelle de dépréciation de Python 3.10 écrite en v0.7.0 :
+- **Étape 1** — 3.10 et 3.14 en CI : ✓ faite en v0.7.0.
+- **Étape 2** — annoncer la dépréciation de 3.10 dans le changelog et la bannière `--help`, à la release minor suivante : **pas faite** — aucune release depuis la v0.7.0 ne l'a annoncée.
+- **Étape 3** — après la fin de vie upstream, à la release minor qui suit l'annonce : retirer 3.10 de la CI et relever `requires-python`. Pas atteinte, puisque l'étape 2 n'a jamais eu lieu.
+
+**La règle depuis la 0.25.1.** Une version de Python reste supportée **6 mois après sa fin de vie upstream officielle**. La dépréciation est annoncée dès la première release qui suit cette fin de vie — dans le changelog, dans `--help` et, quand BOB tourne sous cette version, par une ligne INFO au début de l'audit — et elle n'est abandonnée (matrice CI et `requires-python`) que par une release étiquetée **BREAKING** — selon la règle SemVer du projet, un saut de minor tant que BOB est en 0.x, un major à partir de 1.0 — la première après ces 6 mois ; une release patch ou une minor ordinaire n'abandonne jamais une version de Python. Les versions concernées et leurs dates sont dans `bob/_python_support.py`.
+
+**Pour Python 3.10 :** fin de vie le 2026-10-01, annoncée en 0.25.1 (étape 2 de l'ancienne échelle), supportée jusqu'au **2027-04-01**, abandonnée par la première release BREAKING après cette date. Ubuntu 22.04 LTS livre 3.10 comme Python système (celui qu'utilise `pipx`), avec un support standard jusqu'en mai 2027, et `ubuntu:22.04` figure dans la matrice CI des distributions de BOB : sur cette version, BOB après l'abandon demandera un autre Python (22.04 empaquette aussi 3.11).
 
 ## Packaging (depuis v0.4.2)
 
