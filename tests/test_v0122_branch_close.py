@@ -56,8 +56,13 @@ class TestCronNameControlCharStrip:
         '# name: {raw_name}' write so a name can never inject a cron line."""
         src = (_REPO / "bob" / "cron" / "_install.py").read_text(encoding="utf-8")
         i_strip = src.index(r're.sub(r"[\x00-\x1f\x7f]+"')
-        i_write = src.index("# name: {raw_name}")
-        assert i_strip < i_write, "raw_name must be sanitised before the # name: write"
+        # v0.26.0: the file is written by bob.cron._io.write_cron_job, which
+        # strips control characters again before the '# name:' line.
+        i_write = src.index("write_cron_job(slug, raw_name")
+        assert i_strip < i_write, "raw_name must be sanitised before the job is written"
+        io_src = (_REPO / "bob" / "cron" / "_io.py").read_text(encoding="utf-8")
+        w = io_src.index("def write_cron_job(")
+        assert w < io_src.index(r're.sub(r"[\x00-\x1f\x7f]+", " ", raw_name)', w) < io_src.index('f"# name: {raw_name}"', w)
 
     def test_generated_comment_stays_single_line(self):
         """A sanitised name produces exactly one '# name:' line (no injected

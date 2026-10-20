@@ -20,7 +20,7 @@ from bob._privilege import with_privilege
 from bob._tty import prompt_wizard, safe_input
 from bob.config import _EMAIL_RE  # M-1 (v0.5.5): single source of truth
 
-from ._io import build_script_content, resolve_audit_binary
+from ._io import build_script_content, cron_job_location, resolve_audit_binary, use_crontab, write_cron_job
 from ._options import CRON_LANGS, CRON_PROFILES, build_audit_options, default_dimensions
 from ._parse import (
     CRON_DIR,
@@ -348,10 +348,11 @@ def _run_install_cron_plain(user_config, config, t) -> int:
 
     audit_options = build_audit_options(sel_profile, sel_lang, sel_offline)
 
-    cron_path   = CRON_DIR / f"bob-{slug}"
+    # v0.26.0: /etc/cron.d/bob-<slug>, or a block of root's crontab (BusyBox).
+    cron_path, _exists = cron_job_location(slug)
     script_path = SCRIPT_DIR / f"bob-{slug}"
 
-    if cron_path.exists():
+    if _exists:
         ans = safe_input(f"\n  {t('install_cron.overwrite', path=str(cron_path))} ").strip().lower()
         if ans != "y":
             return 0
@@ -380,17 +381,8 @@ def _run_install_cron_plain(user_config, config, t) -> int:
 
     print(f"  ✔ {t('install_cron.script_written', path=str(script_path))}")
 
-    cron_content = (
-        f"# BOB cron — generated {now_str} by bob --install-cron\n"
-        f"# name: {raw_name}\n"
-        f"# email: {notify_email}\n"
-        "SHELL=/bin/bash\n"
-        "PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n\n"
-        f"{schedule_expr}  root  {script_path}\n"
-    )
-
     try:
-        atomic_write(cron_path, cron_content, mode=0o640)
+        cron_path = write_cron_job(slug, raw_name, notify_email, schedule_expr, script_path, now_str)
     except OSError as exc:
         print(f"  ✖ Cannot write {cron_path}: {exc}")
         # v0.25.1: do not leave a script no cron entry will ever run.
@@ -424,8 +416,9 @@ def run_install_cron(user_config, config, t) -> int:
     # v0.25.1 — measured on Alpine 3.24: BusyBox crond reads /etc/crontabs/,
     # there is no /etc/cron.d, and the wizard asked every question, wrote the
     # script, then failed on the cron file and left the script behind. Refuse
-    # before the first question instead.
-    if not CRON_DIR.is_dir():
+    # before the first question instead. v0.26.0: such a host gets its job as
+    # a block of root's crontab; only a host with neither is refused.
+    if not CRON_DIR.is_dir() and not use_crontab():
         print(f"  ✖ {with_privilege(t('install_cron.no_cron_d', path=str(CRON_DIR)))}", file=_sys.stderr)
         return 1
     if not _sys.stdout.isatty():

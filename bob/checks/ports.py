@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from bob.checks import _ufw
+from bob.checks._firewalld import port_forwarded
 from bob.checks._run import (
     TranslationFunc,
     _identity_t,
@@ -273,6 +274,11 @@ def check_ports(
     firewalld_active: bool = False,
     t: TranslationFunc | None = None,
     netfilter_active: bool = False,
+    docker_rules_off: bool = False,
+    #: v0.26.0 — firewalld's StrictForwardPorts=yes: Docker's published ports
+    #: are rejected unless the zone forwards them (measured on Debian 13).
+    firewalld_strict: bool = False,
+    firewalld_forwarded: frozenset = frozenset(),
 ) -> CheckResult:
     """
     Evaluate listening ports and return findings.
@@ -383,7 +389,12 @@ def check_ports(
                     # 29.8.2), it answered from the LAN while the interface's
                     # zone allowed only cockpit, dhcpv6-client and ssh.
                     result.info(
-                        message=_t("ports.uncovered_firewalld_docker" if lport.process == "docker-proxy"
+                        # v0.26.0 — under StrictForwardPorts=yes only a port a
+                        # zone forwards gets here: issue #1536, not measured.
+                        message=_t(("ports.uncovered_firewalld_docker_forwarded" if firewalld_strict
+                                    else "ports.uncovered_firewalld_docker")
+                                   if lport.process == "docker-proxy" and not docker_rules_off
+                                   and not (firewalld_strict and not port_forwarded(firewalld_forwarded, lport.port, lport.proto))
                                    else "ports.uncovered_firewalld", port=pp_info),
                         key="ports.uncovered_firewalld",
                     )

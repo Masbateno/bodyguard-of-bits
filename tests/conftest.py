@@ -62,3 +62,12 @@ def _ensure_i18n_initialised_for_tests(request):
     if not i18n._initialized:
         i18n.init(lang="en")
     yield
+
+
+@pytest.fixture(autouse=True)
+def _no_live_ssh_session_for_fail2ban(monkeypatch):
+    """v0.26.0 — ``Fail2banSnapshot.from_system`` reads the host's live SSH
+    sessions and ``/var/log`` when there is no journal entry to compare a
+    jail's file against. A developer's or a CI runner's own sessions must not
+    decide a test: no session by default, a test that needs one sets it."""
+    monkeypatch.setattr("bob.checks.fail2ban._newest_session_since_syslog", lambda: None)

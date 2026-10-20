@@ -1030,7 +1030,10 @@ def set_posture_from_engine(engine: "ScoreEngine", fw_active: bool) -> None:
     else:
         _fw_score = None
     engine.set_posture(
-        firewall_inactive=not fw_active,
+        # v0.26.0 — a firewalld that would not answer is not an inactive
+        # firewall: no HIGH floor on an unknown.
+        firewall_inactive=not fw_active and not any(
+            f.key == "firewall.firewalld_unreadable" for f in engine.findings),
         # v0.10.2 I-1: the v0.9.0 D-1 rename ``iptables_nft.*`` →
         # ``firewall_iptables.*`` left this string-literal comparison
         # matching the retired prefix, so the iptables-passthrough

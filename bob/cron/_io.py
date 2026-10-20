@@ -89,7 +89,12 @@ def resolve_audit_binary() -> "tuple[str, bool]":
 
 def build_script_content(notify_email: str, log_dir: "Path | str",
                          audit_options: str = "") -> str:
-    """Build the bash script content for a BOB cron job.
+    """Build the shell script for a BOB cron job.
+
+    v0.26.0 — POSIX ``sh``, its own PATH. It was ``#!/bin/bash`` with ``read
+    -ra``, ``<<<`` and arrays: Alpine ships no bash, so a job in root's
+    crontab there would have failed on every run. BusyBox crond also sets no
+    PATH of its own (the cron.d file did, as an environment line).
 
     Args:
         notify_email:  Comma-separated notification addresses ("" for none).
@@ -109,9 +114,11 @@ def build_script_content(notify_email: str, log_dir: "Path | str",
     except (TypeError, AttributeError):
         bob_path = "/usr/local/lib"
     return (
-        "#!/bin/bash\n"
+        "#!/bin/sh\n"
         f"# BOB script — generated {now_str} by bob --install-cron\n"
         "# Re-generate: sudo bob --install-cron\n\n"
+        "PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n"
+        "export PATH\n"
         f"NOTIFY_EMAILS={shlex.quote(notify_email)}\n"
         f"LOG_DIR={shlex.quote(str(log_dir))}\n"
         # M-3 (v0.7.4): use ``${PYTHONPATH:+:$PYTHONPATH}`` to avoid a
@@ -138,8 +145,9 @@ def build_script_content(notify_email: str, log_dir: "Path | str",
         'if [ "$RC" -gt 0 ] && [ -n "$NOTIFY_EMAILS" ]; then\n'
         '    LOG=$(ls -t "$LOG_DIR"/bob_*.log 2>/dev/null | head -1)\n'
         '    if [ -n "$LOG" ]; then\n'
-        '        IFS="," read -ra _ADDRS <<< "$NOTIFY_EMAILS"\n'
-        '        for _ADDR in "${_ADDRS[@]}"; do\n'
+        '        _OLD_IFS=$IFS; IFS=,; set -f\n'
+        '        for _ADDR in $NOTIFY_EMAILS; do\n'
+        '            IFS=$_OLD_IFS\n'
         "            export AUDIT_LOG=\"$LOG\"\n"
         "            export AUDIT_EMAIL=\"$_ADDR\"\n"
         "            export AUDIT_RC=\"$RC\"\n"
@@ -173,6 +181,7 @@ def build_script_content(notify_email: str, log_dir: "Path | str",
         "    send_audit_log_as_html_email(log_file, email, subject)\n"
         "PYTHON_EOF\n"
         "        done\n"
+        "        IFS=$_OLD_IFS; set +f\n"
         "    fi\n"
         "fi\n"
     )
@@ -191,6 +200,8 @@ def apply_cron_schedule(entry, schedule_expr: str) -> str:
     cron file. Returns an empty string on success, or the OSError string on
     read/write failure (caller renders it to the user).
     """
+    if getattr(entry, "crontab_slug", ""):
+        return _apply_crontab_schedule(entry, schedule_expr)
     try:
         text = entry.cron_path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
@@ -230,13 +241,18 @@ def apply_cron_email(entry, new_email: str) -> tuple[str, int]:
           (the caller may want to warn the user).
     """
     try:
-        lines = entry.cron_path.read_text(encoding="utf-8", errors="replace").splitlines()
-        updated = [
-            f"# email: {new_email}" if ln.startswith("# email:") else ln
-            for ln in lines
-        ]
-        # Cron files in /etc/cron.d/ must be 0o640 (root:root) or cron skips them.
-        _atomic_write(entry.cron_path, "\n".join(updated) + "\n", mode=0o640)
+        if getattr(entry, "crontab_slug", ""):
+            err = _apply_crontab_email(entry, new_email)
+            if err:
+                return (err, 0)
+        else:
+            lines = entry.cron_path.read_text(encoding="utf-8", errors="replace").splitlines()
+            updated = [
+                f"# email: {new_email}" if ln.startswith("# email:") else ln
+                for ln in lines
+            ]
+            # Cron files in /etc/cron.d/ must be 0o640 (root:root) or cron skips them.
+            _atomic_write(entry.cron_path, "\n".join(updated) + "\n", mode=0o640)
     except OSError as exc:
         return (str(exc), 0)
 
@@ -256,3 +272,96 @@ def apply_cron_email(entry, new_email: str) -> tuple[str, int]:
         except OSError as exc:
             return (str(exc), subst_count)
     return ("", subst_count)
+
+
+def _crontab_body(slug: str) -> "str | None":
+    from bob.cron import _crontab
+    return next((body for s, body in _crontab.blocks() if s == slug), None)
+
+
+def _apply_crontab_schedule(entry, schedule_expr: str) -> str:
+    """v0.26.0 — the schedule of a job kept in root's crontab: its block only."""
+    from bob.cron import _crontab
+    body = _crontab_body(entry.crontab_slug)
+    if body is None:
+        return f"no BOB block bob-{entry.crontab_slug} in {_crontab.ROOT_CRONTAB}"
+    comments = [ln for ln in body.splitlines() if ln.startswith("#")]
+    current = _crontab.parse_line(body)
+    script = current[1] if current else str(entry.script_path)
+    try:
+        _crontab.put_block(entry.crontab_slug, _crontab.block_text(
+            entry.crontab_slug, comments, schedule_expr, script))
+    except OSError as exc:
+        return str(exc)
+    return ""
+
+
+def _apply_crontab_email(entry, new_email: str) -> str:
+    """v0.26.0 — the ``# email:`` line of a job kept in root's crontab."""
+    from bob.cron import _crontab
+    body = _crontab_body(entry.crontab_slug)
+    if body is None:
+        return f"no BOB block bob-{entry.crontab_slug} in {_crontab.ROOT_CRONTAB}"
+    comments = [f"# email: {new_email}" if ln.startswith("# email:") else ln
+                for ln in body.splitlines() if ln.startswith("#")]
+    # The block's own line, not the entry's copy: a schedule changed earlier
+    # in the same session must not be put back.
+    current = _crontab.parse_line(body)
+    schedule_expr, script = current if current else (entry.schedule_expr, str(entry.script_path))
+    try:
+        _crontab.put_block(entry.crontab_slug, _crontab.block_text(
+            entry.crontab_slug, comments, schedule_expr, script))
+    except OSError as exc:
+        return str(exc)
+    return ""
+
+
+def use_crontab() -> bool:
+    """v0.26.0 — root's crontab is where jobs go: no /etc/cron.d, a crontab dir."""
+    from bob.cron import _crontab
+    from bob.cron._parse import CRON_DIR
+    return not CRON_DIR.is_dir() and _crontab.available()
+
+
+def cron_job_location(slug: str) -> "tuple[Path, bool]":
+    """Where the job *slug* lives (a cron.d file or root's crontab), and
+    whether it is already there."""
+    from bob.cron import _crontab
+    from bob.cron._parse import CRON_DIR
+    if use_crontab():
+        return _crontab.ROOT_CRONTAB, _crontab.has_block(slug)
+    path = CRON_DIR / f"bob-{slug}"
+    return path, path.exists()
+
+
+def write_cron_job(slug: str, raw_name: str, notify_email: str, schedule_expr: str,
+                   script_path, now_str: str) -> Path:
+    """Write the job: /etc/cron.d/bob-<slug>, or its block of root's crontab.
+    Raises OSError; returns the path written."""
+    from bob.cron import _crontab
+    from bob.cron._parse import CRON_DIR
+    # The name and the addresses land on comment lines of a root cron file —
+    # of root's whole crontab on BusyBox: a newline in either would write a
+    # cron line of its own. The wizards strip them already; so does this.
+    raw_name = re.sub(r"[\x00-\x1f\x7f]+", " ", raw_name).strip()
+    notify_email = re.sub(r"[\x00-\x1f\x7f]+", "", notify_email)
+    header = [f"# BOB cron — generated {now_str} by bob --install-cron",
+              f"# name: {raw_name}", f"# email: {notify_email}"]
+    if use_crontab():
+        _crontab.put_block(slug, _crontab.block_text(slug, header, schedule_expr, script_path))
+        return _crontab.ROOT_CRONTAB
+    cron_path = CRON_DIR / f"bob-{slug}"
+    _atomic_write(cron_path, "\n".join(header) + "\n"
+                  "SHELL=/bin/sh\n"
+                  "PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n\n"
+                  f"{schedule_expr}  root  {script_path}\n", mode=0o640)
+    return cron_path
+
+
+def remove_cron_job(entry) -> None:
+    """Delete the job's cron.d file or its block of root's crontab. Raises OSError."""
+    from bob.cron import _crontab
+    if getattr(entry, "crontab_slug", ""):
+        _crontab.remove_block(entry.crontab_slug)
+    else:
+        entry.cron_path.unlink()

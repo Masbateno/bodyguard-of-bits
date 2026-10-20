@@ -66,12 +66,23 @@ ligne de commande avec laquelle il a été généré. Relancez
 
 ### Hôtes sans `/etc/cron.d`
 
-BOB écrit ses tâches dans `/etc/cron.d`, le répertoire que lisent cronie, cron et les dérivés de Vixie-cron. BusyBox crond (Alpine) lit `/etc/crontabs/` et n'a pas de `/etc/cron.d` : depuis la 0.25.1, l'assistant y refuse avant la première question et indique d'ajouter une ligne lançant `bob --quiet --detailed` à la crontab de root (`crontab -e` en root). Avant, il posait toutes les questions, écrivait le script, échouait sur le fichier cron et laissait le script derrière lui (mesuré sur Alpine 3.24).
+BOB écrit ses tâches dans `/etc/cron.d`, le répertoire que lisent cronie, cron et les dérivés de Vixie-cron. BusyBox crond (Alpine) lit un fichier par utilisateur dans `/etc/crontabs/` et n'a pas de `/etc/cron.d`. Depuis la 0.26.0, une tâche y est un bloc de la crontab de root, `/etc/crontabs/root`, entre deux lignes de repère :
+
+```
+# BEGIN BOB cron bob-NOM
+# BOB cron — generated AAAA-MM-JJ by bob --install-cron
+# name: NOM
+# email: 
+0 3 * * *  /usr/local/bin/bob-NOM
+# END BOB cron bob-NOM
+```
+
+Seul ce bloc est réécrit — par `--manage-cron` (horaire, e-mail) et à la suppression ; les lignes que le système ou vous avez mises dans la crontab restent telles quelles. Chaque modification se termine par l'écriture de `root` dans `/etc/crontabs/cron.update`, ce qui fait relire le fichier à BusyBox crond (mesuré sur Alpine 3.24 : sans lui, une modification n'était pas prise en compte en trois minutes ; avec lui, en moins d'une minute). La 0.25.1 refusait l'assistant sur un tel hôte.
 
 ### Fichiers créés
 
 - `/usr/local/bin/bob-{nom}` — script wrapper
-- `/etc/cron.d/bob-{nom}` — entrée cron système
+- `/etc/cron.d/bob-{nom}` — entrée cron système (BusyBox crond : un bloc `# BEGIN/END BOB cron bob-{nom}` de `/etc/crontabs/root` à la place)
 
 ---
 

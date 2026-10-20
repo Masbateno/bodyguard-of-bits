@@ -441,7 +441,7 @@ about one of the two.
 | **finding** | One line of a `CheckResult`: a level (OK / INFO / WARN / ALERT), a key, a message, and optionally a detail, a command and a deduction. | `Finding`, `FindingLevel` in `bob/scoring.py` |
 | **key** | A finding's dotted identifier, `<prefix>.<name>` (`ssh.password_auth`). It is what `--explain`, `ignore.yml`, the CIS map and the domain map are indexed by. | every `key=` argument |
 | **deduction** | Points a finding removes from its domain's score. INFO never carries one. | `warn_with_deduction`, `alert_with_deduction`, `add_deduction` |
-| **cap** | An upper bound a finding sets on its domain's score (an inactive UFW holds *Firewall & Network* at 3/10); the headline is the average of the domains, so it is not capped itself. | `CheckResult.set_cap` |
+| **cap** | An upper bound a finding sets on its domain's score (an inactive UFW, or no active firewall at all, holds *Firewall & Network* at 3/10); the headline is the average of the domains, so it is not capped itself. | `CheckResult.set_cap` |
 | **visibility key** | A key that says a section could not be read. Its presence turns the score into a ceiling (`≤ N/10`) — unknown is not clean. | `VISIBILITY_KEYS` in `bob/visibility.py` |
 | **domain** | One of the six scored areas — firewall & network, exposure & services, access control, system hardening, health & resilience, threat detection — each scored 0–10; a key belongs to one through its prefix. | `DOMAINS`, `_PREFIX_TO_DOMAIN` in `bob/domain_scores.py` |
 | **group** | The on-screen heading that gathers a domain's sections. Since v0.20.0 groups and domains are the same six. | `emit_group()` in `bob/runner.py` |

@@ -75,6 +75,8 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "fail2ban.status_unreadable",
     # v0.24.4 — the SSH jail may be blind (WARN −1) and BOB cannot tell.
     "fail2ban.ssh_jail_source_unverified",
+    # v0.26.0 — ipset/MAC sources of an open firewalld zone are not counted.
+    "firewall.firewalld_sources_not_counted",
     "fail2ban.ssh_jail_file_silent",
     "fail2ban.ssh_jail_file_stale",
     "fail2ban.ssh_jail_misses_failures",
@@ -82,11 +84,13 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "file_perms.ssh_host_keys_unreadable",
     "file_perms.sudoers_unreadable",
     "file_perms.doas_unreadable",
+    "firewall.firewalld_unreadable",
     "firewall.firewalld_zones_unread",
     "firewall.logging_unknown",
     "firewall.policy_unknown",
     "firewall_drivers.rules_unreadable",
     "firewall_iptables.forward_unknown",
+    "firewall_iptables.firewalld_unreadable",
     "firewall_iptables.input_unknown",
     "firewall_iptables.ruleset_unreadable",
     "firmware.microcode_unknown",

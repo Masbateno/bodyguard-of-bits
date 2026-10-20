@@ -21,7 +21,7 @@ def test_help_shows_the_notice_on_310_within_the_width(monkeypatch):
     from bob import i18n
     from bob.cli import print_help
     i18n.init("en")
-    monkeypatch.setattr(ps, "deprecation_for", lambda version_info=None: {"running": "3.10", "until": "2027-04-01", "next": "3.11"})
+    monkeypatch.setattr(ps, "deprecation_for", lambda version_info=None, lang="en": {"running": "3.10", "until": "2027-04-01", "next": "3.11"})
     buf = io.StringIO()
     with redirect_stdout(buf):
         print_help(i18n.t, "0.25.1")
@@ -34,8 +34,31 @@ def test_help_is_silent_elsewhere(monkeypatch):
     from bob import i18n
     from bob.cli import print_help
     i18n.init("en")
-    monkeypatch.setattr(ps, "deprecation_for", lambda version_info=None: None)
+    monkeypatch.setattr(ps, "deprecation_for", lambda version_info=None, lang="en": None)
     buf = io.StringIO()
     with redirect_stdout(buf):
         print_help(i18n.t, "0.25.1")
     assert "deprecated" not in buf.getvalue()
+
+
+def test_the_french_message_writes_the_date_in_french():
+    """0.26.0 — "jusqu'à 2027-04-01" was the English form inside French text."""
+    from bob import i18n
+    assert ps.display_date("2027-04-01", "fr") == "1er avril 2027"
+    assert ps.display_date("2026-10-15", "fr") == "15 octobre 2026"
+    assert ps.display_date("2027-04-01", "en") == "2027-04-01"
+    assert ps.display_date("2027-00-01", "fr") == "2027-00-01"
+    i18n.init("fr")
+    try:
+        text = i18n.t("audit.python_deprecated", **ps.deprecation_for((3, 10, 21), lang="fr"))
+    finally:
+        i18n.init(lang="en")
+    assert "jusqu'au 1er avril 2027" in text and "2027-04-01" not in text
+
+
+def test_both_call_sites_pass_the_language():
+    import inspect
+    import bob.__main__ as main
+    import bob.cli as cli
+    assert "deprecation_for(lang=i18n.current_lang())" in inspect.getsource(main)
+    assert "deprecation_for(lang=_i18n.current_lang())" in inspect.getsource(cli)

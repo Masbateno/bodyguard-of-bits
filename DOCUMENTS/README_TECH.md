@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.25.1-brightgreen)
+![Release](https://img.shields.io/badge/version-0.26.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -25,8 +25,8 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 ### Core audit
 
 - **ASCII banner** with system information — distro, host, kernel, the firewall tools' versions (UFW, firewalld, iptables, nftables), init system, user, date
-- **Firewall status check** — UFW, firewalld (default zone and its target) or a raw nftables/iptables default-deny ruleset: active/inactive, default incoming policy; a firewalld default zone whose target is ACCEPT is an ALERT −3, like UFW's ALLOW default (v0.24.2)
-- **UFW rule analysis** — duplicate rules, unrestricted `allow from any`, IPv6 consistency
+- **Firewall status check** — UFW, firewalld (default zone and its target) or a raw nftables/iptables default-deny ruleset: active/inactive, default incoming policy; a firewalld default zone whose target is ACCEPT is an ALERT −3, like UFW's ALLOW default (v0.24.2); no active firewall at all caps *Firewall & Network* at 3/10, as an inactive UFW does (0.26.0), while a firewalld that `firewall-cmd` cannot query is reported as not established, neither alerted nor capped; on Alpine, awall is named as the front-end with its enabled policies (banner and firewall section), and "awall installed, no policy enabled" is said as such, with no `ufw` to install beside it (0.26.0)
+- **UFW rule analysis** — duplicate rules, unrestricted `allow from any`, IPv6 consistency; run only while UFW is active (0.26.0: before, a host without UFW was told "No duplicate UFW rules detected")
 - **Contextual scoring** — network context detection (direct public IP or an active DDNS client vs NAT); penalties are heavier on internet-exposed machines — a public IP or DDNS (an uncovered open port goes 1 → 2 points; a high/critical exposed service 2 → 3); firewall inactive caps score at 3/10
 - **Security score** 0–10 with risk level: LOW / MEDIUM / HIGH / CRITICAL; findings split into *Action required* / *Possible improvements* / *Normal configuration*
 - **Audit profiles** — `server` (default), `desktop`, `workstation`, `container`; active profile shown in the summary box. **v0.8.1 BREAKING**: `workstation` is no longer an alias for `desktop` and ships its own business-tier overrides (backup / auditd / mac_policy kept at WARN while desktop relaxes them to INFO)
@@ -88,12 +88,12 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 
 ### Detection & monitoring
 
-- **UFW log analysis** — parses `/var/log/ufw.log` over a configurable period (`--log-days=N`, default 7 days); total blocked attempts, top source IPs with geolocation, top targeted ports, bruteforce detection (>10 attempts/60 s), attempts on installed service ports
+- **UFW log analysis** — only where UFW is installed (0.26.0); with UFW inactive, an empty log is INFO, not OK; parses `/var/log/ufw.log` over a configurable period (`--log-days=N`, default 7 days); total blocked attempts, top source IPs with geolocation, top targeted ports, bruteforce detection (>10 attempts/60 s), attempts on installed service ports
 - **SSH auth.log analysis** — parses `/var/log/auth.log`; brute-force detection (≥50 failed attempts across the whole analysed period, all sources combined → WARN, no deduction); last successful logins; top failed-login sources
 - **IP geolocation** — source IPs enriched with country and operator via GeoIP2 (optional, `python3-geoip2` + GeoLite2 database); private ranges identified as local network; results cached per session
 - **IoT/local source dominance** — detects when a single private IP accounts for ≥ 70 % of all blocked UFW traffic over ≥ 50 log entries (INFO, no deduction — usually benign mDNS/SSDP/UPnP noise); typical of LAN-scanning IoT devices
 - **NTP time synchronisation** — systemd-timesyncd, chronyd, or ntpd; WARN −1 pt if disabled or not synchronised
-- **Fail2ban intrusion prevention** — installation, service status, active jails, SSH jail detection; WARN −1 pt if inactive or no jails
+- **Fail2ban intrusion prevention** — installation, service status, active jails, SSH jail detection; WARN −1 pt if inactive or no jails; a file-backed SSH jail is credited only on evidence that sshd's messages reach its file — on a host with no systemd journal (OpenRC), the jail's own `Total failed` count, and a jail whose file lacks the latest SSH session's line while another log file holds it is said blind, with a `logpath` override (0.26.0, measured on Alpine with syslog-ng); an OK resting on partial evidence — that count, or the sampled file of 0.24.4 — is followed by an INFO saying what it rests on, and carries it in `qualified_by` (0.26.0: the reason was in the OK's detail, which the terminal never prints)
 - **Rootkit & integrity scan** — rkhunter/chkrootkit detection; WARN −1 pt for outdated database (≥7 days), missing or stale scan (>30 days)
 - **Linux Audit Framework (auditd)** — installation, service status, loaded rules, coverage of `/etc/passwd`, `/etc/shadow`, `/etc/sudoers`; WARN −1 pt each for inactive service, no rules, uncovered sensitive files (server and workstation profiles; INFO on desktop; skipped in a container)
 - **File integrity monitoring (AIDE/Tripwire)** — installation, database existence, last check recency; WARN −1 pt if no database or no recent check (>30 days)
@@ -127,7 +127,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 
 - **Detailed report** — timestamped log file with ASCII art header, system info, findings, and recommendations; created with `-d`; filename: `bob_YYYYMMDD_HHMMSS.log`. Each finding carries its explanation, its command (`→` fix, `?` check) and its key — unconditionally, and under `-q` too, since an archive cannot be re-run with `-v`
 - **`--manage-logs`** — interactive UI to list, preview, and delete saved report files; scrollable preview with full/summary toggle. Opens on a folder picker (📁) of every tracked log directory — the current one and any previous ones, kept until you explicitly forget one so a directory change never loses sight of old reports; pick a folder to browse its reports
-- **`--install-cron`** — schedule wizard: name the job, choose schedule type (daily / specific days / custom cron expression), set time and optional email, then pin the audit's profile, language and outbound-probe stance (v0.16.1 — a cron runs as root, so without these it would read root's saved profile and cron's bare `$LANG`); MTA auto-detection (Postfix, Exim, msmtp, ssmtp) — warns when no `sendmail` found; natural-language preview; resulting command line shown before writing; curses TUI with plain fallback; named cron jobs in `/etc/cron.d/bob-{name}`
+- **`--install-cron`** — schedule wizard: name the job, choose schedule type (daily / specific days / custom cron expression), set time and optional email, then pin the audit's profile, language and outbound-probe stance (v0.16.1 — a cron runs as root, so without these it would read root's saved profile and cron's bare `$LANG`); MTA auto-detection (Postfix, Exim, msmtp, ssmtp) — warns when no `sendmail` found; natural-language preview; resulting command line shown before writing; curses TUI with plain fallback; named cron jobs in `/etc/cron.d/bob-{name}`, or — BusyBox crond, no `/etc/cron.d` — a marked block of `/etc/crontabs/root` (0.26.0)
 - **`--manage-cron`** — looping TUI: list installed cron jobs, edit schedule or notification email, delete; email address book accessible from the menu even without any cron installed
 
 ---
@@ -398,7 +398,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.25.1  │  Linux hardening auditor                                     ║
+║  BOB 0.26.0  │  Linux hardening auditor                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║

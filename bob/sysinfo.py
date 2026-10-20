@@ -280,6 +280,7 @@ def collect_system_info(version: str, lang: str):
         firewalld_version=firewalld_version,
         firewalld_present=firewalld_present,
         init_system=init_system,
+        awall=_awall_banner(),
         user=_sanitize(audit_user(), max_len=32),
         config_path=str(get_user_home() / ".config" / "bob" / "config.conf"),
         language=lang,
@@ -434,3 +435,14 @@ def detect_network_context(offline: bool = False) -> tuple[str, str]:
 
     public_ip = get_public_ip(offline=offline)
     return "local", public_ip
+
+
+def _awall_banner() -> str:
+    """v0.26.0 — "N policy(ies) enabled: a, b" when awall is installed, else ""."""
+    from bob.checks._awall import AwallStatus
+    st = AwallStatus.from_system()
+    if not st.installed:
+        return ""
+    if not st.readable:
+        return "?"
+    return ", ".join(st.enabled) if st.enabled else "-"

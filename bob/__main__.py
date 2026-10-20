@@ -659,15 +659,19 @@ def _run(argv=None) -> int:
                                else (t("banner.installed_inactive")
                                      if sys_info.firewalld_present else not_installed)),
                     init_system=sys_info.init_system or not_installed,
+                    awall=(t("banner.awall_policies", policies=sys_info.awall)
+                           if sys_info.awall not in ("", "-", "?") else
+                           t("banner.awall_no_policy") if sys_info.awall == "-" else
+                           t("banner.awall_unreadable") if sys_info.awall == "?" else ""),
                     user=sys_info.user,
                     date=datetime.now().strftime("%d/%m/%Y %H:%M"),
                     labels={k: t(f"banner.{k}") for k in
                             ("system", "host", "kernel", "ufw", "firewalld",
-                             "iptables", "nftables", "init", "user", "date")},
+                             "iptables", "nftables", "awall", "init", "user", "date")},
                 )
                 output.print_info(t("audit.starting"))
                 from bob._python_support import deprecation_for
-                _dep = deprecation_for()
+                _dep = deprecation_for(lang=i18n.current_lang())
                 if _dep:
                     # v0.25.1 — step 2 of the 3.10 ladder: say it where the
                     # operator running 3.10 will read it.

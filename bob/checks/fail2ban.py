@@ -76,6 +76,13 @@ class Fail2banSnapshot:
     ssh_jail_stale: bool = False
     #: The files lack sshd's latest failed login, logged since rsyslog started.
     ssh_jail_misses_failures: bool = False
+    #: v0.26.0 — the jail's own "Total failed": failed logins its filter
+    #: matched in its files since fail2ban started.
+    ssh_jail_counted: int = 0
+    #: v0.26.0 — with no journal: the log file that holds the "Accepted" line
+    #: of the newest SSH session opened since the syslog daemon started, when
+    #: the jail's files do not. sshd's messages go there.
+    ssh_jail_routed_to: str = ""
     #: The ``/etc/fail2ban/jail.d/*.local`` files, read last and in name
     #: order — the last one that sets the jail's backend wins.
     jail_d_locals:  tuple       = ()
@@ -137,6 +144,7 @@ class Fail2banSnapshot:
         if snap.ssh_jail:
             jail_status = _run("fail2ban-client", "status", snap.ssh_jail) or ""
             snap.ssh_jail_files, snap.ssh_jail_journal = _parse_jail_sources(jail_status)
+            snap.ssh_jail_counted = _parse_total_failed(jail_status)
             if snap.ssh_jail_files and not snap.ssh_jail_journal:
                 snap.syslog_active = _syslog_active()
                 snap.journal_available = _command_exists("journalctl")
@@ -159,6 +167,14 @@ class Fail2banSnapshot:
                     snap.ssh_jail_fed = None if None in held else all(held)
                     snap.ssh_jail_misses_failures = snap.ssh_jail_fed is False
                     snap.ssh_jail_stale = False
+                if latest is None and snap.ssh_jail_fed is not False:
+                    # v0.26.0 — no journal: a live SSH session is the dated
+                    # message. Only its absence is read, and only where another
+                    # log file holds it (Alpine 3.24, syslog-ng's own config:
+                    # auth to /var/log/auth.log, the packaged jail on messages).
+                    snap.ssh_jail_routed_to = _session_routed_elsewhere(snap.ssh_jail_files)
+                    if snap.ssh_jail_routed_to:
+                        snap.ssh_jail_fed = False
                 try:
                     snap.jail_d_locals = tuple(sorted(
                         n for n in os.listdir("/etc/fail2ban/jail.d") if n.endswith(".local")))
@@ -183,6 +199,12 @@ def _parse_jail_sources(jail_status: str) -> "tuple[tuple, bool]":
         elif "journal matches:" in low:
             journal = True
     return files, journal
+
+
+def _parse_total_failed(jail_status: str) -> int:
+    """The filter's ``Total failed:`` of ``fail2ban-client status <jail>``, 0 when absent."""
+    m = re.search(r"Total failed:\s*(\d+)", jail_status)
+    return int(m.group(1)) if m else 0
 
 
 #: An sshd message as syslog writes it: ``sshd[812]:``, ``sshd-session[812]:``.
@@ -345,6 +367,74 @@ def _jail_files_fed(files: tuple, latest: "bytes | None" = None) -> "bool | None
     return any(_SSHD_LINE.search(tail) for tail in tails)
 
 
+#: The log files sshd's messages usually go to, searched for a session's line.
+_AUTH_LOGS = ("/var/log/auth.log", "/var/log/secure", "/var/log/messages", "/var/log/syslog")
+#: As ``/proc/<pid>/comm`` names them; syslog-ng 4 renames itself
+#: ``syslog-ng-main`` (Alpine 3.24, measured).
+_SYSLOG_COMMS = frozenset({"rsyslogd", "syslog-ng", "syslog-ng-main", "syslogd", "sysklogd"})
+
+
+def _proc_start(pid: str, proc: str = "/proc") -> "int | None":
+    """Start time of *pid* in clock ticks since boot (``/proc/<pid>/stat`` field 22)."""
+    try:
+        raw = Path(f"{proc}/{pid}/stat").read_text(encoding="utf-8", errors="replace")
+        return int(raw.rpartition(")")[2].split()[19])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def _newest_session_since_syslog(proc: str = "/proc") -> "int | None":
+    """PID of the newest sshd ``[priv]`` process started after every running
+    syslog daemon, or None (no daemon process found, no such session)."""
+    daemons, sessions = [], []
+    try:
+        pids = [p for p in os.listdir(proc) if p.isdigit()]
+    except OSError:
+        return None
+    for pid in pids:
+        try:
+            comm = Path(f"{proc}/{pid}/comm").read_text(encoding="utf-8", errors="replace").strip()
+            if comm in _SYSLOG_COMMS:
+                daemons.append(_proc_start(pid, proc))
+            elif comm in ("sshd", "sshd-session"):
+                argv0 = Path(f"{proc}/{pid}/cmdline").read_bytes().split(b"\0")[0]
+                if argv0.endswith(b"[priv]"):
+                    sessions.append((_proc_start(pid, proc), int(pid)))
+        except (OSError, ValueError):
+            continue
+    if not daemons or None in daemons:
+        return None
+    later = [(start, pid) for start, pid in sessions if start is not None and start > max(daemons)]
+    return max(later)[1] if later else None
+
+
+def _tail_holds(path: str, needles: tuple) -> "bool | None":
+    """Whether the end of the regular file *path* holds one of *needles*; None unread."""
+    try:
+        if not stat.S_ISREG(os.stat(path).st_mode):
+            return None
+        with open(path, "rb") as fh:
+            size = fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, size - _JAIL_TAIL_BYTES))
+            tail = fh.read(_JAIL_TAIL_BYTES)
+    except OSError:
+        return None
+    return any(n in tail for n in needles)
+
+
+def _session_routed_elsewhere(files: tuple) -> str:
+    """The log file that holds the newest session's "Accepted" line while none
+    of the jail's *files* does — "" when they do, or when it is found nowhere
+    (rotated, out of the tail read, no session to go on)."""
+    pid = _newest_session_since_syslog()
+    if pid is None:
+        return ""
+    needles = (f"sshd-session[{pid}]: Accepted".encode(), f"sshd[{pid}]: Accepted".encode())
+    if any(_tail_holds(f, needles) is not False for f in files):
+        return ""
+    return next((f for f in _AUTH_LOGS if f not in files and _tail_holds(f, needles)), "")
+
+
 def _syslog_active() -> "bool | None":
     """True when a syslog daemon runs, False when every init answer says none
     does, None when no init system could say (an unknown OpenRC service)."""
@@ -487,7 +577,21 @@ def check_fail2ban(snapshot: Fail2banSnapshot, t: TranslationFunc | None = None)
         # holds no sshd message. Said, not credited as protection.
         files = ", ".join(snapshot.ssh_jail_files)
         tvars = {"jail": snapshot.ssh_jail, "files": files}
-        if snapshot.ssh_jail_misses_failures:
+        if snapshot.ssh_jail_routed_to:
+            dest = snapshot.ssh_jail_routed_to
+            name = _override_name(_safe_name(snapshot.ssh_jail), snapshot.jail_d_locals, "logpath")
+            result.info(
+                message=_t("fail2ban.ssh_jail_routed_elsewhere",
+                           jail=snapshot.ssh_jail, files=files, dest=dest),
+                detail=_t("fail2ban.ssh_jail_routed_elsewhere_detail", files=files, dest=dest),
+                # Measured on Alpine: Total failed 0 → 1 with this override.
+                cmd=(f"printf '[%s]\\nlogpath = %s\\n' {shlex.quote(snapshot.ssh_jail)} "
+                     f"{shlex.quote(dest)} | sudo tee /etc/fail2ban/jail.d/{name} && "
+                     f"{service_restart_cmd('fail2ban')}"),
+                key="fail2ban.ssh_jail_routed_elsewhere",
+                template_vars={**tvars, "dest": dest},
+            )
+        elif snapshot.ssh_jail_misses_failures:
             result.info(
                 message=_t("fail2ban.ssh_jail_misses_failures", jail=snapshot.ssh_jail, files=files),
                 key="fail2ban.ssh_jail_misses_failures",
@@ -506,16 +610,43 @@ def check_fail2ban(snapshot: Fail2banSnapshot, t: TranslationFunc | None = None)
                 template_vars=tvars,
             )
     elif snapshot.ssh_jail and snapshot.ssh_jail_files and not snapshot.ssh_jail_journal \
+            and snapshot.ssh_jail_fed is None and snapshot.ssh_jail_counted:
+        # v0.26.0 — no journal to compare against, but the jail itself counted
+        # failed logins in its file. Measured on Alpine 3.24 (busybox syslogd,
+        # OpenRC): two refused logins, "Total failed: 2", and 0.25.1 said the
+        # protection was not verified.
+        _ok_at = len(result.findings)
+        result.ok(
+            message=_t("fail2ban.ssh_jail_active", jail=snapshot.ssh_jail),
+            detail=_t("fail2ban.ssh_jail_active_counted_detail",
+                      jail=snapshot.ssh_jail, count=snapshot.ssh_jail_counted),
+            key="fail2ban.ssh_jail_active",
+        )
+        # What the OK rests on, where the operator reads it: an OK prints no
+        # detail on the terminal. The OK carries the link (JSON, webhook).
+        result.info(
+            message=_t("fail2ban.ssh_jail_counted_caveat", count=snapshot.ssh_jail_counted),
+            key="fail2ban.ssh_jail_counted_caveat",
+            template_vars={"count": snapshot.ssh_jail_counted},
+        )
+        result.qualify("fail2ban.ssh_jail_counted_caveat", since=_ok_at)
+    elif snapshot.ssh_jail and snapshot.ssh_jail_files and not snapshot.ssh_jail_journal \
             and snapshot.ssh_jail_fed is None:
         # Not knowing whether a syslog daemon writes the file is no proof the
         # jail sees anything: said, not credited as protection.
         files = ", ".join(snapshot.ssh_jail_files)
+        # v0.26.0 — a syslog daemon known to run, no journal: what is missing
+        # is a message to compare the file against, not the daemon.
+        _unverified = ("fail2ban.ssh_jail_source_unverified_no_journal"
+                       if snapshot.syslog_active and not snapshot.journal_available
+                       else "fail2ban.ssh_jail_source_unverified")
         result.info(
-            message=_t("fail2ban.ssh_jail_source_unverified", jail=snapshot.ssh_jail, files=files),
+            message=_t(_unverified, jail=snapshot.ssh_jail, files=files),
             key="fail2ban.ssh_jail_source_unverified",
             template_vars={"jail": snapshot.ssh_jail, "files": files},
         )
     elif snapshot.ssh_jail:
+        _ok_at = len(result.findings)
         result.ok(
             message=_t("fail2ban.ssh_jail_active", jail=snapshot.ssh_jail),
             # v0.24.4: on a file, what the OK rests on — and what it does not.
@@ -523,11 +654,21 @@ def check_fail2ban(snapshot: Fail2banSnapshot, t: TranslationFunc | None = None)
                     if snapshot.ssh_jail_files and not snapshot.ssh_jail_journal else ""),
             key="fail2ban.ssh_jail_active",
         )
+        if snapshot.ssh_jail_files and not snapshot.ssh_jail_journal:
+            # v0.26.0 — the v0.24.4 detail said this, on the report only: an
+            # OK prints no detail on the terminal.
+            files = ", ".join(snapshot.ssh_jail_files)
+            result.info(
+                message=_t("fail2ban.ssh_jail_sampled_caveat", files=files),
+                key="fail2ban.ssh_jail_sampled_caveat",
+                template_vars={"files": files},
+            )
+            result.qualify("fail2ban.ssh_jail_sampled_caveat", since=_ok_at)
 
     return result
 
 
-def _override_name(jail: str, existing: tuple) -> str:
+def _override_name(jail: str, existing: tuple, what: str = "journal") -> str:
     """A ``jail.d`` file name that fail2ban reads after every existing
     ``.local`` — they are read in name order and the last setting wins.
 
@@ -536,10 +677,10 @@ def _override_name(jail: str, existing: tuple) -> str:
     (``-`` < ``t``) and the jail stayed blind after the fix. ``~`` sorts after
     the ``.`` of ``.local``, so ``<last>~bob-…`` follows ``<last>.local``.
     """
-    name = f"zz-bob-{jail}-journal.local"
+    name = f"zz-bob-{jail}-{what}.local"
     later = [n for n in existing if n > name]
     if later:
-        name = f"{max(later)[:-len('.local')]}~bob-{jail}-journal.local"
+        name = f"{max(later)[:-len('.local')]}~bob-{jail}-{what}.local"
     return name
 
 

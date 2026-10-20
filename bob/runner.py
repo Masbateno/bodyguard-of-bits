@@ -32,6 +32,7 @@ from bob.checks import _ufw
 from bob.checks.ddns import DdnsSnapshot, check_ddns, ddns_effective_context
 from bob.checks.auth_log import AuthLogSnapshot, check_auth_log
 from bob.checks.docker import DockerSnapshot, check_docker
+from bob.checks.docker import _check_daemon_json as _docker_daemon_json
 from bob.checks.firewall import (
     FirewallStatus,
     check_firewall,
@@ -686,6 +687,10 @@ def run_checks(
     # v0.24.1: also when UFW is installed but inactive — Ubuntu's default state.
     _netfilter_protective: bool | None = None
     _netfilter_policy: str | None = None
+    # v0.26.0 — awall (Alpine) is read only where no managed front-end runs,
+    # the only case check_firewall consults it. A failure there degrades the
+    # section and leaves the 0.25.1 reading (no front-end named), not a lie.
+    _awall = None
     if not fw_status.active and not fwd_status.active:
         _nf_snap = IptablesNftSnapshot.from_system()
         _netfilter_protective = (
@@ -693,6 +698,9 @@ def run_checks(
         )
         if _netfilter_protective:
             _netfilter_policy = _nf_snap.input_policy
+        from bob.checks._awall import AwallStatus
+        with _core("firewall"):
+            _awall = AwallStatus.from_system()
     fw_posture = resolve_firewall_posture(fw_status, fwd_status, _netfilter_policy)
     # v0.24.4: the listening set is read before the firewall check — its
     # enable fixes allow the ports sshd answers on first (a bare `ufw enable`
@@ -703,6 +711,7 @@ def run_checks(
         netfilter_protective=_netfilter_protective, t=t,
         ssh_ports=ports_snapshot.ssh_ports,
         ssh_on_ipv6=ports_snapshot.ssh_on_ipv6,
+        awall=_awall,
     )
     engine.apply(fw_result, section="firewall")
     display_result(fw_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
@@ -728,24 +737,29 @@ def run_checks(
         else None
     )
 
-    emit_section("firewall_rules")
+    # v0.26.0 — UFW's rules are analysed only while UFW is active: `ufw status`
+    # lists none otherwise, and the section said "No duplicate UFW rules" and
+    # "no matching UFW (v6) rule" on hosts without UFW (openSUSE, Fedora) or
+    # with UFW off (Ubuntu Server), the UFW RULES ANALYSIS header included.
+    if fw_status.active:
+        emit_section("firewall_rules")
 
-    # Application profiles resolve a rule written as `ufw allow OpenSSH`,
-    # which prints the profile name and no port in non-verbose output.
-    _ufw_app_profiles = _ufw.read_app_profiles()
-    rules_result = check_rules(
-        ufw_verbose, ufw_numbered, t, fw_status.ipv6_ufw_enabled,
-        listening_ports=all_listening_ports,
-        app_profiles=_ufw_app_profiles,
-        firewalld_active=fwd_status.active,
-    )
-    engine.apply(rules_result, section="firewall_rules")
-    display_result(rules_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
+        # Application profiles resolve a rule written as `ufw allow OpenSSH`,
+        # which prints the profile name and no port in non-verbose output.
+        _ufw_app_profiles = _ufw.read_app_profiles()
+        rules_result = check_rules(
+            ufw_verbose, ufw_numbered, t, fw_status.ipv6_ufw_enabled,
+            listening_ports=all_listening_ports,
+            app_profiles=_ufw_app_profiles,
+            firewalld_active=fwd_status.active,
+        )
+        engine.apply(rules_result, section="firewall_rules")
+        display_result(rules_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
 
-    if config.verbose and ufw_verbose and not config.quiet:
-        output.print_dim(t("firewall_rules.ufw_status_detail"))
-        print()
-        print(ufw_verbose)
+        if config.verbose and ufw_verbose and not config.quiet:
+            output.print_dim(t("firewall_rules.ufw_status_detail"))
+            print()
+            print(ufw_verbose)
 
     # ---- CHECK 40 — UFW logging level (skipped when UFW inactive — covered by check_firewall) ----
     if fw_status.active:
@@ -775,7 +789,7 @@ def run_checks(
     stack_snapshot = FirewallStackSnapshot()
     with _core("firewall_drivers"):
         stack_snapshot = FirewallStackSnapshot.from_system()
-        stack_result   = check_firewall_stack(stack_snapshot, t=t)
+        stack_result   = check_firewall_stack(stack_snapshot, t=t, ufw_active=fw_status.active)
         engine.apply(stack_result, section="firewall_drivers")
         display_result(stack_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
     if not config.quiet:
@@ -904,6 +918,15 @@ def run_checks(
     # ---- CHECK 4 — Listening ports ----
     emit_section("ports")
 
+    # v0.26.0 — firewalld's StrictForwardPorts decides whether Docker's
+    # published ports bypass the zone (measured on Debian 13, firewalld 2.3.1).
+    from bob.checks._firewalld import forwarded_ports, strict_forward_ports
+    _firewalld_strict = bool(fwd_status.active and strict_forward_ports())
+    # firewalld issue #1536: a port a zone forwards is not rejected under strict.
+    _firewalld_forwarded = forwarded_ports() if _firewalld_strict else frozenset()
+    if _firewalld_forwarded is None:     # zones unread: not taken as rejected
+        _firewalld_strict, _firewalld_forwarded = False, frozenset()
+
     ports_result = check_ports(
         ports_snapshot,
         audited_ports=audited_ports,
@@ -913,21 +936,31 @@ def run_checks(
         firewalld_active=fwd_status.active,
         netfilter_active=fw_posture.backend == "netfilter",
         t=t,
+        # v0.26.0 — with {"iptables": false} Docker writes no IPv4 rule for its
+        # ports: the zone filters them (measured on openSUSE, Docker 29.4.0).
+        docker_rules_off=_docker_daemon_json()[1],
+        firewalld_strict=_firewalld_strict,
+        firewalld_forwarded=_firewalld_forwarded,
     )
     engine.apply(ports_result, section="ports")
     display_result(ports_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
     display_ports_overview(ports_snapshot, config, t, report, output)
 
     # ---- CHECK 5 — UFW log analysis ----
-    if not config.quiet:
-        print_section(t("sections.logs"))
+    # v0.26.0 — only where UFW is installed: there is no UFW log to read
+    # otherwise, and the section credited "No UFW BLOCK events" (openSUSE,
+    # Fedora). Installed but off, past BLOCK events may still be in the window.
+    if fw_status.installed:
+        if not config.quiet:
+            print_section(t("sections.logs"))
 
-    with _core("logs"):
-        logs_snapshot = LogsSnapshot.from_system(log_days=config.log_days)
-        display_geoip_notice(geoip2_status(), t, output, quiet=config.quiet)
-        logs_result, logs_report = check_logs(logs_snapshot, audited_ports=audited_ports, t=t)
-        engine.apply(logs_result, section="logs")
-        display_log_results(logs_result, logs_snapshot, logs_report, config, t, report)
+        with _core("logs"):
+            logs_snapshot = LogsSnapshot.from_system(log_days=config.log_days)
+            display_geoip_notice(geoip2_status(), t, output, quiet=config.quiet)
+            logs_result, logs_report = check_logs(logs_snapshot, audited_ports=audited_ports, t=t,
+                                                  ufw_active=fw_status.active)
+            engine.apply(logs_result, section="logs")
+            display_log_results(logs_result, logs_snapshot, logs_report, config, t, report)
 
     # ---- CHECK 6 — DDNS / external exposure ----
     emit_section("ddns")
@@ -950,7 +983,9 @@ def run_checks(
 
     with _core("docker"):
         docker_snapshot = DockerSnapshot.from_system()
-        docker_result   = check_docker(docker_snapshot, network_context=network_context, t=t)
+        docker_result   = check_docker(docker_snapshot, network_context=network_context, t=t,
+                                       firewalld_strict=_firewalld_strict,
+                                       firewalld_forwarded=_firewalld_forwarded)
         engine.apply(docker_result, section="docker")
         display_result(docker_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)
 

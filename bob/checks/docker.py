@@ -76,6 +76,11 @@ class DockerSnapshot:
     iptables_disabled:  bool
     daemon_json_exists: bool
     exposed_ports:      list[ExposedPort] = field(default_factory=list)
+    #: v0.26.0 — "iptables" or "nftables": the backend Docker writes its
+    #: firewall rules with (``docker info`` FirewallBackend.Driver, else the
+    #: daemon.json ``firewall-backend`` key). The nftables backend has no
+    #: DOCKER-USER chain (measured on openSUSE Leap 16 and Ubuntu Server).
+    firewall_backend:   str = "iptables"
 
     @classmethod
     def from_system(cls) -> "DockerSnapshot":
@@ -96,12 +101,14 @@ class DockerSnapshot:
 
         daemon_json_exists, iptables_disabled = _check_daemon_json()
         exposed_ports = _get_exposed_ports()
+        firewall_backend = _firewall_backend()
 
         return cls(
             installed=True,
             iptables_disabled=iptables_disabled,
             daemon_json_exists=daemon_json_exists,
             exposed_ports=exposed_ports,
+            firewall_backend=firewall_backend,
         )
 
     @classmethod
@@ -142,6 +149,8 @@ def check_docker(
     snapshot: DockerSnapshot,
     network_context: str = "local",
     t: TranslationFunc | None = None,
+    firewalld_strict: bool = False,
+    firewalld_forwarded: frozenset = frozenset(),
 ) -> CheckResult:
     """
     Evaluate Docker security snapshot and return findings.
@@ -161,9 +170,24 @@ def check_docker(
         result.info(message=_t("docker.not_installed"), key="docker.not_installed")
         return result
 
+    from bob.checks._firewalld import port_forwarded
+    # v0.26.0 — a published port a firewalld zone also forwards is not taken
+    # as rejected under StrictForwardPorts=yes (firewalld issue #1536).
+    public_ports = [p for p in snapshot.exposed_ports if p.is_public]
+    strict_for = {p.port_proto: firewalld_strict and not port_forwarded(firewalld_forwarded, p.host_port, p.proto)
+                  for p in public_ports}
+    all_strict = firewalld_strict and all(strict_for.values())
+
     # iptables bypass check
     if snapshot.iptables_disabled:
         result.ok(message=_t("docker.iptables_disabled"), key="docker.iptables_disabled")
+    elif all_strict:
+        # v0.26.0 — firewalld rejects what Docker forwards (DNAT) unless the
+        # zone forwards the port: measured on Debian 13 (firewalld 2.3.1,
+        # Docker 26.1.5), a published 8099 was rejected from the LAN with
+        # StrictForwardPorts=yes and answered with no.
+        result.info(message=_t("docker.firewalld_strict_forward_ports"),
+                    key="docker.firewalld_strict_forward_ports")
     else:
         result.warn(
             message=_t("docker.iptables_bypass"),
@@ -172,7 +196,11 @@ def check_docker(
         )
         result.info(message=_t("docker.iptables_bypass_detail1"), key="docker.iptables_bypass_detail1")
         result.info(message=_t("docker.iptables_bypass_detail2"), key="docker.iptables_bypass_detail2")
-        result.info(message=_t("docker.iptables_bypass_detail3"), key="docker.iptables_bypass_detail3")
+        # v0.26.0: DOCKER-USER exists only with Docker's iptables backend.
+        result.info(message=_t("docker.iptables_bypass_detail3_nftables"
+                               if snapshot.firewall_backend == "nftables"
+                               else "docker.iptables_bypass_detail3"),
+                    key="docker.iptables_bypass_detail3")
         result.info(message=_t("docker.iptables_bypass_docs"), key="docker.iptables_bypass_docs")
         points = 1 if network_context in ("public", "ddns") else 0
         if points:
@@ -184,7 +212,6 @@ def check_docker(
             )
 
     # Exposed container ports
-    public_ports = [p for p in snapshot.exposed_ports if p.is_public]
 
     if not snapshot.exposed_ports:
         result.ok(message=_t("docker.no_containers"), key="docker.no_containers")
@@ -192,13 +219,21 @@ def check_docker(
         result.ok(message=_t("docker.no_public_ports"), key="docker.no_public_ports")
     else:
         for port in public_ports:
+            if strict_for.get(port.port_proto) and not snapshot.iptables_disabled:
+                result.info(
+                    message=(f"{port.container_name}: {port.port_proto} "
+                             f"→ {port.container_port}/{port.proto} "
+                             f"({_t('docker.exposed_firewalld_strict')})"),
+                    key="docker.exposed_firewalld_strict",
+                )
+                continue
             if not snapshot.iptables_disabled:
                 # Port truly bypassing UFW — escalate to alert
                 result.alert(
                     message=(
                         f"{port.container_name}: {port.port_proto} "
                         f"→ {port.container_port}/{port.proto} "
-                        f"({_t('docker.exposed_bypass_ufw')})"
+                        f"({_t('docker.exposed_bypass_nftables' if snapshot.firewall_backend == 'nftables' else 'docker.exposed_bypass_ufw')})"
                     ),
                     nature="action",
                     key="docker.exposed_bypass_ufw",
@@ -260,6 +295,30 @@ def _check_daemon_json() -> tuple[bool, bool]:
         return True, False
 
     return True, config.get("iptables") is False
+
+def _firewall_backend() -> str:
+    """``"nftables"`` or ``"iptables"`` — which backend Docker writes its rules with.
+
+    v0.26.0. ``docker info`` names the driver ("iptables+firewalld",
+    "nftables+firewalld", "nftables" — measured on Docker 29.4.0 and 29.1.3);
+    an older Docker, or a daemon that does not answer, falls back to the
+    daemon.json ``firewall-backend`` key, then to iptables, Docker's default.
+    """
+    out = _run("docker", "info", "--format", "{{json .FirewallBackend}}")
+    try:
+        driver = (json.loads(out) or {}).get("Driver", "") if out.strip() else ""
+    except (json.JSONDecodeError, AttributeError):
+        driver = ""
+    if isinstance(driver, str) and driver:
+        return "nftables" if driver.startswith("nftables") else "iptables"
+    try:
+        config = json.loads(read_text_capped(DAEMON_JSON_PATH, encoding="utf-8", errors="replace"))
+    except (OSError, json.JSONDecodeError):
+        return "iptables"
+    if isinstance(config, dict) and config.get("firewall-backend") == "nftables":
+        return "nftables"
+    return "iptables"
+
 
 def _get_exposed_ports() -> list[ExposedPort]:
     """

@@ -37,8 +37,8 @@ This separation allows the entire business logic to be tested by instantiating s
 
 | Module | Role |
 |---|---|
-| `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~1045 lines) |
-| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (57 filterable + 10 always-on sections), `_section_enabled()` (~1234 lines) |
+| `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~1049 lines) |
+| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (57 filterable + 10 always-on sections), `_section_enabled()` (~1269 lines) |
 | `cli.py` | Argument parsing — returns an `AuditConfig` dataclass |
 | `config.py` | User configuration — `UserConfig` (`~/.config/bob/config.conf`), `EmailStore` |
 | `display.py` | Terminal output helpers — `display_result()`, `print_audit_summary()`, etc. |
@@ -203,6 +203,8 @@ bob/
 │   └── cron.py          # Curses TUI for --install-cron / --manage-cron
 ├── checks/
 │   ├── __init__.py
+│   ├── _awall.py           # AwallStatus — awall installed, its enabled policies
+│   │                       #   (`awall list`), read where no UFW/firewalld runs (0.26.0)
 │   ├── _firewalld.py       # FirewalldStatus — firewall-cmd state/zone/services,
 │   │                       #   shared by firewall, iptables_nftables, ports,
 │   │                       #   ipv6 and services so a firewalld host is not read
@@ -540,8 +542,8 @@ print(f'Same order: {en == fr}')
 
 Expected output — the two files hold the same keys **in the same order**:
 ```
-EN keys: 2936
-FR keys: 2936
+EN keys: 2969
+FR keys: 2969
 Missing in FR: none
 Same order: True
 ```
@@ -558,7 +560,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Translate all values
 
-The file contains exactly 2936 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
+The file contains exactly 2969 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
 
 Example:
 ```json

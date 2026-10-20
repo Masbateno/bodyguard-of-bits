@@ -20,13 +20,16 @@ Usage:
 
 from __future__ import annotations
 
+import ipaddress
+
 import re
 import shlex
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from bob.checks import _ufw
-from bob.checks._firewalld import HostPolicy, best_verdict, families_of, open_rules, zone_verdict
+from bob.checks._firewalld import (HostPolicy, best_verdict, families_of, open_rules, refusing_rules,
+                                   source_coverage, zone_verdict)
 from bob.checks._run import (
     TranslationFunc,
     _MANAGER_ALIASES,
@@ -281,7 +284,29 @@ def _firewalld_close_cmd(zone: str, interfaces: "tuple[str, ...]" = (),
             f"sudo firewall-cmd --reload")
 
 
-def _firewalld_open_message(zone, verdict, policies=()) -> "tuple[str, dict]":
+def _is_address(source: str) -> bool:
+    try:
+        ipaddress.ip_network(source, strict=False)
+        return True
+    except ValueError:
+        return False
+
+
+def _refusals_caveat(result, _t, zones, since: int) -> None:
+    """v0.26.0 — an open zone that also refuses some traffic in its rich rules:
+    said after the finding that calls it open, and linked to it (measured on
+    Debian 13: a port reject rule refused 8099 in a zone at target ACCEPT)."""
+    for zone in zones:
+        refusing = refusing_rules(zone.rich_rules)
+        if refusing:
+            tvars = {"zone": zone.name or "?", "count": len(refusing)}
+            result.info(message=_t("firewall.firewalld_open_zone_refuses_some",
+                                   zone=tvars["zone"], count=tvars["count"]),
+                        key="firewall.firewalld_open_zone_refuses_some", template_vars=tvars)
+            result.qualify("firewall.firewalld_open_zone_refuses_some", since=since)
+
+
+def _firewalld_open_message(zone, verdict, policies=(), taken=()) -> "tuple[str, dict]":
     """The message key and variables naming what lets every packet in — and,
     for a rich rule, in which address family (``family="ipv4"`` opens IPv4
     only)."""
@@ -300,6 +325,11 @@ def _firewalld_open_message(zone, verdict, policies=()) -> "tuple[str, dict]":
         return ("firewall.firewalld_policy_open_iface",
                 {"zone": name, "interfaces": ", ".join(zone.physical)})
     if zone.all_sources:
+        if taken:
+            # v0.26.0 — what a zone classified first keeps (measured on Debian 13).
+            return ("firewall.firewalld_policy_open_source_except",
+                    {"zone": name, "sources": ", ".join(zone.all_sources),
+                     "exceptions": ", ".join(f"{src} ({z})" for z, src in taken)})
         return ("firewall.firewalld_policy_open_source",
                 {"zone": name, "sources": ", ".join(zone.all_sources)})
     return "firewall.firewalld_policy_open", {"zone": name}
@@ -369,6 +399,25 @@ def _firewalld_open_fix(zone, verdict, firewalld) -> str:
     return " && ".join(cmds)
 
 
+def _lang() -> str:
+    from bob import i18n
+    return i18n.current_lang()
+
+
+def _pct(value: float, lang: str = "en") -> str:
+    """A share as the cumulated-sources INFO prints it: 37.5, 0.4, < 0.1 —
+    with a decimal comma in French (37,5)."""
+    if 0 < value < 0.1:
+        text = "< 0.1"
+    elif 99.95 <= value < 100:
+        # v0.26.0 — never "100" short of all of it: measured on Debian 13,
+        # 8.8.8.0/24 left out of the pooled halves printed "100% (100%)".
+        text = "> 99.9"
+    else:
+        text = f"{value:.1f}".rstrip("0").rstrip(".") if value < 100 else "100"
+    return text.replace(".", ",") if lang == "fr" else text
+
+
 def check_firewall(
     status: FirewallStatus,
     firewalld=None,
@@ -376,6 +425,7 @@ def check_firewall(
     t: TranslationFunc | None = None,
     ssh_ports: "list[int] | None" = None,
     ssh_on_ipv6: "bool | None" = None,
+    awall=None,
 ) -> CheckResult:
     """
     Evaluate firewall status and return findings and deductions.
@@ -421,7 +471,9 @@ def check_firewall(
             opened = firewalld.open_verdict
             if opened is not None:
                 zone, verdict = opened
-                msg_key, tvars = _firewalld_open_message(zone, verdict, firewalld.host_policies)
+                msg_key, tvars = _firewalld_open_message(zone, verdict, firewalld.host_policies,
+                                                         firewalld.taken_from(zone))
+                _at = len(result.findings)
                 result.alert_with_deduction(
                     key="firewall.firewalld_policy_open",
                     message=_t(msg_key, **tvars),
@@ -430,6 +482,7 @@ def check_firewall(
                     nature="action",
                     template_vars=tvars,
                 )
+                _refusals_caveat(result, _t, [zone], _at)
             # v0.24.3: a zone bound to narrower sources takes precedence over
             # the interface's zone for those addresses (measured on Fedora 44:
             # 192.168.1.10/32 in trusted opened 8080 to that host). An exposure
@@ -445,24 +498,66 @@ def check_firewall(
                 undo = " && ".join(
                     f"sudo firewall-cmd --permanent --zone={shlex.quote(z.name)} "
                     f"--remove-source={shlex.quote(src)}" for z, srcs in pooled for src in srcs)
+                # v0.26.0 — what those zones really take, in firewalld's order
+                # (measured on Debian 13): every public address is the alert;
+                # the whole family, or the sources a zone classified first keeps.
+                whole, taken = firewalld.pooled_scope
+                exceptions = ", ".join(f"{src} ({name})" for name, src in taken)
+                # Decided after review: nearly all of them (NEAR_ALL_PUBLIC %)
+                # keeps the alert, and the text gives the share.
+                near = firewalld.pooled_public_share < 100.0
+                public = _pct(firewalld.pooled_public_share, _lang())
+                _pooled_key = ("firewall.firewalld_policy_open_sources_pooled_near_except" if near and taken
+                               else "firewall.firewalld_policy_open_sources_pooled_near" if near
+                               else "firewall.firewalld_policy_open_sources_pooled_except" if taken
+                               else "firewall.firewalld_policy_open_sources_pooled" if whole
+                               else "firewall.firewalld_policy_open_sources_pooled_public")
+                _at = len(result.findings)
                 result.alert_with_deduction(
                     key="firewall.firewalld_policy_open",
-                    message=_t("firewall.firewalld_policy_open_sources_pooled",
-                               zones=zones, sources=sources),
+                    message=_t(_pooled_key, zones=zones, sources=sources, exceptions=exceptions,
+                               public=public),
                     points=3,
                     cmd=(f"sudo firewall-cmd --permanent --zone={shlex.quote(fallback)} "
                          f"--add-service=ssh && {undo} && sudo firewall-cmd --reload"),
                     nature="action",
-                    template_vars={"zones": zones, "sources": sources},
+                    template_vars={"zones": zones, "sources": sources,
+                                   **({"exceptions": exceptions} if taken else {}),
+                                   **({"public": public} if near else {})},
                 )
+                _refusals_caveat(result, _t, [z for z, _ in pooled], _at)
             shown = {z.name for z, _ in pooled} if opened is None else set()
             for src_zone, _verdict in firewalld.open_sources:
                 if src_zone.name in shown:
                     continue
                 svars = {"zone": src_zone.name, "sources": ", ".join(src_zone.sources)}
+                _at = len(result.findings)
                 result.info(message=_t("firewall.firewalld_source_zone_open",
                                        zone=svars["zone"], sources=svars["sources"]),
                             key="firewall.firewalld_source_zone_open", template_vars=svars)
+                _refusals_caveat(result, _t, [src_zone], _at)
+            # v0.26.0, after review — an open zone with ipset or MAC sources:
+            # those are not counted in the shares, so the 99% alert can be
+            # missed. Said, and the score reads as a ceiling.
+            _uncounted = [z.name for z, _ in firewalld.open_sources
+                          if any(not _is_address(src) for src in z.sources)]
+            if _uncounted:
+                result.info(message=_t("firewall.firewalld_sources_not_counted", zones=", ".join(_uncounted)),
+                            key="firewall.firewalld_sources_not_counted",
+                            template_vars={"zones": ", ".join(_uncounted)})
+            # v0.26.0 — what those zones reach together, short of a whole family
+            # (the whole is the pooled alert above). Reported, not scored: BOB
+            # cannot judge whether the sources deserve the trust.
+            _open = {z.name for z, _ in firewalld.open_sources}
+            for family, names, share, public in source_coverage(
+                    [z for z, _ in firewalld.open_sources if z.name not in shown],
+                    closed=[b for b in firewalld.bindings
+                            if b.sources and not b.physical and b.name not in _open]):
+                cvars = {"zones": ", ".join(names), "family": "IPv4" if family == "ipv4" else "IPv6",
+                         "share": _pct(share, _lang()), "public": _pct(public, _lang())}
+                result.info(message=_t("firewall.firewalld_source_zones_cumulated", zones=cvars["zones"],
+                                       family=cvars["family"], share=cvars["share"], public=cvars["public"]),
+                            key="firewall.firewalld_source_zones_cumulated", template_vars=cvars)
             # v0.24.3: unread is not none. Without the active zones or
             # policies the inbound default is unknown: nothing deducted, and
             # said, so the score reads as a ceiling rather than a clean bill.
@@ -478,24 +573,57 @@ def check_firewall(
         # carry the detailed verdict. Only a host with no front-end AND no
         # filtering netfilter ruleset is genuinely unprotected.
         if netfilter_protective:
+            # v0.26.0 — awall wrote that ruleset: name it (Alpine 3.24, measured).
+            if awall is not None and awall.enabled:
+                result.info(message=_t("firewall.awall_active", policies=", ".join(awall.enabled)),
+                            key="firewall.awall_active",
+                            template_vars={"policies": ", ".join(awall.enabled)})
+                return result
             result.info(
                 message=_t("firewall.netfilter_active"),
                 key="firewall.netfilter_active",
             )
+            return result
+        # v0.26.0 — firewall-cmd present but silent (it failed and printed
+        # nothing: a refusal, a timeout under load). Unknown is not absent: no
+        # "no firewall" alert and no cap; the score reads as a ceiling.
+        if firewalld is not None and firewalld.installed and not firewalld.readable:
+            result.info(message=_t("firewall.firewalld_unreadable"),
+                        key="firewall.firewalld_unreadable")
             return result
 
     # --- UFW installed ---
     if not status.installed:
         _fwd_installed = firewalld is not None and firewalld.installed
         _cmd, _detail = _firewall_install_fix(_t, ssh_ports, firewalld_installed=_fwd_installed)
+        _awall_here = awall is not None and awall.installed and not _fwd_installed
+        # "no policy enabled" only when `awall list` was read; unread, the
+        # generic line (true: no UFW, no firewalld, the kernel not filtering).
+        # v0.26.0, after review — enabled is not loaded: measured in Alpine
+        # 3.24.2, `awall enable web` without `awall activate` left INPUT at
+        # policy ACCEPT with no rule, and the alert said no policy was enabled.
+        _not_loaded = _awall_here and awall.readable and bool(awall.enabled)
+        _missing_key = ("prerequisites.firewall_missing_firewalld_stopped" if _fwd_installed
+                        else "prerequisites.firewall_missing_awall_not_loaded" if _not_loaded
+                        else "prerequisites.firewall_missing_awall_idle" if _awall_here and awall.readable
+                        else "prerequisites.firewall_missing")
+        _policies = ", ".join(awall.enabled) if _not_loaded else ""
+        if _awall_here:
+            # v0.26.0 — awall is the front-end here: no ufw to install beside it.
+            _cmd, _detail = None, _t("prerequisites.firewall_missing_awall_not_loaded_detail" if _not_loaded
+                                     else "prerequisites.firewall_missing_awall_idle_detail")
         result.alert(
-            message=_t("prerequisites.firewall_missing_firewalld_stopped" if _fwd_installed
-                       else "prerequisites.firewall_missing"),
+            message=_t(_missing_key, policies=_policies),
             detail=_detail,
             nature="action",
             cmd=_cmd,
             key="prerequisites.firewall_missing",
         )
+        # v0.26.0 — the same cap as an inactive UFW. Measured: an openSUSE
+        # host with no firewall running scored 7/10 in Firewall & Network
+        # (only the nftables −3), an Ubuntu host with UFW off 3/10.
+        result.set_cap(maximum=3, reason=_t(_missing_key, policies=_policies),
+                       key="prerequisites.firewall_missing")
         return result  # nothing more to check
 
     result.ok(message=_t("prerequisites.ufw_installed"), key="prerequisites.ufw_installed")

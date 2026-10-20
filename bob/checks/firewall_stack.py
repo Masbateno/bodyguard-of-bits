@@ -54,6 +54,13 @@ class FirewallStackSnapshot:
                              kubelite, k3s) — pod networking needs forwarding.
     """
     input_raw_accepts:   list[str] = field(default_factory=list)
+    #: v0.26.0 — the rules of the raw, mangle and nat tables that set a
+    #: packet mark (all of them run before the filter INPUT chain), ``-S`` form.
+    mark_setters:        list[str] = field(default_factory=list)
+    #: v0.26.0 — every ``-A INPUT`` rule of the filter table, in order, each
+    #: jump to a user chain followed inline: a mark set there counts only for
+    #: the rules below it.
+    input_rules:         list[str] = field(default_factory=list)
     forward_raw_accepts: list[str] = field(default_factory=list)
     nftables_active:     bool = False
     # False when the ruleset could not be listed at all — distinct from
@@ -76,7 +83,18 @@ class FirewallStackSnapshot:
         """
         input_out   = _run("iptables", "-L", "INPUT",   "-n")
         forward_out = _run("iptables", "-L", "FORWARD", "-n")
-        input_raw   = _parse_raw_accepts(input_out)
+        # v0.26.0 — the INPUT rules are read in `-S` form: `-L -n` drops the
+        # interface, so `-i lo -j ACCEPT` printed exactly as an accept-all
+        # (measured in a network namespace with ufw 0.36).
+        input_s     = _run("iptables", "-S", "INPUT")
+        input_raw   = _parse_raw_accepts_s(input_s)
+        # v0.26.0 — what a mark rule accepts depends on who sets the mark:
+        # measured with ufw 0.36 active, a mangle PREROUTING MARK on new
+        # 8099 packets opened 8099 through `-m mark --mark … -j ACCEPT`.
+        mark_setters = _mark_setters(*(_run("iptables", "-t", table, "-S")
+                                       for table in ("raw", "mangle", "nat")))
+        input_rules = (_input_path(_run("iptables", "-S"))
+                       or [ln.strip() for ln in input_s.splitlines() if ln.startswith("-A ")])
         forward_raw = _parse_raw_accepts(forward_out)
 
         nft_out         = _run("nft", "list", "ruleset") if _command_exists("nft") else ""
@@ -124,6 +142,8 @@ class FirewallStackSnapshot:
 
         return cls(
             input_raw_accepts=input_raw,
+            mark_setters=mark_setters,
+            input_rules=input_rules,
             forward_raw_accepts=forward_raw,
             nftables_active=nftables_active,
             rules_readable=rules_readable,
@@ -145,7 +165,8 @@ def _routing_daemon(snapshot: "FirewallStackSnapshot") -> bool:
 # Pure check logic
 # ---------------------------------------------------------------------------
 
-def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | None = None) -> CheckResult:
+def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | None = None,
+                         ufw_active: bool = True) -> CheckResult:
     """
     Check for firewall stack conflicts and unexpected configurations.
 
@@ -161,8 +182,24 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
     found_issue = False
 
     # --- Raw ACCEPT rules in INPUT chain ---
-    # Rules in INPUT that are not jumping to a ufw-* chain bypass UFW entirely.
-    for rule in snapshot.input_raw_accepts:
+    # Rules in INPUT that are not jumping to a ufw-* chain bypass UFW.
+    # v0.26.0: only while UFW is active — with UFW off there is nothing to
+    # bypass: those rules are the host's ruleset, which the iptables/nftables
+    # section judges (an accept-all costs 3 there, so this −2 was counted twice
+    # for one rule; measured on k3s). And only rules that can let a new
+    # connection in: a port rule opened 8099 past an active ufw, a mark rule
+    # opened nothing, -i lo reaches only the loopback (network namespace, ufw 0.36).
+    for rule in (snapshot.input_raw_accepts if ufw_active else []):
+        reach = _accept_reach(rule, snapshot.mark_setters + _input_setters_above(snapshot.input_rules, rule))
+        if reach == "loopback":
+            continue
+        if reach == "conditional":
+            result.info(
+                key="firewall_drivers.iptables_accept_conditional",
+                message=_t("firewall_drivers.iptables_accept_conditional", rule=rule),
+                template_vars={"rule": rule},
+            )
+            continue
         result.warn_with_deduction(
             key="firewall_drivers.iptables_bypass",
             message=_t("firewall_drivers.iptables_bypass", rule=rule),
@@ -174,7 +211,9 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
     # --- ACCEPT rules in FORWARD chain ---
     # Docker, WireGuard, and libvirt/KVM legitimately add ACCEPT rules to FORWARD.
     # Only flag them when no such routing daemon is detected.
-    if snapshot.forward_raw_accepts:
+    # v0.26.0: like INPUT, only beside an active UFW — measured on Alpine with
+    # awall, its own FORWARD rules cost 1 each as "bypassing UFW".
+    if snapshot.forward_raw_accepts and ufw_active:
         if _routing_daemon(snapshot):
             result.info(
                 message=_t("firewall_drivers.forward_routing_ok"),
@@ -191,7 +230,9 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
             found_issue = True
 
     # --- nftables parallel to UFW ---
-    if snapshot.nftables_active:
+    # v0.26.0: only beside an active UFW; with UFW off the nftables ruleset is
+    # the firewall, judged by the iptables/nftables section.
+    if snapshot.nftables_active and ufw_active:
         result.warn_with_deduction(
             key="firewall_drivers.nftables_parallel",
             message=_t("firewall_drivers.nftables_parallel"),
@@ -221,7 +262,7 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
             detail=_t("firewall_drivers.rules_unreadable_detail"),
             key="firewall_drivers.rules_unreadable",
         )
-    elif not found_issue and not snapshot.forward_raw_accepts:
+    elif not found_issue and not (snapshot.forward_raw_accepts and ufw_active):
         result.ok(message=_t("firewall_drivers.no_issues"), key="firewall_drivers.no_issues")
 
     return result
@@ -230,6 +271,168 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _parse_raw_accepts_s(iptables_s_output: str) -> list[str]:
+    """The ``-A INPUT … -j ACCEPT`` lines of ``iptables -S INPUT``."""
+    return [ln.strip() for ln in iptables_s_output.splitlines()
+            if ln.startswith("-A ") and re.search(r"(^|\s)-j ACCEPT(\s|$)", ln)]
+
+
+#: What a raw INPUT ACCEPT rule can let in on its own (v0.26.0), measured with
+#: ufw 0.36 active in a network namespace: a ``--dport 8099`` rule opened 8099
+#: from outside; a ``-m mark`` rule opened nothing (it accepts what another
+#: rule marked — kube-router's network-policy rule is one); ``-i lo`` admits
+#: only the loopback.
+_LOOPBACK = re.compile(r"(^|\s)-i lo(\s|$)")
+_MARK_ONLY = re.compile(r"^-A \S+(?: -m comment --comment (?:\"[^\"]*\"|\S+))?"
+                        r" -m mark --mark \S+(?: -m comment --comment (?:\"[^\"]*\"|\S+))? -j ACCEPT$")
+_STATE_ONLY = re.compile(r"^-A \S+(?: -m comment --comment (?:\"[^\"]*\"|\S+))?"
+                         r" -m (?:conntrack --ctstate|state --state) (?:RELATED|ESTABLISHED)(?:,(?:RELATED|ESTABLISHED))?"
+                         r"(?: -m comment --comment (?:\"[^\"]*\"|\S+))? -j ACCEPT$")
+
+
+_MARK_MATCH = re.compile(r" -m mark --mark (0x[0-9a-fA-F]+|\d+)(?:/(0x[0-9a-fA-F]+|\d+))?")
+_MARK_SET = re.compile(r"-j (?:MARK|CONNMARK) --set-x?mark (0x[0-9a-fA-F]+|\d+)(?:/(0x[0-9a-fA-F]+|\d+))?")
+
+
+_JUMP = re.compile(r"\s-[jg]\s+(\S+)")
+_CONNMARK_COPY = re.compile(r"-j CONNMARK --(restore|save)-mark(?:\s+--nfmask\s+(\S+))?(?:\s+--ctmask\s+(\S+))?")
+#: v0.26.0, after review — HMARK sets offset + (hash % mod); measured with ufw
+#: 0.36 active: `-j HMARK --hmark-mod 1 --hmark-offset 0x20000` in mangle
+#: PREROUTING opened 8099 through a mark rule BOB called conditional.
+_HMARK = re.compile(r"-j HMARK\b.*?--hmark-mod\s+(\d+).*?--hmark-offset\s+(\S+)")
+#: TPROXY sets the mark as MARK --set-xmark does (``--tproxy-mark value/mask``).
+_TPROXY_MARK = re.compile(r"-j TPROXY\b.*?--tproxy-mark\s+(0x[0-9a-fA-F]+|\d+)(?:/(0x[0-9a-fA-F]+|\d+))?")
+#: An HMARK spread this wide cannot be listed: the mark it sets is not established.
+_HMARK_MAX_MOD = 256
+
+
+def _is_mark_op(rule: str) -> bool:
+    return bool(_MARK_SET.search(rule) or _CONNMARK_COPY.search(rule)
+                or _HMARK.search(rule) or _TPROXY_MARK.search(rule))
+
+
+def _mark_setters(*outputs: str) -> list[str]:
+    """The rules of *outputs* (``iptables -t raw|mangle|nat -S``, in that
+    order) that touch a mark on the inbound path, in the order a new inbound
+    packet meets them: every table's PREROUTING, then every table's INPUT,
+    each chain's jumps followed inline (v0.26.0, measured with ufw 0.36 active:
+    a MARK in mangle OUTPUT or POSTROUTING left 8099 closed, in a user chain
+    jumped from mangle PREROUTING it opened 8099, jumped from OUTPUT only it
+    did not)."""
+    tables = []
+    for out in outputs:
+        chains: dict[str, list] = {}
+        for ln in out.splitlines():
+            if ln.startswith("-A "):
+                chains.setdefault(ln.split()[1], []).append(ln.strip())
+        tables.append(chains)
+
+    def expand(chains, chain, seen):
+        if chain in seen:
+            return []
+        seen = seen | {chain}
+        ordered = []
+        for rule in chains.get(chain, []):
+            ordered.append(rule)
+            m = _JUMP.search(rule)
+            if m and m.group(1) in chains:
+                ordered += expand(chains, m.group(1), seen)
+        return ordered
+
+    sequence = [r for hook in ("PREROUTING", "INPUT") for chains in tables
+                for r in expand(chains, hook, frozenset())]
+    return [r for r in sequence if _is_mark_op(r)]
+
+
+def _input_path(filter_s: str) -> list[str]:
+    """The filter table's INPUT rules in the order a packet meets them, each
+    jump to a user chain followed inline (v0.26.0, measured with ufw 0.36
+    active: a MARK in a user chain jumped from INPUT above the mark rule
+    opened 8099, nested one chain deeper too; jumped below it, nothing)."""
+    chains: dict[str, list] = {}
+    for ln in filter_s.splitlines():
+        if ln.startswith("-A "):
+            chains.setdefault(ln.split()[1], []).append(ln.strip())
+
+    def expand(chain, seen):
+        ordered = []
+        for rule in chains.get(chain, []):
+            ordered.append(rule)
+            m = _JUMP.search(rule)
+            if m and m.group(1) in chains and m.group(1) not in seen:
+                ordered += expand(m.group(1), seen | {m.group(1)})
+        return ordered
+
+    return expand("INPUT", frozenset({"INPUT"}))
+
+
+def _input_setters_above(input_rules: list, rule: str) -> list:
+    """The mark-touching rules of filter INPUT above *rule* (v0.26.0, measured
+    with ufw 0.36 active: a MARK above the mark rule opened 8099, the same MARK
+    below it did not)."""
+    above = input_rules[:input_rules.index(rule)] if rule in input_rules else []
+    return [ln for ln in above if _is_mark_op(ln)]
+
+
+def _num(text: "str | None", default: int = 0xFFFFFFFF) -> int:
+    return int(text, 0) if text else default
+
+
+def _mark_reachable(rule: str, setters) -> bool:
+    """Whether a new packet can carry the mark *rule* accepts, following
+    *setters* in order: a MARK sets the packet's mark, a CONNMARK set the
+    connection's, and only a restore copies the connection's bits to the
+    packet, as far as its masks let it (v0.26.0, measured with ufw 0.36
+    active: CONNMARK --set-xmark alone, or restored with masks that miss the
+    bits, or restored before it is set, left 8099 closed; set then restored,
+    8099 opened). Values and masks compared, so kube-proxy's 0x4000 does not
+    feed a match on 0x20000. Unmarked packets carry 0."""
+    m = _MARK_MATCH.search(rule)
+    if not m:
+        return True
+    value, mask = int(m.group(1), 0), _num(m.group(2))
+    nf, ct = {0}, {0}
+    for setter in setters:
+        copy = _CONNMARK_COPY.search(setter)
+        hmark = _HMARK.search(setter)
+        tproxy = _TPROXY_MARK.search(setter)
+        if hmark:
+            mod, offset = int(hmark.group(1)), int(hmark.group(2), 0)
+            if mod > _HMARK_MAX_MOD:
+                return True       # not established: never called conditional
+            nf |= {offset + i for i in range(max(mod, 1))}
+        elif tproxy:
+            v, mk = int(tproxy.group(1), 0), _num(tproxy.group(2))
+            nf |= {(x & ~mk) ^ v for x in nf}
+        elif copy:
+            nfmask, ctmask = _num(copy.group(2)), _num(copy.group(3))
+            if copy.group(1) == "restore":
+                nf |= {(n & ~nfmask) ^ (c & ctmask) for n in nf for c in ct}
+            else:
+                ct |= {(c & ~ctmask) ^ (n & nfmask) for c in ct for n in nf}
+        else:
+            s = _MARK_SET.search(setter)
+            v, mk = int(s.group(1), 0), _num(s.group(2))
+            target = ct if "-j CONNMARK" in setter else nf
+            target |= {(x & ~mk) ^ v for x in target}
+        if len(nf) > 256 or len(ct) > 256:
+            return True           # too many paths to follow: not established either way
+    return any((n & mask) == (value & mask) for n in nf)
+
+
+def _accept_reach(rule: str, mark_setters=()) -> str:
+    """``"loopback"``, ``"conditional"`` (mark or established state only — no
+    new connection on its own) or ``"admits"``. A mark rule admits when a new
+    packet can carry that mark (:func:`_mark_reachable`)."""
+    if _LOOPBACK.search(rule):
+        return "loopback"
+    if _MARK_ONLY.match(rule):
+        return "admits" if _mark_reachable(rule, mark_setters) else "conditional"
+    if _STATE_ONLY.match(rule):
+        return "conditional"
+    return "admits"
+
 
 def _parse_raw_accepts(iptables_output: str) -> list[str]:
     """

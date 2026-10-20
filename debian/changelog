@@ -1,3 +1,20 @@
+bodyguard-of-bits (0.26.0-1) unstable; urgency=medium
+
+  * Minor, BREAKING (scores): the firewall judged as the host has it, beyond
+    UFW, measured on openSUSE Leap 16, Ubuntu Server 26.04, Alpine 3.24 and
+    Debian 13: no active firewall at all caps Firewall & Network at 3/10 as an
+    inactive UFW does; raw iptables INPUT/FORWARD rules and an nftables ruleset
+    are judged as bypassing UFW only beside an active UFW, read with
+    iptables -S, and deducted only when they can let a new connection in; a
+    firewalld that firewall-cmd cannot query is not "no firewall"; hosts
+    without UFW get no UFW findings; awall named; Docker's nftables backend
+    read; firewalld source zones added up (INFO); a fail2ban jail with no
+    systemd journal credited on its own count or shown blind, an OK on
+    partial evidence followed by its caveat; --install-cron into root's
+    crontab on BusyBox crond.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Tue, 20 Oct 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.25.1-1) unstable; urgency=medium
 
   * Patch, no score change: commands, findings and advice as the host has

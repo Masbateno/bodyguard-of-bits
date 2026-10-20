@@ -6,6 +6,449 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.26.0] — 2026-10-20
+
+**A minor, BREAKING (scores): the firewall judged as the host has it, beyond UFW —
+no inbound filtering at all, raw iptables rules, awall, Docker on nftables, firewalld
+zones bound to sources — and fail2ban and cron where there is no systemd and no
+`/etc/cron.d`. Measured on real openSUSE Leap 16, Ubuntu Server 26.04, Alpine 3.24
+and Debian 13, and in a network namespace running the real ufw.**
+The global scoring formula is unchanged — what *Firewall & Network* deducts, caps
+and floors changes, BREAKING for scores, below; no JSON-schema or CSV-column
+change; no section, `--explain` key or CIS reference added or removed; no finding
+key renamed or removed.
+
+**BREAKING (scores).** The *Firewall & Network* domain moves, and the headline with
+it:
+
+- **down** when BOB establishes that no inbound filtering by default is active —
+  no UFW, firewalld or awall filtering, and no netfilter chain denying inbound by default
+  (rules that drop some ports are not weighed one by one): capped at 3/10, the cap an
+  inactive UFW alone already had (openSUSE, firewalld stopped: 7/10 → 3/10);
+- **up** where raw iptables rules, or the rules a firewall front-end other than UFW
+  wrote, were counted as "bypassing UFW" (Ubuntu with UFW inactive: 1/10 → 3/10;
+  with UFW active: 4/10 → 8/10; Alpine with an awall policy: 2/10 → 10/10);
+- **no longer floored** at HIGH risk where `firewall-cmd` answers nothing: that
+  firewall is reported as not established, not as absent;
+- **up** where a chain at policy accept ends with a rule that drops or rejects
+  every remaining packet: BOB read "no firewall" (−3, and the new cap), while the
+  chain refused what it did not accept;
+- **up by 3 in the domain** where firewalld source zones pooled to a whole family
+  lose more than 1% of the public addresses to a zone firewalld classifies first —
+  the 0.24.3 ALERT becomes the cumulated INFO (not measured on a host with such a
+  range; the order it rests on is, §6); and **down by 3** where they take at least
+  99% of the public addresses without adding up to a whole family, which 0.24.3
+  left unscored.
+
+**Findings that change.** Twelve new finding keys:
+`firewall.firewalld_unreadable`, `firewall_iptables.firewalld_unreadable`,
+`firewall_drivers.iptables_accept_conditional`, `firewall.awall_active`,
+`firewall.firewalld_source_zones_cumulated`, `fail2ban.ssh_jail_routed_elsewhere`,
+`fail2ban.ssh_jail_counted_caveat`, `fail2ban.ssh_jail_sampled_caveat`,
+`firewall.firewalld_open_zone_refuses_some`, `docker.firewalld_strict_forward_ports`,
+`docker.exposed_firewalld_strict`, `firewall.firewalld_sources_not_counted` (INFO, no
+points). On a host where UFW is not active, the UFW rule analysis
+(`firewall_rules.*`), the UFW-bypass findings (`firewall_drivers.iptables_bypass`,
+`iptables_forward_bypass`, `nftables_parallel`) are no longer emitted, nor the UFW
+log analysis (`logs.*`) where UFW is not installed. One level change: `logs.empty`
+is INFO, not OK, while UFW is inactive. New texts under existing keys are listed in
+each section; a `qualified_by` link appears on two fail2ban OKs (§7).
+
+### 1. No inbound filtering by default
+
+- **Capped like an inactive UFW.** `prerequisites.firewall_missing` (no UFW, no
+  firewalld, a netfilter ruleset that filters nothing) cost nothing and capped
+  nothing: an openSUSE host with firewalld stopped scored 7/10 in *Firewall &
+  Network* — only the nftables finding took 3 — while an Ubuntu host with UFW off
+  was capped at 3/10. Having no firewall scored better than having one switched off.
+  It now caps the domain at 3/10. Measured on openSUSE Leap 16 (firewalld 2.1.2
+  stopped): 7/10 → 3/10, headline 7 → 6, risk HIGH in both. The cap reads the
+  IPv4 default — an `ip` or `inet` chain, not an `ip6` one — and the alert says
+  so ("no netfilter chain denies inbound IPv4 traffic by default"). IPv6 is judged
+  in the IPv6 section where BOB reads it (UFW, firewalld); a raw ruleset's IPv6
+  filtering is not evaluated (known limits).
+- **A firewalld BOB cannot query is not "no firewall".** With `firewall-cmd`
+  present but giving no usable state — it failed and printed nothing (a
+  refusal, a timeout under load) —
+  0.25.1 alerted "No active firewall" and floored the risk at HIGH — measured on a
+  host firewalld was filtering. It is now an INFO (`firewall.firewalld_unreadable`,
+  and `firewall_iptables.firewalld_unreadable` for the base chains, not judged):
+  no alert, no cap, no floor, and the score reads as an upper bound. A stopped
+  firewalld is told apart from it: firewalld 2.1.2 prints "not running" on stderr
+  and exits 252 with stdout empty — the first 0.26.0 tree read that as unreadable
+  and lost the alert; found on the host, fixed before this release.
+- **A chain that ends by rejecting everything filters.** Measured in a network
+  namespace with 8097 accepted: an nft chain at `policy accept` whose last rule is
+  a bare `reject`, and an iptables INPUT at `-P INPUT ACCEPT` ending in `-j
+  REJECT`, refused 8099. BOB read the policy only — "no active firewall", −3 for
+  INPUT ACCEPT, in 0.25.1 as well; the first 0.26.0 tree capped the domain on top.
+  The first rule that takes every packet now decides: an accept-everything rule,
+  or a `drop`/`reject` with no match (a `reject` limited to TCP leaves the rest to
+  the policy). The OK says the chain ends with that rule, not "policy REJECT".
+  The alert says "no netfilter chain denies inbound IPv4 traffic by default", where it
+  said "the netfilter layer is not filtering inbound traffic": rules that drop
+  some ports, with no final rule, are not weighed one by one.
+- **Base chains on the same hook.** Measured in a network namespace: a chain
+  accepting everything at priority 0 and another ending in `reject` at priority 10
+  refused 8099, in either order — an accept hands the packet to the next base
+  chain, a reject ends it. BOB reads every IPv4 base chain on the hook, as since
+  0.24.4.
+- **The loopback rule of iptables-nft.** iptables-nft writes a counter into every
+  rule (`iifname "lo" counter packets 0 bytes 0 accept`); the pattern wanted
+  `accept` right after `"lo"`, and a host with that rule lost a point for not
+  having it (`firewall_iptables.no_loopback`, since 0.15.4).
+- The cap line of the breakdown names what the alert names ("firewalld is
+  installed but not running", "awall is installed but no policy is enabled"), not
+  "neither UFW nor firewalld is installed".
+
+### 2. Raw iptables INPUT rules, judged by what they let in
+
+`firewall_drivers.iptables_bypass` took 2 points for every INPUT rule whose target
+is ACCEPT, whatever it matched, with UFW active or not. Measured in a network
+namespace running the real ufw 0.36 (default deny), probed from a second
+namespace: a raw `--dport 8099 -j ACCEPT` put first in INPUT opened 8099; a
+`-m mark` rule (as kube-router writes it) opened nothing; and `iptables -L INPUT
+-n`, which BOB read, prints no interface without `-v`, so the rule `-i lo -j
+ACCEPT` showed as `ACCEPT all -- 0.0.0.0/0 0.0.0.0/0`, the line of an accept-all.
+
+- The rules are read with `iptables -S`.
+- A loopback rule is not reported; a rule that accepts only established traffic,
+  or a mark no rule sets, is an INFO (`firewall_drivers.iptables_accept_conditional`);
+  a rule that can let a new connection in keeps its 2 points.
+- Only while UFW is active: with UFW off, the INPUT chain is the host's own
+  ruleset, judged by the iptables/nftables section, which scores the chains'
+  default policies and no rule one by one — an ACCEPT rule there is the ruleset's
+  own policy, not a bypass of anything. In 0.25.1, on k3s with UFW off,
+  kube-router's mark rule cost 2 as a bypass on top of the 3 that section takes
+  for an INPUT policy of ACCEPT; in 0.26.0 it costs nothing in either section, and
+  the 3 for the policy stay.
+- **A mark rule is judged by who sets the mark.** Measured on the same bench: a
+  `-t mangle -A PREROUTING -p tcp --dport 8099 -j MARK --set-xmark 0x20000/0x20000`
+  opened 8099 through `-m mark --mark 0x20000/0x20000 -j ACCEPT`, which the first
+  0.26.0 tree called conditional. A mark rule is now treated as a possible inbound
+  bypass — 2 points — when a new packet can carry the mark it accepts: unmarked (a match on an unset bit), or
+  marked by a rule of the raw, mangle or nat table, read table by table
+  (`iptables -t raw -S`, `-t mangle -S`, `-t nat -S`), or by a rule above it in
+  filter INPUT, the user chains it jumps to included (`iptables -S`); value and bits compared (kube-proxy, which marks in nat, sets
+  0x4000: it does not feed a match on 0x20000). This applies to an ACCEPT rule
+  whose only match is the mark: whatever packets a setter marks, that rule accepts
+  them; a rule that also matches a port is judged as a port rule. Measured with
+  iptables 1.8.10
+  (nf_tables): `iptables -t raw -A PREROUTING -p tcp --dport 8099 -j MARK
+  --set-xmark 0x20000/0x20000` was accepted and opened 8099, and so did the same
+  rule in `-t nat` PREROUTING, `-t mangle` PREROUTING and INPUT, and in filter
+  INPUT above the mark rule; below it, nothing opened. Found by the last review,
+  measured: a MARK in a user chain of the filter table jumped from INPUT above the
+  mark rule opened 8099, nested one chain deeper too, while BOB called the rule
+  conditional; jumped below it, nothing opened. Only the inbound path counts:
+  a rule in PREROUTING or INPUT, or in a chain jumped to from them — measured, a
+  MARK in mangle OUTPUT or POSTROUTING opened nothing; in a user chain jumped from
+  mangle PREROUTING it opened 8099, jumped from OUTPUT only it did not. Marks are
+  followed in the order a new packet meets them — every table's PREROUTING, then
+  INPUT: a MARK sets the packet's mark, a CONNMARK the connection's, and only a
+  restore that comes after copies the connection's bits to the packet, as far as
+  its masks let it. Measured: CONNMARK `--set-xmark` alone, restored with masks
+  that miss the bits, or restored before it is set left 8099 closed; set then
+  restored, 8099 opened. Measured again after review, each case in a fresh network
+  namespace (Linux 7.0), with iptables 1.8.10 on both backends — iptables-nft (the
+  nf_tables backend, not native nftables rules) and iptables-legacy: the MARK
+  rule accepted (exit 0), listed by `-S` (by nft as `meta mark set`), and the SYN
+  counted by the mark rule. In raw or mangle PREROUTING it opened 8099. In nat
+  PREROUTING it marks only the first packet of a connection, and only while
+  conntrack is in use: with an `ESTABLISHED,RELATED` accept, as every UFW ruleset
+  has, 8099 opened; with no conntrack rule, nat saw no packet and 8099 stayed
+  closed. The UFW-bypass check runs only with UFW active. With `iptables` the
+  legacy backend, BOB read the same `-S` lines and deducted the same way.
+- The same "only beside an active UFW" holds for raw FORWARD ACCEPT rules (1 point
+  each) and for an nftables ruleset beside UFW (1 point). That last point is a flat
+  one for a second ruleset BOB does not evaluate rule by rule, not a measured
+  bypass.
+
+Replayed on Ubuntu Server 26.04 with the three rules: UFW inactive 1/10 → 3/10
+(the inactive-UFW cap), no bypass reported; UFW active 4/10 → 8/10, 2 points for
+the `--dport` rule only — 8099 was open from the LAN.
+
+### 3. A host without UFW is not told about UFW
+
+- The UFW rule analysis runs only while UFW is active: a host without UFW was
+  told "No duplicate UFW rules detected".
+- The UFW log analysis runs only where UFW is installed — measured in a namespace
+  with `ufw` masked, 0.25.1 read the host's own `ufw.log`. With UFW inactive, an
+  empty log is INFO, not OK.
+- Texts that named UFW where another firewall decides say "firewall rule" or name
+  the firewall: `ports.system_port`, `ipv6.firewalld_v6`.
+
+### 4. awall, Alpine's firewall front-end
+
+Measured on Alpine 3.24 (awall 1.12): with one policy enabled (deny inbound, ssh
+kept), 0.25.1 said "no active firewall front-end (UFW/firewalld)" and took 2
+points for each of the three INPUT rules awall wrote and 1 for each of its two
+FORWARD rules, all "bypassing UFW": *Firewall & Network* 2/10. Now:
+
+- awall and its enabled policies are named in the banner and in the firewall
+  section (`firewall.awall_active`); 10/10 on that host;
+- with awall installed and no policy enabled, the alert says so, prints no
+  command — choosing a policy is the operator's — and the domain is capped
+  (0.25.1: "neither UFW nor firewalld installed", and `apk add ufw`);
+- when `awall list` fails, BOB does not claim that no policy is enabled;
+- a policy enabled and not loaded is said as such. Measured in Alpine 3.24.2:
+  `awall enable web` without `awall activate` left INPUT at policy ACCEPT with no
+  rule — the alert said no policy was enabled; it now says awall has `web`
+  enabled and not loaded, and still prints no command.
+
+A policy that an enabled one imports is listed `required` by `awall list` and is
+loaded too (measured in Alpine 3.24.2: `web` importing `base`); it is named as
+`base (required)`. awall is read only where neither UFW nor firewalld is active.
+
+### 5. Docker's firewall backend
+
+Measured on openSUSE Leap 16 with Docker 29.4.0 and firewalld: a published port
+answered from the LAN whatever the zone said, with the iptables and with the
+nftables backend.
+
+- Docker's backend is read (`docker info`, else `firewall-backend` in
+  `daemon.json`). Under the nftables backend there is no DOCKER-USER chain: the
+  third detail line and the alert say so and point to your own nftables rules,
+  where 0.25.1 said "via iptables" and offered DOCKER-USER.
+- `"iptables": false` turns off Docker's IPv4 rules only (an `ip6` table
+  remained). `docker.iptables_disabled` said "UFW rules apply normally", on a
+  firewalld host too; it now says Docker does not write most of its IPv4 rules
+  (Docker's own wording), so its published ports are left to the host firewall,
+  to be checked — and the
+  containers' own addresses where the network routes to them. On the measured host
+  no such rule was found and 8099, not allowed by the zone, was refused from the
+  LAN; that does not make every published or routed container port filtered by
+  itself. It also says that containers on a bridge network lose their way out (no masquerading) until you
+  write those rules — measured: the container's outbound connections failed; a
+  routed setup may differ — and that IPv6 follows its own option. The
+  `"iptables": false` option the Docker alert lists says the same. With it,
+  `ports.uncovered_firewalld_docker` ("the firewalld zone does not filter it") is
+  no longer emitted for the port.
+- `ports.uncovered_firewalld_docker` says "while Docker writes its own firewall
+  rules", not "Docker's iptables management", which the nftables backend is not.
+- **firewalld's `StrictForwardPorts`.** Measured on Debian 13 (firewalld 2.3.1,
+  Docker 26.1.5), a container publishing 8099, probed from the LAN: with
+  `StrictForwardPorts=no`, the default, 8099 answered — firewalld's forward chain
+  accepts every DNAT'd packet (`ct status dnat accept`); with `yes` it was rejected
+  (`filter_FORWARD_dnat`: `reject with icmpx admin-prohibited`). BOB reads the
+  setting as the running firewalld applies it, in its loaded forward chain — not
+  in `/etc/firewalld/firewalld.conf`: measured, the file set to `yes` without a
+  reload said yes while the loaded chain still accepted (and the other way round).
+  Unread (an iptables backend, an older firewalld), it is not taken as `yes`. With
+  `yes`, no
+  bypass alert and no bypass warning, but an INFO saying firewalld rejects what
+  Docker forwards unless the zone forwards the port, each published port listed as
+  such, and the port line no longer says the zone does not filter it. An earlier
+  attempt on the same host, before a reinstall, saw 8099 time out with the default
+  setting; it could not be reproduced (a fresh install answered, across firewalld
+  and Docker restarts), and is left unexplained. A published port that a firewalld
+  zone also forwards keeps the bypass alert: under `StrictForwardPorts=yes`,
+  firewalld 2.3.1 accepts DNAT'd traffic to such a port whatever the ingress zone
+  (firewalld issue #1536, confirmed upstream and still open; not reproduced here).
+  BOB reads the forward-ports of every zone for that, and with the zones unread
+  does not take any port as rejected. The port line under *Listening ports* says
+  which case it is: Docker's own rules with `StrictForwardPorts` off, the case
+  measured, or a port a zone forwards, with the issue named.
+- `--explain docker.exposed_port` is split: the commands, in order, and the
+  nftables case in *how*; what was measured and its limits in *why*. The
+  DOCKER-USER example says what it stops: new connections from other sources — a
+  connection already tracked before the rules is let through until it expires.
+
+### 6. firewalld zones bound to sources
+
+**Taken in firewalld's order.** Measured on Debian 13 (firewalld 2.3.1), from
+192.168.1.10 to a listener on 8099, with zones bobA (0.0.0.0/1) and bobB
+(128.0.0.0/1) at target ACCEPT and a DROP zone keeping ssh bound to
+192.168.1.10/32: between source zones, the lowest `ingress-priority` classifies
+a packet first, then the zone name; the first source that matches wins, not the
+narrowest. Named `aaacarve` the DROP zone closed 8099 to that host, named
+`zzzcarve` it did not; at priority −10 `zzzcarve` closed it, at +10 `aaacarve`
+did not. 0.24.3 added the declared sources up and alerted "every client … every
+port is open" either way. BOB now works out what each zone really takes, in that
+order:
+
+- the ALERT (−3) holds when the open zones take at least **99%** of the
+  **public** addresses of the family — decided: a private range kept out, the LAN
+  for instance, does not make the host less open to the internet, nor does a
+  small public one. It names what another zone classifies first ("except for
+  192.168.1.10/32 (aaacarve)"), gives the share when it is short of all of them
+  ("take > 99.9% of the public addresses … the host's firewall policy lets every
+  port in from nearly all of them") — the local policy's coverage, not a
+  reachability test from the internet —
+  or says the private ranges are not all taken;
+- below 99%, the cumulated INFO below gives the share they really take;
+- measured with 8.8.8.0/24 in `aaacarve`: the first 0.26.0 tree, which wanted
+  every public address, gave the INFO and raised *Firewall & Network* from 7/10 to
+  10/10, the headline from 8 to 9 — a /24 kept out of nearly all of the internet.
+  Found by the review; the ALERT now holds there, and the share printed "100%
+  (100%)" until the rounding was fixed ("> 99.9%");
+- the threshold is a step: 98.9% of the public addresses is INFO, 99% the ALERT.
+
+*Public addresses*, in both families, means the family's address space less a
+fixed table of non-public ranges — for IPv4 the private, loopback, link-local,
+shared, documentation, benchmarking, multicast and reserved blocks — not a count
+of allocated or reachable addresses. The public share of IPv6 is now taken within
+`2000::/3`, the global unicast block, its unallocated parts included, less the documentation ranges `2001:db8::/32` and `3fff::/20` — an
+approximation, as for IPv4: other special-purpose prefixes inside it (such as
+`2001::/23`) count as public; the full IANA registry is not applied. In this
+release's first working tree — never published: 0.25.1 had no such table — the
+table of non-public ranges held `2000::/3` inside `::/1` and missed `e000::/3`,
+so the public share was read against `e000::/3`. Found on the way and fixed; a
+guard holds the denominator (`2000::/3` less the two documentation ranges) and
+the exclusion of `e000::/3`.
+
+**A zone bound to a whole family** follows the same order — measured on Debian
+with `trusted` on 0.0.0.0/0: the DROP zone named `aaacarve` closed 8099 to
+192.168.1.10, named `zzzcarve` it did not. Its ALERT names what a zone classified
+first keeps ("except for 192.168.1.10/32 (aaacarve)"); where that leaves it less
+than 99% of the public addresses, the zone no longer stands for the host's inbound
+policy and is reported as a source zone, with the share it really takes.
+
+**Host policies, in firewalld's order.** Negative priorities run before the zone's
+rules, positive ones before its target (measured on Fedora 44 in 0.24.3). Measured
+on Debian 13 with bobA and bobB pooled as above: a policy `ANY` → `HOST`, target
+DROP, ssh allowed, dropped 8099 at priority −10 and at +10; without it 8099 was
+open. BOB judges each source zone through the host policies (since 0.24.3): under
+either policy no zone is open, and there is no ALERT.
+
+**A source zone is judged on its sources' families.** A zone of IPv4 sources at
+target ACCEPT with `rule family="ipv4" reject` was reported open — through its IPv6
+half, which no packet of those sources reaches. Measured on Debian 13 (an ssh rule
+at priority −20, the reject at −10): 8099 refused; BOB now reports nothing open.
+A MAC or ipset source keeps both families for that verdict — the family of an
+ipset is not read — and takes no part in the shares of addresses: only address
+prefixes count toward the cumulated INFO and the 99% ALERT. An open zone with such
+sources is said (`firewall.firewalld_sources_not_counted`): the share it opens is
+not established, an alert for nearly all public addresses can be missed, and the
+score reads as a ceiling.
+The interface's zone is ordered against the source zones as measured on Fedora 44
+in 0.24.3 (a source zone first at equal priority; the lower `ingress-priority`
+first otherwise): source zones it classifies first take nothing, pooled or not.
+
+**Rich rules that refuse.** Measured on Debian 13: a zone at target ACCEPT bound to
+192.168.1.10/32, with `rule family="ipv4" port port="8099" protocol="tcp"
+reject`, refused 8099 to that host and let 8097 in; BOB said "every port is open
+to those addresses" (since 0.24.3). An open zone that also holds rich rules that
+drop or reject is now followed by an INFO — what they refuse is not open, and BOB
+does not weigh them one by one (`firewall.firewalld_open_zone_refuses_some`) —
+linked to the finding in `qualified_by`; for an interface zone, a source zone and
+pooled zones alike. No points: the zone is still open to the rest.
+
+**Added up.**
+
+Two or more ACCEPT zones bound to narrow sources each got their own INFO; what
+they reach together was not said. An INFO now adds it up, per family, as a share
+of the address space and of its public addresses
+(`firewall.firewalld_source_zones_cumulated`): the addresses those zones really
+take — overlapping sources counted once, the sources of zones classified first
+left out. Measured on openSUSE with
+0.0.0.0/2 and 64.0.0.0/3: "37.5% of the IPv4 address space (42.6% of its public
+addresses)" — "37,5 %" in French. Not scored: whether those sources deserve the
+trust is not BOB's to judge. Zones whose effective sources reach at least 99% of
+the public addresses keep the ALERT above.
+
+### 7. fail2ban where there is no systemd journal
+
+Measured on Alpine 3.24 (OpenRC), with the jail fail2ban's own package ships on
+`/var/log/messages`:
+
+- **busybox syslogd** writes sshd there; two refused logins: `Total failed: 2`.
+  0.25.1 said "whether a syslog daemon writes it could not be established" — one
+  was running, and BOB knew it. The jail's own count is now read: a jail that
+  counted failures in its file is credited. Before any failure, the INFO says
+  what is missing: no journal to compare the file against, no failure counted.
+- **syslog-ng with Alpine's own configuration** sends auth to
+  `/var/log/auth.log`: the packaged jail is blind (`Total failed: 0` after a
+  refused login). 0.25.1 said "not verified". The newest SSH session opened since
+  the syslog daemon started has its `Accepted` line in another log file and not
+  in the jail's: the INFO says so, as an observation of that moment
+  (`fail2ban.ssh_jail_routed_elsewhere`: "the latest SSH login observed was logged
+  to …"), and prints a `logpath` override. Run as
+  printed (as root), the jail counted the next failure and the audit credited it.
+  That line is read only to warn, never to credit: it shows where that message
+  went, not that failures take the same route — a syslog filter on the text can
+  part them, and the INFO says so. A syslog-ng routing cannot be dated, a reload changes it with the daemon's start time
+  unchanged.
+- **An OK on partial evidence says what it rests on.** The reason was in the
+  OK's detail, which the terminal never prints for an OK. Both such OKs are now
+  followed by an INFO and carry it in `qualified_by` (JSON, webhook):
+  `fail2ban.ssh_jail_counted_caveat` (the count proves the jail received failed
+  logins through its file, not that sshd's messages still go there) and
+  `fail2ban.ssh_jail_sampled_caveat` (the 0.24.4 OK, a file holding sshd's latest
+  message and the latest failure of each kind the journal shows: not a proof that
+  every failure reaches it). No points,
+  and not a visibility key: the jail is seen. Replayed on Debian 13 with rsyslog:
+  0.25.1 printed the OK alone, 0.26.0 the OK and the INFO; score unchanged.
+
+### 8. Scheduling an audit on BusyBox crond
+
+0.25.1 refused `--install-cron` on a host without `/etc/cron.d`. On BusyBox crond
+(Alpine), a job is now a block of root's crontab, `/etc/crontabs/root`, between
+`# BEGIN BOB cron bob-<name>` and `# END BOB cron bob-<name>`; only that block is
+ever rewritten (`--manage-cron`: schedule, e-mail; removal), and each change ends
+by appending `root` to `/etc/crontabs/cron.update` — the names already waiting
+there are kept. Measured on Alpine 3.24: without
+it, crond did not re-read the file in three minutes. Installed through the wizard,
+the job ran at the scheduled minute and wrote its report; a schedule change
+rewrote the block only; removal deleted the BOB block alone, leaving the crontab
+byte for byte what it had been before the job was installed. The job
+script is POSIX `sh` (Alpine has no bash; it was `bash`). A host with neither
+`/etc/cron.d` nor `/etc/crontabs/` is still refused, and the message names both.
+
+### 9. Other texts
+
+- In French, dates are written the French way: the Python 3.10 notice says
+  "au moins jusqu'au 1er avril 2027", and the French changelogs and documents
+  no longer write ISO dates in their prose.
+- `--explain prerequisites.firewall_missing` and
+  `firewall_drivers.iptables_bypass` describe the cap and the rule reading above.
+
+### Not in this release, and known limits
+
+- Kubernetes beyond the node (the API server, a checkpoint of the cluster): 0.27.
+- For the default-filtering verdict, nftables and iptables rules are still not
+  evaluated one by one: BOB reads the chains' policies and the first rule that
+  takes every packet. The UFW-bypass check reads selected INPUT rules (§2), not the
+  whole ruleset. A mark set by an nftables rule (`meta mark set`) is not read as a
+  mark setter: only the iptables tables are. MARK (`--set-mark`, `--and-mark`,
+  `--or-mark`, `--xor-mark`, all printed by `iptables -S` as `--set-xmark`,
+  measured), CONNMARK, HMARK (measured: an offset of 0x20000 opened 8099 — BOB
+  missed it before this release's last review) and TPROXY `--tproxy-mark` (read,
+  not measured) are followed; any other way of setting a mark is not.
+- For a raw netfilter ruleset, the default-filtering verdict and the cap use the
+  IPv4 default; whether its ip6 or inet tables filter IPv6 inbound is not
+  evaluated (`ipv6.netfilter_v6` says so; a limit since 0.24.1, planned for 0.27).
+  firewalld's source-zone coverage is assessed for IPv6 separately (§6).
+  A host that filters IPv4 by default and leaves IPv6 open is neither capped nor
+  deducted for IPv6, and its score is not marked as a ceiling for it.
+- Front-ends are judged one at a time: awall is read only where neither UFW nor
+  firewalld runs, and rules of several front-ends present together are not each
+  audited.
+- Docker's nftables backend is experimental in Docker Engine 29 (measured on 29.1.3
+  and 29.4.0): what §5 says of it may change with later releases. firewalld sources are added up for IPv6 as for
+  IPv4, but not measured on a host: none with a global IPv6 address was at hand.
+  The guards run the IPv6 cases through the same check — the order, the first
+  match, what a zone classified first takes, the step from 98.9% to 99%.
+- The count caveat (§7) was checked in tests and in the terminal rendering, not
+  replayed on a host: the Alpine host had been cleaned by then.
+- A printed fix through `doas` needs a terminal: `doas` without a tty refuses, as
+  `doas` does.
+
+### Counters
+
+Tests 14021 → **14673**, mutations 703 → **819**, locale keys 2936 → **2969** per
+language; `--explain` keys (226), CIS references (226) and sections (57)
+unchanged.
+
+### Guards
+
+`test_v0260_no_firewall_is_capped.py`, `test_v0260_raw_accept_reach.py`,
+`test_v0260_no_ufw_no_ufw_findings.py`, `test_v0260_awall_named.py`,
+`test_v0260_docker_firewall_backend.py`, `test_v0260_firewalld_sources_cumulated.py`,
+`test_v0260_firewalld_nested_sources.py`, `test_v0260_final_reject_rule.py`,
+`test_v0260_fail2ban_without_journal.py`, `test_v0260_cron_in_root_crontab.py`.
+Every guard has a mutation that brings its defect back.
+
 ## [0.25.1] — 2026-10-18
 
 **A patch: commands, findings and advice as the host in front of BOB has them —

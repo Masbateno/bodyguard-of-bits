@@ -66,12 +66,23 @@ to regenerate one.
 
 ### Hosts without `/etc/cron.d`
 
-BOB writes its jobs to `/etc/cron.d`, the directory cronie, cron and Vixie-cron derivatives read. BusyBox crond (Alpine) reads `/etc/crontabs/` and has no `/etc/cron.d`: since 0.25.1 the wizard refuses there before the first question and says to add a line running `bob --quiet --detailed` to root's crontab (`crontab -e` as root). Before, it asked everything, wrote the script, failed on the cron file and left the script behind (measured on Alpine 3.24).
+BOB writes its jobs to `/etc/cron.d`, the directory cronie, cron and Vixie-cron derivatives read. BusyBox crond (Alpine) reads one file per user in `/etc/crontabs/` and has no `/etc/cron.d`. Since 0.26.0 a job there is a block of root's crontab, `/etc/crontabs/root`, between two marker lines:
+
+```
+# BEGIN BOB cron bob-NAME
+# BOB cron — generated YYYY-MM-DD by bob --install-cron
+# name: NAME
+# email: 
+0 3 * * *  /usr/local/bin/bob-NAME
+# END BOB cron bob-NAME
+```
+
+Only that block is ever rewritten — by `--manage-cron` (schedule, e-mail) and on removal; the lines the system or you put in the crontab stay as they are. Each change ends by writing `root` to `/etc/crontabs/cron.update`, which is what makes BusyBox crond re-read the file (measured on Alpine 3.24: without it, an edit was not picked up in three minutes; with it, within a minute). 0.25.1 refused the wizard on such a host.
 
 ### Files created
 
 - `/usr/local/bin/bob-{name}` — wrapper script
-- `/etc/cron.d/bob-{name}` — system cron entry
+- `/etc/cron.d/bob-{name}` — system cron entry (BusyBox crond: a `# BEGIN/END BOB cron bob-{name}` block of `/etc/crontabs/root` instead)
 
 ---
 

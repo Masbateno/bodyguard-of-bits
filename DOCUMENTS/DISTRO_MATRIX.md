@@ -152,7 +152,7 @@ the tested host is in the last column where it differs.
 | Ubuntu, Mint, Debian, Pi OS | ufw / nftables | **✓** ufw active↔inactive, v6 awareness | ufw inactive |
 | Fedora, openSUSE | firewalld | **✓** credited by zone (v0.20.2); rich-rules/forward-ports shown (v0.20.4); judged by the zones of the interfaces, the policies, the sources and the address family since 0.24.3 (see the 0.24.2 / 0.24.3 field passes) | firewalld active |
 | Kali | nftables (no ufw) | **✓** underlying nft/iptables layer inspected | no active firewall |
-| Alpine | **none by default** (awall available) | **✓** honest "no firewall / unprotected"; **✗** awall front-end not recognised (soft — nft/iptables layer still inspected) | no firewall |
+| Alpine | **none by default** (awall available) | **✓** honest "no firewall / unprotected", capped like an inactive UFW since 0.26.0; **✓** awall named as the front-end with its enabled policies, and "installed, no policy enabled" said as such (0.26.0, see the 0.26.0 Alpine field pass) | no firewall; awall measured active and idle |
 
 **BOB status:**
 - **✓ (0.21.3)** firewalld that is **installed but stopped** used to show
@@ -607,7 +607,7 @@ checks plus, where it applies, `su_unrestricted` (root with a usable password).*
 
 | Gap | Sev. | § | Note |
 |-----|------|---|------|
-| awall front-end not recognised | soft | §4 | The Alpine-native firewall builder is not read as a front-end, but the underlying nft/iptables ruleset it generates *is* inspected — so a host with active awall rules is not read as unprotected. Low urgency. |
+| ~~awall front-end not recognised~~ | — | §4 | **Resolved in 0.26.0** (see the 0.26.0 Alpine field pass): named in the banner and the firewall section; its own INPUT/FORWARD rules no longer cost points as "bypassing UFW". |
 | `package_integrity` timeout is a hang-guard, not a slowness cap | decision | §10 | `debsums -c` / `rpm -Va` re-hash **every** packaged file — O(installed files) — so a full install legitimately takes minutes: measured **556 s** (Pi Zero W) and **511 s** (Mint 22.3 desktop, x86 4-core). A 60 s then 300 s wall-clock kill destroyed those valid scans (honest "result not established", group-killed, never a false "clean" — but no result). The timeout's real job is to stop a *wedged* process, not to cap a slow-but-progressing one, and the check is opt-in (`--exhaustive`), so it is a generous **hang-guard**: `_VERIFY_TIMEOUT` raised 60 → **1800 s** (30 min) in 0.23.0 — any real scan finishes well under it (Pi 556 s, Mint 511 s), a true hang stays bounded, and an operator can Ctrl-C. Parser validated against real output (podman Debian/Fedora/Arch) **and the full tamper round-trip on real hardware** (Mint, 1800 s: a clean scan completes and lists 21 genuinely-changed non-config files; tampering `/usr/bin/base64` raises it to 22 with base64 first). |
 | ~~SUID `find` skips under CPU starvation~~ | — | §10 | **Resolved in 0.22.1**: `_FIND_TIMEOUT` raised 15 → 30 s. |
 
@@ -667,7 +667,7 @@ firewalld`, a probe from another LAN host and a new audit.*
 | Gap | Sev. | § | Note |
 |-----|------|---|------|
 | IPv6 source forms (`::/1` + `8000::/1`) | soft | §1 | Covered by the guards only: the probing host had no global IPv6 address. |
-| Exposure split across zones by narrower, non-adding sources | soft | §1 | Each such zone shows an INFO; BOB does not weigh how much of a family they reach together short of the whole. |
+| ~~Exposure split across zones by narrower, non-adding sources~~ | — | §1 | **Resolved in 0.26.0** (see the 0.26.0 firewalld field pass): an INFO adds up what the zones reach together, as a share of the family's space and of its public addresses; not scored. |
 
 
 ### 0.24.4 field pass — service checks against the service's own answer, fixes applied as printed
@@ -691,7 +691,7 @@ with an automatic rollback first, and access checked between cases.*
 | Gap | Sev. | § | Note |
 |-----|------|---|------|
 | nftables rules are not evaluated one by one | soft | §1 | BOB reads base-chain policies (family, accept-everything); `input_ok` says reachability is not established. |
-| fail2ban routing is sampled, not proven | soft | §3 | Latest sshd message and latest failure of each kind seen since rsyslog started; OpenRC / syslog-ng jails on files are not verified. |
+| fail2ban routing is sampled, not proven | soft | §3 | Latest sshd message and latest failure of each kind seen since rsyslog started. With no journal (OpenRC), since 0.26.0: the jail's own failure count credits it, and a jail whose file lacks the latest SSH session's line while another log file holds it is said blind (see the 0.26.0 Alpine field pass); a syslog-ng or busybox routing cannot be dated, so a file holding that line is not taken as proof. |
 | ~~ClamAV socket open to every local user~~ | — | §5 | **Resolved in 0.25.0**: WARN −1 (was INFO). |
 | ~~`sudo` vs Alpine's `doas`~~ | — | — | **Resolved in 0.25.0**: `doas` where there is no `sudo` (17 of 17 commands on Alpine). |
 
@@ -721,6 +721,227 @@ stage; every fix applied as printed and re-audited. Figures as published in the
 | nftables rules are not evaluated one by one | soft | §1 | Unchanged since 0.24.4, except the accept-everything first rule of a DROP chain (read above). |
 | ~~Per-user files under `doas`~~ | — | §6 | **Resolved in the 0.25.1 work tree** (`DOAS_USER`), field-verified on Alpine 3.24 (see the 0.25.1 field pass). |
 
+
+### 0.26.0 bench — no firewall, and raw INPUT ACCEPT rules
+
+*No machine on the multiboot host was up; measured instead in a network namespace
+on the development machine (user namespace, root mapped): a server namespace
+running the real ufw 0.36 from the package templates (default deny incoming),
+two listeners on 8097 and 8099, probed from a second namespace over a veth pair.
+2026-10-18.*
+
+| Raw rule put first in INPUT, ufw active | 8097 | 8099 | `iptables -L INPUT -n` shows | 0.25.1 deducted | 0.26.0 |
+|---|---|---|---|---|---|
+| none | refused | refused | — | — | — |
+| `-p tcp --dport 8099 -j ACCEPT` | refused | **open** | `ACCEPT … tcp dpt:8099` | −2 | WARN −2 |
+| `-m mark --mark 0x20000/0x20000 -j ACCEPT` | refused | refused | `ACCEPT … mark match …` | −2 | INFO |
+| `-i lo -j ACCEPT` | — | — | `ACCEPT 0 -- 0.0.0.0/0 0.0.0.0/0`, the same as an accept-all | −2 | not reported |
+| the mark rule, and `-t mangle -A PREROUTING -p tcp --dport 8099 -j MARK --set-xmark 0x20000/0x20000` (19 October) | refused | **open** | `ACCEPT … mark match …` | −2 | WARN −2 (the first 0.26.0 tree: INFO) — a mark rule admits when a raw, mangle or nat rule, or an INPUT rule above it, sets its mark |
+| the mark rule, and the same MARK in raw PREROUTING / nat PREROUTING / mangle INPUT / filter INPUT above it / filter INPUT below it (19 October, iptables 1.8.10 nf_tables — every rule accepted) | refused | open / open / open / open / **closed** | — | — | WARN −2 for the first four, INFO for the last |
+| the mark rule, and a MARK in mangle OUTPUT + POSTROUTING / in a user chain jumped from mangle PREROUTING / the same chain jumped from OUTPUT only / CONNMARK `--set-xmark` + `--restore-mark` in mangle PREROUTING (19 October) | refused | closed / **open** / closed / **open** | — | — | INFO / WARN −2 / INFO / WARN −2 — only setters on the inbound path count |
+| the mark rule, and CONNMARK `--set-xmark` alone / with a restore whose masks miss the bits / restored before it is set / set then restored (19 October) | refused | closed / closed / closed / **open** | — | — | INFO / INFO / INFO / WARN −2 — the connection's mark reaches the packet only through a restore after it |
+| the mark rule, and a MARK in a filter user chain jumped from INPUT above it / the same, nested one chain deeper / jumped below it (20 October) | refused | **open** / **open** / closed | — | — | WARN −2 / WARN −2 / INFO (before the fix: INFO for all three) — filter INPUT's jumps are followed |
+| no UFW, INPUT DROP and the mark rule, each case in a fresh namespace (Linux 7.0), iptables 1.8.10, iptables-nft and iptables-legacy: a MARK in raw / mangle / nat PREROUTING, without then with an `ESTABLISHED,RELATED` accept (20 October) | — | raw, mangle: **open** both ways; nat: closed without, **open** with — nat sees only a connection's first packet, and none while conntrack is unused | — | — | with `iptables` the legacy backend and UFW taken as active: WARN −2 for raw and nat |
+
+With the three rules in place, BOB's own collection run in that namespace read the
+`-S` lines; 0.25.1's module on the same ruleset deducted −6, 0.26.0 −2. With ufw
+off, 0.26.0 reports none of them: the INPUT chain is then the host's ruleset,
+judged by the iptables/nftables section (on k3s, kube-router's mark rule had cost
+2 there on top of that section's 3).
+
+No UFW at all (the ufw binary masked in a mount namespace, the real iptables of the
+namespace, policy ACCEPT): 0.25.1 printed a *UFW RULES ANALYSIS* section with "No
+duplicate UFW rules detected", and a *UFW LOG ANALYSIS* section that read the host's
+own ufw log (`logs.local_dominance`); *Firewall & Network* 6/10. 0.26.0 prints
+neither section and caps the domain at 3/10.
+
+No firewall at all: the openSUSE Leap 16 audit of the 0.25.1 pass (firewalld
+stopped, an nftables ruleset filtering nothing) scored *Firewall & Network* 7/10,
+the Ubuntu Server audit with UFW installed and off 3/10. 0.26.0 caps the first at
+3 as well — replayed on the host, below.
+
+### 0.26.0 field pass — source-bound ACCEPT zones on openSUSE
+
+*openSUSE Leap 16.0, firewalld 2.1.2, 18 October 2026: zones `bobA` (source
+0.0.0.0/2) and `bobB` (64.0.0.0/3), target ACCEPT, runtime sources; both zones
+deleted afterwards.*
+
+| | 0.25.1 | 0.26.0 |
+|---|---|---|
+| findings | one INFO per zone, nothing more | the same two INFO, plus "The sources bound to firewalld zones bobA, bobB, each of which accepts every packet from its sources, together cover 37.5% of the IPv4 address space (42.6% of its public addresses)" — in French with a decimal comma (wording as released; measured with the first wording, same figures) |
+| score | unchanged | unchanged (decided: BOB cannot judge whether those sources deserve the trust) |
+
+Two zones covering a whole family together keep the existing ALERT; one zone alone
+keeps its own INFO.
+
+### 0.26.0 field pass — Docker's firewall backend on openSUSE
+
+*openSUSE Leap 16.0, firewalld active (zone `public`: dhcpv6-client, ssh), Docker
+29.4.0 from the distribution (installed for the pass, removed afterwards with its
+15 packages and the `docker-forwarding` policy it wrote; host rebooted). A
+container publishing 8099, one making outbound connections, probed from the LAN.
+Each backend measured from a clean state: after an iptables-backend run, Docker's
+own `FORWARD` policy DROP stayed behind and made the nftables backend look
+filtered — the nftables rows below come from a fresh boot.*
+
+| `daemon.json` | `docker info` backend | 8099 from the LAN | DOCKER-USER | container outbound | 0.26.0 says |
+|---|---|---|---|---|---|
+| (shipped file) | `iptables+firewalld` | answers | yes | works | bypass via iptables; option 2 with DOCKER-USER |
+| `"firewall-backend": "nftables"` | `nftables+firewalld` | answers | **no** | works | bypass via **nftables**; option 2 with your own nftables rules |
+| the same + `"iptables": false` | `nftables+firewalld` | refused | no | no NAT | iptables disabled, IPv4 rules not written (an `ip6 docker-bridges` table remained); the port line says the zone governs it |
+
+Before 0.26.0 BOB said "via iptables" and offered DOCKER-USER under the nftables
+backend, kept "the zone does not filter it" for the port with `"iptables": false`,
+and said "UFW rules apply normally" on this firewalld host. With the nftables
+backend Docker refused to start while `net.ipv4.ip_forward` was 0 (it sets it itself
+only with the iptables backend). openSUSE ships an `/etc/docker/daemon.json`
+(log options, `selinux-enabled`): the user-namespace fix, which writes the file only
+where none exists, does nothing there, as its detail already says.
+
+### 0.26.0 field pass — a stopped and a silent firewalld on openSUSE
+
+*openSUSE Leap 16.0, firewalld 2.1.2, real, 18 October 2026; 0.25.1 and the 0.26.0
+tree on the same host state. firewalld active and enabled again afterwards, nothing
+left in `/etc/firewalld/zones`.*
+
+| Host state | 0.25.1 | 0.26.0 |
+|---|---|---|
+| firewalld active | score 8, *Firewall & Network* 10/10, `firewall_rules` OK lines | 8, 10/10, no `firewall_rules` section |
+| firewalld stopped | 7, 7/10, "No active firewall — neither UFW nor firewalld is installed", risk HIGH | 6, **3/10**, "… firewalld is installed but not running", the cap note, risk HIGH; no UFW sections |
+| firewalld active, `firewall-cmd` failing with no output (a wrapper first on `PATH`) | 6, 6/10, "No active firewall", HIGH floor — on a host firewalld was filtering | 7 as an upper bound, `firewall.firewalld_unreadable` INFO, risk MEDIUM, no floor |
+| the same, `firewall-cmd` hanging | as above | as above; both audits finish past the timeout (93 s for the two) |
+
+The replay found two defects in the first 0.26.0 tree, both fixed before this table:
+firewalld 2.1.2 prints `--state` "not running" on **stderr**, stdout empty, exit 252
+— read as "unreadable", a stopped firewalld lost its alert and its cap (10/10); and
+the cap line of the breakdown said "neither UFW nor firewalld is installed" under the
+"installed but not running" alert.
+
+### 0.26.0 field pass — raw INPUT ACCEPT rules on Ubuntu Server
+
+*Ubuntu Server 26.04.1, ufw 0.36 installed, real, 18 October 2026. Three raw rules put
+first in INPUT: `--dport 8099 -j ACCEPT`, `-i lo -j ACCEPT`, a `-m mark --mark
+0x20000/0x20000 -j ACCEPT` rule as kube-router writes it; listeners on 8097 and 8099;
+probed from the LAN. 0.25.1 and the 0.26.0 tree run on the same host state;
+everything removed afterwards, the heavy snap services paused during the pass and
+restarted.*
+
+| UFW | 8099 / 8097 from the LAN | 0.25.1 | 0.26.0 |
+|---|---|---|---|
+| inactive | — | *Firewall & Network* 1/10, `iptables_bypass` −6 (the three rules, `-i lo` included), *UFW RULES ANALYSIS* shown | 3/10 (the inactive-UFW cap), no `iptables_bypass`, no UFW rules section; the empty UFW log is INFO |
+| active (default deny) | **8099 open**, 8097 filtered, SSH up | 4/10, −6 | 8/10, −2 for the `--dport` rule only; the mark rule INFO; `-i lo` not reported |
+
+### 0.26.0 bench — a chain at policy accept that ends by rejecting everything
+
+*Network namespace on the development machine (user namespace, root mapped), a
+listener on 8097 and 8099 probed from a second namespace over a veth pair, `ufw`
+masked. 19 October 2026.*
+
+| Ruleset (8097 accepted, then) | 8099 | 0.25.1 | 0.26.0 before the fix | 0.26.0 |
+|---|---|---|---|---|
+| nft `policy accept`, last rule `reject` | refused | "no active firewall", −3 | the same, capped at 3/10 | filtering (`firewall.netfilter_active`), no deduction |
+| iptables-nft `-P INPUT ACCEPT`, last `-j REJECT` | refused | the same | the same | the same as nft; the `-i lo` rule, printed `iifname "lo" counter … accept`, no longer read as missing (−1) |
+
+A `reject` with a match (`ip protocol tcp … reject with tcp reset`) leaves the rest to
+the policy; an accept-everything rule above the reject wins.
+
+### 0.26.0 field pass — Docker beside firewalld, StrictForwardPorts, on Debian
+
+*Debian 13.7, firewalld 2.3.1 and docker.io 26.1.5 installed for the pass (73 packages
+with tcpdump, purged afterwards), a busybox container publishing 8099, probed from
+192.168.1.10; nftrace and tcpdump on the host. 19 October 2026.*
+
+| `StrictForwardPorts` | 8099 from the LAN | what firewalld did | BOB |
+|---|---|---|---|
+| `no` (default) | open | `filter_FORWARD`: `ct status dnat accept` | ALERT, the port bypasses the host firewall (−1 local) |
+| `yes` | **rejected** (`No route to host`) | `filter_FORWARD_dnat`: `reject with icmpx admin-prohibited` | the first 0.26.0 tree: the same ALERT; now INFO, no bypass, no deduction |
+
+A first attempt, before purging and reinstalling, saw 8099 time out with `no`, across
+restarts and with a `docker-forwarding` policy added by hand (the SYN reached the
+container, replies left docker0); it could not be reproduced on the fresh install and
+is unexplained. Docker 26.1.5 created no `docker-forwarding` policy (Docker 29.4.0 on
+openSUSE did).
+
+The setting as loaded, not as written (firewalld 2.3.1 alone, 44 packages, purged
+afterwards): started with `no`, the forward chain held `ct status dnat accept`;
+the file set to `yes` without a reload, the chain still accepted; after
+`firewall-cmd --reload`, `ct status dnat jump filter_FORWARD_dnat`; set back to `no`
+without a restart, the chain still jumped. BOB now reads the loaded chain.
+
+### 0.26.0 field pass — firewalld source zones nested in each other, on Debian
+
+*Debian 13.7, firewalld 2.3.1 installed for the pass (twice) and purged afterwards with the
+47 packages it brought (15 of them kept by `autoremove` as recommended by installed
+packages, purged by name), real, 19 October 2026. Runtime sources only; a listener on
+8099; probed from 192.168.1.10. Zones bobA (0.0.0.0/1) and bobB (128.0.0.0/1), target
+ACCEPT; a DROP zone keeping ssh, bound to 192.168.1.10/32.*
+
+| DROP zone | 8099 from 192.168.1.10 | 0.26.0 before the fix | 0.26.0 |
+|---|---|---|---|
+| none | open | ALERT −3, "every client" | the same |
+| `aaacarve` (sorts first) | **dropped**, SSH up | ALERT −3, "every client … every port is open" | ALERT −3, "every public address … except for 192.168.1.10/32 (aaacarve)" |
+| `zzzcarve` (sorts last) | open | ALERT −3 | ALERT −3, "every client" |
+| `zzzcarve`, ingress-priority −10 | **dropped** | — | (as `aaacarve`) |
+| `aaacarve`, ingress-priority +10 | open | — | (as `zzzcarve`) |
+| `aaacarve` on 8.8.8.0/24 | open from .10 | INFO "> 99.9% of the IPv4 address space (> 99.9% of its public addresses)"; *Firewall & Network* 7/10 → 10/10, headline 8 → 9 | ALERT −3, "take > 99.9% of the public addresses … nearly all of the internet, except for 8.8.8.0/24 (aaacarve)" — decided after the review (at least 99% of the public addresses); the same configuration in the guard, not replayed on the host |
+| `trusted` on 0.0.0.0/0 alone | open | ALERT −3 | the same |
+| `trusted` on 0.0.0.0/0 + `aaacarve` | **dropped** | ALERT −3, "every client … goes through it" | ALERT −3, "… except for 192.168.1.10/32 (aaacarve)" |
+| `trusted` on 0.0.0.0/0 + `zzzcarve` | open | ALERT −3 | ALERT −3, "every client" |
+
+The same with the policy at priority +10 (firewalld installed a fifth time): 8099
+**dropped**, no ALERT. A zone of my /32 at ACCEPT with `rule priority="-20" service
+name="ssh" accept` and `rule priority="-10" family="ipv4" reject`: 8099 **refused**,
+SSH up; the first 0.26.0 tree reported the zone open through IPv6, it is now judged on
+its sources' family.
+
+bobA (0.0.0.0/1) and bobB (128.0.0.0/1) at ACCEPT, and a policy `bobpol` ANY → HOST,
+priority −10, target DROP, ssh allowed (19 October, firewalld installed a fourth
+time): 8099 **dropped**, SSH up; BOB: no ALERT, *Firewall & Network* 10/10. Policy
+removed: 8099 open.
+
+A zone at target ACCEPT bound to 192.168.1.10/32 with `rule family="ipv4" port
+port="8099" protocol="tcp" reject` (19 October, firewalld installed a third time):
+8099 **refused**, 8097 open; BOB said "every port is open to those addresses", and
+now follows that INFO with `firewall.firewalld_open_zone_refuses_some`, linked in
+`qualified_by` (terminal and `--json-full` checked on the host).
+
+Between source zones: the lowest `ingress-priority` first, then the zone name; the
+first source that matches wins, not the narrowest. `--set-ingress-priority` works in
+the permanent configuration only (runtime refused). Found on the way: the IPv6
+public-address table, wrong since the first 0.26.0 tree, and a share printed "100%"
+short of all of it.
+
+### 0.26.0 field pass — Alpine: cron in root's crontab, awall, fail2ban with no journal
+
+*Alpine 3.24 (OpenRC, BusyBox v1.37.0, Python 3.14.7), real, 18 October 2026. 0.25.1
+and the 0.26.0 tree run on the same host state. awall 1.12, fail2ban 1.1 and
+syslog-ng 4 installed from apk for the pass and removed afterwards (iptables, pulled
+in by awall, went with it, as before the pass).*
+
+| Measured | 0.25.1 | 0.26.0 |
+|---|---|---|
+| `--install-cron` (BusyBox crond, no `/etc/cron.d`) | refused before the first question | a block between `# BEGIN BOB cron bob-NAME` / `# END …` in `/etc/crontabs/root`, then `root` in `cron.update` (without it crond did not re-read the file in three minutes); crond ran the job at the scheduled minute and the report was written; a schedule change rewrote the block only; removal left the crontab byte for byte as before |
+| awall, one policy enabled (deny inbound, ssh kept) | "no active front-end (UFW/firewalld)"; *Firewall & Network* 2/10: −2 × 3 INPUT and −1 × 2 FORWARD rules awall wrote, all "bypassing UFW" | awall and its policy named in the banner and the firewall section; 10/10 |
+| awall installed, no policy enabled, chains open | "neither UFW nor firewalld installed", `apk add ufw` printed | "awall is installed but no policy is enabled"; no command; capped at 3/10 |
+| fail2ban's packaged jail (`/var/log/messages`), busybox syslogd, two refused logins: `Total failed: 2` | "whether a syslog daemon writes it could not be established" — one was running | SSH jail credited on its own count, followed by an INFO saying it rests on that count (routing changed since would not show) |
+| same, before any failure (`Total failed: 0`) | same line | "a syslog daemon runs, but with no systemd journal to compare against and no failure counted … not verified" |
+| syslog-ng with Alpine's own `syslog-ng.conf` (auth to `/var/log/auth.log`), a refused login: `Total failed: 0` — the jail is blind | "not verified" | the latest SSH session's `Accepted` line is in `/var/log/auth.log`, not in `/var/log/messages`: said, with a `logpath` override; run as written (as root, `doas` dropped — doas without a tty refuses), the jail counted the next failure and the audit credited it |
+
+The sampled-file caveat (the 0.24.4 OK) was replayed on Debian 13.7 (real, 19
+October 2026; rsyslog and fail2ban installed for the pass and purged afterwards): a
+jail on `/var/log/auth.log`, two refused logins, `Total failed: 2`. 0.25.1 printed
+the OK alone; 0.26.0 prints it followed by the INFO, and `--json-full` gives the OK
+`qualified_by: ["fail2ban.ssh_jail_sampled_caveat"]`. Score unchanged (8/10, not a
+ceiling).
+
+awall `required` (19 October, in an Alpine 3.24.2 container): with `web` importing
+`base`, `awall enable web` left `awall list` printing `base required` and `web
+enabled`; BOB named `web` only, and now names `web, base (required)`.
+
+Measured along the way: syslog-ng 4 names itself `syslog-ng-main` in
+`/proc/<pid>/comm`; a restarted fail2ban did not count failures already in its
+file, within `findtime`; stopping OpenRC's `syslog` stops `crond` (`need logger`),
+which does not come back when a logger starts again.
 
 ### 0.25.1 field pass — doas on Alpine
 
@@ -825,9 +1046,9 @@ privileged, one mounting `/etc`, one non-root. No code change came out of it.*
 
 | Gap | Sev. | § | Note |
 |-----|------|---|------|
-| `--install-cron` / `--manage-cron` on BusyBox crond (`/etc/crontabs/`) | soft | §1 | Refused with an explanation in 0.25.1; installing into a crontab is a feature of its own (0.26.0 candidate). |
-| `firewall_drivers.iptables_bypass` deducts 2 for every INPUT rule whose target is ACCEPT, whatever it matches | soft | §4 | Measured on k3s: kube-router's rule accepting only packets it marked as allowed by a network policy (`mark match 0x20000/0x20000`) read as a "raw ACCEPT rule bypassing UFW", with ufw inactive. Changing it changes scores → planned for 0.26.0. |
-| UFW-worded OK lines on hosts without UFW (`firewall_rules.no_duplicates`, `firewall_rules.no_open_any`, `logs.*` "UFW log source", "No UFW BLOCK events") | soft | §4 | Seen again on openSUSE (firewalld, no ufw); first noted on the Pi Zero (v0.18.1). Nothing deducted; they credit an absence of UFW rules on a host that has no UFW. Planned for 0.26.0: the keys emitted on those hosts change. |
+| ~~`--install-cron` / `--manage-cron` on BusyBox crond (`/etc/crontabs/`)~~ | — | §1 | **Resolved in 0.26.0** (see the 0.26.0 Alpine field pass): a job is a marked block of root's crontab. |
+| ~~`firewall_drivers.iptables_bypass` deducts 2 for every INPUT rule whose target is ACCEPT, whatever it matches~~ | — | §4 | **Resolved in 0.26.0** (see the 0.26.0 bench above): reported only while UFW is active, read with `iptables -S`, deducted only for a rule that can let a new connection in. |
+| ~~UFW-worded OK lines on hosts without UFW (`firewall_rules.no_duplicates`, `firewall_rules.no_open_any`, `logs.*` "UFW log source", "No UFW BLOCK events")~~ | — | §4 | **Resolved in 0.26.0** (see the 0.26.0 bench above): UFW rules analysed only while UFW is active, UFW logs only where UFW is installed. |
 
 ---
 © 2026 Cédric Clauzel

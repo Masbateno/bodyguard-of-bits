@@ -572,7 +572,7 @@ class TestValidateCustomCron:
 class TestBuildScriptContent:
     def test_starts_with_shebang(self):
         script = build_script_content("admin@example.com", "/var/log/bob")
-        assert script.startswith("#!/bin/bash\n")
+        assert script.startswith("#!/bin/sh\n")
 
     def test_quotes_email(self):
         # shlex.quote should wrap simple addresses without modification.
@@ -647,7 +647,7 @@ class TestBuildScriptContent:
         assert "export PYTHONPATH=" not in script
         # The script must still be a script: dropping the line must not eat
         # the blank line separating the header from the audit command.
-        assert script.startswith("#!/bin/bash")
+        assert script.startswith("#!/bin/sh")
         assert "--quiet --detailed" in script
         assert "RC=$?" in script
 

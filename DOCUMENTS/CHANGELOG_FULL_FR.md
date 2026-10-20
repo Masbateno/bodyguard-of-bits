@@ -6,6 +6,127 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.26.0] — 20-10-2026
+
+**Une version mineure, BREAKING (scores) : le pare-feu jugé tel que l'hôte l'a, au-delà d'UFW — aucun filtrage entrant du tout, des règles iptables brutes, awall, Docker sous nftables, des zones firewalld rattachées à des sources — ainsi que fail2ban et cron là où il n'y a ni systemd ni `/etc/cron.d`. Mesuré sur openSUSE Leap 16, Ubuntu Server 26.04, Alpine 3.24 et Debian 13 réels, et dans un espace de noms réseau faisant tourner le vrai ufw.**
+La formule globale du score ne change pas — ce que *Pare-feu & Réseau* retire, plafonne et planche change, BREAKING pour les scores, ci-dessous ; aucun changement de schéma JSON ni de colonnes CSV ; aucune section, clé `--explain` ni référence CIS n'est ajoutée ou retirée ; aucune clé de constat n'est renommée ni retirée.
+
+**BREAKING (scores).** Le domaine *Pare-feu & Réseau* bouge, et le score global avec lui :
+
+- **à la baisse** quand BOB établit qu'aucun filtrage entrant par défaut n'est actif — ni UFW, ni firewalld, ni awall qui filtre, et aucune chaîne netfilter qui refuse l'entrant par défaut (des règles qui bloquent certains ports ne sont pas pesées une à une) : plafonné à 3/10, le plafond qu'avait déjà un UFW inactif seul (openSUSE, firewalld arrêté : 7/10 → 3/10) ;
+- **à la hausse** là où des règles iptables brutes, ou les règles écrites par un autre front-end de pare-feu qu'UFW, étaient comptées comme « contournant UFW » (Ubuntu avec UFW inactif : 1/10 → 3/10 ; avec UFW actif : 4/10 → 8/10 ; Alpine avec une politique awall : 2/10 → 10/10) ;
+- **plus de plancher** au risque HIGH là où `firewall-cmd` ne répond rien : ce pare-feu est signalé comme non établi, pas comme absent ;
+- **à la hausse** là où une chaîne à politique accept se termine par une règle qui bloque ou rejette tout paquet restant : BOB lisait « aucun pare-feu » (−3, et le nouveau plafond), alors que la chaîne refusait ce qu'elle n'acceptait pas ;
+- **à la hausse de 3 dans le domaine** là où des zones de sources firewalld mises en commun sur toute une famille perdent plus de 1 % des adresses publiques au profit d'une zone que firewalld classe en premier — l'ALERT de 0.24.3 devient l'INFO cumulée (non mesuré sur un hôte doté d'une telle plage ; l'ordre sur lequel cela repose l'est, §6) ; et **à la baisse de 3** là où elles prennent au moins 99 % des adresses publiques sans couvrir toute une famille, ce que 0.24.3 laissait sans note.
+
+**Constats qui changent.** Douze nouvelles clés de constat : `firewall.firewalld_unreadable`, `firewall_iptables.firewalld_unreadable`, `firewall_drivers.iptables_accept_conditional`, `firewall.awall_active`, `firewall.firewalld_source_zones_cumulated`, `fail2ban.ssh_jail_routed_elsewhere`, `fail2ban.ssh_jail_counted_caveat`, `fail2ban.ssh_jail_sampled_caveat`, `firewall.firewalld_open_zone_refuses_some`, `docker.firewalld_strict_forward_ports`, `docker.exposed_firewalld_strict`, `firewall.firewalld_sources_not_counted` (INFO, sans points). Sur un hôte où UFW n'est pas actif, l'analyse des règles UFW (`firewall_rules.*`) et les constats de contournement d'UFW (`firewall_drivers.iptables_bypass`, `iptables_forward_bypass`, `nftables_parallel`) ne sont plus émis, ni l'analyse des journaux UFW (`logs.*`) là où UFW n'est pas installé. Un niveau change : `logs.empty` est INFO, et non OK, tant qu'UFW est inactif. Les nouveaux textes sous des clés existantes sont listés dans chaque section ; un lien `qualified_by` apparaît sur deux OK fail2ban (§7).
+
+### 1. Aucun filtrage entrant par défaut
+
+- **Plafonné comme un UFW inactif.** `prerequisites.firewall_missing` (ni UFW, ni firewalld, un jeu de règles netfilter qui ne filtre rien) ne coûtait rien et ne plafonnait rien : un hôte openSUSE à firewalld arrêté obtenait 7/10 en *Pare-feu & Réseau* — seul le constat nftables prenait 3 points — alors qu'un hôte Ubuntu à UFW éteint était plafonné à 3/10. Ne pas avoir de pare-feu valait mieux qu'en avoir un éteint. Le domaine est désormais plafonné à 3/10. Mesuré sur openSUSE Leap 16 (firewalld 2.1.2 arrêté) : 7/10 → 3/10, score global 7 → 6, risque HIGH dans les deux cas. Le plafond lit le comportement par défaut d'IPv4 — une chaîne `ip` ou `inet`, pas une chaîne `ip6` — et l'alerte le dit (« aucune chaîne netfilter ne refuse le trafic IPv4 entrant par défaut »). IPv6 est jugé dans la section IPv6 là où BOB le lit (UFW, firewalld) ; le filtrage IPv6 d'un jeu de règles brut n'est pas évalué (limites connues).
+- **Un firewalld que BOB ne peut pas interroger n'est pas « aucun pare-feu ».** Avec `firewall-cmd` présent mais sans état exploitable — il échouait sans rien imprimer (un refus, un délai dépassé sous charge) —, 0.25.1 alertait « Aucun pare-feu actif » et mettait un plancher HIGH au risque — mesuré sur un hôte que firewalld filtrait. C'est désormais une INFO (`firewall.firewalld_unreadable`, et `firewall_iptables.firewalld_unreadable` pour les chaînes de base, non jugées) : ni alerte, ni plafond, ni plancher, et le score se lit comme une borne supérieure. Un firewalld arrêté en est distingué : firewalld 2.1.2 écrit « not running » sur stderr et sort en 252, stdout vide — la première version de travail de 0.26.0 le lisait comme illisible et perdait l'alerte ; trouvé sur l'hôte, corrigé avant cette version.
+- **Une chaîne qui se termine en rejetant tout filtre.** Mesuré dans un espace de noms réseau, 8097 accepté : une chaîne nft à `policy accept` dont la dernière règle est un `reject` nu, et une chaîne INPUT iptables à `-P INPUT ACCEPT` terminée par `-j REJECT`, refusaient 8099. BOB ne lisait que la politique — « aucun pare-feu actif », −3 pour INPUT ACCEPT, en 0.25.1 aussi ; la première version de travail de 0.26.0 plafonnait le domaine en plus. C'est désormais la première règle qui prend tout paquet qui décide : une règle qui accepte tout, ou un `drop`/`reject` sans critère (un `reject` limité à TCP laisse le reste à la politique). L'OK dit que la chaîne se termine par cette règle, et non « politique REJECT ». L'alerte dit « aucune chaîne netfilter ne refuse le trafic IPv4 entrant par défaut », là où elle disait « la couche netfilter ne filtre pas le trafic entrant » : des règles qui bloquent certains ports, sans règle finale, ne sont pas pesées une à une.
+- **Des chaînes de base sur le même crochet.** Mesuré dans un espace de noms réseau : une chaîne qui accepte tout à la priorité 0 et une autre terminée par `reject` à la priorité 10 refusaient 8099, dans un ordre comme dans l'autre — un accept passe le paquet à la chaîne de base suivante, un reject y met fin. BOB lit chaque chaîne de base IPv4 du crochet, comme depuis 0.24.4.
+- **La règle loopback d'iptables-nft.** iptables-nft écrit un compteur dans chaque règle (`iifname "lo" counter packets 0 bytes 0 accept`) ; le motif attendait `accept` juste après `"lo"`, et un hôte doté de cette règle perdait un point pour ne pas l'avoir (`firewall_iptables.no_loopback`, depuis 0.15.4).
+- La ligne de plafond du détail du score nomme ce que nomme l'alerte (« firewalld est installé mais arrêté », « awall est installé mais aucune politique n'est activée »), et non « ni UFW ni firewalld n'est installé ».
+
+### 2. Les règles INPUT iptables brutes, jugées sur ce qu'elles laissent entrer
+
+`firewall_drivers.iptables_bypass` retirait 2 points pour chaque règle INPUT de cible ACCEPT, quoi qu'elle filtre, UFW actif ou non. Mesuré dans un espace de noms réseau faisant tourner le vrai ufw 0.36 (refus par défaut), sondé depuis un second espace : un `--dport 8099 -j ACCEPT` brut placé en tête d'INPUT ouvrait 8099 ; une règle `-m mark` (telle que l'écrit kube-router) n'ouvrait rien ; et `iptables -L INPUT -n`, que BOB lisait, n'affiche pas l'interface sans `-v` : la règle `-i lo -j ACCEPT` apparaissait comme `ACCEPT all -- 0.0.0.0/0 0.0.0.0/0`, la ligne d'une règle qui accepte tout.
+
+- Les règles sont lues avec `iptables -S`.
+- Une règle loopback n'est pas signalée ; une règle qui n'accepte que le trafic établi, ou une marque qu'aucune règle ne pose, est une INFO (`firewall_drivers.iptables_accept_conditional`) ; une règle qui peut laisser entrer une nouvelle connexion garde ses 2 points.
+- Seulement tant qu'UFW est actif : UFW éteint, la chaîne INPUT est le jeu de règles propre à l'hôte, jugé par la section iptables/nftables, qui note les politiques par défaut des chaînes et aucune règle une à une — une règle ACCEPT y est la politique même du jeu de règles, pas un contournement. En 0.25.1, sur k3s avec UFW éteint, la règle de marque de kube-router coûtait 2 points de contournement en plus des 3 que cette section retire pour une politique INPUT à ACCEPT ; en 0.26.0 elle ne coûte rien, ni dans une section ni dans l'autre, et les 3 points de la politique restent.
+- **Une règle de marque est jugée sur qui pose la marque.** Mesuré sur le même banc : un `-t mangle -A PREROUTING -p tcp --dport 8099 -j MARK --set-xmark 0x20000/0x20000` ouvrait 8099 à travers `-m mark --mark 0x20000/0x20000 -j ACCEPT`, que la première version de travail de 0.26.0 disait conditionnelle. Une règle de marque est désormais traitée comme un contournement entrant possible — 2 points — quand un nouveau paquet peut porter la marque qu'elle accepte : non marqué (un critère sur un bit non posé), ou marqué par une règle des tables raw, mangle ou nat, lues table par table (`iptables -t raw -S`, `-t mangle -S`, `-t nat -S`), ou par une règle placée au-dessus d'elle dans INPUT de filter, chaînes utilisateur qu'il appelle comprises (`iptables -S`) ; valeur et bits comparés (kube-proxy, qui marque dans nat, pose 0x4000 : il n'alimente pas un critère sur 0x20000). Cela vaut pour une règle ACCEPT dont le seul critère est la marque : quels que soient les paquets qu'une pose marque, cette règle les accepte ; une règle qui vise aussi un port est jugée comme une règle de port. Mesuré avec iptables 1.8.10 (nf_tables) : `iptables -t raw -A PREROUTING -p tcp --dport 8099 -j MARK --set-xmark 0x20000/0x20000` était accepté et ouvrait 8099, tout comme la même règle dans PREROUTING de `-t nat`, dans PREROUTING et INPUT de `-t mangle`, et dans INPUT de filter au-dessus de la règle de marque ; en dessous, rien ne s'ouvrait. Trouvé par la dernière revue, mesuré : un MARK dans une chaîne utilisateur de la table filter appelée depuis INPUT au-dessus de la règle de marque ouvrait 8099, imbriqué une chaîne plus bas aussi, alors que BOB disait la règle conditionnelle ; appelée en dessous, rien ne s'ouvrait. Seul compte le chemin entrant : une règle dans PREROUTING ou INPUT, ou dans une chaîne appelée depuis elles — mesuré, un MARK dans OUTPUT ou POSTROUTING de mangle n'ouvrait rien ; dans une chaîne utilisateur appelée depuis PREROUTING de mangle, il ouvrait 8099, appelée seulement depuis OUTPUT, non. Les marques sont suivies dans l'ordre où un nouveau paquet les rencontre — PREROUTING de chaque table, puis INPUT : un MARK pose la marque du paquet, un CONNMARK celle de la connexion, et seule une restauration placée après copie les bits de la connexion vers le paquet, autant que ses masques le permettent. Mesuré : CONNMARK `--set-xmark` seul, restauré avec des masques qui manquent les bits, ou restauré avant d'être posé laissait 8099 fermé ; posé puis restauré, 8099 s'ouvrait. Mesuré à nouveau après revue, chaque cas dans un espace de noms réseau neuf (Linux 7.0), avec iptables 1.8.10 sur les deux backends — iptables-nft (le backend nf_tables, pas des règles nftables natives) et iptables-legacy : la règle MARK acceptée (code de sortie 0), listée par `-S` (par nft comme `meta mark set`), et le SYN compté par la règle de marque. Dans PREROUTING de raw ou de mangle, elle ouvrait 8099. Dans PREROUTING de nat, elle ne marque que le premier paquet d'une connexion, et seulement quand conntrack est utilisé : avec un accept `ESTABLISHED,RELATED`, comme en a tout jeu de règles UFW, 8099 s'ouvrait ; sans règle conntrack, nat ne voyait aucun paquet et 8099 restait fermé. Le contrôle de contournement d'UFW ne tourne qu'avec UFW actif. Avec `iptables` sur le backend legacy, BOB lisait les mêmes lignes `-S` et retirait les points de la même façon.
+- Le même « seulement à côté d'un UFW actif » vaut pour les règles FORWARD ACCEPT brutes (1 point chacune) et pour un jeu de règles nftables à côté d'UFW (1 point). Ce dernier point est forfaitaire, pour un second jeu de règles que BOB n'évalue pas règle par règle, et non un contournement mesuré.
+
+Rejoué sur Ubuntu Server 26.04 avec les trois règles : UFW inactif 1/10 → 3/10 (le plafond de l'UFW inactif), aucun contournement signalé ; UFW actif 4/10 → 8/10, 2 points pour la seule règle `--dport` — 8099 était ouvert depuis le LAN.
+
+### 3. Un hôte sans UFW n'entend plus parler d'UFW
+
+- L'analyse des règles UFW ne tourne que tant qu'UFW est actif : un hôte sans UFW se voyait dire « Aucune règle UFW en doublon détectée ».
+- L'analyse des journaux UFW ne tourne que là où UFW est installé — mesuré dans un espace de noms où `ufw` était masqué, 0.25.1 lisait le `ufw.log` de l'hôte lui-même. UFW inactif, un journal vide est une INFO, et non un OK.
+- Les textes qui nommaient UFW là où un autre pare-feu décide disent « règle de pare-feu » ou nomment le pare-feu : `ports.system_port`, `ipv6.firewalld_v6`.
+
+### 4. awall, le front-end de pare-feu d'Alpine
+
+Mesuré sur Alpine 3.24 (awall 1.12) : avec une politique activée (refus en entrée, ssh gardé), 0.25.1 disait « aucun front-end pare-feu actif (UFW/firewalld) » et retirait 2 points pour chacune des trois règles INPUT écrites par awall et 1 pour chacune de ses deux règles FORWARD, toutes « contournant UFW » : *Pare-feu & Réseau* 2/10. Désormais :
+
+- awall et ses politiques activées sont nommés dans la bannière et dans la section pare-feu (`firewall.awall_active`) ; 10/10 sur cet hôte ;
+- awall installé sans politique activée, l'alerte le dit, n'imprime aucune commande — le choix d'une politique revient à l'opérateur — et le domaine est plafonné (0.25.1 : « ni UFW ni firewalld installé », et `apk add ufw`) ;
+- quand `awall list` échoue, BOB n'affirme pas qu'aucune politique n'est activée ;
+- une politique activée mais non chargée est dite telle. Mesuré dans Alpine 3.24.2 : `awall enable web` sans `awall activate` laissait INPUT à la politique ACCEPT sans aucune règle — l'alerte disait qu'aucune politique n'était activée ; elle dit désormais qu'awall a `web` activée et non chargée, toujours sans imprimer de commande.
+
+Une politique qu'importe une politique activée apparaît `required` dans `awall list` et elle est chargée aussi (mesuré dans Alpine 3.24.2 : `web` qui importe `base`) ; elle est nommée `base (required)`. awall n'est lu que là où ni UFW ni firewalld n'est actif.
+
+### 5. Le backend de pare-feu de Docker
+
+Mesuré sur openSUSE Leap 16 avec Docker 29.4.0 et firewalld : un port publié répondait depuis le LAN quoi que dise la zone, avec le backend iptables comme avec le backend nftables.
+
+- Le backend de Docker est lu (`docker info`, sinon `firewall-backend` dans `daemon.json`). Sous le backend nftables, il n'y a pas de chaîne DOCKER-USER : la troisième ligne de détail et l'alerte le disent et renvoient à vos propres règles nftables, là où 0.25.1 disait « via iptables » et proposait DOCKER-USER.
+- `"iptables": false` ne coupe que les règles IPv4 de Docker (une table `ip6` restait). `docker.iptables_disabled` disait « les règles UFW s'appliquent normalement », sur un hôte firewalld aussi ; il dit désormais que Docker n'écrit pas la plupart de ses règles IPv4 (les mots de Docker lui-même), si bien que ses ports publiés sont laissés au pare-feu de l'hôte, à vérifier — ainsi que les adresses propres des conteneurs si le réseau y mène. Sur l'hôte mesuré, aucune de ces règles n'a été trouvée et 8099, non autorisé par la zone, était refusé depuis le LAN ; cela ne rend pas à lui seul filtré tout port publié ou routé d'un conteneur. Il dit aussi que les conteneurs d'un réseau bridge perdent leur sortie (pas de masquerading) tant que vous n'écrivez pas ces règles — mesuré : les connexions sortantes du conteneur échouaient ; une configuration routée peut différer —, et que l'IPv6 suit sa propre option. L'option `"iptables": false` que liste l'alerte Docker dit la même chose. Avec elle, `ports.uncovered_firewalld_docker` (« la zone firewalld ne le filtre pas ») n'est plus émis pour le port.
+- `ports.uncovered_firewalld_docker` dit « tant que Docker écrit ses propres règles de pare-feu », et non « la gestion iptables de Docker », ce que le backend nftables n'est pas.
+- **Le `StrictForwardPorts` de firewalld.** Mesuré sur Debian 13 (firewalld 2.3.1, Docker 26.1.5), un conteneur publiant 8099, sondé depuis le LAN : avec `StrictForwardPorts=no`, la valeur par défaut, 8099 répondait — la chaîne de transfert de firewalld accepte tout paquet DNAT (`ct status dnat accept`) ; avec `yes`, il était rejeté (`filter_FORWARD_dnat` : `reject with icmpx admin-prohibited`). BOB lit le réglage tel que le firewalld en marche l'applique, dans sa chaîne de transfert chargée — pas dans `/etc/firewalld/firewalld.conf` : mesuré, le fichier passé à `yes` sans rechargement disait yes alors que la chaîne chargée acceptait encore (et dans l'autre sens). Non lu (backend iptables, firewalld plus ancien), il n'est pas pris pour `yes`. Avec `yes`, ni alerte ni avertissement de contournement, mais une INFO qui dit que firewalld rejette ce que Docker transfère sauf si la zone transfère le port, chaque port publié listé comme tel, et la ligne du port ne dit plus que la zone ne le filtre pas. Une première tentative sur le même hôte, avant une réinstallation, avait vu 8099 dépasser son délai avec le réglage par défaut ; elle n'a pas pu être reproduite (une installation neuve répondait, malgré les redémarrages de firewalld et de Docker) et reste inexpliquée. Un port publié qu'une zone firewalld transfère aussi garde l'alerte de contournement : sous `StrictForwardPorts=yes`, firewalld 2.3.1 accepte le trafic DNAT vers un tel port quelle que soit la zone d'entrée (issue firewalld #1536, confirmée en amont et toujours ouverte ; non reproduite ici). BOB lit pour cela les forward-ports de toutes les zones, et quand les zones ne sont pas lues, ne tient aucun port pour rejeté. La ligne du port, sous *Ports en écoute*, dit de quel cas il s'agit : les règles propres de Docker avec `StrictForwardPorts` désactivé, le cas mesuré, ou un port qu'une zone transfère, l'issue nommée.
+- `--explain docker.exposed_port` est scindé : les commandes, dans l'ordre, et le cas nftables dans *how* ; ce qui a été mesuré et ses limites dans *why*. L'exemple DOCKER-USER dit ce qu'il arrête : les nouvelles connexions des autres sources — une connexion déjà suivie avant les règles passe jusqu'à son expiration.
+
+### 6. Les zones firewalld rattachées à des sources
+
+**Prises dans l'ordre de firewalld.** Mesuré sur Debian 13 (firewalld 2.3.1), de 192.168.1.10 vers un écouteur sur 8099, avec les zones bobA (0.0.0.0/1) et bobB (128.0.0.0/1) de cible ACCEPT et une zone DROP gardant ssh rattachée à 192.168.1.10/32 : entre zones de sources, la plus basse `ingress-priority` classe un paquet en premier, puis le nom de la zone ; la première source qui correspond l'emporte, pas la plus étroite. Nommée `aaacarve`, la zone DROP fermait 8099 à cet hôte ; nommée `zzzcarve`, non ; à la priorité −10, `zzzcarve` le fermait, à +10 `aaacarve` non. 0.24.3 additionnait les sources déclarées et alertait « tous les clients … tous les ports sont ouverts » dans tous les cas. BOB calcule désormais ce que chaque zone prend réellement, dans cet ordre :
+
+- l'ALERT (−3) tient quand les zones ouvertes prennent au moins **99 %** des adresses **publiques** de la famille — décidé : une plage privée laissée de côté, le LAN par exemple, ne rend pas l'hôte moins ouvert à Internet, pas plus qu'une petite plage publique. Elle nomme ce qu'une autre zone classe en premier (« sauf pour 192.168.1.10/32 (aaacarve) »), donne la part quand il en manque (« prennent > 99,9 % des adresses publiques … la politique du pare-feu de l'hôte laisse entrer tous les ports depuis presque toutes ces adresses ») — la couverture de la politique locale, pas un test de joignabilité depuis Internet — ou dit que les plages privées ne sont pas toutes prises ;
+- en deçà de 99 %, l'INFO cumulée ci-dessous donne la part réellement prise ;
+- mesuré avec 8.8.8.0/24 dans `aaacarve` : la première version de travail de 0.26.0, qui voulait toutes les adresses publiques, donnait l'INFO et faisait passer *Pare-feu & Réseau* de 7/10 à 10/10, le score global de 8 à 9 — une /24 laissée de côté de presque tout Internet. Trouvé par la revue ; l'ALERT y tient désormais, et la part s'affichait « 100 % (100 %) » jusqu'à la correction de l'arrondi (« > 99,9 % ») ;
+- le seuil est une marche : 98,9 % des adresses publiques donnent l'INFO, 99 % l'ALERT.
+
+Les *adresses publiques*, dans les deux familles, désignent l'espace d'adresses de la famille moins une table fixe de plages non publiques — pour IPv4 les blocs privés, de bouclage, lien-local, partagé, de documentation, de banc d'essai, multicast et réservés — et non un décompte des adresses allouées ou joignables. La part publique d'IPv6 se calcule désormais dans `2000::/3`, le bloc global unicast, parties non allouées comprises, moins les plages de documentation `2001:db8::/32` et `3fff::/20` — une approximation, comme pour IPv4 : d'autres préfixes à usage spécial qu'il contient (comme `2001::/23`) comptent comme publics ; le registre IANA complet n'est pas appliqué. Dans le premier arbre de travail de cette version — jamais publié : 0.25.1 n'avait pas cette table —, la table des plages non publiques mettait `2000::/3` dans `::/1` et oubliait `e000::/3`, si bien que la part publique se lisait par rapport à `e000::/3`. Trouvé en chemin et corrigé ; une garde tient le dénominateur (`2000::/3` moins les deux plages de documentation) et l'exclusion de `e000::/3`.
+
+**Une zone rattachée à toute une famille** suit le même ordre — mesuré sur Debian avec `trusted` sur 0.0.0.0/0 : la zone DROP nommée `aaacarve` fermait 8099 à 192.168.1.10, nommée `zzzcarve`, non. Son ALERT nomme ce que garde une zone classée en premier (« sauf pour 192.168.1.10/32 (aaacarve) ») ; quand il lui reste moins de 99 % des adresses publiques, la zone ne tient plus lieu de politique d'entrée de l'hôte et elle est signalée comme une zone de sources, avec la part qu'elle prend réellement.
+
+**Les politiques de l'hôte, dans l'ordre de firewalld.** Les priorités négatives passent avant les règles de la zone, les positives avant sa cible (mesuré sur Fedora 44 en 0.24.3). Mesuré sur Debian 13 avec bobA et bobB mises en commun comme ci-dessus : une politique `ANY` → `HOST`, cible DROP, ssh permis, bloquait 8099 à la priorité −10 comme à +10 ; sans elle, 8099 était ouvert. BOB juge chaque zone de sources à travers les politiques de l'hôte (depuis 0.24.3) : sous l'une ou l'autre politique, aucune zone n'est ouverte, et il n'y a pas d'ALERT.
+
+**Une zone de sources est jugée sur les familles de ses sources.** Une zone de sources IPv4 de cible ACCEPT avec `rule family="ipv4" reject` était déclarée ouverte — par sa moitié IPv6, qu'aucun paquet de ces sources n'atteint. Mesuré sur Debian 13 (une règle ssh à la priorité −20, le reject à −10) : 8099 refusé ; BOB ne déclare désormais rien d'ouvert. Une source MAC ou ipset garde les deux familles pour ce verdict — la famille d'un ipset n'est pas lue — et n'entre pas dans les parts d'adresses : seuls les préfixes d'adresses comptent pour l'INFO cumulée et l'ALERT des 99 %. Une zone ouverte qui a de telles sources est signalée (`firewall.firewalld_sources_not_counted`) : la part qu'elle ouvre n'est pas établie, une alerte pour presque toutes les adresses publiques peut être manquée, et le score se lit comme une borne supérieure. La zone de l'interface est ordonnée face aux zones de sources comme mesuré sur Fedora 44 en 0.24.3 (une zone de sources d'abord à priorité égale ; sinon la plus basse `ingress-priority` d'abord) : les zones de sources qu'elle classe avant elles ne prennent rien, mises en commun ou non.
+
+**Des règles riches qui refusent.** Mesuré sur Debian 13 : une zone de cible ACCEPT rattachée à 192.168.1.10/32, avec `rule family="ipv4" port port="8099" protocol="tcp" reject`, refusait 8099 à cet hôte et laissait entrer 8097 ; BOB disait « tous les ports sont ouverts à ces adresses » (depuis 0.24.3). Une zone ouverte qui porte aussi des règles riches qui bloquent ou rejettent est désormais suivie d'une INFO — ce qu'elles refusent n'est pas ouvert, et BOB ne les pèse pas une à une (`firewall.firewalld_open_zone_refuses_some`) —, liée au constat par `qualified_by` ; pour une zone d'interface, une zone de sources comme des zones mises en commun. Sans points : la zone reste ouverte au reste.
+
+**Additionnées.**
+
+Deux zones ACCEPT ou plus rattachées à des sources étroites avaient chacune leur INFO ; ce qu'elles atteignent ensemble n'était pas dit. Une INFO l'additionne désormais, par famille, en part de l'espace d'adresses et de ses adresses publiques (`firewall.firewalld_source_zones_cumulated`) : les adresses que ces zones prennent réellement — les sources qui se chevauchent comptées une fois, les sources des zones classées en premier laissées de côté. Mesuré sur openSUSE avec 0.0.0.0/2 et 64.0.0.0/3 : « 37,5 % de l'espace d'adresses IPv4 (42,6 % de ses adresses publiques) ». Non noté : juger si ces sources méritent cette confiance ne revient pas à BOB. Les zones dont les sources effectives atteignent au moins 99 % des adresses publiques gardent l'ALERT ci-dessus.
+
+### 7. fail2ban là où il n'y a pas de journal systemd
+
+Mesuré sur Alpine 3.24 (OpenRC), avec la jail que livre le paquet fail2ban lui-même sur `/var/log/messages` :
+
+- **busybox syslogd** y écrit sshd ; deux connexions refusées : `Total failed: 2`. 0.25.1 disait « BOB n'a pas pu établir qu'un démon syslog l'écrit » — il en tournait un, et BOB le savait. Le compteur de la jail est désormais lu : une jail qui a compté des échecs dans son fichier est créditée. Avant tout échec, l'INFO dit ce qui manque : aucun journal auquel comparer le fichier, aucun échec compté.
+- **syslog-ng avec la configuration d'Alpine** envoie auth vers `/var/log/auth.log` : la jail du paquet est aveugle (`Total failed: 0` après une connexion refusée). 0.25.1 disait « non vérifiée ». La plus récente session SSH ouverte depuis le démarrage du démon syslog a sa ligne `Accepted` dans un autre fichier journal et pas dans celui de la jail : l'INFO le dit, comme une observation de ce moment-là (`fail2ban.ssh_jail_routed_elsewhere` : « la dernière connexion SSH observée a été journalisée dans … »), et imprime une surcharge `logpath`. Jouée telle qu'imprimée (en root), la jail a compté l'échec suivant et l'audit l'a créditée. Cette ligne ne sert qu'à avertir, jamais à créditer : elle montre où ce message est allé, pas que les échecs suivent le même chemin — un filtre syslog sur le texte peut les séparer, et l'INFO le dit. Un routage syslog-ng ne se date pas, un rechargement le change sans que l'heure de démarrage du démon bouge.
+- **Un OK posé sur une preuve partielle dit sur quoi il repose.** La raison était dans le détail de l'OK, que le terminal n'affiche jamais pour un OK. Ces deux OK sont désormais suivis d'une INFO et la portent dans `qualified_by` (JSON, webhook) : `fail2ban.ssh_jail_counted_caveat` (le compte prouve que la jail a reçu des échecs par son fichier, pas que les messages de sshd y arrivent encore) et `fail2ban.ssh_jail_sampled_caveat` (l'OK de 0.24.4, un fichier qui contient le dernier message de sshd et le dernier échec de chaque type que montre le journal : pas une preuve que chaque échec y arrive). Sans points, et pas une clé de visibilité : la jail est vue. Rejoué sur Debian 13 avec rsyslog : 0.25.1 affichait l'OK seul, 0.26.0 l'OK et l'INFO ; score inchangé.
+
+### 8. Planifier un audit avec le crond de BusyBox
+
+0.25.1 refusait `--install-cron` sur un hôte sans `/etc/cron.d`. Avec le crond de BusyBox (Alpine), une tâche est désormais un bloc de la crontab de root, `/etc/crontabs/root`, entre `# BEGIN BOB cron bob-<nom>` et `# END BOB cron bob-<nom>` ; seul ce bloc est jamais réécrit (`--manage-cron` : horaire, e-mail ; suppression), et chaque modification se termine par l'ajout de `root` à la fin de `/etc/crontabs/cron.update` — les noms qui y attendent déjà sont gardés. Mesuré sur Alpine 3.24 : sans lui, crond n'a pas relu le fichier en trois minutes. Installée par l'assistant, la tâche a tourné à la minute prévue et écrit son rapport ; un changement d'horaire n'a réécrit que le bloc ; la suppression n'a retiré que le bloc BOB, laissant la crontab identique, octet pour octet, à ce qu'elle était avant l'installation de la tâche. Le script de la tâche est en `sh` POSIX (Alpine n'a pas bash ; il était en `bash`). Un hôte sans `/etc/cron.d` ni `/etc/crontabs/` est toujours refusé, et le message nomme les deux.
+
+### 9. Autres textes
+
+- En français, les dates s'écrivent à la française : l'avis Python 3.10 dit « au moins jusqu'au 1er avril 2027 », et les changelogs et documents français n'écrivent plus de dates ISO dans leur prose.
+- `--explain prerequisites.firewall_missing` et `firewall_drivers.iptables_bypass` décrivent le plafond et la lecture des règles ci-dessus.
+
+### Hors de cette version, et limites connues
+
+- Kubernetes au-delà du nœud (le serveur d'API, un état du cluster) : 0.27.
+- Pour le verdict de filtrage par défaut, les règles nftables et iptables ne sont toujours pas évaluées une à une : BOB lit les politiques des chaînes et la première règle qui prend tout paquet. Le contrôle de contournement d'UFW lit certaines règles INPUT (§2), pas tout le jeu de règles. Une marque posée par une règle nftables (`meta mark set`) n'est pas lue comme une pose de marque : seules les tables iptables le sont. MARK (`--set-mark`, `--and-mark`, `--or-mark`, `--xor-mark`, tous imprimés par `iptables -S` sous la forme `--set-xmark`, mesuré), CONNMARK, HMARK (mesuré : un décalage de 0x20000 ouvrait 8099 — BOB le manquait avant la dernière revue de cette version) et TPROXY `--tproxy-mark` (lu, non mesuré) sont suivis ; toute autre manière de poser une marque ne l'est pas.
+- Pour un jeu de règles netfilter brut, le verdict de filtrage par défaut et le plafond se fondent sur le défaut IPv4 ; que ses tables ip6 ou inet filtrent l'IPv6 entrant n'est pas évalué (`ipv6.netfilter_v6` le dit ; limite depuis 0.24.1, prévue pour 0.27). La couverture des zones de sources firewalld est évaluée séparément pour IPv6 (§6). Un hôte qui filtre IPv4 par défaut et laisse IPv6 ouvert n'est ni plafonné ni pénalisé pour IPv6, et son score n'est pas marqué comme un plafond pour cela.
+- Les front-ends sont jugés un à la fois : awall n'est lu que là où ni UFW ni firewalld ne tourne, et les règles de plusieurs front-ends présents ensemble ne sont pas toutes auditées.
+- Le backend nftables de Docker est expérimental dans Docker Engine 29 (mesuré sur 29.1.3 et 29.4.0) : ce qu'en dit le §5 peut changer avec les versions suivantes. Les sources firewalld sont additionnées pour IPv6 comme pour IPv4, mais pas mesurées sur un hôte : aucun hôte doté d'une adresse IPv6 globale n'était disponible. Les gardes font passer les cas IPv6 par le même contrôle — l'ordre, la première correspondance, ce que prend une zone classée avant, la marche de 98,9 % à 99 %.
+- La réserve sur le compteur (§7) a été vérifiée par les tests et dans le rendu terminal, pas rejouée sur un hôte : l'hôte Alpine avait été nettoyé entre-temps.
+- Un correctif imprimé passant par `doas` demande un terminal : `doas` sans tty refuse, comme `doas` le fait.
+
+### Compteurs
+
+Tests 14021 → **14673**, mutations 703 → **819**, clés de locale 2936 → **2969** par langue ; clés `--explain` (226), références CIS (226) et sections (57) inchangées.
+
+### Gardes
+
+`test_v0260_no_firewall_is_capped.py`, `test_v0260_raw_accept_reach.py`, `test_v0260_no_ufw_no_ufw_findings.py`, `test_v0260_awall_named.py`, `test_v0260_docker_firewall_backend.py`, `test_v0260_firewalld_sources_cumulated.py`, `test_v0260_firewalld_nested_sources.py`, `test_v0260_final_reject_rule.py`, `test_v0260_fail2ban_without_journal.py`, `test_v0260_cron_in_root_crontab.py`. Chaque garde a une mutation qui ramène son défaut.
+
 ## [0.25.1] — 18-10-2026
 
 **Un correctif : commandes, constats et conseils tels que l'hôte devant BOB les a — `doas` là où il n'y a pas de `sudo`, le cron d'Alpine, AppArmor sous OpenRC, un firewalld arrêté, Docker à côté de firewalld — mesurés sur Alpine 3.24, openSUSE Leap 16, Fedora 44 et Ubuntu Server 26.04 (k3s 1.36) réels.**
@@ -58,7 +179,7 @@ La réécriture n'a lieu que si le texte contient le mot : sur un hôte `sudo`, 
 
 ### 5. Python 3.10 : fin de vie en amont, prise en charge dépréciée dans BOB
 
-Python 3.10 a atteint sa fin de vie en amont le 2026-10-01. BOB continue de prendre en charge une version de Python au moins six mois après cette date, et n'en abandonne une que dans une release étiquetée BREAKING (une mineure en 0.x). Lancé sous 3.10, BOB le dit désormais au début d'un audit (INFO) et à la fin de `--help` : 3.10 est prise en charge au moins jusqu'au 2027-04-01 ; la release qui l'abandonnera sera étiquetée BREAKING et exigera 3.11 ou plus récent, la version vers laquelle migrer. La politique est écrite dans `README_TECH` et `CONVENTIONS` §8.
+Python 3.10 a atteint sa fin de vie en amont le 1er octobre 2026. BOB continue de prendre en charge une version de Python au moins six mois après cette date, et n'en abandonne une que dans une release étiquetée BREAKING (une mineure en 0.x). Lancé sous 3.10, BOB le dit désormais au début d'un audit (INFO) et à la fin de `--help` : 3.10 est prise en charge au moins jusqu'au 1er avril 2027 ; la release qui l'abandonnera sera étiquetée BREAKING et exigera 3.11 ou plus récent, la version vers laquelle migrer. La politique est écrite dans `README_TECH` et `CONVENTIONS` §8.
 
 ### 6. Documentation
 
@@ -1034,7 +1155,7 @@ chaque backend qu'elles jugent (EN + FR).
   chaque version publiée.
 - Le contrôle « l'entrée la plus récente n'est pas dans le futur » comparait une
   release datée en heure locale au jour UTC du runner de CI : cette release, datée
-  du 2026-10-09 à Paris, a échoué en CI à 22:13 UTC le 2026-10-08. La borne est
+  du 9 octobre 2026 à Paris, a échoué en CI à 22:13 UTC le 8 octobre 2026. La borne est
   désormais le jour calendaire le plus tardif sur Terre (UTC+14), épinglée par un
   test qui rejoue cet instant.
 - Une garde de 0.20.2 (`firewalld/ipv6-gap-warned-though-firewalld-filters-v6`)
@@ -8473,11 +8594,11 @@ Le piège se retend facilement : la **première version des nouveaux gardes réi
 
 ### La date de release de v0.14.0 était fausse
 
-Les surfaces de release ont été figées au 2026-08-28 au démarrage du travail, mais le push et la publication PyPI ont eu lieu le lendemain : le workflow qui a uploadé 0.14.0 est horodaté `2026-08-29T16:46:08Z`.
+Les surfaces de release ont été figées au 28 août 2026 au démarrage du travail, mais le push et la publication PyPI ont eu lieu le lendemain : le workflow qui a uploadé 0.14.0 est horodaté `2026-08-29T16:46:08Z`.
 
-Corrigé sur les seules surfaces v0.14.0 — la ligne de changelog et l'en-tête de section, les entrées debian et rpm de `0.14.0-1`, les trois lignes `.TH` des pages de man, l'en-tête du SNAPSHOT et sa ligne « release surface dated », et la date de fin de vie de v0.13.x dans `SECURITY{,_FR}.md` (qui est par définition le jour du ship de v0.14.0). Le jour de la semaine suit : le 2026-08-29 est un samedi, et le garde de jours de semaine ajouté en v0.14.0 le confirme.
+Corrigé sur les seules surfaces v0.14.0 — la ligne de changelog et l'en-tête de section, les entrées debian et rpm de `0.14.0-1`, les trois lignes `.TH` des pages de man, l'en-tête du SNAPSHOT et sa ligne « release surface dated », et la date de fin de vie de v0.13.x dans `SECURITY{,_FR}.md` (qui est par définition le jour du ship de v0.14.0). Le jour de la semaine suit : le 29 août 2026 est un samedi, et le garde de jours de semaine ajouté en v0.14.0 le confirme.
 
-**v0.13.3 et v0.13.4 gardent leurs dates au 2026-08-28** — elles ont réellement été publiées ce jour-là, leurs workflows horodatés 17:31 et 18:00 UTC le 28. Seule v0.14.0 a franchi minuit.
+**v0.13.3 et v0.13.4 gardent leurs dates au 28 août 2026** — elles ont réellement été publiées ce jour-là, leurs workflows horodatés 17:31 et 18:00 UTC le 28. Seule v0.14.0 a franchi minuit.
 
 ### Un lot robustesse, issu d'une campagne de stress test locale
 
@@ -8741,7 +8862,7 @@ Corrigée en EN et FR, avec deux gardes : l'un fait passer chaque exemple d'usag
 
 #### 4. La date de release avait de nouveau dérivé
 
-Les surfaces v0.14.1 étaient encore datées du 2026-08-29, désormais inatteignable. Passées au **2026-08-30** (un dimanche) sur les lignes de tableau et les titres de section des changelogs, les entrées debian et rpm, les trois lignes `.TH` des pages de man, ainsi que l'en-tête et la ligne « release surface dated » du SNAPSHOT. C'est la dérive même pour laquelle v0.14.0 avait été corrigée — rattrapée cette fois avant publication et non après. Si la publication glisse au-delà du 30, il faudra recommencer.
+Les surfaces v0.14.1 étaient encore datées du 29 août 2026, désormais inatteignable. Passées au **30 août 2026** (un dimanche) sur les lignes de tableau et les titres de section des changelogs, les entrées debian et rpm, les trois lignes `.TH` des pages de man, ainsi que l'en-tête et la ligne « release surface dated » du SNAPSHOT. C'est la dérive même pour laquelle v0.14.0 avait été corrigée — rattrapée cette fois avant publication et non après. Si la publication glisse au-delà du 30, il faudra recommencer.
 
 ### Vérifié sain
 
@@ -9588,13 +9709,13 @@ Un audit complet de la documentation (vérification croisée de chaque document 
 - **Le profil `workstation`** se contredisait d'un document à l'autre : [README.md](../README.md) l'appelait un « alias de rétrocompatibilité vers `desktop` » et [man/bob-profile.5](../man/bob-profile.5) disait « livré mais non consommé par le chargeur » — les deux décrivent le comportement d'*avant v0.8.1* — tandis que README_TECH / SECURITY le disaient à juste titre de premier rang. La réalité ([bob/profiles.py](../bob/profiles.py)) : l'alias a été retiré en v0.8.1 et `workstation` est un profil de premier rang pour le monde professionnel. Toutes les sources ont été réconciliées, et `workstation` a été **ajouté à la ligne de profils de `--help` + au message d'erreur de `--profile`** ([bob/cli.py](../bob/cli.py)) dont il était entièrement absent.
 - **Comptes périmés** : EXPLAIN_KEYS cité à 116 / 168 (README_TECH) et 116 (man) → corrigé à la vraie valeur **169 clés / 45 préfixes** ; « 43 checks » (README ×2, README_TECH ×2) → **34 sections de check** (comme `--check=list`). Le compte des services (38) était déjà correct.
 - **`UFW_AUDIT_SHARE`** (retiré en v0.5.4) était documenté comme une variable d'environnement fonctionnelle dans [man/bob.1](../man/bob.1) (entrée retirée) et [README_DEV.md](../DOCUMENTS/README_DEV.md) (tableau d'environnement + un extrait de code périmé → corrigé vers le vrai mécanisme `BOB_SHARE` de `bob/_paths.py`).
-- dates des pages de manuel passées au 2026-06-11.
+- dates des pages de manuel passées au 11 juin 2026.
 
 [tests/test_v0111_doc_accuracy.py](../tests/test_v0111_doc_accuracy.py) — 6 gardes anti-dérive qui épinglent deux des faits corrigés pour qu'ils ne puissent pas régresser : chaque `bob/data/profiles/*.conf` livré doit apparaître dans la ligne de profils de `--help` + le message d'erreur de `--profile`, et aucun document destiné à l'utilisateur ne doit montrer un `bob --json-v1` exécutable. (Même schéma « après un bug → une garde générique » que la garde anti-dérive des littéraux de v0.11.0.)
 
 ### Fuite i18n inverse — du français codé en dur dans les commandes SMART du disque
 
-Apparue en comparant un audit réel en **anglais** à l'audit en français (exécutions de l'utilisateur, 2026-06-10) : les cinq suggestions de commandes d'auto-test `smartctl` de [bob/checks/disk.py](../bob/checks/disk.py) portaient des **commentaires en ligne en français codé en dur** (`# lancer un test automatique court (~2 min)`, `# surveiller la progression en temps réel`, …). Ils s'affichaient correctement dans un audit en français mais **faisaient fuiter du français dans chaque audit en anglais**. C'est l'inverse de F8 (déféré), et plus net : F8 est de l'« anglais non traduit » (défendable pour des titres CIS), ceci est une sortie tout simplement dans la mauvaise langue, donc livrée maintenant plutôt que d'attendre le lot i18n de v0.12.0. Correctif : cinq clés de locale `disk.smart_cmd.{test_short,test_long,watch,abort,history}` (EN + FR), insérées dans le commentaire de la commande via `_t()`. Un balayage a confirmé que la fuite se limitait à ces cinq chaînes (l'autre seul français trouvé dans le source, `logs.py`, est un conditionnel correct `… if lang == "fr" else …`). Épinglé par `tests/test_v0111_ux_audit_fixes.py::TestDiskSmartCmdLocalised` (pas de français codé en dur dans `disk.py` ; les deux locales présentes ; le commentaire EN est en anglais).
+Apparue en comparant un audit réel en **anglais** à l'audit en français (exécutions de l'utilisateur, 10 juin 2026) : les cinq suggestions de commandes d'auto-test `smartctl` de [bob/checks/disk.py](../bob/checks/disk.py) portaient des **commentaires en ligne en français codé en dur** (`# lancer un test automatique court (~2 min)`, `# surveiller la progression en temps réel`, …). Ils s'affichaient correctement dans un audit en français mais **faisaient fuiter du français dans chaque audit en anglais**. C'est l'inverse de F8 (déféré), et plus net : F8 est de l'« anglais non traduit » (défendable pour des titres CIS), ceci est une sortie tout simplement dans la mauvaise langue, donc livrée maintenant plutôt que d'attendre le lot i18n de v0.12.0. Correctif : cinq clés de locale `disk.smart_cmd.{test_short,test_long,watch,abort,history}` (EN + FR), insérées dans le commentaire de la commande via `_t()`. Un balayage a confirmé que la fuite se limitait à ces cinq chaînes (l'autre seul français trouvé dans le source, `logs.py`, est un conditionnel correct `… if lang == "fr" else …`). Épinglé par `tests/test_v0111_ux_audit_fixes.py::TestDiskSmartCmdLocalised` (pas de français codé en dur dans `disk.py` ; les deux locales présentes ; le commentaire EN est en anglais).
 
 ### Chiffres
 
@@ -10121,7 +10242,7 @@ Si un utilisateur signale un problème sur la détection côté client (faux pos
 
 ### Pourquoi une release de préparation
 
-Deux audits par sous-agent ont été menés le 2026-06-08 pour cadrer le travail du lot BREAKING de v0.10.0 :
+Deux audits par sous-agent ont été menés le 8 juin 2026 pour cadrer le travail du lot BREAKING de v0.10.0 :
 
 1. **Audit des candidats au découpage en sous-checks D-4** — a parcouru `bob/checks/*.py` à la recherche de clés de constat qui regroupent plusieurs sous-cas sous un même nom. A identifié 8 candidats au découpage, classés, avec une estimation d'effort par découpage, plus une liste « NE PAS découper » de 5 clés qui ressemblent à des candidats mais restent unifiées. Estimation totale de l'effort D-4 : **≈ 20 heures** (le contrat de shim par joker est la principale nouveauté par rapport au simple shim de baseline `str → str` de v0.9.2).
 
@@ -10195,7 +10316,7 @@ Aujourd'hui, cela ne change aucun comportement visible, parce qu'aucun check n'�
 
 ### Rafraîchissement de SNAPSHOT.md
 
-[DOCUMENTS/SNAPSHOT.md](../DOCUMENTS/SNAPSHOT.md) avait été rafraîchi pour la dernière fois pour v0.7.4 (2026-06-02, rafraîchi depuis la base de v0.6.0). v0.10.0 ajoute deux paragraphes :
+[DOCUMENTS/SNAPSHOT.md](../DOCUMENTS/SNAPSHOT.md) avait été rafraîchi pour la dernière fois pour v0.7.4 (2 juin 2026, rafraîchi depuis la base de v0.6.0). v0.10.0 ajoute deux paragraphes :
 
 - **Dérive de v0.7.4 à v0.9.2, en un paragraphe** — couvre le cycle v0.8.x (lot de dérive de v0.8.0 + actions de cadrage A1+A2 + audit des lacunes de fonctionnalités silencieuses clôturant v0.7.x, hardening en profondeur de v0.8.1 sur 26 niveaux en 3 passes de sous-agent, dont le retrait BREAKING de l'alias workstation, lot conservateur de v0.8.2 + consolidation de `bob/_i18n_safe.py` + `--test-webhook` + descriptions de `--check=list` + avertissement de dépréciation D-3 + linter de locale, hotfix de v0.8.3 sur un chemin d'audit UnboundLocalError venu de la livraison de v0.8.2 qui masquait l'import du module `UserConfig` dans `main()`, nettoyage de v0.8.4 sur la surveillance de 7 mois d'`is_unit_enabled` + nouveau `DOCUMENTS/TUTORIAL{,_FR}.md`) et le cycle v0.9.x (lot BREAKING de v0.9.0 clôturant D-1/D-2/D-3/TD-1/F-2/F-3 + correctif `cur="="` de la complétion bash, hotfix de v0.9.1 sur l'ergonomie du message F-3 avec un repli entre crochets dû à un `i18n.t` appelé avant l'initialisation dans `parse_args`, i18n de BaselineLoadError de v0.9.2 + shim de migration de baseline entre versions).
 
@@ -10744,7 +10865,7 @@ C'était l'item `tutorial` déféré du backlog v0.9.0. Il est déplacé dans v0
 
 ### Fermeture roadmap — compare-breakdown-diff killed
 
-[[project_future_compare_breakdown_diff]] (memory) — roadmap feature ouverte en v0.3.0 (2026-05-08) pour ajouter diff per-key des déductions dans `bob compare`. Statut au ship time v0.8.4 :
+[[project_future_compare_breakdown_diff]] (memory) — roadmap feature ouverte en v0.3.0 (8 mai 2026) pour ajouter diff per-key des déductions dans `bob compare`. Statut au ship time v0.8.4 :
 
 - Ouvert depuis v0.3.0
 - Zéro signal user à travers 5 majeures (v0.4 / v0.5 / v0.6 / v0.7 / v0.8)
@@ -11248,7 +11369,7 @@ Changements de comportement visibles par l'utilisateur :
 - **Les surcharges de profil comportant des fautes de frappe** émettent un `logger.warning` au lieu de ne rien faire en silence
 - **`--show-ignored`** : le rendu en ligne est correctement documenté dans la page de manuel (ne sort pas, ne déverse pas le YAML)
 
-**v0.7.x est en fin de vie depuis le 2026-06-05** — déclaration formelle dans [SECURITY.md](../SECURITY.md), sur le modèle de celle qui a retiré v0.6.x en v0.7.2. Aucun correctif de sécurité ne sera rétroporté en v0.7.x ; les utilisateurs doivent faire `pipx upgrade bodyguard-of-bits` vers v0.8.x pour recevoir les correctifs de sécurité. La ligne v0.8.x est largement rétrocompatible avec v0.7.x via les ré-exports de `__init__.py` + `--json-v1` pour les consommateurs JSON legacy, à l'exception du changement BREAKING du profil workstation décrit ci-dessus (déposer une copie de `desktop.conf` dans `~/.config/bob/profiles/workstation.conf` pour retrouver la sémantique de v0.7.x sur ce profil).
+**v0.7.x est en fin de vie depuis le 5 juin 2026** — déclaration formelle dans [SECURITY.md](../SECURITY.md), sur le modèle de celle qui a retiré v0.6.x en v0.7.2. Aucun correctif de sécurité ne sera rétroporté en v0.7.x ; les utilisateurs doivent faire `pipx upgrade bodyguard-of-bits` vers v0.8.x pour recevoir les correctifs de sécurité. La ligne v0.8.x est largement rétrocompatible avec v0.7.x via les ré-exports de `__init__.py` + `--json-v1` pour les consommateurs JSON legacy, à l'exception du changement BREAKING du profil workstation décrit ci-dessus (déposer une copie de `desktop.conf` dans `~/.config/bob/profiles/workstation.conf` pour retrouver la sémantique de v0.7.x sur ce profil).
 
 v0.6.x reste en fin de vie (déclarée en v0.7.2).
 
@@ -11278,7 +11399,7 @@ Les 5 cycles patches v0.7.1 → v0.7.4 ont accumulé une drift doc/packaging sil
 
 ### Actions framing (anti-surdéclaration)
 
-Critique externe ChatGPT 2026-06-02 sur un audit v0.7.4 : "pertinent comme outil de diagnostic technique mais pas fiable comme système de notation de sécurité absolue". Le diagnostic correct portait sur le **framing** (BOB ne dit pas assez fort qu'il audit sous hypothèses), pas sur le moteur. Deux actions Tier 1 shippées :
+Critique externe ChatGPT du 2 juin 2026 sur un audit v0.7.4 : "pertinent comme outil de diagnostic technique mais pas fiable comme système de notation de sécurité absolue". Le diagnostic correct portait sur le **framing** (BOB ne dit pas assez fort qu'il audit sous hypothèses), pas sur le moteur. Deux actions Tier 1 shippées :
 
 - **A1 — ligne footer `summary.context_disclaimer`** ([bob/display.py:581](../bob/display.py) + nouvelle clé locale `summary.context_disclaimer`) : `print_audit_summary` ajoute désormais une ligne `ℹ` supplémentaire juste après les notes existantes `summary.scope_line1` / `scope_line2` : *« Verdict conditionné par le profil et le contexte réseau ci-dessus. BOB est un auditeur de configuration hardening, pas un moteur d'analyse de menaces — à interpréter en conséquence. »* Le profil + contexte réseau sont déjà affichés dans la box du summary (lignes `Profil d'audit` + `Contexte réseau`), donc le disclaimer s'appuie dessus ; il ne re-émet PAS un en-tête templatisé `Hypothèses : profil=X | contexte=Y | posture=Z`. Pre-v0.8.0 la box affichait `Score 8/10 + FAIBLE` sans aucun rappel que ce verdict était *conditionné*. Un lecteur de capture d'écran pouvait conclure "tout va bien" sans voir le contexte. 1 print + 1 clé locale par langue. 0 schema change.
 - **A2 — section "What BOB is / is NOT"** ([README.md](../README.md) + [README_FR.md](../README_FR.md) + [SECURITY.md](../SECURITY.md) + [SECURITY_FR.md](../SECURITY_FR.md)) : nouvel encart court (~15 lignes) qui clame explicitement que BOB **est** un auditeur de configuration hardening avec modulation contextuelle par profile + posture, et **n'est pas** : threat-modeling engine, scanner d'exposition réseau actif, system de verdict autonome. Le score reflète l'hygiène de configuration sous le profile choisi, pas la posture de sécurité absolue. Interprétation humaine requise pour traduire le verdict en "ma machine est-elle exploitable depuis Internet".
@@ -11345,7 +11466,7 @@ Issus du drift batch (item 8 + 9) + de l'audit silent-feature-gap :
 
 ### Ce qui n'est PAS shippé
 
-D-1..D-4 du contrat `project_v08x_deferred` (figé 2026-05-30 lors du kickoff Phase 2 v0.7.x) reste ouvert pour la continuation v0.8.x :
+D-1..D-4 du contrat `project_v08x_deferred` (figé le 30 mai 2026 lors du kickoff Phase 2 v0.7.x) reste ouvert pour la continuation v0.8.x :
 - **D-1** : renumber sections + uniformisation noms `emit_section()`
 - **D-2** : fusion `_ALL_SECTIONS` + `_ALWAYS_ON_SECTIONS`
 - **D-3** : retrait `EXPLAIN_KEY_ALIASES` obsolètes (cycle par cycle)
@@ -11680,7 +11801,7 @@ Selon la règle mémoire `feedback-conservative-refactor` (« gain × risque = S
 
   - 0.7.x marquée ✅ courante
   - 0.6.x marquée ❌ fin de vie (était courante avant v0.7.0)
-  - Nouveau paragraphe explicatif : « **v0.6.x est en fin de vie depuis le 2026-06-01** (le jour même de la sortie de v0.7.0). Aucun correctif de sécurité ne sera rétroporté en v0.6.x. Les utilisateurs de v0.6.x doivent faire `pipx upgrade bodyguard-of-bits` vers v0.7.x pour recevoir les correctifs de sécurité. La release v0.7.0 est rétrocompatible avec l'API publique de v0.6.x via les ré-exports de `__init__.py` + le drapeau `--json-v1` pour les consommateurs JSON legacy — la mise à jour est transparente pour la grande majorité des utilisateurs. »
+  - Nouveau paragraphe explicatif : « **v0.6.x est en fin de vie depuis le 1er juin 2026** (le jour même de la sortie de v0.7.0). Aucun correctif de sécurité ne sera rétroporté en v0.6.x. Les utilisateurs de v0.6.x doivent faire `pipx upgrade bodyguard-of-bits` vers v0.7.x pour recevoir les correctifs de sécurité. La release v0.7.0 est rétrocompatible avec l'API publique de v0.6.x via les ré-exports de `__init__.py` + le drapeau `--json-v1` pour les consommateurs JSON legacy — la mise à jour est transparente pour la grande majorité des utilisateurs. »
 
 En plus, les notes de la GitHub Release v0.6.2 portent un bandeau EOL bien visible en tête (édité à la main via `gh release edit`).
 
@@ -12510,8 +12631,8 @@ Ce sont des updates mécaniques sans changement de scope. La couverture reste id
 
 La chaîne de deprecation (12+ mois) :
 
-- **v0.4.2** (2026-05-14) : `BOB_SHARE` documenté comme le contrat ; `UFW_AUDIT_SHARE` accepté comme alias legacy avec notice `logger.info(...)`
-- **v0.5.4** (2026-05-23) : `logger.info` upgradé à `logger.warning(...)` avec message explicite "DEPRECATED since v0.5.4, will be REMOVED in v0.6.0. Update your installer to BOB_SHARE..."
+- **v0.4.2** (14 mai 2026) : `BOB_SHARE` documenté comme le contrat ; `UFW_AUDIT_SHARE` accepté comme alias legacy avec notice `logger.info(...)`
+- **v0.5.4** (23 mai 2026) : `logger.info` upgradé à `logger.warning(...)` avec message explicite "DEPRECATED since v0.5.4, will be REMOVED in v0.6.0. Update your installer to BOB_SHARE..."
 - **v0.6.0** (cette release) : constante `_ENV_LEGACY` supprimée, lecture fallback supprimée, branche warning supprimée. La variable est maintenant silencieusement ignorée — les packages settant encore verront `resolve_share_dir()` retourner None et fall back aux data package-local, ce qui est le default safe.
 
 Changement net dans `bob/_paths.py` : -20 lignes (une constante, une lecture fallback, la branche warning). La docstring est mise à jour pour noter "removed in v0.6.0" pour référence historique. Deux références commentaire stales dans `bob/i18n.py:44` et `bob/registry.py:38` ont aussi été mises à jour.
@@ -13036,7 +13157,7 @@ Tests renommés : `test_nature_is_action` → `test_nature_is_improvement` (× 2
 
 ### Où v0.5.5 se situe dans la ligne v0.5.x
 
-Ceci est une **release de maintenance** pour la branche v0.5.x, post-cycle hardening. La branche refactor de 5 releases (v0.5.0 → v0.5.4) a clos le 2026-05-23 avec les 13/15 findings audit shippés + 2 splits déférés v0.6.0. v0.5.5 adresse un audit 19-findings séparé focalisé sur les **dimensions hardening** (bugs réels, security smells, code health) plutôt que refactor structurel.
+Ceci est une **release de maintenance** pour la branche v0.5.x, post-cycle hardening. La branche refactor de 5 releases (v0.5.0 → v0.5.4) a clos le 23 mai 2026 avec les 13/15 findings audit shippés + 2 splits déférés v0.6.0. v0.5.5 adresse un audit 19-findings séparé focalisé sur les **dimensions hardening** (bugs réels, security smells, code health) plutôt que refactor structurel.
 
 La ligne v0.5.x s'engage à rester contract-preserving. Deferrals pour v0.6.0 incluent #13 (split ssh.py, 1324 LoC), #14 (split cron.py, 1224 LoC), et tout cleanup breaking-change que le prochain cycle audit fait apparaître.
 
@@ -13057,7 +13178,7 @@ La ligne v0.5.x s'engage à rester contract-preserving. Deferrals pour v0.6.0 in
 | 5 | **v0.5.4** | **23-05-2026** | `prompt_wizard` + sunset + `_PREFIX_TO_DOMAIN` + cache APT C | +49 |
 | **Total** | — | — | **13/15 findings audit + 1 feature métier + sunset + 1 deprecation** | **≈ −350 LoC vs v0.4.8** |
 
-La branche v0.5.x a shippé sur **5 releases en 2 jours calendrier** (2026-05-21 à 2026-05-22). Les cinq releases testées cross-distro sur 5 VMs (Linux Mint 22.3 prod + Mint+DDNS, Debian 13 trixie, Kali Rolling, Ubuntu 26.04 LTS) avec zéro régression observée. Sortie wire préservée bit-pour-bit à travers les Phases 1–4 ; Phase 5 introduit 2 changements wire intentionnels (ligne INFO cache APT, re-bucketing scores par domaine) documentés ci-dessus.
+La branche v0.5.x a shippé sur **5 releases en 2 jours calendrier** (du 21 au 22 mai 2026). Les cinq releases testées cross-distro sur 5 VMs (Linux Mint 22.3 prod + Mint+DDNS, Debian 13 trixie, Kali Rolling, Ubuntu 26.04 LTS) avec zéro régression observée. Sortie wire préservée bit-pour-bit à travers les Phases 1–4 ; Phase 5 introduit 2 changements wire intentionnels (ligne INFO cache APT, re-bucketing scores par domaine) documentés ci-dessus.
 
 ### #6 — Helper `prompt_wizard()` pour wizards plain-text
 
@@ -13151,7 +13272,7 @@ Changements de test dans `tests/test_domain_scores_mapping_complete.py` :
 
 ### Cache APT option C — INFO permanent sur âge cache (feature métier demandée par user)
 
-**Contexte (depuis test terrain v0.5.3).** Durant le test cross-distro le 2026-05-22, la VM Ubuntu 26.04 LTS (`so6ubuntutest`) rapportait "Les paquets système sont à jour" dans l'audit BOB, mais un `sudo apt update` manuel lancé immédiatement après révélait 17 paquets en attente (dont 8 LTS security updates : libgnutls30t64, bind9, openvpn, rsync, etc.). L'investigation a montré que la simulation `apt-get -s dist-upgrade` de BOB lisait correctement le cache APT local — mais le cache avait 3-5 jours d'âge (sous le seuil obsolète de 7 jours qui déclenche un WARNING) et n'avait pas été synchronisé avec l'upstream où des annonces de sécurité avaient landé entre-temps.
+**Contexte (depuis test terrain v0.5.3).** Durant le test cross-distro le 22 mai 2026, la VM Ubuntu 26.04 LTS (`so6ubuntutest`) rapportait "Les paquets système sont à jour" dans l'audit BOB, mais un `sudo apt update` manuel lancé immédiatement après révélait 17 paquets en attente (dont 8 LTS security updates : libgnutls30t64, bind9, openvpn, rsync, etc.). L'investigation a montré que la simulation `apt-get -s dist-upgrade` de BOB lisait correctement le cache APT local — mais le cache avait 3-5 jours d'âge (sous le seuil obsolète de 7 jours qui déclenche un WARNING) et n'avait pas été synchronisé avec l'upstream où des annonces de sécurité avaient landé entre-temps.
 
 Le WARNING existant `apt_cache_stale` (>7 jours) couvrait le cas obviously-stale mais laissait la zone silencieuse "frais-assez-mais-pas-zéro" non-observable. L'utilisateur a choisi "option C" parmi 4 options proposées : *toujours* émettre un INFO avec l'âge du cache quand le verdict est "all clear", donnant une transparence permanente sur la fraîcheur du cache.
 
@@ -13209,7 +13330,7 @@ Validation terrain : sur le host dev (so6desktop) avec 4 paquets de sécurité e
 
 ### Deferrals : `#13` (split ssh.py) et `#14` (split cron.py) → v0.6.0
 
-L'audit v0.5.x (2026-05-21) flagged les deux fichiers comme candidats au split :
+L'audit v0.5.x (21 mai 2026) flagged les deux fichiers comme candidats au split :
 
 ```
 bob/checks/ssh.py:  1387 LoC à v0.4.8 → 1268 après #1 (Phase 2) → 1324 après #4 (Phase 3) → 1324 à l'entrée v0.5.4
@@ -13788,11 +13909,11 @@ $ python3 -m pytest tests/ -q
 
 ## [v0.5.0] — 21-05-2026
 
-**Refactor v0.5.x — Phase 1 sur 5.** Cette release ouvre la **branche v0.5.x**. C'est le premier volet d'un refactor en 5 phases, tiré d'un audit par sous-agent (généraliste, lancé le 2026-05-21 avec `DOCUMENTS/SNAPSHOT.md` comme briefing principal). L'audit a renvoyé **15 constats de refactor**, classés par valeur/effort, avec une classification explicite du risque.
+**Refactor v0.5.x — Phase 1 sur 5.** Cette release ouvre la **branche v0.5.x**. C'est le premier volet d'un refactor en 5 phases, tiré d'un audit par sous-agent (généraliste, lancé le 21 mai 2026 avec `DOCUMENTS/SNAPSHOT.md` comme briefing principal). L'audit a renvoyé **15 constats de refactor**, classés par valeur/effort, avec une classification explicite du risque.
 
 Le principe directeur de tout ce refactor en 5 phases : **le comportement du pipeline d'audit ne change pas**. Le `schema_version="1"` du JSON, les 7 domaines de score, les 116 EXPLAIN_KEYS, les 34 sections filtrables, les alias de `--explain`, les drapeaux CLI, l'héritage des profils, les clés de locale — tout est stable. La Phase 1 retient les constats additifs à faible risque, qui n'exigent aucune chirurgie touchant aux contrats.
 
-### Plan des phases (établi le 2026-05-21)
+### Plan des phases (établi le 21 mai 2026)
 
 | Phase | Version | Thème | Constats | Risque |
 |---|---|---|---|---|

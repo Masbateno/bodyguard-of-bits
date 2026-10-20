@@ -16,6 +16,9 @@ def test_no_cron_d_is_refused_before_any_question(monkeypatch, tmp_path):
     from bob import i18n
     i18n.init("en")
     monkeypatch.setattr(inst, "CRON_DIR", tmp_path / "cron.d")
+    # v0.26.0: refused only where there is no /etc/crontabs either.
+    from bob.cron import _crontab
+    monkeypatch.setattr(_crontab, "CRONTABS_DIR", tmp_path / "crontabs")
     asked = []
     monkeypatch.setattr(inst, "_run_install_cron_plain", lambda *a: asked.append(1) or 0)
     err = io.StringIO()

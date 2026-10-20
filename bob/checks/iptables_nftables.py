@@ -57,6 +57,9 @@ class IptablesNftSnapshot:
     #: The chain the input fix would target holds a rule accepting everything:
     #: a drop policy behind it would change nothing.
     input_accepts_all: bool = False
+    #: v0.26.0 — INPUT's restrictive verdict comes from a final rule that
+    #: drops or rejects everything, not from the chain's policy.
+    input_policy_by_rule: bool = False
 
     @classmethod
     def from_system(cls) -> "IptablesNftSnapshot":
@@ -87,6 +90,7 @@ class IptablesNftSnapshot:
                     input_target=_nft_hook_target(raw, "input", _nft_managed(nft_res.stderr)),
                     forward_target=_nft_hook_target(raw, "forward", _nft_managed(nft_res.stderr)),
                     input_accepts_all=_nft_first_ipv4_chain_accepts_all(raw, "input"),
+                    input_policy_by_rule=_nft_policy_by_rule(raw, "input"),
                 )
 
         # --- fall back to iptables ---
@@ -103,6 +107,7 @@ class IptablesNftSnapshot:
                     input_target=("iptables",),
                     forward_target=("iptables",),
                     input_accepts_all=bool(re.search(r"^-A INPUT -j ACCEPT\s*$", raw, re.MULTILINE)),
+                    input_policy_by_rule=_ipt_terminal_input(raw) in ("DROP", "REJECT"),
                 )
 
         # Nothing came back from either backend. That is two different
@@ -202,6 +207,38 @@ def _nft_first_ipv4_chain_accepts_all(ruleset: str, hook: str) -> bool:
     return False
 
 
+#: v0.26.0 — a rule that drops or rejects every packet, counters and comments
+#: aside: ``drop``, ``reject``, ``reject with icmp type host-prohibited``.
+_DROPS_EVERYTHING = re.compile(r"^(drop|reject(?:\s+with\s+[\w\s-]+)?)$")
+
+
+def _chain_verdict(chain: dict) -> "tuple[str, bool]":
+    """(the verdict every packet meets in *chain*, whether a rule gave it).
+
+    v0.26.0 — measured in a network namespace: a chain at policy accept whose
+    last rule is a bare ``reject`` (nft) or ``-j REJECT`` (iptables) refused
+    8099 while 8097, accepted above it, answered — and BOB read "no firewall"
+    (−3, capped at 3/10). The first rule that takes every packet decides: an
+    accept-everything rule, or a drop/reject with no match. A rule with a
+    match (``ip protocol tcp … reject``) leaves the rest to the policy.
+    """
+    for rule in chain["rules"]:
+        text = _RULE_NOISE.sub("", rule).strip()
+        if text == "accept":
+            return "ACCEPT", True
+        m = _DROPS_EVERYTHING.match(text)
+        if m:
+            return ("DROP" if m.group(1) == "drop" else "REJECT"), True
+    return chain["policy"], False
+
+
+def _nft_policy_by_rule(ruleset: str, hook: str) -> bool:
+    """Whether the restrictive verdict on *hook* comes from a final rule."""
+    return any(v in ("DROP", "REJECT") and by_rule
+               for v, by_rule in (_chain_verdict(c) for c in _nft_base_chains(ruleset, hook)
+                                  if c["family"] in _IPV4_FAMILIES))
+
+
 def _accepts_everything(rule: str) -> bool:
     """A rule that accepts every packet: ``accept``, counters and comments aside."""
     return _RULE_NOISE.sub("", rule).strip() == "accept"
@@ -224,8 +261,7 @@ def _nft_policy(ruleset: str, hook: str) -> str:
     chains = _nft_base_chains(ruleset, hook)
     if not chains:
         return "unknown"
-    effective = ["ACCEPT" if any(_accepts_everything(r) for r in c["rules"]) else c["policy"]
-                 for c in chains if c["family"] in _IPV4_FAMILIES]
+    effective = [_chain_verdict(c)[0] for c in chains if c["family"] in _IPV4_FAMILIES]
     for restrictive in ("DROP", "REJECT"):
         if restrictive in effective:
             return restrictive
@@ -274,8 +310,14 @@ def _nft_has_loopback(ruleset: str) -> bool:
     Verified against real `nft list ruleset` output: `meta iifname "lo"` and
     `iifname { "lo" }` are both normalised by nft to `iifname "lo"`, so those
     two need no pattern of their own.
+
+    v0.26.0: iptables-nft writes a counter into every rule — ``iifname "lo"
+    counter packets 0 bytes 0 accept`` (measured in a network namespace,
+    ``iptables -A INPUT -i lo -j ACCEPT``) — and the pattern wanted ``accept``
+    right after ``"lo"``: −1 for a rule that was there.
     """
-    return bool(re.search(r'\biif(?:name)?\s+"?lo"?\s+accept', ruleset, re.IGNORECASE))
+    return bool(re.search(r'\biif(?:name)?\s+"?lo"?\s+(?:counter(?:\s+packets\s+\d+\s+bytes\s+\d+)?\s+)?accept',
+                          ruleset, re.IGNORECASE))
 
 
 def _nft_has_conntrack(ruleset: str) -> bool:
@@ -306,9 +348,18 @@ def _ipt_effective_input_policy(rules: str) -> str:
     DROP — the policy is never reached. As for nftables, BOB reads policies
     and this one rule; a rule accepting a whole interface is not weighed.
     """
-    if re.search(r"^-A INPUT -j ACCEPT\s*$", rules, re.MULTILINE):
-        return "ACCEPT"
-    return _ipt_policy(rules, "INPUT")
+    terminal = _ipt_terminal_input(rules)
+    return terminal if terminal else _ipt_policy(rules, "INPUT")
+
+
+def _ipt_terminal_input(rules: str) -> str:
+    """The first INPUT rule that takes every packet: ``-j ACCEPT``, ``-j DROP``
+    or ``-j REJECT`` with no match (v0.26.0, see :func:`_chain_verdict`); ""."""
+    for line in rules.splitlines():
+        m = re.match(r"^-A INPUT -j (ACCEPT|DROP|REJECT)(?:\s+--reject-with\s+\S+)?\s*$", line.strip())
+        if m:
+            return m.group(1)
+    return ""
 
 
 def _ipt_has_loopback(rules: str) -> bool:
@@ -413,6 +464,15 @@ def check_iptables_nftables(
         )
         return result
 
+    # v0.26.0 — firewalld installed but firewall-cmd silent: if it runs, it
+    # filters in its own chains and keeps the base policy at ACCEPT, so the
+    # base chains say nothing about the host. Not judged; said.
+    if firewalld is not None and getattr(firewalld, "installed", False) \
+            and not getattr(firewalld, "readable", True):
+        result.info(message=_t("firewall_iptables.firewalld_unreadable"),
+                    key="firewall_iptables.firewalld_unreadable")
+        return result
+
     if snapshot.query_failed and snapshot.backend == "none":
         # A backend binary is installed but its ruleset could not be read. The
         # firewall state is unknown, not absent, and this used to cost 3 points
@@ -491,7 +551,11 @@ def check_iptables_nftables(
         )
     elif snapshot.input_policy in ("DROP", "REJECT"):
         result.ok(
-            message=_t("firewall_iptables.input_ok", policy=snapshot.input_policy),
+            # v0.26.0 — a final drop/reject rule, the chain's policy accept
+            # never reached: said as it is, not as "policy DROP".
+            message=(_t("firewall_iptables.input_ok_final_rule", policy=snapshot.input_policy)
+                     if snapshot.input_policy_by_rule
+                     else _t("firewall_iptables.input_ok", policy=snapshot.input_policy)),
             # v0.24.4: what this OK rests on — policies, not every rule.
             detail=_t("firewall_iptables.input_ok_detail"),
             key="firewall_iptables.input_ok",

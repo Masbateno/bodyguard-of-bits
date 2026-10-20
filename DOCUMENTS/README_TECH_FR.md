@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.25.1-brightgreen)
+![Release](https://img.shields.io/badge/version-0.26.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -25,8 +25,8 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 ### Audit principal
 
 - **Bannière ASCII** avec informations système — distro, hôte, noyau, versions des outils de pare-feu (UFW, firewalld, iptables, nftables), système d'init, utilisateur, date
-- **Vérification du statut du pare-feu** — UFW, firewalld (zone par défaut et sa cible) ou jeu de règles nftables/iptables brut en refus par défaut : actif/inactif, politique par défaut entrante ; une zone par défaut firewalld dont la cible est ACCEPT est une ALERT −3, comme la politique ALLOW par défaut d'UFW (v0.24.2)
-- **Analyse des règles UFW** — règles en doublon, `allow from any` sans restriction de port, cohérence IPv6
+- **Vérification du statut du pare-feu** — UFW, firewalld (zone par défaut et sa cible) ou jeu de règles nftables/iptables brut en refus par défaut : actif/inactif, politique par défaut entrante ; une zone par défaut firewalld dont la cible est ACCEPT est une ALERT −3, comme la politique ALLOW par défaut d'UFW (v0.24.2) ; l'absence de tout pare-feu actif plafonne *Pare-feu & Réseau* à 3/10, comme un UFW inactif (0.26.0), tandis qu'un firewalld que `firewall-cmd` ne peut pas interroger est signalé comme non établi, ni alerté ni plafonné ; sur Alpine, awall est nommé comme front-end avec ses politiques activées (bannière et section pare-feu), et « awall installé, aucune politique activée » est dit tel quel, sans `ufw` à installer à côté (0.26.0)
+- **Analyse des règles UFW** — règles en doublon, `allow from any` sans restriction de port, cohérence IPv6 ; seulement quand UFW est actif (0.26.0 : avant, un hôte sans UFW lisait « Aucune règle UFW en doublon détectée »)
 - **Score contextuel** — détection du contexte réseau (IP publique directe ou client DDNS actif vs NAT) ; pénalités plus lourdes sur les machines exposées sur internet — IP publique ou DDNS (un port ouvert non couvert passe de 1 à 2 points ; un service à risque élevé ou critique exposé de 2 à 3) ; pare-feu inactif plafonne le score à 3/10
 - **Score de sécurité** 0–10 avec niveau de risque : FAIBLE / MOYEN / ÉLEVÉ / CRITIQUE ; constats répartis en *Action requise* / *Améliorations possibles* / *Configuration normale*
 - **Profils d'audit** — `server` (défaut), `desktop`, `workstation`, `container` ; profil actif affiché dans la boîte de synthèse. **v0.8.1 BREAKING** : `workstation` n'est plus un alias de `desktop` et livre ses propres overrides business-tier (backup / auditd / mac_policy restent à WARN alors que desktop les relâche à INFO)
@@ -88,12 +88,12 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 ### Détection & surveillance
 
-- **Logs UFW** — parse `/var/log/ufw.log` sur une période configurable (`--log-days=N`, défaut 7 jours) ; total des tentatives bloquées, top IPs sources avec géolocalisation, top ports ciblés, détection bruteforce (>10 tentatives/60 s), tentatives sur ports de services installés
+- **Logs UFW** — seulement là où UFW est installé (0.26.0) ; UFW inactif, un journal vide est une INFO, pas un OK ; parse `/var/log/ufw.log` sur une période configurable (`--log-days=N`, défaut 7 jours) ; total des tentatives bloquées, top IPs sources avec géolocalisation, top ports ciblés, détection bruteforce (>10 tentatives/60 s), tentatives sur ports de services installés
 - **Analyse auth.log SSH** — parse `/var/log/auth.log` ; détection brute-force (≥50 tentatives échouées sur toute la période analysée, toutes sources confondues → WARN, sans déduction) ; dernières connexions réussies ; top sources d'échec
 - **Géolocalisation IP** — IPs sources enrichies avec pays et opérateur via GeoIP2 (optionnel, `python3-geoip2` + base GeoLite2) ; plages privées identifiées comme réseau local ; résultats mis en cache par session
 - **Dominance source locale IoT** — détecte quand une seule IP privée représente ≥ 70 % du trafic UFW bloqué sur ≥ 50 entrées de log (INFO, sans déduction — le plus souvent du bruit mDNS/SSDP/UPnP bénin) ; typique des appareils IoT qui scannent le LAN
 - **Synchronisation NTP** — systemd-timesyncd, chronyd ou ntpd ; WARN −1 pt si désactivé ou non synchronisé
-- **Prévention d'intrusion Fail2ban** — installation, état du service, jails actifs, présence d'un jail SSH ; WARN −1 pt si inactif ou aucun jail
+- **Prévention d'intrusion Fail2ban** — installation, état du service, jails actifs, présence d'un jail SSH ; WARN −1 pt si inactif ou aucun jail ; une jail SSH sur fichier n'est créditée que sur une preuve que les messages de sshd atteignent son fichier — sur un hôte sans journal systemd (OpenRC), le compteur `Total failed` de la jail elle-même, et une jail dont le fichier n'a pas la ligne de la dernière session SSH alors qu'un autre fichier journal l'a est dite aveugle, avec une surcharge `logpath` (0.26.0, mesuré sur Alpine avec syslog-ng) ; un OK posé sur une preuve partielle — ce compteur, ou le fichier échantillonné de la 0.24.4 — est suivi d'une INFO qui dit sur quoi il repose, et la porte dans `qualified_by` (0.26.0 : la raison était dans le détail de l'OK, que le terminal n'affiche jamais)
 - **Scan rootkit & intégrité** — détection rkhunter/chkrootkit ; WARN −1 pt pour base obsolète (≥7 jours), scan absent ou trop ancien (>30 jours)
 - **Linux Audit Framework (auditd)** — installation, état du service, règles chargées, couverture de `/etc/passwd`, `/etc/shadow`, `/etc/sudoers` ; WARN −1 pt chacun pour service inactif, aucune règle, fichiers non couverts (profils server et workstation ; INFO en desktop ; ignoré dans un conteneur)
 - **Intégrité des fichiers (AIDE/Tripwire)** — installation, existence de la base, récence du dernier check ; WARN −1 pt si base absente ou check absent/trop ancien (>30 jours)
@@ -127,7 +127,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 - **Rapport détaillé** — fichier log horodaté avec en-tête ASCII art, informations système, constats et recommandations ; créé avec `-d` ; nom : `bob_YYYYMMDD_HHMMSS.log`. Chaque constat porte son explication, sa commande (`→` correctif, `?` vérification) et sa clé — sans condition, et aussi sous `-q`, car une archive ne se relance pas avec `-v`
 - **`--manage-logs`** — interface interactive pour lister, prévisualiser et supprimer les rapports ; prévisualisation scrollable avec bascule résumé/complet. S'ouvre sur un sélecteur de dossiers (📁) listant chaque répertoire de logs suivi — l'actuel et les précédents, conservés jusqu'à ce que vous en oubliiez un explicitement, pour qu'un changement de répertoire ne perde jamais de vue les anciens rapports ; choisissez un dossier pour parcourir ses rapports
-- **`--install-cron`** — wizard de planification : nom du cron, type de planning (quotidien / jours spécifiques / expression cron personnalisée), heure et email optionnel, puis fixation du profil, de la langue et des sondes sortantes de l'audit (v0.16.1 — un cron s'exécute en root : sans cela il lirait le profil enregistré de root et le `$LANG` nu de cron) ; détection automatique du MTA (Postfix, Exim, msmtp, ssmtp) — avertit si aucun `sendmail` trouvé ; aperçu en langage naturel ; ligne de commande résultante affichée avant écriture ; TUI curses avec repli texte ; crons nommés dans `/etc/cron.d/bob-{nom}`
+- **`--install-cron`** — wizard de planification : nom du cron, type de planning (quotidien / jours spécifiques / expression cron personnalisée), heure et email optionnel, puis fixation du profil, de la langue et des sondes sortantes de l'audit (v0.16.1 — un cron s'exécute en root : sans cela il lirait le profil enregistré de root et le `$LANG` nu de cron) ; détection automatique du MTA (Postfix, Exim, msmtp, ssmtp) — avertit si aucun `sendmail` trouvé ; aperçu en langage naturel ; ligne de commande résultante affichée avant écriture ; TUI curses avec repli texte ; crons nommés dans `/etc/cron.d/bob-{nom}`, ou — BusyBox crond, sans `/etc/cron.d` — un bloc repéré de `/etc/crontabs/root` (0.26.0)
 - **`--manage-cron`** — TUI en boucle : lister, modifier planning/email, supprimer des crons ; carnet d'adresses email accessible depuis le menu, même sans cron installé
 
 ---
@@ -398,7 +398,7 @@ Exemple (tronqué pour la lisibilité) :
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.25.1  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.26.0  │  Auditeur de durcissement Linux                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -878,7 +878,7 @@ Historique de référence : audit v0.7.0 = 117 clés / 30 préfixes / 100 % de c
 
 ## Politique de support Python
 
-> **Ce qui est vrai aujourd'hui** (remesuré le 2026-10-17). Les règles écrites en v0.7.0 sont gardées ci-dessous telles quelles, avec ce qui a été fait et ce qui ne l'a pas été depuis.
+> **Ce qui est vrai aujourd'hui** (remesuré le 17 octobre 2026). Les règles écrites en v0.7.0 sont gardées ci-dessous telles quelles, avec ce qui a été fait et ce qui ne l'a pas été depuis.
 
 `pyproject.toml` exige Python **≥ 3.10**, et la CI lance toute la suite sur **3.10, 3.11, 3.12, 3.13 et 3.14** (`tests.yml` ; `publish.yml` refait la même matrice avant une release). Les linters tournent en 3.12.
 
@@ -888,7 +888,7 @@ Historique de référence : audit v0.7.0 = 117 clés / 30 préfixes / 100 % de c
 | 3.13 | ✅ supporté, en CI |
 | 3.12 | ✅ supporté, en CI (fait aussi tourner les linters) |
 | 3.11 | ✅ supporté, en CI |
-| 3.10 | ⚠ **déprécié** (annoncé en 0.25.1), en CI — fin de vie upstream le 2026-10-01 (PEP 619 ; 3.10.22 a été la dernière version) ; **supporté jusqu'au 2027-04-01** |
+| 3.10 | ⚠ **déprécié** (annoncé en 0.25.1), en CI — fin de vie upstream le 1er octobre 2026 (PEP 619 ; 3.10.22 a été la dernière version) ; **supporté jusqu'au 1er avril 2027** |
 | 3.9  | ❌ abandonné en v0.2.3 |
 
 Le texte de la v0.7.0 disait que BOB supporte « les versions **N et N-2** ». Ce n'est pas le cas : N étant 3.14, N-2 vaut 3.12, et BOB supporte cinq versions. Ce qu'il fait réellement, c'est tester chaque version de CPython à partir de 3.10.
@@ -900,7 +900,7 @@ L'échelle de dépréciation de Python 3.10 écrite en v0.7.0 :
 
 **La règle depuis la 0.25.1.** Une version de Python reste supportée **6 mois après sa fin de vie upstream officielle**. La dépréciation est annoncée dès la première release qui suit cette fin de vie — dans le changelog, dans `--help` et, quand BOB tourne sous cette version, par une ligne INFO au début de l'audit — et elle n'est abandonnée (matrice CI et `requires-python`) que par une release étiquetée **BREAKING** — selon la règle SemVer du projet, un saut de minor tant que BOB est en 0.x, un major à partir de 1.0 — la première après ces 6 mois ; une release patch ou une minor ordinaire n'abandonne jamais une version de Python. Les versions concernées et leurs dates sont dans `bob/_python_support.py`.
 
-**Pour Python 3.10 :** fin de vie le 2026-10-01, annoncée en 0.25.1 (étape 2 de l'ancienne échelle), supportée jusqu'au **2027-04-01**, abandonnée par la première release BREAKING après cette date. Ubuntu 22.04 LTS livre 3.10 comme Python système (celui qu'utilise `pipx`), avec un support standard jusqu'en mai 2027, et `ubuntu:22.04` figure dans la matrice CI des distributions de BOB : sur cette version, BOB après l'abandon demandera un autre Python (22.04 empaquette aussi 3.11).
+**Pour Python 3.10 :** fin de vie le 1er octobre 2026, annoncée en 0.25.1 (étape 2 de l'ancienne échelle), supportée jusqu'au **1er avril 2027**, abandonnée par la première release BREAKING après cette date. Ubuntu 22.04 LTS livre 3.10 comme Python système (celui qu'utilise `pipx`), avec un support standard jusqu'en mai 2027, et `ubuntu:22.04` figure dans la matrice CI des distributions de BOB : sur cette version, BOB après l'abandon demandera un autre Python (22.04 empaquette aussi 3.11).
 
 ## Packaging (depuis v0.4.2)
 

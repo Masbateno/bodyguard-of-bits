@@ -7,6 +7,10 @@
     "kernel": "Noyau",
     "ufw": "UFW",
     "firewalld": "firewalld",
+    "awall": "awall",
+    "awall_policies": "{policies} activée(s)",
+    "awall_no_policy": "installé, aucune politique activée",
+    "awall_unreadable": "installé (awall list a échoué)",
     "iptables": "iptables",
     "nftables": "nftables",
     "init": "Init",
@@ -183,22 +187,36 @@
   },
   "prerequisites": {
     "ufw_installed": "UFW est installé",
-    "firewall_missing": "Aucun pare-feu actif — ni UFW ni firewalld installé, et la couche netfilter ne filtre pas le trafic entrant",
-    "firewall_missing_firewalld_stopped": "Aucun pare-feu actif — firewalld est installé mais arrêté, et la couche netfilter ne filtre pas le trafic entrant"
+    "firewall_missing": "Aucun pare-feu actif — ni UFW ni firewalld installé, et aucune chaîne netfilter ne refuse le trafic IPv4 entrant par défaut",
+    "firewall_missing_firewalld_stopped": "Aucun pare-feu actif — firewalld est installé mais arrêté, et aucune chaîne netfilter ne refuse le trafic IPv4 entrant par défaut",
+    "firewall_missing_awall_idle": "Aucun pare-feu actif — awall est installé mais aucune politique n'est activée, et aucune chaîne netfilter ne refuse le trafic IPv4 entrant par défaut",
+    "firewall_missing_awall_idle_detail": "awall est le front-end du pare-feu de cet hôte : écrivez ou activez une politique qui autorise SSH et les ports que vous servez (awall enable <politique>), puis chargez-la avec awall activate. BOB n'imprime pas de commande : le choix de la politique vous revient.",
+    "firewall_missing_awall_not_loaded": "Aucun pare-feu actif — awall a des politiques activées ({policies}) mais elles ne sont pas chargées, et aucune chaîne netfilter ne refuse le trafic IPv4 entrant par défaut",
+    "firewall_missing_awall_not_loaded_detail": "awall enable sélectionne une politique ; awall activate la charge dans le noyau — mesuré dans Alpine 3.24.2 : après awall enable, INPUT restait à la politique ACCEPT sans aucune règle. Chargez-les avec awall activate après avoir vérifié qu'elles gardent votre session SSH. BOB n'imprime pas de commande : charger une politique vous revient."
   },
   "firewall": {
     "firewalld_keeps_ssh_detail": "La commande garde SSH autorisé dans la zone par défaut et dans chaque zone active : sans pare-feu il répondait de partout, elle ne ferme donc rien de ce qu'il atteignait. C'est un point de départ, pas une segmentation — ensuite, retirez ssh des zones qui ne doivent pas l'offrir (firewall-cmd --permanent --zone=<zone> --remove-service=ssh, puis --reload). SSH est inscrit dans la configuration permanente avant le démarrage de firewalld — la zone par défaut, les zones que NetworkManager donne aux connexions actives et les zones auxquelles une interface ou une source est liée — si bien que le premier jeu de règles chargé l'autorise déjà : mesuré sur Fedora et openSUSE, 0 nouvelle connexion SSH refusée, contre 3 à 4 sur Fedora quand ssh était ajouté après le démarrage. Une zone liée autrement reçoit ssh après le démarrage, avec le rechargement.",
     "ssh_ports_unknown_detail": "BOB n'a pas pu établir sur quels ports sshd répond — `ss -tulnp` n'a pas pu tourner, ou n'a nommé aucun processus (BOB n'a pas été lancé en root) — il ne donne donc aucune commande qui active le filtrage : une commande qui ne garderait que le port 22 couperait un sshd qui écoute ailleurs. Autorisez d'abord le port de votre session SSH, puis activez le filtrage.",
     "active": "Le pare-feu UFW est actif",
     "netfilter_active": "Aucun front-end pare-feu actif (UFW/firewalld), mais la couche netfilter filtre le trafic entrant — audité dans la section iptables/nftables",
+    "awall_active": "awall est le front-end du pare-feu (activées : {policies}) — le jeu de règles iptables qu'il a généré filtre le trafic entrant, audité dans la section iptables/nftables",
     "firewalld_active": "firewalld est le pare-feu actif — la zone par défaut '{zone}' autorise : {services}",
     "firewalld_policy_open": "La zone par défaut firewalld '{zone}' accepte tout le trafic entrant (cible ACCEPT) — tous les ports sont ouverts sauf si une règle les bloque",
     "firewalld_policy_open_iface": "La zone firewalld '{zone}' accepte tout le trafic entrant sur {interfaces} (cible ACCEPT) — tous les ports sont ouverts sauf si une règle les bloque",
     "firewalld_policy_open_host_policy": "La policy firewalld '{policy}' accepte tout le trafic entrant vers l'hôte (cible ACCEPT) et tranche avant la zone '{zone}' — tous les ports sont ouverts",
     "firewalld_policy_open_source": "La zone firewalld '{zone}' est liée à {sources}, donc tous les clients de cette famille d'adresses passent par elle, et elle accepte tout le trafic entrant (cible ACCEPT) — tous les ports sont ouverts",
+    "firewalld_policy_open_source_except": "La zone firewalld '{zone}' est rattachée à {sources} et accepte tout le trafic entrant (cible ACCEPT) : tout client de cette famille d'adresses passe par elle, sauf {exceptions}, qu'une autre zone classe en premier — tous les ports sont ouverts",
     "firewalld_source_zone_open": "La zone firewalld '{zone}' accepte tout le trafic entrant depuis {sources} — tous les ports sont ouverts à ces adresses, qui passent par cette zone avant celle de l'interface ; BOB ne peut pas juger si elles méritent cette confiance",
+    "firewalld_open_zone_refuses_some": "La zone firewalld '{zone}' porte aussi {count} règle(s) riche(s) qui bloquent ou rejettent une partie du trafic avant que sa cible ACCEPT s'applique — ce qu'elles refusent n'est pas ouvert ; BOB ne les pèse pas une à une",
+    "firewalld_source_zones_cumulated": "Les sources rattachées aux zones firewalld {zones}, qui acceptent chacune tout paquet venant de ses sources, prennent ensemble {share} % de l'espace d'adresses {family} ({public} % de ses adresses publiques), sans les sources que d'autres zones classent en premier — chaque zone est listée ci-dessus ; BOB ne peut pas juger si ces sources méritent cette confiance",
+    "firewalld_sources_not_counted": "Les zones firewalld {zones} acceptent tout depuis des sources ipset ou MAC que BOB ne compte pas : la part des adresses qu'elles ouvrent n'est pas établie, et une alerte pour presque toutes les adresses publiques peut être manquée",
     "firewalld_zones_unread": "firewall-cmd n'a pas listé les zones ou les policies actives — la politique entrante par défaut n'a pas pu être établie, elle n'est donc ni créditée ni alertée",
+    "firewalld_unreadable": "firewalld est installé mais firewall-cmd n'a rien répondu — on ne sait pas si un pare-feu filtre le trafic entrant",
     "firewalld_policy_open_sources_pooled": "Les zones firewalld {zones} acceptent tout le trafic entrant depuis {sources} — ensemble, ces sources couvrent tous les clients de cette famille d'adresses, donc tous les ports sont ouverts",
+    "firewalld_policy_open_sources_pooled_public": "Les zones firewalld {zones} acceptent tout le trafic entrant depuis {sources} — ensemble, ces sources prennent toutes les adresses publiques de cette famille d'adresses, mais pas toutes ses plages privées et réservées, donc la politique du pare-feu de l'hôte laisse entrer tous les ports depuis toutes ces adresses (la joignabilité depuis Internet n'est pas testée)",
+    "firewalld_policy_open_sources_pooled_except": "Les zones firewalld {zones} acceptent tout le trafic entrant depuis {sources} — ensemble, ces sources prennent toutes les adresses publiques de cette famille d'adresses, donc la politique du pare-feu de l'hôte laisse entrer tous les ports depuis toutes ces adresses (la joignabilité depuis Internet n'est pas testée), sauf pour {exceptions}, qu'une autre zone classe en premier",
+    "firewalld_policy_open_sources_pooled_near": "Les zones firewalld {zones} acceptent tout le trafic entrant depuis {sources} — ensemble, ces sources prennent {public} % des adresses publiques de cette famille d'adresses, donc la politique du pare-feu de l'hôte laisse entrer tous les ports depuis presque toutes ces adresses (la joignabilité depuis Internet n'est pas testée)",
+    "firewalld_policy_open_sources_pooled_near_except": "Les zones firewalld {zones} acceptent tout le trafic entrant depuis {sources} — ensemble, ces sources prennent {public} % des adresses publiques de cette famille d'adresses, donc la politique du pare-feu de l'hôte laisse entrer tous les ports depuis presque toutes ces adresses (la joignabilité depuis Internet n'est pas testée), sauf pour {exceptions}, qu'une autre zone classe en premier",
     "firewalld_policy_open_zone_rule": "La zone firewalld '{zone}' a une règle riche qui accepte tous les paquets {families} — tous les ports sont ouverts en {families} sauf si une règle antérieure les bloque",
     "firewalld_policy_open_policy_rule": "La policy firewalld '{policy}' a une règle riche qui accepte tous les paquets {families} vers l'hôte et tranche avant la zone '{zone}' — tous les ports sont ouverts en {families}",
     "inactive": "Le pare-feu UFW est désactivé. Votre machine n'est actuellement pas protégée.",
@@ -275,7 +293,7 @@
     "uncovered_bound_address_deny": "Port {port} — lié uniquement à {address}, aucune règle UFW explicite, mais couvert par la politique de refus par défaut",
     "uncovered_bound_address_firewalld": "Port {port} — lié uniquement à {address} — régi par la zone firewalld de l'interface par laquelle on l'atteint, pas par une règle UFW",
     "uncovered_bound_address_netfilter": "Port {port} — lié uniquement à {address} — régi par le jeu de règles nftables/iptables (entrée refusée par défaut ; une règle peut encore autoriser ce port — BOB lit la politique par défaut, pas toutes les règles, et n'établit pas la joignabilité), pas par une règle UFW",
-    "system_port": "Port système interne — aucun danger (service OS légitime, pas de règle UFW nécessaire) : {port} ({service})",
+    "system_port": "Port système interne — aucun danger (service OS légitime, pas de règle de pare-feu nécessaire) : {port} ({service})",
     "unreadable": "Les ports en écoute n'ont pas pu être déterminés",
     "unreadable_detail": "`ss -tulnp` n'a pas pu être exécuté — le binaire est absent (iproute2 n'est pas installé sur les images minimales ni dans beaucoup de conteneurs) ou il a échoué. Sa sortie est vide dans les deux cas, ce qui est indiscernable d'une machine sans rien en écoute : BOB signale donc la lacune au lieu d'annoncer zéro port ouvert. Vérifier avec : ss -tulnp",
     "listening_count": "{count} port(s) en écoute détecté(s) sur ce système",
@@ -285,13 +303,15 @@
     "uncovered_default_deny": "Port {port} en écoute sur toutes les interfaces — aucune règle UFW explicite, mais couvert par la politique de refus par défaut",
     "uncovered_ufw_inactive": "Port {port} en écoute sur toutes les interfaces — aucun pare-feu actif pour le filtrer",
     "uncovered_firewalld": "Port {port} en écoute sur toutes les interfaces — régi par la zone firewalld de l'interface par laquelle on l'atteint, pas par une règle UFW",
-    "uncovered_firewalld_docker": "Port {port} en écoute sur toutes les interfaces — publié par Docker : quand Docker gère iptables (par défaut), la zone firewalld ne le filtre pas (mesuré sur Fedora ; voir la section Docker)",
+    "uncovered_firewalld_docker": "Port {port} en écoute sur toutes les interfaces — publié par Docker : avec Docker qui écrit ses propres règles de pare-feu et le StrictForwardPorts de firewalld désactivé (les deux valeurs par défaut), la zone firewalld ne filtrait pas un tel port lors des mesures (Fedora, openSUSE et Debian ; voir la section Docker)",
+    "uncovered_firewalld_docker_forwarded": "Port {port} en écoute sur toutes les interfaces — publié par Docker : le StrictForwardPorts de firewalld est activé, mais une zone firewalld transfère aussi ce port, et firewalld laisse alors passer le trafic DNAT vers lui quelle que soit la zone d'entrée (issue firewalld #1536, confirmée en amont ; non reproduite ici ; voir la section Docker)",
     "uncovered_netfilter": "Port {port} en écoute sur toutes les interfaces — régi par le jeu de règles nftables/iptables (entrée refusée par défaut ; une règle peut encore autoriser ce port — BOB lit la politique par défaut, pas toutes les règles, et n'établit pas la joignabilité), pas par une règle UFW"
   },
   "logs": {
     "no_logfile": "Fichier de log UFW introuvable (/var/log/ufw.log) et aucune entrée UFW dans journald — journalisation désactivée ?",
     "source_journald": "Source des logs UFW : systemd-journald (pas de /var/log/ufw.log — normal sur les systèmes sans rsyslog)",
     "empty": "Aucun événement UFW BLOCK dans les logs sur la période analysée",
+    "empty_ufw_inactive": "Aucun événement UFW BLOCK sur la période analysée — UFW est inactif, il n'y en avait donc pas à attendre",
     "period": "Période analysée",
     "days_unit": "jour(s)",
     "days_available": "jour(s) de logs disponibles",
@@ -327,16 +347,20 @@
   },
   "docker": {
     "not_installed": "Docker non installé — section ignorée",
-    "iptables_disabled": "Docker est configuré avec iptables désactivé (daemon.json). Les règles UFW s'appliquent normalement.",
+    "iptables_disabled": "Docker configuré avec iptables désactivé (daemon.json) : il n'écrit pas la plupart de ses règles de pare-feu IPv4, si bien que ses ports publiés sont laissés au pare-feu de l'hôte — vérifiez qu'il les filtre, ainsi que les adresses propres des conteneurs si le réseau y mène ; les conteneurs d'un réseau bridge n'ont pas d'accès sortant (pas de NAT) tant que vous n'écrivez pas ces règles (l'IPv6 suit l'option distincte ip6tables)",
+    "firewalld_strict_forward_ports": "StrictForwardPorts=yes est réglé dans firewalld : le trafic que Docker transfère vers ses ports publiés est rejeté, sauf si la zone firewalld transfère le port — mesuré sur Debian 13 (firewalld 2.3.1, Docker 26.1.5) : un 8099 publié était rejeté depuis le LAN, et répondait avec StrictForwardPorts=no",
+    "exposed_firewalld_strict": "rejeté par firewalld (StrictForwardPorts=yes) sauf si la zone le transfère",
     "iptables_bypass": "Docker peut contourner le pare-feu de l'hôte (UFW, firewalld) — iptables n'est pas désactivé dans daemon.json",
     "no_containers": "Aucun conteneur Docker en cours d'exécution ne publie de port",
     "no_public_ports": "Containers Docker détectés — aucun port exposé publiquement",
     "exposed_ports": "Ports exposés par Docker",
     "iptables_bypass_detail1": "C'est un choix d'architecture, pas une correction simple — deux options :",
-    "iptables_bypass_detail2": "  1. Désactiver iptables Docker (avancé) : mettre {\"iptables\": false} dans daemon.json — vous gérez le réseau vous-même",
+    "iptables_bypass_detail2": "  1. Désactiver iptables Docker (avancé) : mettre {\"iptables\": false} dans daemon.json — vous gérez le réseau vous-même : les conteneurs perdent alors l'accès sortant (pas de NAT) tant que vous n'écrivez pas ces règles",
     "iptables_bypass_detail3": "  2. Le garder : publier sur 127.0.0.1 un port qui doit rester sur l'hôte (-p 127.0.0.1:8080:8080), et pour limiter qui atteint un port publié, filtrer dans la chaîne DOCKER-USER du backend iptables de Docker (bob --explain docker.exposed_port) — une règle du pare-feu de l'hôte ne le filtre pas",
+    "iptables_bypass_detail3_nftables": "  2. Le garder : publier sur 127.0.0.1 un port qui doit rester sur l'hôte (-p 127.0.0.1:8080:8080), et pour limiter qui atteint un port publié, ajouter vos propres règles nftables — le backend nftables de Docker n'a pas de chaîne DOCKER-USER",
     "iptables_bypass_docs": "  → Lisez avant d'agir : https://docs.docker.com/network/iptables/",
-    "exposed_bypass_ufw": "contourne le pare-feu de l'hôte via iptables"
+    "exposed_bypass_ufw": "contourne le pare-feu de l'hôte via iptables",
+    "exposed_bypass_nftables": "contourne le pare-feu de l'hôte via nftables"
   },
   "scoring": {
     "score_label": "Score de sécurité",
@@ -516,7 +540,7 @@
     "reports_webhook": "Aucune adresse saisie. La tâche préviendra via le webhook enregistré dans la config de root (/root/.config/bob/config.conf) — vérifiez cette URL maintenant avec bob --test-webhook --webhook=URL.",
     "reports_webhook_offline": "Aucune adresse saisie, et le webhook enregistré dans la config de root ne partira pas non plus : vous avez choisi un audit hors ligne, ce qui supprime le POST. En l'état cette tâche ne préviendra personne. Choisissez un audit en ligne, ou ajoutez une adresse.",
     "no_log_dir": "Aucun emplacement de logs configuré — configurez-le d'abord avec : {cmd}",
-    "no_cron_d": "Cet hôte n'a pas de {path}, le répertoire où BOB écrit ses tâches cron (BusyBox crond, sur Alpine, lit /etc/crontabs/ à la place). Aucune tâche n'a été installée. Pour programmer un audit ici, ajoutez une ligne lançant bob --quiet --detailed à la crontab de root (sudo crontab -e).",
+    "no_cron_d": "Cet hôte n'a ni {path} ni /etc/crontabs/, les deux emplacements où BOB écrit ses tâches cron. Aucune tâche n'a été installée. Pour programmer un audit ici, ajoutez une ligne lançant bob --quiet --detailed à la crontab de root avec l'outil de votre cron (sudo crontab -e).",
     "overwrite": "Un cron existe déjà ({path}). Écraser ? [y/N]",
     "script_written": "Script créé : {path}",
     "cron_written": "Cron installé : {path}",
@@ -1062,7 +1086,7 @@
       "3": "Erreur technique",
       "4": "--target N manqué, ou le score n'a pas pu être entièrement vérifié"
     },
-    "python_deprecated": "Python {running} est déprécié : BOB le supporte au moins jusqu'à {until}, puis une version BREAKING exigera {next} ou plus récent."
+    "python_deprecated": "Python {running} est déprécié : BOB le supporte au moins jusqu'au {until}, puis une version BREAKING exigera {next} ou plus récent."
   },
   "cli": {
     "list": {
@@ -1183,7 +1207,7 @@
     "listeners_list": "Port(s) concerné(s) : {ports}",
     "port_no_v6_rule": "Port {port} à l'écoute en IPv6 (::) sans règle UFW (v6) correspondante",
     "all_ports_covered": "Les {count} service(s) IPv6 sont couverts par des règles UFW (v6)",
-    "firewalld_v6": "Les services IPv6 sont filtrés par firewalld (mêmes règles de zone qu'en IPv4) — aucune règle UFW v6 requise",
+    "firewalld_v6": "Les services IPv6 sont filtrés par firewalld (mêmes règles de zone qu'en IPv4)",
     "firewalld_v6_open": "Les services IPv6 ne sont pas filtrés — une zone firewalld portant une interface accepte tout le trafic entrant (cible ACCEPT)",
     "ufw_v6_off_blocked": "UFW IPv6 est désactivé, donc UFW bloque tout le trafic IPv6 (IPV6=no) — les {count} service(s) IPv6 sont injoignables, et l'IPv6 est inutilisable sur cet hôte",
     "ufw_v6_off_blocked_detail": "Services IPv6 : {ports}. Avec IPV6=no, ufw-init pose DROP sur les chaînes IPv6 INPUT, FORWARD et OUTPUT (loopback excepté). Pas une exposition — mais si cet hôte doit utiliser IPv6, mettre IPV6=yes dans /etc/default/ufw puis lancer : sudo ufw reload",
@@ -1199,7 +1223,7 @@
     "report_unavailable": "Le rapport détaillé n'a pas pu être écrit dans {path} ({error}) — l'audit ci-dessous est complet, seul le fichier manque",
     "section_unavailable": "Section non évaluée ({section}) — une erreur interne a empêché ce contrôle de s'exécuter",
     "starting": "Démarrage de l'audit",
-    "python_deprecated": "Exécution sous Python {running}, déprécié : BOB le supporte au moins jusqu'à {until}, puis une version BREAKING exigera {next} ou plus récent.",
+    "python_deprecated": "Exécution sous Python {running}, déprécié : BOB le supporte au moins jusqu'au {until}, puis une version BREAKING exigera {next} ou plus récent.",
     "audit_profile": "Profil d'audit : {profile}",
     "profile_autodetected_desktop": "Environnement de bureau détecté — profil « desktop » utilisé (il rapporte en INFO l'absence de sauvegarde, les règles auditd, AppArmor sans profil en mode enforce et la connexion SSH par mot de passe, entre autres). Forcer avec --profile server.",
     "profile_not_found": "Profil '{profile}' introuvable — utilisation du profil par défaut (server)",
@@ -2249,8 +2273,8 @@
       },
       "exposed_port": {
         "title": "Un container Docker expose un port (le pare-feu de l'hôte est contourné ; joignable depuis le LAN)",
-        "why": "Le container publie un port via `-p HOST_PORT:CONTAINER_PORT` ou une déclaration `ports:`. Comme Docker pilote iptables (voir docker.iptables_bypass), ce port est joignable depuis au moins le LAN et possiblement l'internet public selon l'adresse de publish (défaut 0.0.0.0 = toutes interfaces). Les règles deny UFW pour ce port n'ont aucun effet, pas plus qu'une zone firewalld qui ne l'autorise pas (mesuré sur Fedora 44). Que cela soit un problème dépend de ce que le container offre : un dashboard auto-hébergé, une UI d'admin de base de données, ou un redis sans authentification sont autant d'incidents d'exposition Docker classiques.",
-        "how": "1. Auditer ce que le container expose :\n   docker ps\n   docker inspect <container> | jq '.[0].NetworkSettings.Ports'\n2. Si le service est interne uniquement, restreindre l'adresse de publish :\n   docker run -p 127.0.0.1:8080:8080 ...   # localhost seulement\n   docker run -p 192.168.1.10:8080:8080 ... # IP LAN spécifique seulement\n3. Si le container doit être joignable mais seulement depuis des clients spécifiques, filtrer dans la chaîne DOCKER-USER (backend iptables de Docker ; son backend nftables n'en a pas), en laissant d'abord passer les réponses aux connexions des conteneurs. Ce DROP vise toute nouvelle connexion transférée depuis cette interface, pas seulement les ports de Docker : sur un hôte routeur, le restreindre d'abord. Lancer dans cet ordre (-I insère en tête, RETURN se retrouve premier) :\n   sudo iptables -I DOCKER-USER -i <interface-externe> ! -s <ip-de-confiance> -j DROP\n   sudo iptables -I DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN\n   Mesuré sur Ubuntu 26.04, Docker 29.1.3 : autres hôtes du LAN refusés, hôte de confiance servi, DNS et Internet gardés par les conteneurs (leurs nouvelles connexions entrent par le pont Docker, pas par cette interface). Sans RETURN, ou avec un DROP nu en fin de chaîne, ils perdaient les deux. Il arrête les nouvelles connexions venues d'autres sources ; une connexion déjà établie peut continuer jusqu'à sa fermeture. Non mesuré : ce dernier point, l'IPv6 (ip6tables a sa propre DOCKER-USER) et un hôte routeur.",
+        "why": "Le container publie un port via `-p HOST_PORT:CONTAINER_PORT` ou une déclaration `ports:`. Comme Docker pilote iptables (voir docker.iptables_bypass), ce port est joignable depuis au moins le LAN et possiblement l'internet public selon l'adresse de publish (défaut 0.0.0.0 = toutes interfaces). Les règles deny UFW pour ce port n'ont aucun effet, pas plus qu'une zone firewalld qui ne l'autorise pas (mesuré sur Fedora 44). Que cela soit un problème dépend de ce que le container offre : un dashboard auto-hébergé, une UI d'admin de base de données, ou un redis sans authentification sont autant d'incidents d'exposition Docker classiques.\n\nExemple DOCKER-USER (COMMENT, étape 3), mesuré sur Ubuntu 26.04 avec Docker 29.1.3 : autres hôtes du LAN refusés, hôte de confiance servi, DNS et Internet gardés par les conteneurs — leurs nouvelles connexions entrent par le pont Docker et leurs réponses repartent comme établies. Sans RETURN, ou avec un DROP nu en fin de chaîne, ils perdaient les deux. Le DROP vise toute nouvelle connexion transférée depuis cette interface, pas seulement les ports de Docker : sur un hôte qui route d'autres réseaux, le restreindre d'abord. Une connexion déjà établie peut continuer jusqu'à sa fermeture. Non mesuré : ce point, l'IPv6 (ip6tables a sa propre DOCKER-USER) et un hôte routeur.",
+        "how": "1. Auditer ce que le container expose :\n   docker ps\n   docker inspect <container> | jq '.[0].NetworkSettings.Ports'\n2. Si le service est interne uniquement, restreindre l'adresse de publish :\n   docker run -p 127.0.0.1:8080:8080 ...   # localhost seulement\n   docker run -p 192.168.1.10:8080:8080 ... # IP LAN spécifique seulement\n3. Si le container doit être joignable mais seulement depuis des clients spécifiques et que Docker utilise son backend iptables, filtrer dans la chaîne DOCKER-USER. Lancer dans cet ordre (-I insère en tête, RETURN se retrouve premier) ; le DROP touche aussi d'autres flux que l'hôte transfère depuis cette interface (voir POURQUOI) :\n   sudo iptables -I DOCKER-USER -i <interface-externe> ! -s <ip-de-confiance> -j DROP\n   sudo iptables -I DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN\n   Elles arrêtent les nouvelles connexions des autres sources ; une connexion déjà suivie avant elles passe jusqu'à son expiration.\n   Avec le backend nftables de Docker, il n'y a pas de chaîne DOCKER-USER : écrire vos propres règles nftables.",
         "server": {
           "why": "Sur un serveur, chaque port Docker exposé est potentiellement internet-facing. Traitez chaque déclaration `-p` comme une décision de port public, pas de port local."
         },
@@ -3007,7 +3031,7 @@
     "prerequisites": {
       "firewall_missing": {
         "title": "Aucun pare-feu actif (ni UFW, ni firewalld en marche, ni ruleset netfilter filtrant)",
-        "why": "Sans pare-feu hôte, chaque service en écoute sur la machine est exposé au réseau auquel elle est connectée. Aucune politique allow/deny par service, aucune politique deny par défaut, aucune trace d'audit des règles. Sur un hôte exposé à internet c'est une faille critique ; sur un hôte LAN-only le système reste trivialement joignable par tout pair compromis. Ce constat ne se déclenche que si BOB n'a trouvé aucun front-end géré ET que la couche netfilter brute ne filtrait pas le trafic entrant — un hôte protégé par un simple ruleset nftables en deny-par-défaut est crédité à la place, pas signalé ici.",
+        "why": "Sans pare-feu hôte, chaque service en écoute sur la machine est exposé au réseau auquel elle est connectée. Aucune politique allow/deny par service, aucune politique deny par défaut, aucune trace d'audit des règles. Sur un hôte exposé à internet c'est une faille critique ; sur un hôte LAN-only le système reste trivialement joignable par tout pair compromis. Ce constat ne se déclenche que si BOB n'a trouvé aucun front-end géré ET que la couche netfilter brute ne filtrait pas le trafic entrant — un hôte protégé par un simple ruleset nftables en deny-par-défaut est crédité à la place, pas signalé ici. Depuis 0.26.0, il plafonne le domaine Pare-feu & Réseau à 3/10, comme un UFW inactif : mesuré sur openSUSE Leap 16, un hôte sans pare-feu actif y obtenait 7/10 alors qu'un hôte à UFW éteint était plafonné à 3. Un firewalld que firewall-cmd ne peut pas interroger n'est pas ce constat : il est signalé comme non établi.",
         "how": "BOB audite deux front-ends et la couche netfilter brute ; choisissez celui que fournit votre distribution. Le constat lui-même porte la commande d'installation construite pour le gestionnaire de paquets de cet hôte (ufw sur les familles Debian/Arch/Alpine, firewalld sur Fedora/RHEL/openSUSE).\n\nUFW (Debian, Ubuntu, Arch, Alpine) :\n1. L'installer :\n   sudo apt install ufw\n2. Politique par défaut sûre :\n   sudo ufw default deny incoming\n   sudo ufw default allow outgoing\n3. (Si vous utilisez SSH) l'autoriser avant d'activer :\n   sudo ufw allow 22/tcp\n4. Activer :\n   sudo ufw enable\n\nfirewalld (Fedora, RHEL, openSUSE) :\n1. Installer et activer :\n   sudo dnf install firewalld   # ou : sudo zypper install firewalld\n   sudo systemctl enable --now firewalld\n2. Vérifier :\n   sudo firewall-cmd --state\n\nOu un simple ruleset nftables avec une politique entrante deny-par-défaut — BOB crédite aussi cette couche (auditée dans la section iptables/nftables)."
       }
     },
@@ -3346,7 +3370,7 @@
     "firewall_drivers": {
       "iptables_bypass": {
         "title": "Règle iptables ACCEPT brute dans INPUT contourne le filtrage UFW",
-        "why": "UFW écrit ses règles dans des chaînes dédiées (ufw-before-input, ufw-input, ufw-after-input). Une règle ACCEPT brute directement dans la chaîne INPUT prend effet AVANT que les chaînes ufw-* ne soient atteintes, donc les paquets matchant cette règle entrent quelles que soient les règles UFW deny qui devraient les rejeter. Le résultat est un contournement silencieux d'UFW — `ufw status` montre le pare-feu actif et configuré, alors que le trafic du port contourné circule librement. Ces règles proviennent typiquement de tweaks iptables manuels ou d'un paquet précédemment installé.",
+        "why": "UFW écrit ses règles dans des chaînes dédiées (ufw-before-input, ufw-input, ufw-after-input). Une règle ACCEPT brute directement dans la chaîne INPUT prend effet AVANT que les chaînes ufw-* ne soient atteintes, donc les paquets matchant cette règle entrent quelles que soient les règles UFW deny qui devraient les rejeter. Le résultat est un contournement silencieux d'UFW — `ufw status` montre le pare-feu actif et configuré, alors que le trafic du port contourné circule librement. Ces règles proviennent typiquement de tweaks iptables manuels ou d'un paquet précédemment installé. Depuis 0.26.0, il n'est signalé que si UFW est actif, lu avec iptables -S, et seulement pour une règle qui peut laisser entrer une nouvelle connexion : mesuré avec ufw actif dans un espace de noms réseau, une règle --dport ouvrait son port, une règle -m mark n'ouvrait rien, et -i lo n'atteint que la boucle locale. Une règle sur une marque ou un état établi est listée en INFO ; UFW éteint, la chaîne INPUT est le jeu de règles de l'hôte, et la section iptables/nftables la juge.",
         "how": "1. Lister les règles fautives :\n   sudo iptables -L INPUT -n --line-numbers\n2. Supprimer chaque règle ACCEPT brute (remplacez N par le numéro de ligne) :\n   sudo iptables -D INPUT N\n3. Si la règle a été ajoutée par un paquet ou un script de démarrage, trouvez et désactivez la source — sinon elle réapparaîtra après reboot :\n   sudo grep -r 'iptables -A INPUT' /etc/\n4. Sauvegarder le ruleset nettoyé :\n   sudo netfilter-persistent save",
         "server": {
           "why": "Sur un serveur, une règle ACCEPT brute en INPUT signifie qu'une partie de votre posture pare-feu est invisible au pilotage UFW — `ufw allow` et `ufw deny` ne peuvent pas l'affecter. Le port exposé reste ouvert quoi que dise la config UFW documentée."
@@ -3885,15 +3909,21 @@
     "no_jails_detail": "Fail2ban fonctionne mais n'a aucun jail actif configuré. Activez au minimum le jail sshd dans /etc/fail2ban/jail.local pour protéger SSH des attaques par force brute.",
     "no_jails_reason": "Fail2ban actif sans aucun jail configuré",
     "ssh_jail_source_unverified": "La jail SSH de Fail2ban '{jail}' lit {files} ; BOB n'a pas pu établir qu'un démon syslog l'écrit, sa protection n'est donc pas vérifiée",
+    "ssh_jail_source_unverified_no_journal": "La jail SSH de Fail2ban '{jail}' lit {files} ; un démon syslog tourne, mais sans journal systemd auquel comparer ce fichier et sans échec de connexion compté par la jail depuis le démarrage de fail2ban, l'arrivée des messages de sshd dans ce fichier n'est pas vérifiée",
     "ssh_jail_file_silent": "La jail SSH de Fail2ban '{jail}' lit {files}, où aucun message de sshd n'a été trouvé ; sa protection n'est donc pas vérifiée",
     "ssh_jail_file_stale": "La jail SSH de Fail2ban '{jail}' lit {files}, qui contient d'anciens messages de sshd mais pas son dernier ; sa protection n'est donc pas vérifiée",
     "ssh_jail_misses_failures": "La jail SSH de Fail2ban '{jail}' lit {files}, qui ne contient pas le dernier échec de connexion de sshd ; elle ne voit donc pas les échecs qu'elle doit compter",
+    "ssh_jail_routed_elsewhere": "La jail SSH de Fail2ban '{jail}' lit {files}, mais la dernière connexion SSH observée a été journalisée dans {dest}, pas dans {files} — à ce moment-là, ce message de sshd n'arrivait pas à la jail ; les échecs de connexion n'ont pas été observés, et à moins qu'un filtre syslog ne les envoie ailleurs que cette ligne de connexion, la jail ne voit pas les échecs qu'elle doit compter",
+    "ssh_jail_routed_elsewhere_detail": "Mesuré, pas supposé : la session SSH la plus récente ouverte depuis le démarrage du démon syslog a sa ligne « Accepted » dans {dest}, et dans aucun de {files}. Faites lire {dest} à la jail (la commande écrit une surcharge jail.d lue après les autres), puis vérifiez que fail2ban-client status compte un échec de connexion. Si un rechargement a changé le routage du démon depuis cette session, relancez l'audit depuis une nouvelle session SSH.",
     "ssh_jail_blind": "La jail SSH de Fail2ban '{jail}' lit {files}, mais aucun démon syslog ne l'écrit — les échecs de connexion n'atteignent jamais la jail",
     "ssh_jail_blind_reason": "La jail SSH lit un fichier de journal que rien n'écrit",
     "ssh_jail_blind_detail": "La jail '{jail}' surveille {files}. Aucun démon syslog (rsyslog, syslog-ng, syslog) ne tourne : les échecs de sshd vont dans le seul journal systemd et la jail n'en compte aucun — elle est active et ne bannit personne. Faites lire le journal à la jail (backend = systemd), ou démarrez un démon syslog qui écrit le fichier.",
     "active": "Fail2ban actif — {count} jail(s) activé(s)",
     "ssh_jail_active": "Protection SSH contre la force brute active (jail : {jail})",
     "ssh_jail_active_file_detail": "Vérifié : le fichier de la jail contient le dernier message de sshd, et le dernier échec de connexion de chaque type vu depuis le démarrage de rsyslog (utilisateur inconnu ; mot de passe ou clé refusés pour un utilisateur existant ; PAM ; trop de tentatives). Ce n'est pas une preuve que chaque échec atteint le fichier : seul le dernier de chaque type est comparé, un routage qui envoie ailleurs une partie des échecs d'un type peut échapper, et un type non vu depuis n'est pas vérifié.",
+    "ssh_jail_active_counted_detail": "Vérifié : la jail a compté {count} échec(s) de connexion dans son fichier depuis le démarrage de fail2ban (fail2ban-client status {jail}, « Total failed ») — son filtre y reconnaît bien les messages de sshd. Ce n'est pas une preuve que les échecs suivants l'atteignent encore : un routage changé depuis n'apparaît pas dans ce compte.",
+    "ssh_jail_counted_caveat": "Cette protection repose sur le compteur de la jail elle-même ({count} échec(s) de connexion depuis le démarrage de fail2ban) : ce compte prouve que la jail a reçu des échecs par son fichier, pas que les messages de sshd y arrivent encore — sans journal systemd, BOB ne peut pas savoir si le routage syslog a changé depuis",
+    "ssh_jail_sampled_caveat": "Cette protection repose sur un échantillon : {files} contient le dernier message de sshd et, quand le journal en montre, le dernier échec de connexion de chaque type — pas sur une preuve que chaque échec y arrive ; un routage qui en envoie une partie ailleurs peut échapper",
     "status_unreadable": "Impossible de lire la liste des prisons fail2ban",
     "status_unreadable_detail": "`fail2ban-client status` n'a renvoyé aucune liste de prisons alors que le service est actif — refus, délai dépassé, ou socket pas encore prête. Un appel réussi comporte toujours une ligne « Jail list: », même vide : c'est donc une requête échouée et non une machine faisant tourner fail2ban sans rien de configuré. Vérifier avec : sudo fail2ban-client status"
   },
@@ -4251,6 +4281,7 @@
     "runtime_only_detail": "Cette commande ne modifie que le jeu de règles en cours et n'enregistre rien : au prochain démarrage la politique revient à ACCEPT et ce constat reparaît, sauf si les règles sont enregistrées là où le backend les charge (netfilter-persistent save pour iptables ; /etc/nftables.conf pour nftables). Ses accept sont ajoutés après les règles déjà présentes dans la chaîne, qui continuent donc de décider en premier : une règle qui y refuse votre source SSH la refuse toujours.",
     "accept_all_detail": "Une règle de cette chaîne accepte chaque paquet avant que la politique ne soit atteinte : passer la politique à DROP ne changerait rien — mesuré, le port est resté ouvert. BOB ne donne pas de commande : retirez d'abord cette règle (repérez-la avec nft -a list ruleset ou iptables -S INPUT), en gardant des accept explicites pour les services nécessaires, puis posez la politique.",
     "input_ok": "Politique INPUT par défaut : {policy} (recommandé)",
+    "input_ok_final_rule": "INPUT se termine par une règle qui répond {policy} à tout paquet restant — la politique de la chaîne n'est jamais atteinte (recommandé)",
     "input_ok_detail": "Lu dans les politiques par défaut des chaînes (pour nftables, chaque chaîne de base IPv4 du hook input, en tenant compte d'une règle qui accepte tout). Les règles ne sont pas évaluées une à une : que SSH, ou un port donné, franchisse chaque chaîne n'est pas établi ici.",
     "input_unknown": "Politique INPUT par défaut : indéterminée — vérification manuelle recommandée",
     "no_loopback": "Aucune règle loopback (lo) — les services locaux peuvent être inaccessibles",
@@ -4259,11 +4290,13 @@
     "forward_ok": "Politique FORWARD par défaut : {policy} (recommandé)",
     "forward_unknown": "Politique FORWARD par défaut : indéterminée — vérification manuelle recommandée",
     "ruleset_unreadable": "Impossible de lire le jeu de règles du pare-feu",
+    "firewalld_unreadable": "firewalld est installé mais n'a pas pu être interrogé — les chaînes de base ne sont pas jugées, puisqu'un firewalld en marche filtre dans ses propres chaînes",
     "ruleset_unreadable_detail": "Un binaire iptables ou nftables est installé, mais l'énumération du jeu de règles n'a rien produit. Un `iptables -S` qui fonctionne imprime toujours ses lignes de politique, même sans aucune règle chargée : un résultat vide signifie donc que la requête a été refusée — généralement une CAP_NET_ADMIN absente. L'état du pare-feu est inconnu, pas absent : BOB n'affirme ni l'un ni l'autre. Vérifier avec : sudo iptables -S"
   },
   "firewall_drivers": {
     "no_issues": "Aucun ruleset pare-feu parallèle en conflit détecté",
     "iptables_bypass": "Règle iptables ACCEPT brute contourne UFW dans la chaîne INPUT : {rule}",
+    "iptables_accept_conditional": "Règle iptables ACCEPT brute dans INPUT, hors UFW, qui ne peut pas laisser entrer une nouvelle connexion à elle seule (elle porte sur une marque ou un état établi) : {rule} — vérifier ce qui pose la marque",
     "iptables_forward_bypass": "Règle iptables ACCEPT brute contourne UFW dans la chaîne FORWARD : {rule}",
     "forward_routing_ok": "La chaîne FORWARD contient des règles ACCEPT — cohérent avec le routage Docker, VPN, KVM ou Kubernetes",
     "nftables_parallel": "Règles nftables actives détectées en parallèle d'UFW — conflits potentiels",

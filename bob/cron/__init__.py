@@ -64,7 +64,11 @@ from ._io import (  # noqa: F401 — _atomic_write re-exported for back-compat
     apply_cron_email,
     apply_cron_schedule,
     build_script_content,
+    cron_job_location,
+    remove_cron_job,
     resolve_audit_binary,
+    use_crontab,
+    write_cron_job,
 )
 from ._install import (  # noqa: F401 — _CronQuit / _run_*_plain re-exported
     _CronQuit,
@@ -91,6 +95,10 @@ __all__ = [
     # Public API
     "CronEntry",
     "CRON_DIR",
+    "cron_job_location",
+    "remove_cron_job",
+    "use_crontab",
+    "write_cron_job",
     "SCRIPT_DIR",
     "apply_cron_email",
     "apply_cron_schedule",

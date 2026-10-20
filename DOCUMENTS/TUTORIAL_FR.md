@@ -52,7 +52,7 @@ L'installeur de la complétion crée aussi un lien symbolique `/usr/local/bin/bo
 sudo /home/$USER/.local/bin/bob
 ```
 
-**Sur un hôte qui utilise `doas` au lieu de `sudo`** (Alpine, par exemple), utilise `doas` partout où ce tutoriel écrit `sudo`, avec le chemin complet de BOB tant que l'option A n'a pas créé le lien (`doas /home/$USER/.local/bin/bob --install-completion`). BOB trouve ton répertoire personnel grâce à la variable `SUDO_USER` de sudo et, depuis la 0.25.1, `DOAS_USER` de doas : tes réglages, ta liste d'exclusions, ta ligne de base et ton historique restent dans ton propre `~/.config/bob`. (Avant la 0.25.1, ils allaient dans `/root/.config/bob` sous doas, et aucun lien n'était créé ; mesuré sur Alpine 3.24.) Autre différence d'Alpine : BusyBox crond lit `/etc/crontabs/` et il n'y a pas de `/etc/cron.d`, donc `--install-cron` (étape 7) y refuse et indique comment ajouter l'audit à la crontab de root à la place.
+**Sur un hôte qui utilise `doas` au lieu de `sudo`** (Alpine, par exemple), utilise `doas` partout où ce tutoriel écrit `sudo`, avec le chemin complet de BOB tant que l'option A n'a pas créé le lien (`doas /home/$USER/.local/bin/bob --install-completion`). BOB trouve ton répertoire personnel grâce à la variable `SUDO_USER` de sudo et, depuis la 0.25.1, `DOAS_USER` de doas : tes réglages, ta liste d'exclusions, ta ligne de base et ton historique restent dans ton propre `~/.config/bob`. (Avant la 0.25.1, ils allaient dans `/root/.config/bob` sous doas, et aucun lien n'était créé ; mesuré sur Alpine 3.24.) Autre différence d'Alpine : BusyBox crond lit `/etc/crontabs/` et il n'y a pas de `/etc/cron.d`, donc `--install-cron` (étape 7) écrit la tâche comme un bloc repéré de la crontab de root, `/etc/crontabs/root`, sans toucher au reste du fichier (depuis la 0.26.0 ; la 0.25.1 refusait).
 
 ---
 
@@ -68,11 +68,11 @@ Un audit dure de quelques secondes à quelques minutes : la durée dépend du di
 2. **Un cadre de synthèse** à la fin : le score sur 10 (écrit `≤ N/10` quand une section n'a pas pu être lue en entier — le score est alors un plafond), le niveau de risque (`FAIBLE`, `MOYEN`, `ÉLEVÉ` ou `CRITIQUE`), le contexte réseau détecté par BOB, le profil d'audit et la durée ; puis les constats à traiter en premier (*À corriger*), les *Améliorations possibles* et le détail du score
 3. **Sous le cadre**, un rappel que le verdict dépend du profil et du contexte réseau affichés au-dessus, le score de chaque domaine, et une synthèse de la surface d'attaque
 
-BOB lit UFW, firewalld, et un jeu de règles nftables ou iptables brut. Quand aucun d'eux ne filtre le trafic entrant, il lève *« Aucun pare-feu actif »* et propose l'outil de pare-feu de ta famille de distributions — `ufw` sur Debian, Ubuntu, Arch et Alpine, `firewalld` sur Fedora, RHEL et openSUSE — avec des commandes qui autorisent SSH avant que le pare-feu ne commence à filtrer.
+BOB lit UFW, firewalld, et un jeu de règles nftables ou iptables brut. Quand aucun d'eux ne filtre le trafic entrant, il lève *« Aucun pare-feu actif »* et propose l'outil de pare-feu de ta famille de distributions — `ufw` sur Debian, Ubuntu, Arch et Alpine, `firewalld` sur Fedora, RHEL et openSUSE — avec des commandes qui autorisent SSH avant que le pare-feu ne commence à filtrer. Sur Alpine avec awall installé, BOB nomme awall à la place : il dit quelles politiques sont activées, ou qu'aucune ne l'est, et n'imprime aucune commande, puisque le choix d'une politique te revient (0.26.0).
 
 ### Lire le score
 
-Chaque domaine part de 10/10 et perd les points de ses constats ; le score global est la moyenne des domaines qui ont au moins un constat autre qu'INFO, arrondie, et maintenue à 9 dès que quelque chose a été déduit (10/10 est réservé à un audit sans rien à corriger). Un constat plafonne en outre son domaine : un UFW installé mais inactif maintient *Pare-feu & Réseau* à 3/10. Chaque constat a :
+Chaque domaine part de 10/10 et perd les points de ses constats ; le score global est la moyenne des domaines qui ont au moins un constat autre qu'INFO, arrondie, et maintenue à 9 dès que quelque chose a été déduit (10/10 est réservé à un audit sans rien à corriger). Deux constats plafonnent en outre leur domaine : un UFW installé mais inactif, et l'absence de tout pare-feu actif, maintiennent *Pare-feu & Réseau* à 3/10 (le second depuis 0.26.0). Chaque constat a :
 
 - Un **niveau** : OK (✔, vert) / INFO (ℹ, cyan — signalé, ne coûte aucun point) / ATTENTION (⚠, jaune) / ALERTE (✖, rouge)
 - Une **clé** (ex. `ssh.password_auth`) — identifiant stable pour les scripts, `--explain` et `--ignore` ; le cadre de synthèse l'affiche sur la ligne `? bob --explain CLÉ`
@@ -199,7 +199,7 @@ sudo bob --install-cron
 L'assistant te fait passer par nom → planification → heure → e-mail facultatif → profil → langue → sondes sortantes. Fichiers créés :
 
 - `/usr/local/bin/bob-{nom}` — script d'enveloppe qui appelle BOB avec le profil, la langue et la posture réseau que tu as choisis. Ces trois-là sont demandés parce qu'un cron s'exécute en root : avant la v0.16.1 le script lisait la config enregistrée de *root*, pas la tienne, si bien que l'audit nocturne d'un opérateur `desktop` était silencieusement noté en `server` — et comme le profil pilote le code de sortie, il décidait aussi si l'e-mail partait
-- `/etc/cron.d/bob-{nom}` — entrée cron du système
+- `/etc/cron.d/bob-{nom}` — entrée cron du système (BusyBox crond : un bloc de `/etc/crontabs/root`)
 
 Le script appelle le `bob` que tu exécutes au moment où tu installes la tâche — `/usr/local/bin/bob` une fois l'option A de l'étape 1 faite, `~/.local/bin/bob` avec l'option B — puisque c'est cette version qui écrit les options du script. Lancé autrement (`python3 -m bob`), il appelle le `bob` que le `PATH` de root trouve ; s'il n'en trouve aucun, il écrit `/usr/local/bin/bob` et l'assistant avertit que ce chemin n'existe pas.
 
@@ -358,7 +358,7 @@ sudo bob --french                           # raccourci pour --lang=fr
 sudo bob --lang=fr                          # explicite
 ```
 
-Toute la sortie (terminal, `--help`, .log, messages de détail JSON, contenus des webhooks, entrées explain) est localisée — 2936 clés × 2 locales — à trois exceptions près, décrites ci-dessous. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
+Toute la sortie (terminal, `--help`, .log, messages de détail JSON, contenus des webhooks, entrées explain) est localisée — 2969 clés × 2 locales — à trois exceptions près, décrites ci-dessous. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
 
 Trois choses restent anglaises à dessein, et un diff bilingue de la sortie d'audit en v0.15.4 a confirmé que ce sont les seules : les **commandes shell** des lignes de remédiation (une commande n'est pas de la prose), les **références CIS** portant un code numéroté (décision v0.11.2 — les références « Bonne pratique », sans code, *sont* traduites), et les **38 libellés de services**, comme `Samba (Windows file sharing)` ou `Apache Web Server`, traités comme des noms de produits même quand ils portent des mots anglais. Ces libellés servent aussi de clé aux entrées `service_risk.*` et entrent dans la ligne de base d'audit : les traduire à la source renommerait 114 entrées de locale et ferait apparaître des changements fantômes dans `--diff` au changement de langue.
 

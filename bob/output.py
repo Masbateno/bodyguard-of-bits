@@ -653,6 +653,7 @@ def print_banner(
     labels: dict[str, str],
     firewalld: str = "",
     init_system: str = "",
+    awall: str = "",
 ) -> None:
     """Print the ASCII art banner with system information.
 
@@ -697,6 +698,8 @@ def print_banner(
         (labels.get("firewalld", "firewalld"), firewalld),
         (labels.get("iptables", "iptables"), iptables),
         (labels.get("nftables", "nftables"), nftables),
+        # v0.26.0 — only where awall is installed (Alpine's front-end).
+        *([(labels.get("awall", "awall"), awall)] if awall else []),
         (labels.get("init",     "Init"),     init_system),
         (labels.get("user",     "User"),     user),
         (labels.get("date",     "Date"),     date),

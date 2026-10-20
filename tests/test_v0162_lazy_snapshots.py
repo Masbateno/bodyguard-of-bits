@@ -91,11 +91,15 @@ class TestTheEagerCoreIsTheDocumentedOne:
     #: is absent — the common non-RPM case) and feeds check_firewall,
     #: check_iptables_nftables, check_ports, check_ipv6, check_services and the
     #: posture floor (fw_active), exactly like FirewallStatus.
+    #: AwallStatus (v0.26.0) is read inside the firewall check's own block, and
+    #: only where neither UFW nor firewalld is active — the edge case that
+    #: already reads IptablesNftSnapshot; `awall list` runs only where awall is
+    #: installed.
     ALWAYS_ON = frozenset({
         "FirewallStatus", "PortsSnapshot", "IptablesNftSnapshot",
         "FirewallStackSnapshot", "NetworkContextSnapshot", "IPv6Snapshot",
         "DdnsSnapshot", "LogsSnapshot", "DockerSnapshot", "VirtSnapshot",
-        "HardeningSnapshot", "FirewalldStatus",
+        "HardeningSnapshot", "FirewalldStatus", "AwallStatus",
     })
 
     @staticmethod

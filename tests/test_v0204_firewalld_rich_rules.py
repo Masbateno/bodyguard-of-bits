@@ -100,9 +100,13 @@ class TestFromSystem:
     def _fake_run(self, outputs):
         """Build a run_result stub returning canned stdout per firewall-cmd arg."""
         class _R:
-            def __init__(self, stdout, ok=True):
+            # The fields of a real CommandResult (stderr and code included,
+            # which the --state reading consults since 0.26.0).
+            def __init__(self, stdout, ok=True, stderr="", code=0):
                 self.stdout = stdout
                 self.ok = ok
+                self.stderr = stderr
+                self.code = code
         def _run(cmd, *args):
             return _R(outputs.get(args[-1], ""))
         return _run

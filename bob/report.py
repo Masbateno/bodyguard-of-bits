@@ -134,6 +134,7 @@ class SystemInfo:
         firewalld_version: str = "",
         firewalld_present: bool = False,
         init_system:       str = "",
+        awall:             str = "",
     ) -> None:
         self.os_name          = os_name
         self.hostname         = hostname
@@ -144,6 +145,7 @@ class SystemInfo:
         self.firewalld_version = firewalld_version
         self.firewalld_present = firewalld_present
         self.init_system      = init_system
+        self.awall            = awall   # v0.26.0 — "" when awall is not installed
         self.user             = user
         self.config_path      = config_path
         self.language         = language

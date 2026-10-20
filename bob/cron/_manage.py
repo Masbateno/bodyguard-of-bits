@@ -14,7 +14,9 @@ from bob._tty import prompt_wizard, read_line as _rl, safe_input
 from bob.config import _EMAIL_RE  # M-1 (v0.5.5): single source of truth
 
 from ._install import _CronQuit, prompt_emails  # noqa: F401 — _CronQuit re-exported
-from ._io import apply_cron_email, apply_cron_schedule
+from bob._privilege import with_privilege
+
+from ._io import apply_cron_email, apply_cron_schedule, remove_cron_job
 from ._parse import (
     _validate_custom_cron,
     build_schedule_expr,
@@ -279,7 +281,7 @@ def _run_manage_cron_plain(config, t) -> int:
         crons = list_installed_crons()
 
         if not crons:
-            print(f"  ℹ {t('manage_cron.no_crons', cmd=output.command('sudo bob --install-cron'))}")
+            print(f"  ℹ {t('manage_cron.no_crons', cmd=output.command(with_privilege('sudo bob --install-cron')))}")
             print()
             print(f"    {'m':<8} {t('manage_cron.prompt_ex_email_book')}")
             print()
@@ -388,7 +390,7 @@ def _run_manage_cron_plain(config, t) -> int:
             if ans == "y":
                 for entry in to_delete:
                     try:
-                        entry.cron_path.unlink()
+                        remove_cron_job(entry)   # v0.26.0: a crontab block too
                     except OSError:
                         pass
                     if entry.script_path.exists():

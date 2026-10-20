@@ -111,7 +111,7 @@ v0.16.4 parce que la convention s'arrêtait à la frontière curses sans raison
 lisaient comme de la prose ordinaire dans l'assistant.
 
 Dans un bloc `HOW TO FIX`, c'est l'indentation qui marque la matière, de façon
-constante sur toutes les clés (locale anglaise, 2026-10-16 : 903 lignes
+constante sur toutes les clés (locale anglaise, 16 octobre 2026 : 903 lignes
 indentées contre 636 étapes numérotées, le reste étant notes et prose). Peindre un bloc entier en violet a été essayé et a vidé la
 couleur de son sens : les deux tiers d'un bloc sont de la prose.
 
@@ -466,7 +466,7 @@ se trompe en général sur l'un des deux.
 | **constat** (finding) | Une ligne d'un `CheckResult` : un niveau (OK / INFO / WARN / ALERT), une clé, un message, et au besoin un détail, une commande et une déduction. | `Finding`, `FindingLevel` dans `bob/scoring.py` |
 | **clé** | L'identifiant pointé d'un constat, `<préfixe>.<nom>` (`ssh.password_auth`). C'est ce qu'indexent `--explain`, `ignore.yml`, la table CIS et la table des domaines. | chaque argument `key=` |
 | **déduction** | Les points qu'un constat retire au score de son domaine. Une INFO n'en porte jamais. | `warn_with_deduction`, `alert_with_deduction`, `add_deduction` |
-| **plafond** (cap) | Une borne haute qu'un constat impose au score de son domaine (un UFW inactif maintient *Pare-feu & Réseau* à 3/10) ; le score global est la moyenne des domaines, il n'est donc pas plafonné lui-même. | `CheckResult.set_cap` |
+| **plafond** (cap) | Une borne haute qu'un constat impose au score de son domaine (un UFW inactif, ou l'absence de tout pare-feu actif, maintient *Pare-feu & Réseau* à 3/10) ; le score global est la moyenne des domaines, il n'est donc pas plafonné lui-même. | `CheckResult.set_cap` |
 | **clé de visibilité** | Une clé qui dit qu'une section n'a pas pu être lue. Sa présence fait du score un plafond (`≤ N/10`) — inconnu n'est pas propre. | `VISIBILITY_KEYS` dans `bob/visibility.py` |
 | **domaine** | L'un des six périmètres scorés — pare-feu & réseau, exposition & services, contrôle d'accès, durcissement système, santé & résilience, détection des menaces — chacun noté de 0 à 10 ; une clé y appartient par son préfixe. | `DOMAINS`, `_PREFIX_TO_DOMAIN` dans `bob/domain_scores.py` |
 | **groupe** | Le titre à l'écran qui rassemble les sections d'un domaine. Depuis v0.20.0, groupes et domaines sont les mêmes six. | `emit_group()` dans `bob/runner.py` |

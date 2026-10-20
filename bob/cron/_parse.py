@@ -41,6 +41,14 @@ class CronEntry:
     # (e.g. ``*/15``, ``0-23/3``). In that case hour=0, minute=0 are placeholders
     # for UI defaults and ``schedule_expr`` is the only source of truth.
     time_simple: bool = True
+    #: v0.26.0 — set when the job is a block of root's crontab
+    #: (/etc/crontabs/root, BusyBox crond) rather than a file of /etc/cron.d.
+    crontab_slug: str = ""
+
+    @property
+    def key(self) -> str:
+        """One identity per job: crontab jobs share a file."""
+        return f"{self.cron_path}#{self.crontab_slug}" if self.crontab_slug else str(self.cron_path)
 
 def list_installed_crons() -> list[CronEntry]:
     """Return all installed BOB cron entries."""
@@ -60,7 +68,37 @@ def list_installed_crons() -> list[CronEntry]:
         if entry:
             entries.append(entry)
 
+    # v0.26.0 — blocks of root's crontab (BusyBox crond, /etc/crontabs/root).
+    from bob.cron import _crontab
+    for slug, body in _crontab.blocks():
+        entry = _parse_crontab_block(slug, body)
+        if entry:
+            entries.append(entry)
+
     return entries
+
+def _parse_crontab_block(slug: str, body: str) -> "CronEntry | None":
+    """A CronEntry from a BOB block of root's crontab (no user field)."""
+    from bob.cron import _crontab
+    parsed = _crontab.parse_line(body)
+    if parsed is None:
+        _log.warning("crontab block bob-%s has no recognisable cron line; skipping", slug)
+        return None
+    schedule_expr, script = parsed
+    name_match = re.search(r"^# name: (.+)$", body, re.MULTILINE)
+    email_match = re.search(r"^# email: (.*)$", body, re.MULTILINE)
+    minute_s, hour_s = schedule_expr.split()[:2]
+    try:
+        hour, minute, time_simple = int(hour_s), int(minute_s), True
+    except ValueError:
+        hour, minute, time_simple = 0, 0, False
+    return CronEntry(
+        name=name_match.group(1).strip() if name_match else slug,
+        schedule_expr=schedule_expr, hour=hour, minute=minute,
+        script_path=Path(script), cron_path=_crontab.ROOT_CRONTAB,
+        email=email_match.group(1).strip() if email_match else "",
+        time_simple=time_simple, crontab_slug=slug,
+    )
 
 def parse_cron_file(path: Path, legacy: bool = False) -> CronEntry | None:
     """Parse a BOB cron file and return a CronEntry, or None if unrecognised."""

@@ -981,7 +981,8 @@ def print_help(t, version: str) -> None:
         print(f"  {_code}   {t(f'help.exit.{_code}')}")
 
     from bob._python_support import deprecation_for
-    _dep = deprecation_for()
+    from bob import i18n as _i18n
+    _dep = deprecation_for(lang=_i18n.current_lang())
     if _dep:
         import textwrap
         print()

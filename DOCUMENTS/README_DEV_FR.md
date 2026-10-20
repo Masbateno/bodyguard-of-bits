@@ -37,8 +37,8 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 
 | Module | Rôle |
 |---|---|
-| `__main__.py` | Orchestrateur — parsing des arguments, collecte des snapshots, appelle `run_checks()`, affiche le résumé (~1045 lignes) |
-| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (57 sections filtrables + 10 always-on), `_section_enabled()` (~1234 lignes) |
+| `__main__.py` | Orchestrateur — parsing des arguments, collecte des snapshots, appelle `run_checks()`, affiche le résumé (~1049 lignes) |
+| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (57 sections filtrables + 10 always-on), `_section_enabled()` (~1269 lignes) |
 | `cli.py` | Parsing des arguments — retourne un `AuditConfig` dataclass |
 | `config.py` | Configuration utilisateur — `UserConfig` (`~/.config/bob/config.conf`), `EmailStore` |
 | `display.py` | Helpers d'affichage terminal — `display_result()`, `print_audit_summary()`, etc. |
@@ -203,6 +203,8 @@ bob/
 │   └── cron.py          # TUI curses pour --install-cron / --manage-cron
 ├── checks/
 │   ├── __init__.py
+│   ├── _awall.py           # AwallStatus — awall installé, ses politiques activées
+│   │                       #   (`awall list`), lu là où ni UFW ni firewalld ne tourne (0.26.0)
 │   ├── _firewalld.py       # FirewalldStatus — état/zone/services via firewall-cmd,
 │   │                       #   partagé par firewall, iptables_nftables, ports,
 │   │                       #   ipv6 et services pour qu'un hôte firewalld ne soit
@@ -540,8 +542,8 @@ print(f'Same order: {en == fr}')
 
 Résultat attendu — les deux fichiers ont les mêmes clés **dans le même ordre** :
 ```
-EN keys: 2936
-FR keys: 2936
+EN keys: 2969
+FR keys: 2969
 Missing in FR: none
 Same order: True
 ```
@@ -558,7 +560,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Traduire toutes les valeurs
 
-Le fichier contient exactement 2936 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
+Le fichier contient exactement 2969 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
 
 Exemple :
 ```json

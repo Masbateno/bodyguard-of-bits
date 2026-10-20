@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.25.1
+Version:        0.26.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,13 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Tue Oct 20 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.26.0-1
+- Minor, BREAKING (scores): no active firewall caps Firewall & Network at
+  3/10; raw iptables rules judged as bypassing UFW only beside an active UFW
+  and only when they can let a new connection in; an unqueryable firewalld
+  is not "no firewall"; no UFW findings without UFW; awall named; Docker's
+  nftables backend read; fail2ban without a journal credited on its count
+  or shown blind, with caveats; --install-cron into BusyBox root's crontab.
 * Sun Oct 18 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.25.1-1
 - Patch, no score change: doas and DOAS_USER honoured in texts and per-user
   files; --install-cron refused without /etc/cron.d; AppArmor profiles

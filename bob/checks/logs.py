@@ -262,6 +262,7 @@ def check_logs(
     snapshot: LogsSnapshot,
     audited_ports: set[str] | None = None,
     t: TranslationFunc | None = None,
+    ufw_active: bool = True,
 ) -> "tuple[CheckResult, LogReportData | None]":
     """
     Analyse log snapshot and return findings.
@@ -289,7 +290,12 @@ def check_logs(
         result.info(message=_t("logs.source_journald"), key="logs.source_journald")
 
     if snapshot.total == 0:
-        result.ok(message=_t("logs.empty"), key="logs.empty")
+        if not ufw_active:
+            # v0.26.0 — UFW off blocks nothing: an empty log is expected,
+            # not a sign of quiet traffic.
+            result.info(message=_t("logs.empty_ufw_inactive"), key="logs.empty")
+        else:
+            result.ok(message=_t("logs.empty"), key="logs.empty")
         return result, None
 
     # Top IPs and ports

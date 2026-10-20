@@ -52,7 +52,7 @@ The completion installer also creates a symlink in `/usr/local/bin/bob`, which i
 sudo /home/$USER/.local/bin/bob
 ```
 
-**On a host that uses `doas` instead of `sudo`** (Alpine, for example), use `doas` wherever this tutorial writes `sudo`, with BOB's full path until Option A has created the link (`doas /home/$USER/.local/bin/bob --install-completion`). BOB finds your home through sudo's `SUDO_USER` and, since 0.25.1, doas's `DOAS_USER`, so your settings, ignore list, baseline and history stay in your own `~/.config/bob`. (Before 0.25.1 they went to `/root/.config/bob` under doas, and no link was created; measured on Alpine 3.24.) One more Alpine difference: BusyBox crond reads `/etc/crontabs/` and there is no `/etc/cron.d`, so `--install-cron` (Step 7) refuses there and tells you how to add the audit to root's crontab instead.
+**On a host that uses `doas` instead of `sudo`** (Alpine, for example), use `doas` wherever this tutorial writes `sudo`, with BOB's full path until Option A has created the link (`doas /home/$USER/.local/bin/bob --install-completion`). BOB finds your home through sudo's `SUDO_USER` and, since 0.25.1, doas's `DOAS_USER`, so your settings, ignore list, baseline and history stay in your own `~/.config/bob`. (Before 0.25.1 they went to `/root/.config/bob` under doas, and no link was created; measured on Alpine 3.24.) One more Alpine difference: BusyBox crond reads `/etc/crontabs/` and there is no `/etc/cron.d`, so `--install-cron` (Step 7) writes the job as a marked block of root's crontab, `/etc/crontabs/root`, and leaves the rest of that file alone (since 0.26.0; 0.25.1 refused).
 
 ---
 
@@ -68,11 +68,11 @@ An audit takes from a few seconds to a few minutes: the time depends on the disk
 2. **A summary box** at the end: the score out of 10 (written `≤ N/10` when a section could not be read in full — the score is then a ceiling), the risk level (`LOW`, `MEDIUM`, `HIGH` or `CRITICAL`), the network context BOB detected, the audit profile and the duration; then the findings to handle first (*Action required*), the *Possible improvements* and the score breakdown
 3. **Below the box**, a reminder that the verdict depends on the profile and network context shown above it, the score of each domain, and an attack-surface summary
 
-BOB reads UFW, firewalld, and a raw nftables or iptables ruleset. When none of them filters inbound traffic, it raises *"No active firewall"* and suggests the front-end of your distribution family — `ufw` on Debian, Ubuntu, Arch and Alpine, `firewalld` on Fedora, RHEL and openSUSE — with commands that allow SSH before the firewall starts filtering.
+BOB reads UFW, firewalld, and a raw nftables or iptables ruleset. When none of them filters inbound traffic, it raises *"No active firewall"* and suggests the front-end of your distribution family — `ufw` on Debian, Ubuntu, Arch and Alpine, `firewalld` on Fedora, RHEL and openSUSE — with commands that allow SSH before the firewall starts filtering. On Alpine with awall installed, BOB names awall instead: it says which policies are enabled, or that none is, and prints no command, since choosing a policy is yours (0.26.0).
 
 ### Read the score
 
-Each domain starts at 10/10 and loses the points of its findings; the headline score is the average of the domains that have a finding other than INFO, rounded, and held at 9 as soon as anything was deducted (10/10 is kept for an audit with nothing to fix). One finding also caps its domain outright: an installed but inactive UFW holds *Firewall & Network* at 3/10. Each finding has :
+Each domain starts at 10/10 and loses the points of its findings; the headline score is the average of the domains that have a finding other than INFO, rounded, and held at 9 as soon as anything was deducted (10/10 is kept for an audit with nothing to fix). Two findings also cap their domain outright: an installed but inactive UFW, and no active firewall at all, hold *Firewall & Network* at 3/10 (the second since 0.26.0). Each finding has :
 
 - A **level** : OK (✔, green) / INFO (ℹ, cyan — reported, costs no points) / WARNING (⚠, yellow) / ALERT (✖, red)
 - A **key** (e.g. `ssh.password_auth`) — stable identifier for scripting, `--explain` and `--ignore`; the summary box prints it on the `? bob --explain KEY` line
@@ -197,7 +197,7 @@ sudo bob --install-cron
 The wizard walks you through name → schedule → time → optional email → profile → language → outbound probes. Files created :
 
 - `/usr/local/bin/bob-{name}` — wrapper script that calls BOB with the profile, language and network stance you chose. Those three are asked because a cron runs as root: before v0.16.1 the script read *root's* saved config, not yours, so a `desktop` operator's nightly audit silently graded as `server` — and since the profile drives the exit code, it also decided whether the email was sent
-- `/etc/cron.d/bob-{name}` — system cron entry
+- `/etc/cron.d/bob-{name}` — system cron entry (BusyBox crond: a block of `/etc/crontabs/root`)
 
 The script calls the `bob` you are running when you install the job — `/usr/local/bin/bob` once Option A of Step 1 is done, `~/.local/bin/bob` under Option B — since that version writes the script's options. Started another way (`python3 -m bob`), it calls the `bob` root's `PATH` finds; with none, it writes `/usr/local/bin/bob` and the wizard warns that the path does not exist.
 
@@ -352,7 +352,7 @@ sudo bob --french                           # shortcut for --lang=fr
 sudo bob --lang=fr                          # explicit
 ```
 
-All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 2936 keys × 2 locales — except three things, described below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
+All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 2969 keys × 2 locales — except three things, described below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
 
 Three things stay English on purpose, and a bilingual diff of the audit output in v0.15.4 confirmed they are the only ones: **shell commands** in remediation lines (a command is not prose), **CIS benchmark references** that carry a numbered code (v0.11.2 decision — the uncoded "Best practice" ones *are* translated), and the **38 service labels**, such as `Samba (Windows file sharing)` or `Apache Web Server`, treated as product names even when they carry English words. The labels also key the `service_risk.*` entries and go into the audit baseline, so translating them at the source would rename 114 locale entries and make `--diff` report phantom changes on a locale switch.
 

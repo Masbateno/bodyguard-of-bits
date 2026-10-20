@@ -35,7 +35,6 @@ class _Schedule(IntEnum):
 from bob.cron import (
     _EMAIL_RE,
     _CronQuit,
-    CRON_DIR,
     SCRIPT_DIR,
     list_installed_crons,
     cron_to_human,
@@ -50,6 +49,9 @@ from bob.cron import (
     # that merged the duplicated implementations.
     apply_cron_schedule,
     apply_cron_email,
+    cron_job_location,
+    remove_cron_job,
+    write_cron_job,
 )
 
 
@@ -933,8 +935,9 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
                 step = STEP_OVERWRITE
 
             elif step == STEP_OVERWRITE:
-                cron_path = CRON_DIR / f"bob-{slug}"
-                if not cron_path.exists():
+                # v0.26.0: a cron.d file, or a block of root's crontab.
+                cron_path, _exists = cron_job_location(slug)
+                if not _exists:
                     step = STEP_WRITE
                     continue
                 while True:
@@ -960,7 +963,7 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
                 break   # exit inner loop → write files
 
         # ── Write files ──────────────────────────────────────────────────────
-        cron_path   = CRON_DIR / f"bob-{slug}"
+        cron_path, _exists = cron_job_location(slug)
         script_path = SCRIPT_DIR / f"bob-{slug}"
 
         script_content = build_script_content(notify_email, log_dir, audit_options)
@@ -976,16 +979,8 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
 
         now_str = datetime.now().strftime("%Y-%m-%d")
         human = cron_to_human(schedule_expr, lang=config.lang)
-        cron_content = (
-            f"# BOB cron — generated {now_str} by bob --install-cron\n"
-            f"# name: {raw_name}\n"
-            f"# email: {notify_email}\n"
-            "SHELL=/bin/bash\n"
-            "PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n\n"
-            f"{schedule_expr}  root  {script_path}\n"
-        )
         try:
-            _atomic_write(cron_path, cron_content, mode=0o640)
+            cron_path = write_cron_job(slug, raw_name, notify_email, schedule_expr, script_path, now_str)
         except OSError as exc:
             _curses_status_flash(stdscr, t, f"✖ {t('cron_ui.cannot_write', path=cron_path, error=exc)}")
             try:
@@ -1114,7 +1109,7 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
             cursor = n - 1
 
         # Remove stale marked paths after a deletion
-        valid_paths = {str(e.cron_path) for e in crons}
+        valid_paths = {e.key for e in crons}
         marked &= valid_paths
 
         n_sel = len(marked)
@@ -1134,7 +1129,7 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
         # ── Body ─────────────────────────────────────────────────────────────
         if not crons:
             _draw(stdscr, 2, 2, t("manage_cron.no_crons",
-                                  cmd="sudo bob --install-cron"))
+                                  cmd=with_privilege("sudo bob --install-cron")))
             _draw(stdscr, 4, 2, "m: " + t("manage_cron.prompt_ex_email_book"))
         else:
             # Lay the list out for this width (see _cron_render_lines): a flat
@@ -1143,7 +1138,7 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
             # between jobs. Scroll counts physical rows; the cursor counts jobs.
             rows = []
             for entry in crons:
-                is_marked = str(entry.cron_path) in marked
+                is_marked = entry.key in marked
                 emails = (" ; ".join(a.strip() for a in entry.email.split(",") if a.strip())
                           if entry.email else "")
                 human = cron_to_human(entry.schedule_expr, lang)
@@ -1174,7 +1169,7 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
                     attr = _curses.A_DIM
                 else:
                     entry = crons[eidx]
-                    is_marked = str(entry.cron_path) in marked
+                    is_marked = entry.key in marked
                     if eidx == cursor and has_color:
                         attr = _curses.color_pair(1) | _curses.A_BOLD
                     elif eidx == cursor:
@@ -1214,7 +1209,7 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
             if ch in (ord("y"), ord("Y")):
                 for entry in pending_delete:
                     try:
-                        entry.cron_path.unlink()
+                        remove_cron_job(entry)   # v0.26.0: a crontab block too
                     except OSError:
                         pass
                     if entry.script_path.exists():
@@ -1255,14 +1250,14 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
         # ── Selection ────────────────────────────────────────────────────────
         elif ch == ord(" "):
             if crons and 0 <= cursor < n:
-                key = str(crons[cursor].cron_path)
+                key = crons[cursor].key
                 if key in marked:
                     marked.discard(key)
                 else:
                     marked.add(key)
 
         elif ch in (ord("a"), ord("A")):
-            marked = {str(e.cron_path) for e in crons}
+            marked = {e.key for e in crons}
 
         elif ch in (ord("u"), ord("U")):
             marked.clear()
@@ -1275,7 +1270,7 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
         elif ch in (ord("d"), ord("D")):
             if crons:
                 if marked:
-                    pending_delete = [e for e in crons if str(e.cron_path) in marked]
+                    pending_delete = [e for e in crons if e.key in marked]
                 elif 0 <= cursor < n:
                     pending_delete = [crons[cursor]]
                 if pending_delete:
