@@ -7,6 +7,7 @@ and resolves the real user home directory when running under sudo.
 
 from __future__ import annotations
 
+import errno
 import logging
 import os
 import re
@@ -55,19 +56,123 @@ def get_user_home() -> Path:
     return Path.home()
 
 
-def chown_fd_to_sudo_user(fd: int) -> None:
+def _within(path: str, root: str) -> bool:
+    return path == root or path.startswith(root.rstrip("/") + "/")
+
+
+def fd_real_path(fd: int) -> "str | None":
+    """Where an open descriptor really is, as the kernel resolved it."""
+    try:
+        return os.readlink(f"/proc/self/fd/{fd}")
+    except OSError:
+        return None
+
+
+def redirected_out_of_home(lexical: "str | Path", real: "str | None") -> bool:
+    """A path written under the invoking user's home that resolves outside it
+    (v0.26.1). After review: O_NOFOLLOW and follow_symlinks=False guard the last
+    component only — with ~/.config/bob a symlink to /etc, root created
+    /etc/history.jsonl and handed it to the user (measured on a bench). A path
+    outside the home (an --output-dir the operator chose) is not judged here.
+    An unknown real path counts as redirected."""
+    home = os.path.abspath(str(get_user_home()))
+    if not _within(os.path.abspath(str(lexical)), home):
+        return False
+    return real is None or not _within(real, os.path.realpath(home))
+
+
+class RedirectedOutOfHome(OSError):
+    """A write under the invoking user's home, refused: it resolves outside it."""
+
+
+#: lexical path -> where it resolved, for each refusal this run (said at its end).
+_REDIRECT_REFUSED: "dict[str, str | None]" = {}
+
+
+_REDIRECT_SAID: "set[str]" = set()
+
+
+def refused_redirects() -> "list[tuple[str, str | None]]":
+    """The writes refused by :func:`refuse_if_redirected` in this process."""
+    return list(_REDIRECT_REFUSED.items())
+
+
+def say_refused_redirects(t, key: str = "audit.state_redirected") -> None:
+    """One stderr line per refused path not said yet (v0.26.1): the baseline,
+    history or report the user expects is missing, and why. stderr keeps --json
+    clean; --watch says each path once, not every cycle."""
+    import sys
+    for lexical, real in refused_redirects():
+        if lexical in _REDIRECT_SAID:
+            continue
+        _REDIRECT_SAID.add(lexical)
+        print("⚠ " + t(key, path=lexical, user=invoking_user_name(),
+                        real=real or t("audit.state_redirected_unknown")), file=sys.stderr)
+
+
+def refuse_if_redirected(lexical: "str | Path", real: "str | None") -> None:
+    """Raise :class:`RedirectedOutOfHome` when BOB, run for another user (sudo,
+    doas), would write under that user's home through a path that resolves
+    outside it (v0.26.1, after review). Not handing the file over is not enough:
+    root still created or replaced it wherever the link pointed — with
+    ~/.config/bob a link to /etc/cron.d, a root-owned file cron reads. Said once
+    per path at the end of the audit (:func:`refused_redirects`); a run without
+    sudo writes the user's own files with the user's own rights and is not
+    judged."""
+    if not invoking_user_name() or not redirected_out_of_home(lexical, real):
+        return
+    _REDIRECT_REFUSED.setdefault(str(lexical), real)
+    _log.debug("%s resolves outside the home of %s (%s): not written", lexical, invoking_user_name(), real)
+    raise RedirectedOutOfHome(errno.EXDEV, "resolves outside the invoking user's home", str(lexical))
+
+
+def ensure_user_dir(d: "str | Path", mode: "int | None" = None, hand_over: bool = True) -> None:
+    """``mkdir -p`` for a directory BOB keeps its state or reports in (v0.26.1).
+
+    Refused (:class:`RedirectedOutOfHome`) when, run for another user, the
+    directory — or its nearest existing ancestor — resolves outside that user's
+    home. *mode* is applied through a descriptor, not by name: by name, root's
+    chmod followed the link (~/.config/bob pointing at /etc would have made
+    /etc 0700). Handed over to the invoking user unless *hand_over* is False.
+    """
+    d = Path(d)
+    probe = d
+    while not os.path.lexists(probe) and probe.parent != probe:
+        probe = probe.parent
+    refuse_if_redirected(d, os.path.realpath(probe))
+    if mode is None:
+        d.mkdir(parents=True, exist_ok=True)
+    else:
+        d.mkdir(parents=True, mode=mode, exist_ok=True)
+        fd = os.open(str(d), os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        try:
+            refuse_if_redirected(d, fd_real_path(fd))
+            os.fchmod(fd, mode)
+        finally:
+            os.close(fd)
+    if hand_over:
+        chown_to_sudo_user(d)
+
+
+def chown_fd_to_sudo_user(fd: int, lexical: "str | Path | None" = None) -> None:
     """chown an *already-open* file descriptor back to the invoking user.
 
     v0.14.1: the path-based :func:`chown_to_sudo_user` follows symlinks and
     re-resolves the name, leaving a TOCTOU window between ``os.open`` and the
     chown. Operating on the descriptor the caller already holds removes both
     problems — it is the same object that was opened under ``O_NOFOLLOW``.
+
+    v0.26.1 — given the *lexical* path it was opened under, the descriptor is
+    not handed over when that path, under the user's home, resolved outside it.
     """
     sudo_user = invoking_user_name()
     if not sudo_user:
         return
     try:
         import pwd
+        if lexical is not None and redirected_out_of_home(lexical, fd_real_path(fd)):
+            _log.debug("chown_fd_to_sudo_user(%s): resolved outside the home, not handed over", lexical)
+            return
         pw = pwd.getpwnam(sudo_user)
         os.fchown(fd, pw.pw_uid, pw.pw_gid)
     except (KeyError, OSError) as exc:
@@ -81,14 +186,37 @@ def chown_to_sudo_user(path: Path) -> None:
     No-op when SUDO_USER is unset, when the path doesn't exist, or when chown fails
     (the call needs root privileges). Used after creating user-config files/directories
     so the real user can still read/edit them in non-sudo sessions.
+
+    v0.26.1 — a symlink is never followed. These paths sit in the user's own
+    directories; run as root, ``os.chown`` followed a link planted there and
+    handed its target — /etc/shadow, or a file just created through a dangling
+    link — to the invoking user (found by review, measured on a dummy target).
+    A symlink is left alone. Anything else is opened without following one and
+    chowned through that descriptor — and not at all when the path, under the
+    user's home, resolved outside it: a symlinked parent directory (after
+    review, measured: ~/.config/bob pointing at another directory had
+    last_baseline.json created there and handed over).
     """
     sudo_user = invoking_user_name()
     if not sudo_user:
         return
     try:
         import pwd
+        import stat as _stat
+        st = os.lstat(path)
+        # A symlink fails the O_NOFOLLOW open below (ELOOP): left alone.
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+        if _stat.S_ISDIR(st.st_mode):
+            flags |= os.O_DIRECTORY
         pw = pwd.getpwnam(sudo_user)
-        os.chown(path, pw.pw_uid, pw.pw_gid)
+        fd = os.open(str(path), flags)
+        try:
+            if redirected_out_of_home(path, fd_real_path(fd)):
+                _log.debug("chown_to_sudo_user(%s): resolved outside the home, not handed over", path)
+                return
+            os.fchown(fd, pw.pw_uid, pw.pw_gid)
+        finally:
+            os.close(fd)
     except (KeyError, OSError) as exc:
         _log.debug("chown_to_sudo_user(%s) failed: %s", path, exc)
 

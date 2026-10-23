@@ -60,7 +60,7 @@ from bob.checks.world_writable import WorldWritableSnapshot, check_world_writabl
 from bob.checks.docker_audit import DockerAuditSnapshot, check_docker_audit
 from bob.checks.kubernetes import KubernetesSnapshot, check_kubernetes
 from bob.checks.log_rotation import LogRotationSnapshot, check_log_rotation
-from bob.checks.ipv6 import IPv6Snapshot, check_ipv6
+from bob.checks.ipv6 import IPv6Snapshot, _ipv6_input_closed, check_ipv6, ipv6_closed_by_chains
 from bob.checks.ssh import SSHSnapshot, check_ssh
 from bob.checks.file_perms import FilePermsSnapshot, check_file_perms
 from bob.checks.updates import UpdatesSnapshot, check_updates
@@ -941,6 +941,13 @@ def run_checks(
         docker_rules_off=_docker_daemon_json()[1],
         firewalld_strict=_firewalld_strict,
         firewalld_forwarded=_firewalld_forwarded,
+        # v0.26.1 — with IPV6=no, "all interfaces filtered" holds for IPv6 only
+        # where the IPv6 section established that inbound is closed.
+        ipv6_unproven=(ipv6_snapshot.ufw_ipv6_enabled is False
+                       and bool(ipv6_snapshot.ipv6_listeners)
+                       and not _ipv6_input_closed(ipv6_snapshot,
+                                                  extended=not ipv6_snapshot.has_global_ipv6)),
+        ipv6_closed_by_chains=ipv6_closed_by_chains(ipv6_snapshot),
     )
     engine.apply(ports_result, section="ports")
     display_result(ports_result, report, config.verbose, quiet=config.quiet, recurrence=_pr)

@@ -10,10 +10,10 @@
 > (wheels and sdists) and the 104 wheels piwheels built were compared file by
 > file with their git tag. BOB is published without any stored PyPI token.
 > Two steps of the 0.26.0 publication ran with tools that still trusted the
-> affected certificate authorities; the next release closes that.
+> affected certificate authorities; 0.26.1 closes that.
 
 On 20 October 2026 a security incident affecting eMudhra / emSign certificate
-authorities was disclosed ([Python Discourse thread](https://discuss.python.org/t/information-for-python-users-regarding-emudhra-emsign-ca-certificate-security-incident/109576)):
+authorities was publicly disclosed ([Python Discourse thread](https://discuss.python.org/t/information-for-python-users-regarding-emudhra-emsign-ca-certificate-security-incident/109576)):
 their private keys were trivially weak, so a TLS client that still trusted them
 could be served a forged certificate — for pypi.org among others. pip below
 26.2.2, and `pypa/gh-action-pypi-publish` below v1.14.3
@@ -36,7 +36,7 @@ tools were sound.
 
 ### What this does not cover
 
-- **The 0.26.0 publication (20 October 2026, the day of the disclosure).** Its
+- **The 0.26.0 publication (20 October 2026, the day of the public disclosure).** Its
   build ran with pip 26.2.1 to fetch its build tools (`build`, `setuptools`),
   and its upload used `pypa/gh-action-pypi-publish` v1.14.2 — both still
   trusting the affected authorities; v1.14.3 came out the same day, a few hours later. The
@@ -49,7 +49,7 @@ tools were sound.
   uv, certifi) as the Python thread describes, and keep your system's
   `ca-certificates` up to date.
 
-### What changes in the next release
+### What changed in 0.26.1
 
 In the publish workflow, before any build dependency is installed:
 
@@ -58,7 +58,8 @@ In the publish workflow, before any build dependency is installed:
   the very connection at risk;
 - the job fails if pip is older than 26.2.2, and logs the versions it built
   with;
-- the upload uses `pypa/gh-action-pypi-publish` v1.14.3 or later.
+- the upload action is pinned by commit to `pypa/gh-action-pypi-publish`
+  v1.14.3 (`7245906…`), no longer to a moving branch.
 
 ## Supported versions
 
@@ -495,7 +496,22 @@ BOB never phones home.
 
 When BOB is invoked via `sudo` (or `doas`, since 0.25.1), files in `~/.config/bob/` are automatically
 chowned back to `$SUDO_USER` (since v0.3.6) or `$DOAS_USER` so they remain readable/editable
-without sudo afterwards.
+without sudo afterwards. Since 0.26.1 nothing BOB writes there as root goes through a
+symlink to somewhere outside the user's home — the history, baseline, recurrence
+counters, configuration, ignore list, log directory and `-d` report alike. Every write
+goes through a descriptor of its directory, checked first: a directory under the
+user's home that resolved outside it (a symlinked `~/.config/bob`, `~/.config` or log
+directory) is refused — nothing created, replaced, re-moded or handed over there — and
+the refusal is said on stderr at the end of the audit; `--manage-logs` lists, deletes and
+moves no report there. The file's own name is guarded as well: the history and the report
+are opened with `O_NOFOLLOW`, the other state files renamed over their name. Every
+hand-over goes through a descriptor opened with `O_NOFOLLOW`, checked the same way. A link that stays inside the
+home is the user's own, and a run without `sudo` or `doas` is not judged. Before — every release
+from 0.1.0 to 0.26.0, measured on ten of them — root followed such a link — writing to its target, re-moding it, creating it through a
+dangling link and handing it to the invoking user, creating BOB's state files and report
+in a linked directory and setting it to 0700 — so an account running as that user,
+without root, could have had a file such as `/etc/shadow` or `/etc/ld.so.preload` handed
+over by the next `sudo bob`, or `/etc` made unreadable to every other account.
 
 ## Defense-in-depth recommendations (for packagers)
 

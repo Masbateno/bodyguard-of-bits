@@ -11,7 +11,7 @@
 > comparés, fichier par fichier, à leur étiquette git. BOB est publié sans
 > aucun jeton PyPI stocké. Deux étapes de la publication de la 0.26.0 ont
 > tourné avec des outils qui faisaient encore confiance aux autorités
-> concernées ; la prochaine version ferme ce point.
+> concernées ; la 0.26.1 ferme ce point.
 
 Le 20 octobre 2026, un incident de sécurité touchant les autorités de
 certification eMudhra / emSign a été rendu public ([fil Python Discourse](https://discuss.python.org/t/information-for-python-users-regarding-emudhra-emsign-ca-certificate-security-incident/109576)) :
@@ -39,7 +39,7 @@ pas que ce workflow ou ses outils étaient sains.
 ### Ce que cela ne couvre pas
 
 - **La publication de la 0.26.0 (le 20 octobre 2026, jour de la
-  divulgation).** Son build a tourné avec pip 26.2.1 pour récupérer ses outils
+  divulgation publique).** Son build a tourné avec pip 26.2.1 pour récupérer ses outils
   (`build`, `setuptools`), et son envoi a utilisé `pypa/gh-action-pypi-publish`
   v1.14.2 — tous deux faisant encore confiance aux autorités concernées ; la
   v1.14.3 est sortie le jour même, quelques heures plus tard. La comparaison a trouvé les
@@ -52,7 +52,7 @@ pas que ce workflow ou ses outils étaient sains.
   en 26.2.2 ou plus (ainsi que uv et certifi) comme l'indique le fil Python, et
   gardez à jour le paquet `ca-certificates` de votre système.
 
-### Ce qui change dans la prochaine version
+### Ce qui a changé en 0.26.1
 
 Dans le workflow de publication, avant toute installation de dépendance de
 build :
@@ -62,7 +62,8 @@ build :
   par la connexion même qui est en cause ;
 - le job échoue si pip est antérieur à 26.2.2, et journalise les versions avec
   lesquelles il a construit ;
-- l'envoi utilise `pypa/gh-action-pypi-publish` v1.14.3 ou plus.
+- l'action d'envoi est épinglée par commit sur `pypa/gh-action-pypi-publish`
+  v1.14.3 (`7245906…`), et non plus sur une branche mobile.
 
 ## Versions supportées
 
@@ -412,7 +413,7 @@ Pas de télémétrie, pas d'analytics, pas de vérification de mise à jour auto
   - **Historique** : `~/.config/bob/history.jsonl` est `0600`. Une ligne par audit : timestamp + score + niveau. Rotation à 1000 entrées.
   - **Toutes les lectures d'état sont bornées** (v0.14.1). Chaque fichier d'état, ainsi que le `--diff=CHEMIN` fourni par l'opérateur, passe par `bob._atomic.read_text_capped()`, qui refuse tout ce qui n'est pas un fichier régulier et borne la lecture. Auparavant, un chemin pointant vers un périphérique caractère (`--diff=/dev/zero`, ou `ignore.yml` lié vers lui) épuisait la mémoire, et un FIFO bloquait le processus **indéfiniment** — un cron qui reste suspendu au lieu d'échouer, et à chaque exécution suivante.
 
-Quand BOB est invoqué via `sudo` (ou `doas`, depuis la 0.25.1), les fichiers dans `~/.config/bob/` sont automatiquement chownés de retour vers `$SUDO_USER` (depuis v0.3.6) ou `$DOAS_USER` afin qu'ils restent lisibles/éditables sans sudo par la suite.
+Quand BOB est invoqué via `sudo` (ou `doas`, depuis la 0.25.1), les fichiers dans `~/.config/bob/` sont automatiquement chownés de retour vers `$SUDO_USER` (depuis v0.3.6) ou `$DOAS_USER` afin qu'ils restent lisibles/éditables sans sudo par la suite. Depuis la 0.26.1, rien de ce que BOB y écrit en root ne passe par un lien symbolique vers un endroit hors du répertoire personnel de l'utilisateur — historique, baseline, compteurs de récurrence, configuration, liste d'ignorés, répertoire des journaux et rapport `-d` compris. Toute écriture passe par un descripteur de son répertoire, vérifié d'abord : un répertoire sous le répertoire personnel de l'utilisateur qui s'est résolu hors de lui (un `~/.config/bob`, un `~/.config` ou un répertoire de journaux lien symbolique) est refusé — rien n'y est créé, remplacé, changé de mode ni remis —, et le refus est dit sur stderr à la fin de l'audit ; `--manage-logs` n'y liste, supprime ni déplace aucun rapport. Le nom même du fichier est gardé aussi : l'historique et le rapport sont ouverts avec `O_NOFOLLOW`, les autres fichiers d'état renommés par-dessus leur nom. Toute remise passe par un descripteur ouvert avec `O_NOFOLLOW`, vérifié de même. Un lien qui reste dans le répertoire personnel appartient à l'utilisateur, et une exécution sans `sudo` ni `doas` n'est pas jugée. Avant — toutes les versions de la 0.1.0 à la 0.26.0, mesuré sur dix d'entre elles —, root suivait un tel lien — il écrivait dans sa cible, en changeait le mode, la créait à travers un lien pendant et la remettait à l'utilisateur appelant, créait les fichiers d'état et le rapport de BOB dans un répertoire lié et le passait en 0700 —, si bien qu'un compte tournant sous cet utilisateur, sans root, aurait pu se faire remettre un fichier comme `/etc/shadow` ou `/etc/ld.so.preload` au `sudo bob` suivant, ou rendre `/etc` illisible pour tous les autres comptes.
 
 ## Recommandations de défense en profondeur (pour les packageurs)
 

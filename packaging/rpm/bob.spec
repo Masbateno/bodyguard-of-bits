@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.26.0
+Version:        0.26.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,13 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Oct 23 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.26.1-1
+- Patch, no score change: the IPv6 INPUT chain followed into its user
+  chains; the ports OK says IPv4 when IPv6 is not established; the UFW log
+  section says rotated files are not read; a dominant local source described
+  by its ports; an unreadable --history said so and handed back; exhaustive
+  and normal runs compared on what both read; the data beside an unencrypted
+  root named; public IP, SSH and orphan-rule wording.
 * Tue Oct 20 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.26.0-1
 - Minor, BREAKING (scores): no active firewall caps Firewall & Network at
   3/10; raw iptables rules judged as bypassing UFW only beside an active UFW

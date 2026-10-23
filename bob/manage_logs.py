@@ -8,6 +8,7 @@ saved audit report files, plus log directory configuration helpers.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sys
@@ -19,6 +20,76 @@ from pathlib import Path
 from bob.tui import _keys
 from bob.tui._palette import marked_attr
 from bob._tty import read_line as _rl
+
+logger = logging.getLogger(__name__)
+
+
+def _listable(d: Path) -> bool:
+    """v0.26.1 — run for another user (sudo, doas), a report directory under
+    that user's home that resolves outside it is not listed, so nothing there is
+    deleted or moved; the refusal is said when --manage-logs ends."""
+    from bob.sysinfo import RedirectedOutOfHome, refuse_if_redirected
+    try:
+        refuse_if_redirected(d, os.path.realpath(d))
+    except RedirectedOutOfHome:
+        return False
+    return True
+
+
+def _move_report(f: Path, dest_dir: Path) -> None:
+    """Move a report through checked descriptors of both directories (v0.26.1,
+    after review): renamed relative to them; across filesystems, copied from a
+    source opened without following a link, then unlinked. Either directory
+    under the user's home resolving outside it is refused."""
+    import errno
+    from bob.sysinfo import fd_real_path, refuse_if_redirected
+    _dir = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
+    sfd = os.open(str(f.parent), _dir)
+    try:
+        refuse_if_redirected(f.parent, fd_real_path(sfd))
+        dfd = os.open(str(dest_dir), _dir)
+        try:
+            refuse_if_redirected(dest_dir, fd_real_path(dfd))
+            try:
+                os.rename(f.name, f.name, src_dir_fd=sfd, dst_dir_fd=dfd)
+                return
+            except OSError as exc:
+                if exc.errno != errno.EXDEV:
+                    raise
+            src = os.open(f.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=sfd)
+            try:
+                dst = os.open(f.name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC,
+                              0o600, dir_fd=dfd)
+                try:
+                    while True:
+                        chunk = os.read(src, 1 << 16)
+                        if not chunk:
+                            break
+                        view = memoryview(chunk)
+                        while view:
+                            view = view[os.write(dst, view):]
+                    os.fchmod(dst, os.fstat(src).st_mode & 0o777)
+                finally:
+                    os.close(dst)
+            finally:
+                os.close(src)
+            os.unlink(f.name, dir_fd=sfd)
+        finally:
+            os.close(dfd)
+    finally:
+        os.close(sfd)
+
+
+def _unlink_report(f: Path) -> None:
+    """Delete a report through a checked descriptor of its directory (v0.26.1):
+    the directory swapped for a link after it was listed is refused."""
+    from bob.sysinfo import fd_real_path, refuse_if_redirected
+    dfd = os.open(str(f.parent), os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    try:
+        refuse_if_redirected(f.parent, fd_real_path(dfd))
+        os.unlink(f.name, dir_fd=dfd)
+    finally:
+        os.close(dfd)
 
 # ---------------------------------------------------------------------------
 # Score history helpers
@@ -141,14 +212,13 @@ def get_or_prompt_log_dir(user_config, config, t) -> Path:
     In non-interactive contexts (cron, pipes) the default path is used
     silently so that the process never hangs waiting for input.
     """
-    from bob.sysinfo import chown_to_sudo_user, get_user_home
+    from bob.sysinfo import ensure_user_dir, get_user_home
 
     # --output-dir takes highest priority — no prompt, no save
     if getattr(config, "output_dir", ""):
         d = Path(config.output_dir)
         try:
-            d.mkdir(parents=True, exist_ok=True)
-            chown_to_sudo_user(d)
+            ensure_user_dir(d)
         except OSError as exc:
             print(f"  ✖ {t('manage_logs.cannot_create_dir', path=d, error=exc)}")
             d = Path.cwd()
@@ -158,8 +228,7 @@ def get_or_prompt_log_dir(user_config, config, t) -> Path:
     if saved:
         d = Path(saved)
         try:
-            d.mkdir(parents=True, exist_ok=True)
-            chown_to_sudo_user(d)
+            ensure_user_dir(d)
         except OSError:
             pass
         return d
@@ -169,21 +238,30 @@ def get_or_prompt_log_dir(user_config, config, t) -> Path:
 
     # Non-interactive context (cron, piped stdin) — skip the prompt
     if not sys.stdin.isatty():
-        default_dir.mkdir(parents=True, exist_ok=True)
-        chown_to_sudo_user(default_dir)
-        user_config.set("log_dir", str(default_dir))
+        # v0.26.1 — refused under a redirected home (ensure_user_dir): the
+        # report open then fails and the audit runs on without it.
+        try:
+            ensure_user_dir(default_dir)
+            user_config.set("log_dir", str(default_dir))
+        except OSError as exc:
+            logger.debug("log directory %s not prepared: %s", default_dir, exc)
         return default_dir
 
     chosen = prompt_path(t("log_dir.prompt"), default_dir)
 
     try:
-        chosen.mkdir(parents=True, exist_ok=True)
-        chown_to_sudo_user(chosen)
+        ensure_user_dir(chosen)
     except OSError as exc:
         print(f"  ✖ Cannot create directory {chosen}: {exc} — falling back to cwd")
         chosen = Path.cwd()
 
-    user_config.set("log_dir", str(chosen))
+    try:
+        user_config.set("log_dir", str(chosen))
+    except OSError as exc:
+        # v0.26.1 — the choice is used for this run; not saved is not "saved".
+        logger.debug("log_dir not saved: %s", exc)
+        print()
+        return chosen
     print(f"  ✔ {t('log_dir.saved', path=str(chosen))}")
     print()
     return chosen
@@ -294,9 +372,13 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
         log_dir = Path(log_dir_str)
 
         if not log_dir.exists():
-            log_dir.mkdir(parents=True, exist_ok=True)
+            from bob.sysinfo import ensure_user_dir
+            try:
+                ensure_user_dir(log_dir, hand_over=False)
+            except OSError:
+                pass  # listed as empty; refused under a redirected home (v0.26.1)
 
-        cur_logs = sorted(log_dir.glob("bob_*.log"), reverse=True)
+        cur_logs = sorted(log_dir.glob("bob_*.log"), reverse=True) if _listable(log_dir) else []
 
         # Show previous directories that still contain logs. They are kept in
         # the tracked list until the user forgets one from the wizard — an
@@ -306,7 +388,7 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
         for extra in extra_dirs:
             if extra == log_dir:
                 continue
-            if extra.exists():
+            if extra.exists() and _listable(extra):
                 ex_logs = sorted(extra.glob("bob_*.log"), reverse=True)
                 if ex_logs:
                     extra_sections.append((extra, ex_logs))
@@ -378,7 +460,8 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
                 print(f"  {t('manage_logs.cancelled')}")
             else:
                 try:
-                    chosen.mkdir(parents=True, exist_ok=True)
+                    from bob.sysinfo import ensure_user_dir
+                    ensure_user_dir(chosen, hand_over=False)
                 except OSError as exc:
                     print(f"  ✖ Cannot create directory {chosen}: {exc}")
                     print()
@@ -397,11 +480,10 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
                         f"  {t('manage_logs.move_logs_prompt', count=len(all_logs))} [y/N] "
                     ).strip().lower()
                     if move_confirm == "y":
-                        import shutil as _shutil
                         moved = 0
                         for f in all_logs:
                             try:
-                                _shutil.move(str(f), str(chosen / f.name))
+                                _move_report(f, chosen)
                                 moved += 1
                             except OSError as exc:
                                 print(f"  ✖ Cannot move {f.name}: {exc}")
@@ -422,7 +504,7 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
                 deleted = 0
                 for f in all_logs:
                     try:
-                        f.unlink()
+                        _unlink_report(f)
                         deleted += 1
                     except OSError as exc:
                         print(f"  ✖ Cannot delete {f.name}: {exc}")
@@ -435,7 +517,7 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
             elif len(selected) == 1:
                 f = all_logs[selected[0] - 1]
                 try:
-                    f.unlink()
+                    _unlink_report(f)
                     print(f"  ✔ {t('manage_logs.deleted_one', name=f.name)}")
                 except OSError as exc:
                     print(f"  ✖ Cannot delete {f.name}: {exc}")
@@ -444,7 +526,7 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
                 for sel_idx in selected:
                     f = all_logs[sel_idx - 1]
                     try:
-                        f.unlink()
+                        _unlink_report(f)
                         deleted += 1
                     except OSError as exc:
                         print(f"  ✖ Cannot delete {f.name}: {exc}")
@@ -869,11 +951,12 @@ def _change_log_dir(stdscr, user_config, t, log_dir, has_color) -> None:
         return
     chosen = _resolve_path(new_path_str.strip(), log_dir or Path.cwd())
     try:
-        chosen.mkdir(parents=True, exist_ok=True)
+        from bob.sysinfo import ensure_user_dir
+        ensure_user_dir(chosen, hand_over=False)
     except OSError:
         return
     if log_dir is not None and chosen != log_dir:
-        cur_logs = sorted(log_dir.glob("bob_*.log")) if log_dir.exists() else []
+        cur_logs = sorted(log_dir.glob("bob_*.log")) if log_dir.exists() and _listable(log_dir) else []
         if cur_logs:
             move_prompt = (f"  {t('manage_logs.move_logs_prompt', count=len(cur_logs))}"
                            "  [y/N]")
@@ -885,10 +968,9 @@ def _change_log_dir(stdscr, user_config, t, log_dir, has_color) -> None:
                 pass
             stdscr.refresh()
             if stdscr.getch() in (ord("y"), ord("Y")):
-                import shutil as _shutil
                 for fp in cur_logs:
                     try:
-                        _shutil.move(str(fp), str(chosen / fp.name))
+                        _move_report(fp, chosen)
                     except OSError:
                         pass
         _add_extra_dir(user_config, log_dir)
@@ -915,7 +997,7 @@ def _browse_dir(stdscr, browse_dir: Path, user_config, config, t) -> None:
     pending_delete: list[int] = []
 
     while True:
-        if browse_dir.exists():
+        if browse_dir.exists() and _listable(browse_dir):
             logs = sorted(browse_dir.glob("bob_*.log"), reverse=True)
         else:
             logs = []
@@ -1024,7 +1106,7 @@ def _browse_dir(stdscr, browse_dir: Path, user_config, config, t) -> None:
                 for li in sorted(pending_delete, reverse=True):
                     try:
                         name = logs[li].name
-                        logs[li].unlink()
+                        _unlink_report(logs[li])
                         deleted += 1
                         if li <= cursor:
                             deleted_before_cursor += 1
@@ -1092,6 +1174,16 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
 # ---------------------------------------------------------------------------
 
 def run_manage_logs(user_config, config, t) -> int:
+    """Manage audit report files; a directory refused under a redirected home
+    is said when it ends (v0.26.1)."""
+    try:
+        return _run_manage_logs_dispatch(user_config, config, t)
+    finally:
+        from bob.sysinfo import say_refused_redirects
+        say_refused_redirects(t, key="manage_logs.dir_redirected")
+
+
+def _run_manage_logs_dispatch(user_config, config, t) -> int:
     """Manage audit report files.
 
     Uses a curses TUI when stdout is a TTY; falls back to the text-mode

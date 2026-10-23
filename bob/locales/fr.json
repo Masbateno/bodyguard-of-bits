@@ -271,7 +271,7 @@
       "open_local": "restreint au réseau local par règle UFW",
       "open_local_host": "restreint au seul hôte {source} par règle UFW",
       "deny": "bloqué explicitement par règle UFW",
-      "no_rule": "couvert par la politique deny par défaut",
+      "no_rule": "couvert par la politique deny par défaut (aucune règle UFW explicite nécessaire)",
       "no_rule_ufw_inactive": "aucune protection pare-feu active",
       "no_rule_firewalld": "pare-feu géré par firewalld (pas UFW) — joignable seulement si sa zone autorise ce port",
       "no_rule_netfilter": "filtré par le jeu de règles nftables/iptables de l'hôte (ni UFW ni firewalld) — joignable seulement si ce jeu de règles autorise ce port",
@@ -287,6 +287,8 @@
   "ports": {
     "all_covered": "Tous les ports en écoute sur 0.0.0.0 sont couverts par une règle UFW",
     "all_covered_policy": "Tous les ports en écoute sur toutes les interfaces sont filtrés par UFW — par une règle explicite ou par la politique deny par défaut",
+    "all_covered_policy_ipv4": "Tous les ports en écoute sur toutes les interfaces sont filtrés par UFW en IPv4 — par une règle explicite ou par la politique deny par défaut ; en IPv6 (IPV6=no dans UFW), ce qui les atteint n'est pas établi — voir la section IPv6",
+    "all_covered_policy_ipv6_closed": "Tous les ports en écoute sur toutes les interfaces sont filtrés — en IPv4 par UFW, par une règle explicite ou la politique deny par défaut ; en IPv6, l'entrant est fermé par les règles de l'hôte, UFW tournant avec IPV6=no — voir la section IPv6",
     "uncovered": "Port {port} en écoute sur toutes les interfaces sans règle UFW explicite",
     "uncovered_local": "Port {port} — lié uniquement à localhost — pas d'exposition externe",
     "uncovered_bound_address": "Port {port} — lié uniquement à {address}, sans règle de pare-feu — joignable depuis le réseau de cette adresse",
@@ -315,9 +317,10 @@
     "period": "Période analysée",
     "days_unit": "jour(s)",
     "days_available": "jour(s) de logs disponibles",
-    "total_blocks": "tentative(s) bloquée(s) détectée(s)",
-    "verdict_ok": "Activité normale — {total} tentative(s) bloquée(s) sur {days} jour(s), aucun motif d'attaque reconnu dans les événements analysés",
-    "verdict_warn": "Activité suspecte — {total} tentative(s) bloquée(s) sur {days} jour(s)",
+    "period_file": "Fenêtre demandée : {requested} jour(s) ; {days} jour(s) couverts par /var/log/ufw.log. Les journaux rotatés (ufw.log.1 et plus anciens) n'ont pas été lus",
+    "total_blocks": "tentative(s) bloquée(s) avec port de destination",
+    "verdict_ok": "Activité normale — {total} tentative(s) bloquée(s) avec port de destination sur {days} jour(s), aucun motif d'attaque reconnu dans les événements analysés",
+    "verdict_warn": "Activité suspecte — {total} tentative(s) bloquée(s) avec port de destination sur {days} jour(s)",
     "top_ips": "Top IPs sources",
     "top_ports": "Top ports ciblés",
     "brute_title": "Tentatives de connexion bloquées répétées",
@@ -333,7 +336,8 @@
     "geoip2_unavailable_cmd": "pipx inject bob geoip2",
     "geoip2_no_db": "GeoIP2 installé mais aucune base GeoLite2-Country trouvée — géolocalisation IP désactivée",
     "geoip2_no_db_cmd": "sudo mkdir -p /usr/share/GeoIP && sudo wget -O /usr/share/GeoIP/GeoLite2-Country.mmdb https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb",
-    "local_dominance": "La source locale {ip} représente {count}/{total} blocages ({pct}%) — probablement du trafic de découverte IoT (mDNS/SSDP/UPnP), pas une attaque"
+    "local_dominance": "La source locale {ip} représente {count}/{total} blocages ({pct}%) — {protos} vers {ports} port(s) de destination distinct(s) ; BOB n'identifie pas ce trafic : vérifiez de quel appareil il s'agit",
+    "local_dominance_discovery": "La source locale {ip} représente {count}/{total} blocages ({pct}%) — uniquement vers les ports conventionnels de découverte ({ports} : SSDP, mDNS, LLMNR, NetBIOS…) — les ports, pas les paquets, que BOB ne lit pas"
   },
   "ddns": {
     "none": "Aucun client DDNS détecté — pas d'exposition externe via DDNS identifiée",
@@ -420,6 +424,7 @@
     "saved": "Emplacement sauvegardé : {path}"
   },
   "manage_logs": {
+    "dir_redirected": "{path} pointe hors du répertoire personnel de {user}, vers {real} : lancé en root, BOB n'y a rien listé, supprimé ni déplacé. Pour voir où il mène : realpath {path}",
     "cannot_create_dir": "Impossible de créer le répertoire {path} : {error} — repli sur le répertoire courant",
     "banner_total": "{total} rapport(s)",
     "banner_selected": "{count} marqué(s) / {total}",
@@ -665,6 +670,7 @@
     "next_2": "Examinez les avertissements et évaluez leur impact.",
     "next_3": "Relancez l'audit après chaque modification pour vérifier.",
     "summary_title": "RÉSUMÉ DE L'AUDIT",
+    "context_with_ip": "{context} — IP publique vue de l'extérieur : {ip}",
     "field_ok": "OK",
     "field_warning": "Attention",
     "field_alert": "Alerte",
@@ -678,7 +684,7 @@
     "nonstandard_port_note": "Port non standard — exposition réduite aux scanners automatisés",
     "ssh_server": {
       "level": "CRITIQUE",
-      "exposure": "Port très ciblé par les scans automatisés et attaques bruteforce — exposé sur internet par défaut",
+      "exposure": "Port très ciblé par les scans automatisés et attaques bruteforce partout où il est joignable depuis internet",
       "threat": "Accès shell complet à la machine, escalade de privilèges, pivot vers d'autres systèmes du réseau"
     },
     "vnc_server": {
@@ -976,6 +982,10 @@
     "key_appeared": "Nouveau constat : {finding}",
     "key_resolved": "Résolu : {finding}",
     "visibility_dropped": "Cette exécution a pu lire moins de l'hôte que la précédente — la comparaison ci-dessous n'est pas à périmètre égal",
+    "mode_changed": "Cette exécution et la précédente n'ont pas été lancées de la même façon ({curr} maintenant, {prev} avant) : les sections que seul --exhaustive lit ({sections}) et les nombres de constats sont laissés hors de la comparaison",
+    "mode_exhaustive": "avec --exhaustive",
+    "mode_normal": "sans --exhaustive",
+    "mode_unknown": "non enregistré",
     "score_up_but_blinder": "Score à +{delta}, mais cette exécution a lu moins de l'hôte — ce n'est pas une amélioration, c'est une mesure plus petite",
     "score_down_but_blinder": "Score à -{delta}, mais cette exécution a lu moins de l'hôte — la baisse n'est pas imputable à l'hôte",
     "key_unreevaluated": "Non réévalué (sa section n'a pas pu être lue) : {finding}",
@@ -1209,8 +1219,11 @@
     "all_ports_covered": "Les {count} service(s) IPv6 sont couverts par des règles UFW (v6)",
     "firewalld_v6": "Les services IPv6 sont filtrés par firewalld (mêmes règles de zone qu'en IPv4)",
     "firewalld_v6_open": "Les services IPv6 ne sont pas filtrés — une zone firewalld portant une interface accepte tout le trafic entrant (cible ACCEPT)",
-    "ufw_v6_off_blocked": "UFW IPv6 est désactivé, donc UFW bloque tout le trafic IPv6 (IPV6=no) — les {count} service(s) IPv6 sont injoignables, et l'IPv6 est inutilisable sur cet hôte",
+    "ufw_v6_off_blocked": "UFW IPv6 est désactivé, donc UFW bloque tout le trafic IPv6 hors boucle locale, en entrée comme en sortie (IPV6=no) — les {count} service(s) IPv6 sont injoignables depuis le réseau, et cet hôte n'a aucune connectivité IPv6 hors boucle locale",
     "ufw_v6_off_blocked_detail": "Services IPv6 : {ports}. Avec IPV6=no, ufw-init pose DROP sur les chaînes IPv6 INPUT, FORWARD et OUTPUT (loopback excepté). Pas une exposition — mais si cet hôte doit utiliser IPv6, mettre IPV6=yes dans /etc/default/ufw puis lancer : sudo ufw reload",
+    "ufw_v6_off_blocked_chains": "L'IPv6 entrant est fermé — UFW tourne avec IPV6=no ; la politique d'INPUT est DROP et, hormis la règle ACCEPT de la boucle locale, aucune règle du chemin d'INPUT n'accepte de paquets : les {count} service(s) IPv6 sont injoignables depuis le réseau.{followed}",
+    "ufw_v6_off_chains_followed": "Les chaînes qu'INPUT appelle ont été suivies : {chains}.",
+    "ufw_v6_off_blocked_chains_detail": "Services IPv6 : {ports}. Seul l'entrant est évalué : l'usage de l'IPv6 en sortie par cet hôte n'est pas établi. Si cet hôte doit accepter l'IPv6, mettre IPV6=yes dans /etc/default/ufw puis lancer : sudo ufw reload",
     "netfilter_v6": "{count} service(s) en écoute sur IPv6 ({ports}) — régis par le jeu de règles nftables/iptables, pas par UFW (non installé) ; une table inet ou ip6 filtre l'IPv6, une table ip non",
     "no_firewall_v6": "{count} service(s) en écoute sur IPv6 ({ports}) — pas d'UFW sur cet hôte ni d'autre pare-feu filtrant l'entrant",
     "no_ufw_no_listeners": "UFW n'est pas installé et aucun service n'écoute sur IPv6",
@@ -1221,6 +1234,8 @@
   },
   "audit": {
     "report_unavailable": "Le rapport détaillé n'a pas pu être écrit dans {path} ({error}) — l'audit ci-dessous est complet, seul le fichier manque",
+    "state_redirected": "{path} pointe hors du répertoire personnel de {user}, vers {real} : lancé en root, BOB n'y a rien écrit pendant cet audit (état, historique ou rapport non enregistrés). Pour voir où il mène : realpath {path}",
+    "state_redirected_unknown": "un emplacement inconnu",
     "section_unavailable": "Section non évaluée ({section}) — une erreur interne a empêché ce contrôle de s'exécuter",
     "starting": "Démarrage de l'audit",
     "python_deprecated": "Exécution sous Python {running}, déprécié : BOB le supporte au moins jusqu'au {until}, puis une version BREAKING exigera {next} ou plus récent.",
@@ -3565,7 +3580,9 @@
   },
   "history": {
     "title": "Historique des scores",
-    "no_entries": "Aucun historique de score — lancez un audit d'abord"
+    "no_entries": "Aucun historique de score — lancez un audit d'abord",
+    "unreadable": "L'historique des scores existe mais ne peut pas être lu ({path} : {error}) — propriétaire {owner}, mode {mode}. Pour le lire : sudo bob --history",
+    "unreadable_hand_back": "C'est un fichier ordinaire appartenant à un autre compte : le prochain audit lancé avec sudo bob vous le rendra, par le même descripteur vérifié que chaque écriture — aucun chown à taper, dont le shell résoudrait de nouveau le chemin"
   },
   "auth_log": {
     "not_available": "auth.log non accessible — analyse des connexions SSH indisponible",
@@ -3847,6 +3864,7 @@
     "root_unencrypted_reason": "la racine est sur un périphérique nu, non chiffré — un disque volé ou jeté révèle son contenu",
     "root_unencrypted_detail": "Le périphérique derrière / est une partition nue, donc les données au repos sont lisibles par quiconque obtient le disque (portable volé, disque retourné en RMA, disque mis au rebut). Le chiffrement intégral (LUKS) protège les données au repos. Il ne peut pas être activé en place — il faut réinstaller avec le chiffrement activé, ou un cycle sauvegarde/re-chiffrement/restauration. BOB ne le fait jamais automatiquement.",
     "root_unencrypted_detail_with_volumes": "Le périphérique derrière / est une partition nue, donc les données au repos sont lisibles par quiconque obtient le disque. Des volumes chiffrés existent bien sur cet hôte ({volumes}) mais le système de fichiers racine n'en fait pas partie. Le chiffrement intégral (LUKS) protège les données au repos ; il ne peut pas être activé en place — il faut réinstaller avec le chiffrement activé, ou un cycle sauvegarde/re-chiffrement/restauration. BOB ne le fait jamais automatiquement.",
+    "root_unencrypted_also": "Les données à côté ne sont pas chiffrées non plus : {volumes}.",
     "root_unencrypted_server": "Le système de fichiers racine n'est pas chiffré (profil serveur — signalé, pas décompté)",
     "root_unencrypted_server_detail": "Le périphérique racine est une partition nue. Sur un serveur sans écran, le chiffrement intégral nécessite un outillage de déverrouillage distant (une invite de passphrase au boot n'a pas de console), et le modèle de menace physique est une baie verrouillée plutôt qu'un appareil portable — donc BOB le signale sans déduction. Si le serveur détient des données sensibles au repos ou si ses disques peuvent être physiquement retirés ou mis au rebut, envisager LUKS avec une méthode de déverrouillage distant (Clevis/Tang, dropbear-initramfs).",
     "data_unencrypted": "La racine est chiffrée, mais d'autres données de cet hôte ne le sont pas : {volumes}",
@@ -4313,7 +4331,8 @@
     "ipv6_ok": "Configuration IPv6 cohérente avec les règles UFW",
     "ipv6_missing": "Des règles UFW existent en IPv4 mais aucune règle IPv6 équivalente n'a été trouvée",
     "ufw_status_detail": "État UFW (verbose) :",
-    "orphan_rule": "Règle UFW ouverte sans service en écoute : {port}"
+    "orphan_rule": "Règle UFW ouverte sans service en écoute : {port}",
+    "orphan_rule_detail": "Rien n'écoute sur ce port au moment de l'audit. Un programme qui n'écoute que lorsqu'il tourne (Spotify Connect, un jeu, un serveur multimédia) a encore besoin de la règle à ce moment-là : ne la supprimez que si rien ne s'en sert."
   },
   "completion": {
     "data_missing": "Fichier de données de complétion introuvable : {path}",

@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.26.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.26.1-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -115,7 +115,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **Export HTML `--html`** — fichier HTML autosuffisant (sans JS, sans ressources externes) ; cercle de score coloré ; badges ALERT/WARN/INFO/OK ; tableau déductions ; protection XSS
 - **`--format=FORMAT`** — flag unifié : `json | json-full | csv | markdown | html` ; anciens flags conservés comme aliases. Depuis la v0.18.0, la dernière colonne du CSV est `key`, l'identifiant stable du constat — le même que portent `--explain`, `--ignore` et le JSON ; les quinze colonnes précédentes gardent leur position
 - **`--check LIST` / `--skip LIST`** — n'exécuter que les checks nommés (`--check=ssh,firewall`) ou les exclure (`--skip=clamav,rootkit`) ; mutuellement exclusifs ; `--check=list` affiche les 67 noms de sections — les 57 sections filtrables, plus les 10 toujours actives qu'il liste aussi
-- **`--output-dir PATH`** — surcharger le répertoire de sauvegarde pour l'exécution courante ; sans persistance
+- **`--output-dir PATH`** — surcharger le répertoire de sauvegarde pour l'exécution courante, sans le confiner à votre répertoire personnel (lancé avec `sudo`, le rapport y est écrit et vous est remis, comme demandé) ; sans persistance
 - **Rapport comparatif** — baseline enregistrée après chaque audit (`~/.config/bob/last_baseline.json`) ; au prochain lancement : delta de score, variations alertes/avertissements, ports apparus/fermés, services démarrés/arrêtés ; clés ALERT+WARN nouvelles et résolues suivies séparément. Un fichier qui n'est pas une baseline BOB (sans `timestamp` ni `score`) est refusé nommément au lieu d'être comparé comme une baseline à zéro
 - **Historique des scores** — `--history` affiche les N derniers scores en sparkline (▁▂▃▄▅▆▇█) avec dates ; rotation automatique à 1000 entrées. Une ligne dont BOB ne sait lire ni le score ni l'horodatage est ignorée, jamais réparée en un chiffre qu'il n'a pas mesuré
 - **Liste d'exceptions** — `--ignore KEY` ajoute une clé dans `ignore.yml` ; `--show-ignored` lance l'audit et affiche en gris les constats supprimés à côté de la sortie normale (ce n'est pas une commande de listing) ; les constats correspondants sont masqués sans être scorés
@@ -398,7 +398,7 @@ Exemple (tronqué pour la lisibilité) :
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.26.0  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.26.1  │  Auditeur de durcissement Linux                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║

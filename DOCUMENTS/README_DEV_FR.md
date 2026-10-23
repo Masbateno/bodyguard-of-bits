@@ -37,8 +37,8 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 
 | Module | Rôle |
 |---|---|
-| `__main__.py` | Orchestrateur — parsing des arguments, collecte des snapshots, appelle `run_checks()`, affiche le résumé (~1049 lignes) |
-| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (57 sections filtrables + 10 always-on), `_section_enabled()` (~1269 lignes) |
+| `__main__.py` | Orchestrateur — parsing des arguments, collecte des snapshots, appelle `run_checks()`, affiche le résumé (~1054 lignes) |
+| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (57 sections filtrables + 10 always-on), `_section_enabled()` (~1276 lignes) |
 | `cli.py` | Parsing des arguments — retourne un `AuditConfig` dataclass |
 | `config.py` | Configuration utilisateur — `UserConfig` (`~/.config/bob/config.conf`), `EmailStore` |
 | `display.py` | Helpers d'affichage terminal — `display_result()`, `print_audit_summary()`, etc. |
@@ -542,8 +542,8 @@ print(f'Same order: {en == fr}')
 
 Résultat attendu — les deux fichiers ont les mêmes clés **dans le même ordre** :
 ```
-EN keys: 2969
-FR keys: 2969
+EN keys: 2988
+FR keys: 2988
 Missing in FR: none
 Same order: True
 ```
@@ -560,7 +560,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Traduire toutes les valeurs
 
-Le fichier contient exactement 2969 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
+Le fichier contient exactement 2988 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
 
 Exemple :
 ```json

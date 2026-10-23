@@ -6,6 +6,334 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.26.1] — 2026-10-23
+
+**A patch: what the audit of a real Linux Mint 22.3 host showed BOB saying
+wrongly or saying too much — IPv6 behind UFW's `IPV6=no`, the period of the UFW
+log, a TV box called discovery traffic, an unreadable score history, an
+`--exhaustive` run compared with a normal one, the data beside an unencrypted
+root — measured on that host and in network namespaces; and, found by the review
+of this release, a security fix: run as root, BOB no longer follows a symlink
+out of the user's home — nothing written, deleted, moved or handed over there
+(§7).**
+No score changes: no point moves; no finding key is added, renamed or removed;
+no severity level changes — on some hosts an existing INFO verdict switches
+from unresolved to blocked (§1); no JSON-output-schema or CSV-column change. Where a fix would move a
+score — a host with a global IPv6 address (§1), reading the rotated UFW log
+(§2) — it waits for 0.27.0. Outputs that change: on a host with no global IPv6
+address and UFW at `IPV6=no`, `ipv6.ufw_v6_off_rules_unresolved` can become
+`ipv6.ufw_v6_off_blocked` (two existing INFO keys, no points); message variants
+under existing keys (`ipv6.ufw_v6_off_blocked`, `ports.all_covered`,
+`logs.local_dominance`); new details
+on `disk_encryption.root_unencrypted` and `firewall_rules.orphan_rule`; the UFW
+log section's period line and verdict; `--history` on an unreadable file (two
+lines, the second only for another account's regular file); a stderr line when
+a write, or a `--manage-logs` deletion or move, under a redirected home is
+refused (§7); the man page's `--output-dir` entry; the comparison block between runs of different modes; the context line of the `-d`
+report; two texts (SSH's risk context, the French port line). The local
+comparison baseline (`~/.config/bob/last_baseline.json`) gains an `exhaustive`
+field.
+
+### 1. IPv6 behind UFW's `IPV6=no`
+
+Measured on the Mint host (ufw 0.36.2, `IPV6=no`): ip6tables INPUT was
+`-P DROP`, `-j evpn.INPUT` (ExpressVPN), `-j LIBVIRT_INP` (libvirt) and
+`-i lo -j ACCEPT`, both user chains empty — IPv6 inbound was closed, ICMPv6
+included. 0.26.0 read INPUT alone: a jump it could not follow withheld the
+verdict, and the IPv6 section said it could not show whether the local network
+reached `[::]:22`. The ports section said meanwhile "All ports listening on all
+interfaces are filtered by UFW", which it had not established for IPv6.
+
+- The IPv6 filter table is now read whole (`ip6tables -S`) and INPUT's jumps to
+  user chains are followed inline. On a host with no global IPv6 address
+  (below), BOB gives one of two verdicts here — "blocked" or "not established"
+  — and never "open"; each measured case below sets it against what the kernel
+  did. "Blocked" means no rule on that whole path can accept non-loopback
+  inbound traffic: the policy is DROP, and every rule is the loopback accept,
+  a DROP or REJECT, a jump to a chain read inline (weighed
+  by that chain's own rules), a LOG or a RETURN. A LOG decides nothing: the
+  next rule runs. A RETURN in a user chain resumes the calling chain after the
+  jump; in INPUT itself it applies INPUT's policy to the packets it matches, so
+  the rules after it never see them — BOB weighs them anyway, which can only withhold the verdict, never make
+  it "blocked". Any other rule withholds the verdict, as before; when only INPUT
+  can be listed, the user chains are unknown and withhold it. Measured in a network namespace with an
+  IPv6 probe from a peer: that shape — closed, BOB now "blocked"; the chain
+  accepting ICMPv6 and 8099/tcp — 8099 open, BOB withholds; the chain logging,
+  then accepting ICMPv6 and 8099 — open, BOB withholds; the chain returning,
+  then INPUT accepting ICMPv6 and 8099 after the jump — open, BOB withholds;
+  the chain logging and returning only — closed, "blocked"; a RETURN in INPUT
+  itself, then INPUT accepting ICMPv6 and 8099 — closed, BOB withholds (too
+  cautious); the chain accepting
+  ICMPv6 only — closed, BOB withholds (an ACCEPT, which it does not resolve);
+  the chain dropping — closed, "blocked". Replayed on the Mint host: blocked.
+  After review, the same for a goto (`-g`), which is followed like a jump: the
+  verdict conservatively considers the rules in every chain reached — it does
+  not simulate the packet's path — so where control flow is ambiguous, as when
+  a RETURN resumes after a goto, BOB withholds "blocked". Measured: INPUT
+  jumping to A, A going to B and then dropping, B returning, INPUT accepting
+  8099 after the jump — open, BOB withholds; A going to B and then accepting
+  8099, B returning — closed (the goto skips A's accept), BOB withholds (too
+  cautious); a goto into a chain accepting 8099 — open, BOB withholds; a goto
+  into a chain dropping — closed, "blocked".
+- Who closes it is said as read. The 0.24.2 text — "UFW drops all IPv6
+  traffic … IPv6 is unusable on this host", now "UFW drops all IPv6 traffic
+  beyond loopback, in and out … this host has no IPv6 connectivity beyond
+  loopback", since ufw-init still accepts loopback — now needs the whole IPv6
+  filter table in the shape ufw-init leaves — measured with ufw 0.36.2 at `IPV6=no`: INPUT, FORWARD
+  and OUTPUT at DROP, loopback accepted in and out, nothing else (0.24.2 read
+  INPUT alone, and claimed outbound from it). Otherwise — other chains, as
+  ExpressVPN's and libvirt's on the Mint host, or an OUTPUT in another shape —
+  the text speaks of inbound only: "IPv6 inbound is closed — UFW runs with
+  IPV6=no; INPUT's policy is DROP and, except for the loopback ACCEPT rule, no
+  rule on the INPUT path accepts packets … The chains INPUT jumps to were
+  followed: evpn.INPUT, LIBVIRT_INP.", whether the host can use IPv6 outbound
+  not established.
+- This reading applies to hosts without a global IPv6 address, where both
+  verdicts are INFO. With a global address it would lift a WARN −2 — a score
+  change: the 0.26.0 reading stands there until 0.27.0.
+- With UFW at `IPV6=no` and IPv6 listeners, the ports OK says "filtered by UFW
+  over IPv4 … over IPv6 (UFW's IPV6=no), what reaches them is not established —
+  see the IPv6 section"; when the IPv6 section established that inbound is
+  closed through other chains, "over IPv6 inbound is closed by the host's rules,
+  UFW running with IPV6=no". Only the whole ufw-init table keeps "filtered by
+  UFW" for both families.
+
+### 2. The UFW log section
+
+Measured on the Mint host: `/var/log/ufw.log` held 3 days and `ufw.log.1` the
+7 before; the last 7 days held some 10 000 `[UFW BLOCK]` lines across the two
+files (counted with `grep`, day by day). BOB printed "3 day(s) of logs
+available" and "1764 blocked attempt(s) over 7 day(s)" — its own count, from
+`ufw.log` alone, which leaves out lines with no destination port. It reads
+`/var/log/ufw.log` only; reading the rotated files can bring brute-force
+findings it misses today — a score change — and waits for 0.27.0. The section
+now says what it read: "Requested window: 7 day(s); 3 day(s) covered by
+/var/log/ufw.log. Rotated logs (ufw.log.1 and older) were not read", and the
+verdict counts over the days it covered ("over 3 day(s)"). After review, the
+count also says what it counts — "… blocked attempt(s) with a destination
+port over N day(s)". Measured on the Mint host on 23 October — a later reading
+than the 20 October one above, on the file as it then was, covering 18 to 23
+October: BOB counted 3514 of 5018 `[UFW BLOCK]` lines; left out were 1503 IGMP
+lines (`PROTO=2`, no port), unsaid until now, and one line led by 219 NUL
+bytes, whose timestamp BOB does not read.
+
+A local source behind most blocks was "likely IoT discovery traffic
+(mDNS/SSDP/UPnP), not an attack" — decided from its share alone. On the Mint
+host it was a TV box: on 20 October, over the 3 days of the log, 1348 unicast
+UDP packets to 413 distinct high ports, none to 5353 or 1900. The INFO now
+gives what was measured — at the replay on 22 October, over 5 days: "UDP to
+567 distinct destination port(s); BOB does not identify this traffic: check
+which device it is" — and names the conventional discovery ports only when every
+destination port is one (SSDP, mDNS, LLMNR, WS-Discovery, NetBIOS): the ports,
+not the packets, which BOB does not read.
+
+### 3. `--history` and the score history file
+
+`bob --history` without sudo printed "No score history found — run an audit
+first" on the Mint host, where `~/.config/bob/history.jsonl` was 56 KB,
+`root:root 0600`. BOB healed the file's mode on every write, its owner only when
+it created the file. `--history` now says the file exists and cannot be read,
+with its path, owner and mode as `stat` reports them (`doas` named where there
+is no `sudo`):
+
+- to read it now: `sudo bob --history`;
+- to get it back: on a line of its own, only when the name is a regular file
+  (not a link) owned by another account — the next audit run with `sudo bob`
+  hands it back, as every write now does, through a checked descriptor (§7);
+  `sudo bob --history` only reads it. No `chown`
+  command is printed: typed with `sudo`, it would resolve the path again,
+  through any link in it — what §7 closes.
+
+Replayed: after one `sudo bob`, the file was `so6:so6` and `bob --history`
+read it.
+
+### 4. An `--exhaustive` run compared with a normal one
+
+Measured on the Mint host: `--exhaustive` after a normal run printed "This run
+could read less of the host than the previous one" — package_integrity
+(debsums missing) was unread, and the normal run had never attempted it — and
+"6 new info notice(s)"; the next normal run printed "4 info notice(s) resolved
+since last audit" with nothing fixed. The baseline did not record the mode. It
+now does (`"exhaustive": true|false`; absent from an older baseline: not
+recorded). When two runs were not run the same way, the comparison says so and
+leaves out the sections only `--exhaustive` reads (package_integrity,
+world_writable) and every global finding count (alerts, warnings, INFO — not
+per section): no finding from a section one run did not run is called new or
+resolved; the first run after this upgrade says
+the previous mode was not recorded and takes it as a different one: the same
+sections and counts are left out, since BOB cannot tell whether that run read
+them. Between runs of one mode, nothing changes.
+The score line stays: those two sections report INFO and OK, never a deduction
+(a guard holds it), so the score compares across modes — on the Mint host 9 in
+both; `--exhaustive` can still mark it as a ceiling ("≤ 9") when one of them is
+unread, as package_integrity was without debsums.
+
+### 5. The data beside an unencrypted root
+
+`disk_encryption.root_unencrypted` named the root only; the Mint host's `/home`,
+on its own plain partition, went unmentioned — BOB named the data beside the
+root only when the root was encrypted. The detail now ends "The data beside it
+is not encrypted either: /home (/dev/nvme0n1p1), swap (/dev/nvme1n1p3)". Same
+finding, same point; a volume whose encryption could not be read is not listed.
+
+### 6. Wording
+
+- The `-d` report's context line, "Local network only (203.0.113.42)", reads
+  "Local network only — public IP seen from outside: 203.0.113.42" (a
+  documentation address, RFC 5737, standing here for the host's real one): the address
+  the internet sees (the box, or a VPN exit), not this host's.
+- SSH's risk context said "internet-exposed by default", two lines above BOB's
+  measured "not reachable from the internet on this network"; it now says
+  "wherever it is reachable from the internet".
+- A UFW rule with nothing listening keeps its delete command, now after a
+  detail: a program that listens only while it runs (Spotify Connect, a game, a
+  media server) still needs the rule then.
+- The French port line had lost "(aucune règle UFW explicite nécessaire)"; it
+  is back.
+
+### 7. Security: root writes in the user's home no longer follow a symlink out of it
+
+Run as root under `sudo` or `doas`, BOB writes files in the invoking user's own
+directories — in `~/.config/bob/` the history, the comparison baseline, the
+recurrence counters, the configuration and the ignore list; the log directory
+and the `-d` report — and hands them back to that user; `--manage-logs`
+deletes and moves reports there. This section covers every one of those
+operations: none of them goes through a symlink to somewhere outside
+the user's home, and nothing is handed over from there — a guarantee for
+these operations, not against every way a path can be manipulated.
+
+Found by the review of this release, measured on a dummy target before the
+fix: `history.jsonl` was opened without `O_NOFOLLOW`, re-moded by name and
+chowned by name, and `chown_to_sudo_user` — used for every file and directory
+BOB hands back — called `os.chown` following symlinks. A symlink planted at one
+of those names was followed: the JSON line appended to its target, the target's
+mode set to 0600, the target chowned; through a dangling link, the target was
+created. An account running as that user, without root, could therefore have had
+a file handed over by the next `sudo bob` — one that did not yet exist, such as
+`/etc/ld.so.preload`, in 0.26.0, which chowned the history only when creating it;
+and with §3's first version, which chowned it on every write, an existing one
+such as `/etc/shadow`. That first version never shipped.
+
+A symlink higher up works too, which `O_NOFOLLOW` does not see — it guards the
+last component only — and not handing a file over is not enough. Measured on a
+bench (a user namespace, euid 0, `SUDO_USER` set) with 0.26.0: with
+`~/.config/bob` a symlink to another directory, or `~/.config`, root created
+`history.jsonl`, `last_baseline.json`, `recurrence.json`, `config.conf` and
+`ignore.yml` in its target and set that directory's mode to 0700 — through a
+link to `/etc`, `/etc` unreadable to every other account; with
+`~/.local/share/bob` a link, root created the report in its target. On a host,
+`~/.config/bob` pointing at `/etc/ld.so.conf.d` would have handed the user a
+`config.conf` that `ldconfig` reads as root.
+
+Affected: every release from 0.1.0 to 0.26.0. Measured after review on ten
+tags (0.1.0, 0.2.0, 0.3.6, 0.6.1, 0.9.0, 0.14.1, 0.20.0, 0.24.0, 0.25.1,
+0.26.0) on the same bench: each created the five state files and the report
+through the link, and 0.1.0 already set the linked directory to 0700; the
+releases between them share that code path but were not each run. Handing the
+files back to the user, and with it the link-to-`/etc/shadow` case, came with
+v0.3.6. Upgrading to 0.26.1 closes it.
+
+- Every write goes through a descriptor of its directory, checked first: run
+  for another user, a directory under that user's home that the kernel resolved
+  outside it (`/proc/self/fd`) is refused — nothing is created, replaced,
+  re-moded or handed over there. The crash-safe write used for the baseline,
+  the recurrence counters, the configuration, the ignore list and the history's
+  rotation creates, renames and syncs its temporary file relative to that
+  descriptor; the history is appended and the report opened relative to it.
+  A directory is created only when its nearest existing ancestor resolves
+  inside the home, and the configuration directory's 0700 is set through a
+  descriptor, not by name.
+- Every hand-over goes through a descriptor too: `chown_to_sudo_user` opens the
+  file or directory with `O_NOFOLLOW` (a symlink fails the open and is left
+  alone), checks where it resolved and only then `fchown`s it; the history is
+  re-moded and handed back through its own descriptor (`fchmod`, `fchown`), as
+  the `-d` report has been since v0.14.1.
+- The file's own name is guarded too, which a checked directory does not
+  do: the history and the report are opened with `O_NOFOLLOW` (a link planted
+  at `history.jsonl` or at the report's name fails the open); the other state
+  files are written to a new temporary file renamed over the name, which
+  replaces a link there without following it — tested on each of the three.
+- `--manage-logs` lists no report from a directory under the home that
+  resolves outside it — measured with 0.26.0: as root, "all" deleted
+  `bob_*.log` in the directory a `~/.local/share/bob/logs` link pointed at —
+  and deletes each report through a checked descriptor of its directory, and
+  moves one through checked descriptors of both directories (renamed relative
+  to them; across filesystems copied from a source opened with `O_NOFOLLOW`,
+  then unlinked) — a move into or out of a redirected directory is refused; it
+  says so when it ends: "… resolves outside the home of so6, to …: run as
+  root, BOB listed, deleted and moved nothing there."
+- A refusal is said: at the end of the audit, and once per directory in
+  `--watch`, one line on stderr — "~/.config/bob resolves outside the home of
+  so6, to …: run as root, BOB wrote nothing there in this run (state, history
+  or report not saved). To see where it leads: realpath ~/.config/bob". A
+  refused log directory is also said where the report is opened, and the audit
+  runs on without the file.
+- What stays as it was: a link that stays inside the home (`~/.config/bob`
+  pointing at `~/dotfiles/bob`) is the user's own and is written; a run without
+  `sudo` or `doas` is not judged — the user writes with the user's own rights;
+  a path outside the home the operator chose (`--output-dir`) is written and
+  handed back as before.
+- Replayed: the dummy target's content and mode unchanged, nothing created
+  through the dangling link; on the bench and with the CLI end to end (the
+  user's `~/.config` and `~/.local/share` replaced by an empty tmpfs inside a
+  mount namespace), nothing in the link's target, its mode left 0755, the two
+  lines said, the audit complete; with the link inside the home, the history,
+  baseline, recurrence counters, configuration and report written there.
+  `SECURITY.md` says so.
+
+### 8. The publish workflow, after the eMudhra / emSign CA incident
+
+The 0.26.0 publication (20 October 2026, the day the incident was publicly
+disclosed) ran its build with pip 26.2.1, whose vendored certifi (2026.06.17, read from
+the wheel) still held the "emSign ECC Root CA - G3" that certifi 2026.10.19
+removed. Asked to upgrade itself, that pip was already the latest — 26.2.2
+came out at 16:36 UTC, after the build — and fetched `build`, `packaging`,
+`pyproject_hooks` and `setuptools` over that connection (the build log). The
+upload ran `pypa/gh-action-pypi-publish` v1.14.2,
+before the fix for GHSA-5xjx-3w67-w9x9 (v1.14.3, published at 18:53 UTC the
+same day; 0.26.0 was uploaded at 14:43 UTC). Every
+published file was found identical to its git tag (`SECURITY.md`, "Release
+chain check"). In `publish.yml`, in this order, before any build dependency
+is installed:
+
+- the runner's pip installs pip 26.2.2 from a wheel pinned by its SHA-256 —
+  measured in a venv with pip 24.0: the pinned wheel installs, a wrong
+  `#sha256=` is refused;
+- then the job checks the pip that resulted and fails if it is older than
+  26.2.2 — the check measured on its own: exit 1 on 24.0, 0 on 26.2.2 — and
+  logs the pip and `build` versions it built with;
+- the upload action is pinned by commit to v1.14.3
+  (`7245906fb61fa33a13554f9d5fb856fe61758086`), no longer to the moving
+  `release/v1` branch.
+
+### Not in this release, and known limits
+
+- With a global IPv6 address, IPv6 behind `IPV6=no` keeps the 0.26.0 reading
+  until 0.27.0. An ACCEPT anywhere on INPUT's path withholds the verdict, even
+  one that admits only ICMPv6, one after a RETURN in INPUT that never runs, or
+  one a goto skips (all three measured closed).
+- Rotated UFW logs are read from 0.27.0, and with them a log line led by NUL
+  bytes (one of 5018 on the Mint host), whose timestamp BOB does not read today.
+- A port scan from one source is not detected: BOB recognises repeated attempts
+  on one port, not one source across many ports.
+- A directory under the home that resolves outside it (a dotfiles tree kept on
+  another disk, say) gets nothing written by BOB run under `sudo` or `doas` —
+  said at the end of the audit; run without them, BOB writes there as before.
+
+### Counters
+
+Tests 14673 → **15112**, mutations 819 → **894**, locale keys 2969 → **2988** per
+language; `--explain` keys (226), CIS references (226) and sections (57)
+unchanged.
+
+### Guards
+
+`test_v0261_ipv6_user_chains.py`, `test_v0261_logs_measured_wording.py`,
+`test_v0261_history_unreadable.py`, `test_v0261_baseline_exhaustive_mode.py`,
+`test_v0261_disk_beside_plain_root.py`, `test_v0261_wording.py`,
+`test_v0261_no_symlink_followed_as_root.py`, `test_v0261_release_chain.py`. Every guard has
+a mutation that brings its defect back.
+
 ## [0.26.0] — 2026-10-20
 
 **A minor, BREAKING (scores): the firewall judged as the host has it, beyond UFW —

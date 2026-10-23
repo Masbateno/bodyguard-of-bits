@@ -180,9 +180,20 @@ class AuditReport:
         # file. The default directory is the invoking user's own
         # ~/.local/share/bob/logs, but ``--output-dir`` lets an operator point
         # this at a shared location. O_NOFOLLOW makes the open fail instead.
-        fd = os.open(str(path),
-                     os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
-                     0o600)
+        # v0.26.1, after review — opened relative to a descriptor of its
+        # directory, checked first: O_NOFOLLOW guards the last component only,
+        # and with ~/.local/share/bob/logs a link elsewhere root created the
+        # report wherever it pointed. Run for another user, a log directory
+        # under that user's home that resolves outside it is refused.
+        from bob.sysinfo import fd_real_path, refuse_if_redirected
+        dfd = os.open(str(path.parent), os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        try:
+            refuse_if_redirected(path.parent, fd_real_path(dfd))
+            fd = os.open(path.name,
+                         os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC,
+                         0o600, dir_fd=dfd)
+        finally:
+            os.close(dfd)
         self._fh = os.fdopen(fd, "w", encoding="utf-8")
         # When invoked under sudo, the report file is owned by root by default
         # and cannot be read/deleted afterwards by the real user. Chown it back
@@ -421,7 +432,11 @@ class AuditReport:
         """
         context_str = network_context
         if public_ip:
-            context_str += f" ({public_ip})"
+            # v0.26.1 — named for what it is: the address the internet sees
+            # (the box, behind NAT), not this host's. "Local network only
+            # (203.0.113.42)" read as a contradiction on a Mint host.
+            context_str = labels.get("context_with_ip", "{context} ({ip})").format(
+                context=network_context, ip=public_ip)
 
         risk_str = risk_level
         if posture_annotation:

@@ -363,6 +363,11 @@ def check_disk_encryption(snapshot: DiskEncryptionSnapshot,
 
     # enc is False — the root filesystem is on a plain, unencrypted device.
     others = [v for v in snapshot.crypt_volumes]
+    # v0.26.1 — the data beside it is named too, as it is beside an encrypted
+    # root: found on a Mint host, /home on its own unencrypted partition went
+    # unmentioned. Same finding, same points.
+    clear = [f"{what} ({src})" for what, src, e in snapshot.extra_volumes if e is False]
+    also = (" " + _t("disk_encryption.root_unencrypted_also", volumes=", ".join(clear))) if clear else ""
     if is_portable:
         detail = _t("disk_encryption.root_unencrypted_detail")
         if others:
@@ -373,13 +378,13 @@ def check_disk_encryption(snapshot: DiskEncryptionSnapshot,
             message=_t("disk_encryption.root_unencrypted"),
             reason=_t("disk_encryption.root_unencrypted_reason"),
             points=1,
-            detail=detail,
+            detail=detail + also,
             nature="action",
         )
     else:
         result.info(
             message=_t("disk_encryption.root_unencrypted_server"),
-            detail=_t("disk_encryption.root_unencrypted_server_detail"),
+            detail=_t("disk_encryption.root_unencrypted_server_detail") + also,
             key="disk_encryption.root_unencrypted_server",
         )
     return result

@@ -287,6 +287,8 @@
   "ports": {
     "all_covered": "All ports listening on 0.0.0.0 are covered by a UFW rule",
     "all_covered_policy": "All ports listening on all interfaces are filtered by UFW — by an explicit rule or by the default deny policy",
+    "all_covered_policy_ipv4": "All ports listening on all interfaces are filtered by UFW over IPv4 — by an explicit rule or by the default deny policy; over IPv6 (UFW's IPV6=no), what reaches them is not established — see the IPv6 section",
+    "all_covered_policy_ipv6_closed": "All ports listening on all interfaces are filtered — over IPv4 by UFW, by an explicit rule or the default deny policy; over IPv6 inbound is closed by the host's rules, UFW running with IPV6=no — see the IPv6 section",
     "uncovered": "Port {port} listening on all interfaces without explicit UFW rule",
     "uncovered_local": "Port {port} — bound to localhost only — no external exposure",
     "uncovered_bound_address": "Port {port} — bound to {address} only, no firewall rule — reachable from the network that address is on",
@@ -315,9 +317,10 @@
     "period": "Period analysed",
     "days_unit": "day(s)",
     "days_available": "day(s) of logs available",
-    "total_blocks": "blocked attempt(s) detected",
-    "verdict_ok": "Normal activity — {total} blocked attempt(s) over {days} day(s), no recognised attack pattern in the analysed events",
-    "verdict_warn": "Suspicious activity — {total} blocked attempt(s) over {days} day(s)",
+    "period_file": "Requested window: {requested} day(s); {days} day(s) covered by /var/log/ufw.log. Rotated logs (ufw.log.1 and older) were not read",
+    "total_blocks": "blocked attempt(s) with a destination port",
+    "verdict_ok": "Normal activity — {total} blocked attempt(s) with a destination port over {days} day(s), no recognised attack pattern in the analysed events",
+    "verdict_warn": "Suspicious activity — {total} blocked attempt(s) with a destination port over {days} day(s)",
     "top_ips": "Top source IPs",
     "top_ports": "Top targeted ports",
     "brute_title": "Repeated blocked connection attempts",
@@ -333,7 +336,8 @@
     "geoip2_unavailable_cmd": "pipx inject bob geoip2",
     "geoip2_no_db": "GeoIP2 installed but no GeoLite2-Country database found — IP geolocation disabled",
     "geoip2_no_db_cmd": "sudo mkdir -p /usr/share/GeoIP && sudo wget -O /usr/share/GeoIP/GeoLite2-Country.mmdb https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb",
-    "local_dominance": "Local source {ip} accounts for {count}/{total} blocks ({pct}%) — likely IoT discovery traffic (mDNS/SSDP/UPnP), not an attack"
+    "local_dominance": "Local source {ip} accounts for {count}/{total} blocks ({pct}%) — {protos} to {ports} distinct destination port(s); BOB does not identify this traffic: check which device it is",
+    "local_dominance_discovery": "Local source {ip} accounts for {count}/{total} blocks ({pct}%) — only to the conventional discovery ports ({ports}: SSDP, mDNS, LLMNR, NetBIOS…) — the ports, not the packets, which BOB does not read"
   },
   "ddns": {
     "none": "No DDNS client detected — no DDNS-based external exposure identified",
@@ -420,6 +424,7 @@
     "saved": "Location saved: {path}"
   },
   "manage_logs": {
+    "dir_redirected": "{path} resolves outside the home of {user}, to {real}: run as root, BOB listed, deleted and moved nothing there. To see where it leads: realpath {path}",
     "cannot_create_dir": "Cannot create directory {path}: {error} — falling back to the current directory",
     "banner_total": "{total} report(s)",
     "banner_selected": "{count} selected / {total}",
@@ -665,6 +670,7 @@
     "next_2": "Review warnings and assess their impact.",
     "next_3": "Re-run the audit after each change to verify.",
     "summary_title": "AUDIT SUMMARY",
+    "context_with_ip": "{context} — public IP seen from outside: {ip}",
     "field_ok": "OK",
     "field_warning": "Warning",
     "field_alert": "Alert",
@@ -678,7 +684,7 @@
     "nonstandard_port_note": "Non-standard port — reduced exposure to automated scanners",
     "ssh_server": {
       "level": "CRITICAL",
-      "exposure": "Heavily targeted by automated scanners and brute-force attacks — internet-exposed by default",
+      "exposure": "Heavily targeted by automated scanners and brute-force attacks wherever it is reachable from the internet",
       "threat": "Full shell access to the machine, privilege escalation, lateral movement to other network systems"
     },
     "vnc_server": {
@@ -976,6 +982,10 @@
     "key_appeared": "New finding: {finding}",
     "key_resolved": "Resolved: {finding}",
     "visibility_dropped": "This run could read less of the host than the previous one — the comparison below is not like for like",
+    "mode_changed": "This run and the previous one were not run the same way ({curr} now, {prev} before): the sections only --exhaustive reads ({sections}) and the finding counts are left out of the comparison",
+    "mode_exhaustive": "with --exhaustive",
+    "mode_normal": "without --exhaustive",
+    "mode_unknown": "not recorded",
     "score_up_but_blinder": "Score is +{delta}, but this run read less of the host — not an improvement, a smaller measurement",
     "score_down_but_blinder": "Score is -{delta}, but this run read less of the host — the drop is not attributable to the host",
     "key_unreevaluated": "Not re-evaluated (its section could not be read): {finding}",
@@ -1209,8 +1219,11 @@
     "all_ports_covered": "All {count} IPv6 listener(s) are covered by UFW (v6) rules",
     "firewalld_v6": "IPv6 listeners are filtered by firewalld (same zone rules as IPv4)",
     "firewalld_v6_open": "IPv6 listeners are not filtered — a firewalld zone holding an interface accepts all incoming traffic (target ACCEPT)",
-    "ufw_v6_off_blocked": "UFW IPv6 is disabled, so UFW drops all IPv6 traffic (IPV6=no) — the {count} IPv6 listener(s) are unreachable, and IPv6 is unusable on this host",
+    "ufw_v6_off_blocked": "UFW IPv6 is disabled, so UFW drops all IPv6 traffic beyond loopback, in and out (IPV6=no) — the {count} IPv6 listener(s) are unreachable from the network, and this host has no IPv6 connectivity beyond loopback",
     "ufw_v6_off_blocked_detail": "IPv6 listeners: {ports}. ufw-init installs DROP on the IPv6 INPUT, FORWARD and OUTPUT chains when IPV6=no (loopback excepted). Not an exposure — but if this host should use IPv6, set IPV6=yes in /etc/default/ufw and run: sudo ufw reload",
+    "ufw_v6_off_blocked_chains": "IPv6 inbound is closed — UFW runs with IPV6=no; INPUT's policy is DROP and, except for the loopback ACCEPT rule, no rule on the INPUT path accepts packets: the {count} IPv6 listener(s) are unreachable from the network.{followed}",
+    "ufw_v6_off_chains_followed": "The chains INPUT jumps to were followed: {chains}.",
+    "ufw_v6_off_blocked_chains_detail": "IPv6 listeners: {ports}. Only inbound traffic is assessed: whether this host can use IPv6 outbound is not established. If it should accept IPv6, set IPV6=yes in /etc/default/ufw and run: sudo ufw reload",
     "netfilter_v6": "{count} service(s) listening on IPv6 ({ports}) — governed by the nftables/iptables ruleset, not UFW (not installed); an inet or ip6 table filters IPv6, an ip table does not",
     "no_firewall_v6": "{count} service(s) listening on IPv6 ({ports}) — no UFW on this host and no other firewall filtering inbound traffic",
     "no_ufw_no_listeners": "UFW is not installed and no service listens on IPv6",
@@ -1221,6 +1234,8 @@
   },
   "audit": {
     "report_unavailable": "Detailed report could not be written to {path} ({error}) — the audit below is complete, only the file is missing",
+    "state_redirected": "{path} resolves outside the home of {user}, to {real}: run as root, BOB wrote nothing there in this run (state, history or report not saved). To see where it leads: realpath {path}",
+    "state_redirected_unknown": "an unknown location",
     "section_unavailable": "Section not evaluated ({section}) — an internal error prevented this check from running",
     "starting": "Starting audit",
     "python_deprecated": "Running on Python {running}, deprecated: BOB supports it until at least {until}, then a BREAKING release will require {next} or later.",
@@ -3565,7 +3580,9 @@
   },
   "history": {
     "title": "Score History",
-    "no_entries": "No score history found — run an audit first"
+    "no_entries": "No score history found — run an audit first",
+    "unreadable": "Score history exists but cannot be read ({path}: {error}) — owned by {owner}, mode {mode}. To read it: sudo bob --history",
+    "unreadable_hand_back": "It is a regular file owned by another account: the next audit run with sudo bob gives it back to yours, through the same checked descriptor as every write — no chown to type, whose path the shell would resolve again"
   },
   "auth_log": {
     "not_available": "auth.log not accessible — SSH login analysis unavailable",
@@ -3847,6 +3864,7 @@
     "root_unencrypted_reason": "root is on a plain, unencrypted device — a stolen or discarded disk reveals its contents",
     "root_unencrypted_detail": "The device backing / is a plain partition, so data at rest is readable by anyone who obtains the disk (a stolen laptop, a returned RMA drive, a decommissioned disk). Full-disk encryption (LUKS) protects data at rest. It cannot be turned on in place — it requires re-installing with encryption enabled, or a backup/re-encrypt/restore cycle. BOB never does this automatically.",
     "root_unencrypted_detail_with_volumes": "The device backing / is a plain partition, so data at rest is readable by anyone who obtains the disk. Encrypted volumes do exist on this host ({volumes}) but the root filesystem is not among them. Full-disk encryption (LUKS) protects data at rest; it cannot be turned on in place — it requires re-installing with encryption enabled, or a backup/re-encrypt/restore cycle. BOB never does this automatically.",
+    "root_unencrypted_also": "The data beside it is not encrypted either: {volumes}.",
     "root_unencrypted_server": "Root filesystem is not encrypted (server profile — reported, not scored)",
     "root_unencrypted_server_detail": "The root device is a plain partition. On a headless server full-disk encryption needs remote-unlock tooling (a boot-time passphrase prompt has no console), and the physical threat model is a locked rack rather than a portable device — so BOB reports this without a deduction. If the server holds sensitive data at rest or its disks may be physically removed or decommissioned, consider LUKS with a remote-unlock method (Clevis/Tang, dropbear-initramfs).",
     "data_unencrypted": "Root is encrypted, but other data on this host is not: {volumes}",
@@ -4313,7 +4331,8 @@
     "ipv6_ok": "IPv6 configuration consistent with UFW rules",
     "ipv6_missing": "UFW rules exist for IPv4 but no equivalent IPv6 rules found",
     "ufw_status_detail": "UFW status (verbose):",
-    "orphan_rule": "UFW rule open with no listening service: {port}"
+    "orphan_rule": "UFW rule open with no listening service: {port}",
+    "orphan_rule_detail": "Nothing listens on this port at the time of the audit. A program that listens only while it runs (Spotify Connect, a game, a media server) still needs the rule then: delete it only if nothing does."
   },
   "completion": {
     "data_missing": "Completion data file not found: {path}",

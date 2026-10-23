@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 #: "découverte" in its own sense — discovery of devices or flaws — not a finding.
 _DISCOVERY_KEYS = frozenset({
-    "logs.local_dominance",
+    "logs.local_dominance_discovery",
     "service_risk.avahi_local_network_discovery.threat",
     "cups.browsing_on_detail",
     "explain.cpu_security.vulnerable.how",

@@ -122,9 +122,12 @@ def run_watch(
             set_posture_from_engine(engine, fw_active=getattr(result, "fw_active", True))
 
             curr_baseline = build_baseline(
-                engine, result.ports_snapshot, result.snapshots
+                engine, result.ports_snapshot, result.snapshots,
+                exhaustive=config.exhaustive,
             )
             save_baseline(curr_baseline)
+            from bob.sysinfo import say_refused_redirects
+            say_refused_redirects(t)  # v0.26.1 — refused under a redirected home
 
             # ---- Display ----
             bar = _score_bar(engine.score)

@@ -14,7 +14,7 @@ import logging
 from pathlib import Path
 
 from bob._atomic import atomic_write, read_text_capped
-from bob.sysinfo import chown_to_sudo_user, get_user_home
+from bob.sysinfo import chown_to_sudo_user, ensure_user_dir, get_user_home
 
 _log = logging.getLogger(__name__)
 
@@ -51,8 +51,7 @@ def save_recurrence(data: dict[str, int], path: Path | None = None) -> None:
     """
     dest = path or _RECURRENCE_PATH
     try:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        chown_to_sudo_user(dest.parent)
+        ensure_user_dir(dest.parent)
         # I-1 (v0.5.5): force 0o600 explicitly — relying on umask leaves
         # the file world-readable on default Debian/Ubuntu umasks (0644).
         # v0.6.1: migrated to bob._atomic.atomic_write (single source of

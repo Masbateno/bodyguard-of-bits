@@ -279,6 +279,12 @@ def check_ports(
     #: are rejected unless the zone forwards them (measured on Debian 13).
     firewalld_strict: bool = False,
     firewalld_forwarded: frozenset = frozenset(),
+    #: v0.26.1 — UFW runs with IPV6=no and BOB did not establish that IPv6
+    #: inbound is closed: the OK below speaks for IPv4 only.
+    ipv6_unproven: bool = False,
+    #: v0.26.1, after review — IPv6 inbound is closed, but by chains on its path
+    #: beyond UFW's (UFW runs with IPV6=no): the OK does not credit UFW for it.
+    ipv6_closed_by_chains: bool = False,
 ) -> CheckResult:
     """
     Evaluate listening ports and return findings.
@@ -479,7 +485,9 @@ def check_ports(
         # by the policy, not by "a UFW rule" (SSH on 0.0.0.0:22 with no rule
         # was reported as covered by one).
         if default_incoming_policy in ("deny", "reject"):
-            result.ok(message=_t("ports.all_covered_policy"), key="ports.all_covered")
+            result.ok(message=_t("ports.all_covered_policy_ipv4" if ipv6_unproven
+                                 else "ports.all_covered_policy_ipv6_closed" if ipv6_closed_by_chains
+                                 else "ports.all_covered_policy"), key="ports.all_covered")
         else:
             result.ok(message=_t("ports.all_covered"), key="ports.all_covered")
 

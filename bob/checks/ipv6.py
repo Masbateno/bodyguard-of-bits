@@ -85,6 +85,18 @@ class IPv6Snapshot:
     #: reads as "IPv6 blocked". Any other rule (Docker, libvirt, a hand-written
     #: ACCEPT) may admit a listener, and BOB does not resolve which.
     ip6_input_rules:     "list[str] | None" = None
+    #: v0.26.1 — the filter table's user chains (``-N`` lines), None when only
+    #: INPUT could be read. ip6_input_rules then carries every jump to one of
+    #: them followed inline, so a chain that admits nothing does not withhold
+    #: the verdict. Measured on Mint 22.3: INPUT jumped to ExpressVPN's
+    #: evpn.INPUT and libvirt's LIBVIRT_INP, both empty — IPv6 inbound was
+    #: closed, and BOB said it could not show it.
+    ip6_user_chains:     "frozenset[str] | None" = None
+    #: v0.26.1, after review — the whole IPv6 filter table is the shape
+    #: ufw-init leaves with IPV6=no (measured, ufw 0.36.2): INPUT, FORWARD and
+    #: OUTPUT at DROP, loopback accepted in and out, nothing else. Only then is
+    #: "IPv6 is unusable on this host" established; None when not read.
+    ip6_ufw_init_shape:  "bool | None" = None
 
     @classmethod
     def from_system(cls) -> "IPv6Snapshot":
@@ -100,8 +112,8 @@ class IPv6Snapshot:
         ufw_present         = (shutil.which("ufw") is not None
                                or path_exists(Path("/etc/default/ufw")))
         has_global_ipv6     = _read_global_ipv6()
-        ip6_input_policy, ip6_input_rules = (
-            _read_ip6_input_chain() if ufw_ipv6_enabled is False else (None, None))
+        ip6_input_policy, ip6_input_rules, ip6_user_chains, ip6_ufw_init_shape = (
+            _read_ip6_filter_full() if ufw_ipv6_enabled is False else (None, None, None, None))
 
         ss = run_result("ss", "-tulnp")
         ipv6_listeners = sorted(_extract_ipv6_listeners(ss.stdout))
@@ -122,6 +134,8 @@ class IPv6Snapshot:
             ufw_present=ufw_present,
             ip6_input_policy=ip6_input_policy,
             ip6_input_rules=ip6_input_rules,
+            ip6_user_chains=ip6_user_chains,
+            ip6_ufw_init_shape=ip6_ufw_init_shape,
         )
 
 
@@ -137,16 +151,87 @@ def _read_ip6_input_chain() -> "tuple[str | None, list[str] | None]":
     return m.group(1), rules
 
 
+#: The IPv6 filter table ufw-init leaves with IPV6=no (measured, ufw 0.36.2).
+_UFW_INIT_V6_POLICIES = frozenset({"-P INPUT DROP", "-P FORWARD DROP", "-P OUTPUT DROP"})
+_UFW_INIT_V6_RULES = frozenset({"-A INPUT -i lo -j ACCEPT", "-A OUTPUT -o lo -j ACCEPT"})
+
+
+def _ufw_init_shape(listing: str) -> bool:
+    """Whether ``ip6tables -S`` printed exactly what ufw-init leaves."""
+    lines = {ln.strip() for ln in listing.splitlines() if ln.strip()}
+    return lines == _UFW_INIT_V6_POLICIES | _UFW_INIT_V6_RULES
+
+
+def _read_ip6_filter_full() -> "tuple[str | None, list[str] | None, frozenset[str] | None, bool | None]":
+    """(INPUT policy, INPUT's rules with each jump to a user chain followed
+    inline, the user chains, the ufw-init shape) of the IPv6 filter table
+    (v0.26.1). Falls back to INPUT alone — user chains and shape unknown —
+    when the table cannot be listed."""
+    res = run_result("ip6tables", "-S")
+    if res.ok:
+        m = re.search(r"^-P INPUT (\w+)", res.stdout, re.M)
+        if m:
+            from bob.checks.firewall_stack import _input_path
+            chains = frozenset(re.findall(r"^-N (\S+)", res.stdout, re.M))
+            return m.group(1), _input_path(res.stdout), chains, _ufw_init_shape(res.stdout)
+    policy, rules = _read_ip6_input_chain()
+    return policy, rules, None, None
+
+
+def _read_ip6_filter() -> "tuple[str | None, list[str] | None, frozenset[str] | None]":
+    """(INPUT policy, INPUT's path, user chains) — :func:`_read_ip6_filter_full`
+    without the shape."""
+    return _read_ip6_filter_full()[:3]
+
+
 #: The rules ufw-init leaves in the IPv6 INPUT chain when IPV6=no.
 _UFW_V6_OFF_RULES = frozenset({"-A INPUT -i lo -j ACCEPT"})
+_V6_LOOPBACK = re.compile(r"^-A \S+ -i lo -j ACCEPT$")
+_V6_TARGET = re.compile(r"\s-[jg]\s+(\S+)")
+#: Targets that let no packet in.
+_V6_NON_ADMITTING = frozenset({"DROP", "REJECT", "RETURN", "LOG"})
 
 
-def _ipv6_input_closed(snapshot: "IPv6Snapshot") -> bool:
+def _v6_rule_admits(rule: str, user_chains: "frozenset[str] | None") -> bool:
+    """Whether *rule* may let a packet in: anything but loopback, a refusal,
+    a RETURN or LOG, or a jump to a user chain whose rules were read inline."""
+    if rule in _UFW_V6_OFF_RULES or _V6_LOOPBACK.match(rule):
+        return False
+    m = _V6_TARGET.search(rule)
+    if not m:
+        return False                      # no target: counted, falls through
+    target = m.group(1)
+    if target in _V6_NON_ADMITTING:
+        return False
+    return not (user_chains is not None and target in user_chains)
+
+
+def _ipv6_input_closed(snapshot: "IPv6Snapshot", *, extended: bool = True) -> bool:
     """IPv6 INPUT drops everything but loopback — and nothing else can let a
-    packet through: no rule other than ufw-init's loopback one."""
-    return (snapshot.ip6_input_policy == "DROP"
-            and snapshot.ip6_input_rules is not None
-            and set(snapshot.ip6_input_rules) <= _UFW_V6_OFF_RULES)
+    packet through: no rule on INPUT's path, user chains followed, admits.
+
+    *extended* False is the 0.26.0 reading (ufw-init's loopback rule alone).
+    v0.26.1 is a patch: with a global IPv6 address the extended reading would
+    lift the WARN −2 of the branch below, a score change, so it waits for
+    0.27.0 there (decided by the user, 22 October 2026)."""
+    if snapshot.ip6_input_policy != "DROP" or snapshot.ip6_input_rules is None:
+        return False
+    if not extended:
+        return set(snapshot.ip6_input_rules) <= _UFW_V6_OFF_RULES
+    return not any(_v6_rule_admits(r, snapshot.ip6_user_chains)
+                   for r in snapshot.ip6_input_rules)
+
+
+def ipv6_closed_by_chains(snapshot: "IPv6Snapshot") -> bool:
+    """IPv6 inbound established closed, the table not in the whole shape
+    ufw-init leaves (v0.26.1): UFW at IPV6=no, listeners, the extended reading
+    closed, and ip6tables not printing exactly ufw-init's table. "UFW drops all
+    IPv6 traffic" and "IPv6 is unusable" are then not established — after
+    review: on Mint, ExpressVPN's and libvirt's chains sat on INPUT's path, and
+    OUTPUT, not judged, could hold anything."""
+    return (snapshot.ufw_ipv6_enabled is False and bool(snapshot.ipv6_listeners)
+            and _ipv6_input_closed(snapshot, extended=not snapshot.has_global_ipv6)
+            and snapshot.ip6_ufw_init_shape is not True)
 
 
 # ---------------------------------------------------------------------------
@@ -231,16 +316,24 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
     elif snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled is False:
         if snapshot.ipv6_listeners:
             listeners_str = ", ".join(snapshot.ipv6_listeners)
-            if ufw_active and _ipv6_input_closed(snapshot):
+            if ufw_active and _ipv6_input_closed(snapshot, extended=not snapshot.has_global_ipv6):
                 # v0.24.2: UFW with IPV6=no drops every IPv6 packet — the
                 # listeners are unreachable, not exposed. This used to be a
                 # WARN −2 for "services exposed without UFW IPv6 rules" (global
                 # address) or "reachable from the local network without UFW
                 # filtering" (link-local); both are the opposite of measured.
+                _chains = ipv6_closed_by_chains(snapshot)
+                # In the order a packet meets them (after review round 12).
+                _jumped = list(dict.fromkeys(m.group(1) for r in snapshot.ip6_input_rules or []
+                                             for m in [_V6_TARGET.search(r)]
+                                             if m and m.group(1) in (snapshot.ip6_user_chains or ())))
                 result.info(
-                    message=_t("ipv6.ufw_v6_off_blocked",
-                               count=len(snapshot.ipv6_listeners)),
-                    detail=_t("ipv6.ufw_v6_off_blocked_detail", ports=listeners_str),
+                    message=_t("ipv6.ufw_v6_off_blocked_chains" if _chains else "ipv6.ufw_v6_off_blocked",
+                               count=len(snapshot.ipv6_listeners),
+                               followed=(" " + _t("ipv6.ufw_v6_off_chains_followed", chains=", ".join(_jumped))
+                                         if _jumped else "")),
+                    detail=_t("ipv6.ufw_v6_off_blocked_chains_detail" if _chains
+                              else "ipv6.ufw_v6_off_blocked_detail", ports=listeners_str),
                     key="ipv6.ufw_v6_off_blocked",
                 )
             elif snapshot.has_global_ipv6:

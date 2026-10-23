@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import errno
 import os
-import tempfile
+import secrets
 from pathlib import Path
 
 # v0.14.1: generous ceiling for any state file BOB reads back. None of them is
@@ -114,44 +114,57 @@ def atomic_write(path: Path, content: str, *, mode: int = 0o600) -> None:
         OSError: on filesystem errors. The caller decides whether to swallow
                  (best-effort persistence) or surface to the user.
     """
-    # M-7 (v0.7.2): use tempfile.mkstemp to generate a per-call
-    # unique tmp name in the destination directory. Pre-v0.7.2 the tmp
-    # name was the fixed pattern ``path.suffix + ".tmp"``: two concurrent
-    # ``bob`` invocations (cron + manual + watch can coincide) raced on
-    # the same path; O_TRUNC let writer B overwrite A's bytes mid-flight
-    # and A's ``os.replace`` then committed an inconsistent file.
-    tmp_fd, tmp_name = tempfile.mkstemp(
-        prefix=path.name + ".", suffix=".tmp", dir=str(path.parent),
-    )
+    # v0.26.1, after review — the whole write goes through one descriptor of
+    # the directory, checked first. By name, root followed a symlinked
+    # ~/.config/bob (or ~/.config) wherever it pointed: last_baseline.json,
+    # recurrence.json, config.conf and ignore.yml were created or replaced
+    # there (measured on a bench). Run for another user, a directory under that
+    # user's home that resolves outside it is refused (RedirectedOutOfHome);
+    # the temp file is created, renamed and fsynced relative to the descriptor,
+    # so the name cannot be redirected between the check and the rename.
+    from bob.sysinfo import fd_real_path, refuse_if_redirected
+    dir_fd = os.open(str(path.parent), os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
     try:
-        os.fchmod(tmp_fd, mode)
-        with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
-            fh.write(content)
-            fh.flush()
-            # M-2 (v0.7.1): fsync the data + metadata of the tmp file BEFORE
-            # the rename. Without this, ext4's default journal mode
-            # (data=ordered) commits the rename metadata before the data,
-            # leaving a zero-byte file on power loss.
-            os.fsync(fh.fileno())
-        os.replace(tmp_name, str(path))
-    except BaseException:
-        # M-7: clean up the tmp file on ANY failure path, otherwise tmpfile
-        # litter accumulates in ~/.config/bob/ until the next successful
-        # write. Best-effort: a second OSError is swallowed (the original
-        # exception is re-raised).
+        refuse_if_redirected(path.parent, fd_real_path(dir_fd))
+        # M-7 (v0.7.2): a per-call unique tmp name. Pre-v0.7.2 it was fixed:
+        # two concurrent ``bob`` runs (cron + manual + watch) raced on it, and
+        # O_TRUNC let one overwrite the other's bytes mid-flight. O_EXCL as
+        # mkstemp did: a name already there, a link included, is refused.
+        while True:
+            tmp_name = f"{path.name}.{secrets.token_hex(4)}.tmp"
+            try:
+                tmp_fd = os.open(tmp_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC,
+                                 0o600, dir_fd=dir_fd)
+                break
+            except FileExistsError:
+                continue
         try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
-        raise
-    # M-2 (v0.7.1): fsync the parent directory inode so the rename is
-    # durable. Best-effort: on filesystems / mounts that disallow
-    # directory fsync (rare) the OSError is swallowed.
-    try:
-        dir_fd = os.open(str(path.parent), os.O_DIRECTORY)
+            os.fchmod(tmp_fd, mode)
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
+                fh.write(content)
+                fh.flush()
+                # M-2 (v0.7.1): fsync the data + metadata of the tmp file BEFORE
+                # the rename. Without this, ext4's default journal mode
+                # (data=ordered) commits the rename metadata before the data,
+                # leaving a zero-byte file on power loss.
+                os.fsync(fh.fileno())
+            os.replace(tmp_name, path.name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+        except BaseException:
+            # M-7: clean up the tmp file on ANY failure path, otherwise tmpfile
+            # litter accumulates in ~/.config/bob/ until the next successful
+            # write. Best-effort: a second OSError is swallowed (the original
+            # exception is re-raised).
+            try:
+                os.unlink(tmp_name, dir_fd=dir_fd)
+            except OSError:
+                pass
+            raise
+        # M-2 (v0.7.1): fsync the parent directory inode so the rename is
+        # durable. Best-effort: on filesystems / mounts that disallow
+        # directory fsync (rare) the OSError is swallowed.
         try:
             os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
-    except OSError:
-        pass
+        except OSError:
+            pass
+    finally:
+        os.close(dir_fd)

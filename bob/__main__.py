@@ -778,7 +778,8 @@ def _run(argv=None) -> int:
                     print(f"{t('cli.error.webhook_failed_prefix')}{_exc}", file=sys.stderr)
             # ------------------------------------------------------------------------
 
-            curr_baseline = build_baseline(engine, ports_snapshot, snapshots)
+            curr_baseline = build_baseline(engine, ports_snapshot, snapshots,
+                                           exhaustive=config.exhaustive)
             save_baseline(curr_baseline)
 
             # v0.16.0 — always called, quiet handled inside.
@@ -855,6 +856,10 @@ def _run(argv=None) -> int:
                 engine.effective_level.value,
                 level_score_only=engine.level.value,
             )
+            # v0.26.1 — a write refused under a redirected home is said, not
+            # dropped: the baseline, history or report the user expects is missing.
+            from bob.sysinfo import say_refused_redirects
+            say_refused_redirects(t)
 
             # v0.16.0 — a bounded score cannot satisfy a target.
             #

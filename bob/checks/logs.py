@@ -164,6 +164,15 @@ class LogReportData:
     top_ips:        list[tuple[str, int]]
     top_ports:      list[tuple[str, int]]
     svc_hits:       dict[str, int]
+    #: v0.26.1 — "file" (/var/log/ufw.log only) or "journald".
+    log_source:     str = "file"
+
+    @property
+    def days_covered(self) -> int:
+        """The days the events were read over: the period asked for, or fewer
+        when the log holds fewer (v0.26.1 — measured on Mint, "1764 blocked
+        attempt(s) over 7 day(s)" from a ufw.log that held 3 days)."""
+        return min(self.log_days, self.days_available) if self.days_available else self.log_days
 
 @dataclass
 class LogsSnapshot:
@@ -322,6 +331,7 @@ def check_logs(
         top_ips=top_ips,
         top_ports=top_ports,
         svc_hits=svc_hits,
+        log_source=snapshot.log_source,
     )
 
     # Findings — repeated blocked traffic, classified by what the evidence
@@ -372,16 +382,26 @@ def check_logs(
             key="logs.svc_hits_detail",
         )
 
-    # Dominant local source — likely IoT mDNS/SSDP/UPnP noise (benign, no deduction)
+    # Dominant local source (no deduction). v0.26.1 — it said "likely IoT
+    # discovery traffic (mDNS/SSDP/UPnP), not an attack" from the share alone.
+    # Measured on Mint: a TV box sending unicast UDP to 413 distinct high ports,
+    # none of them 5353 or 1900. It now says what was measured: the ports and
+    # protocols, and "discovery" only when every port is a discovery port.
     local_ip, local_count, local_pct = _dominant_local_source(snapshot.entries)
     if local_ip is not None:
+        own = [e for e in snapshot.entries if e.src_ip == local_ip]
+        ports = {e.dst_port for e in own}
+        protos = "/".join(sorted({e.proto.upper() for e in own}))
+        discovery = ports <= _DISCOVERY_PORTS
         result.info(
             message=_t(
-                "logs.local_dominance",
+                "logs.local_dominance_discovery" if discovery else "logs.local_dominance",
                 ip=local_ip,
                 count=local_count,
                 total=snapshot.total,
                 pct=local_pct,
+                ports=(", ".join(str(x) for x in sorted(ports)) if discovery else len(ports)),
+                protos=protos,
             ),
             key="logs.local_dominance",
         )
@@ -508,14 +528,18 @@ def _service_hits(
 _LOCAL_DOMINANCE_THRESHOLD = 0.70   # fraction of total blocks from one local IP
 _LOCAL_DOMINANCE_MIN_COUNT = 50     # ignore very quiet logs (< 50 total blocks)
 
+#: v0.26.1 — destination ports of local discovery protocols: SSDP, mDNS,
+#: LLMNR, WS-Discovery, NetBIOS name and datagram.
+_DISCOVERY_PORTS = frozenset({1900, 5353, 5355, 3702, 137, 138})
+
+
 def _dominant_local_source(
     entries: list[LogEntry],
 ) -> tuple[str | None, int, int]:
     """
     Detect whether a single private IP dominates the block log.
 
-    A dominant local source is almost always benign IoT traffic
-    (mDNS, SSDP, UPnP discovery) rather than a real attack.
+    What its traffic is, check_logs says from the ports it targets.
 
     Returns:
         (ip, count, pct_int) if a dominant local IP is found, or (None, 0, 0).

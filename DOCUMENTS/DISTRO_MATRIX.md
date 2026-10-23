@@ -943,6 +943,45 @@ Measured along the way: syslog-ng 4 names itself `syslog-ng-main` in
 file, within `findtime`; stopping OpenRC's `syslog` stops `crond` (`need logger`),
 which does not come back when a logger starts again.
 
+### 0.26.1 field pass — an audit of the Mint host, and its replay
+
+*Linux Mint 22.3 (kernel 7.0, ufw 0.36.2 with `IPV6=no`, Python 3.12), real. 0.26.0
+audited it on 20 October 2026 (`--exhaustive`, then a normal run); the 0.26.1 tree
+replayed it as root on 22 October 2026. Nothing installed for the pass. One fix the
+audit led to was on the host, not in BOB: a test sudoers drop-in left since June
+granting passwordless `python3` was removed by its owner.*
+
+| Measured | 0.26.0 | 0.26.1 |
+|---|---|---|
+| ip6tables INPUT `-P DROP`, `-j evpn.INPUT` (ExpressVPN), `-j LIBVIRT_INP` (libvirt), `-i lo -j ACCEPT`, both chains empty; sshd on `[::]:22`, link-local only | "BOB cannot show whether the local network reaches them"; the ports OK said every interface filtered by UFW | IPv6 inbound closed, the chains named, only inbound judged; the ports OK says closed "by the host's rules" for IPv6 |
+| `/var/log/ufw.log` 3 days, `ufw.log.1` the 7 before (some 10 000 blocks in the last 7 days) | "3 day(s) of logs available", "1764 blocked attempt(s) over 7 day(s)" | "N day(s) in /var/log/ufw.log; rotated files are not read", the verdict over the days covered (5 at the replay) |
+| a TV box, 192.168.1.50: unicast UDP to 413 (20 October) and 567 (22 October) distinct high ports, none to 5353/1900 | "likely IoT discovery traffic (mDNS/SSDP/UPnP), not an attack" | the protocol and port count; "BOB does not identify this traffic" |
+| `~/.config/bob/history.jsonl` root:root 0600, 56 KB | `bob --history`: "No score history found" | "exists but cannot be read … owned by root, mode 0600"; after one `sudo bob`, so6:so6 and read |
+| `--exhaustive` after a normal run, then a normal run | "This run could read less of the host", "6 new info notice(s)", then "4 info notice(s) resolved" | "not run the same way (… now, not recorded before)": exhaustive sections and counts left out |
+| `/` and `/home` on plain ext4, plain swap | the root named, `/home` not | `/home` and swap named in the detail, same −1 |
+
+### 0.26.1 bench — IPv6 INPUT and the chains it jumps to
+
+*Network namespace with an IPv6 (ULA) probe from a peer namespace, a listener on
+[::]:8099, ip6tables 1.8.10 (nf_tables), Linux 7.0, 22 October 2026. INPUT at
+policy DROP with `-j evpn.INPUT`, `-j LIBVIRT_INP`, `-i lo -j ACCEPT` (the Mint
+shape), then each variant below.*
+
+| User chain / INPUT holds | [::]:8099 | BOB (no global address) |
+|---|---|---|
+| nothing (the Mint shape) | closed | blocked |
+| ACCEPT ICMPv6 and 8099/tcp | **open** | withholds |
+| LOG, then ACCEPT ICMPv6 and 8099 | **open** | withholds |
+| RETURN, then INPUT accepting ICMPv6 and 8099 after the jump | **open** | withholds |
+| LOG and RETURN only | closed | blocked |
+| a RETURN in INPUT itself, then INPUT accepting ICMPv6 and 8099 | closed (the policy applies) | withholds — too cautious |
+| ACCEPT ICMPv6 only | closed | withholds — an ACCEPT |
+| DROP | closed | blocked |
+
+The real ufw 0.36.2 at `IPV6=no` in the same namespace bench left exactly `-P INPUT DROP`,
+`-P FORWARD DROP`, `-P OUTPUT DROP`, `-A INPUT -i lo -j ACCEPT`, `-A OUTPUT -o lo -j ACCEPT`:
+the one table for which BOB says "IPv6 is unusable on this host".
+
 ### 0.25.1 field pass — doas on Alpine
 
 *Alpine 3.24 (OpenRC, BusyBox, doas, Python 3.14.7), real, 2026-10-17. The 0.25.1

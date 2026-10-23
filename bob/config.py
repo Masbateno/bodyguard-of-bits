@@ -41,7 +41,7 @@ import re
 from pathlib import Path
 
 from bob._atomic import atomic_write
-from bob.sysinfo import chown_to_sudo_user, get_user_home
+from bob.sysinfo import chown_to_sudo_user, ensure_user_dir, get_user_home
 
 logger = logging.getLogger(__name__)
 
@@ -138,9 +138,9 @@ class EmailStore:
 
     def _ensure_dir(self) -> None:
         try:
-            self._path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
-            self._path.parent.chmod(0o700)
-            chown_to_sudo_user(self._path.parent)
+            # v0.26.1 — 0700 through a descriptor, and nothing done through a
+            # directory that resolves outside the user's home (ensure_user_dir).
+            ensure_user_dir(self._path.parent, mode=0o700)
         except OSError as exc:
             logger.warning("Could not create config directory %s: %s", self._path.parent, exc)
 
@@ -409,9 +409,9 @@ class UserConfig:
     def _ensure_dir(self) -> None:
         """Create the config directory if it does not exist (mode 0700)."""
         try:
-            self._path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
-            self._path.parent.chmod(0o700)
-            chown_to_sudo_user(self._path.parent)
+            # v0.26.1 — 0700 through a descriptor, and nothing done through a
+            # directory that resolves outside the user's home (ensure_user_dir).
+            ensure_user_dir(self._path.parent, mode=0o700)
         except OSError as exc:
             logger.warning("Could not create config directory %s: %s", self._path.parent, exc)
 

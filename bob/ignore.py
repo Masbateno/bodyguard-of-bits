@@ -19,7 +19,7 @@ import re
 from pathlib import Path
 
 from bob._atomic import atomic_write, read_text_capped
-from bob.sysinfo import chown_to_sudo_user, get_user_home
+from bob.sysinfo import chown_to_sudo_user, ensure_user_dir, get_user_home
 from bob.checks._run import path_exists
 
 _log = logging.getLogger(__name__)
@@ -117,8 +117,7 @@ def add_ignore_key(key: str, path: Path | None = None) -> bool:
     if key in load_ignore_keys(path):
         return False
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        chown_to_sudo_user(path.parent)
+        ensure_user_dir(path.parent)
         if path_exists(path):
             content = read_text_capped(path)
             if "ignore:" in content:

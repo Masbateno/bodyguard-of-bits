@@ -250,10 +250,17 @@ def display_log_results(logs_result, snapshot, log_report, config, t, report) ->
         return
 
     if not quiet:
-        print_dim(
-            f"{t('logs.period')} : {log_report.log_days} {t('logs.days_unit')} "
-            f"— {log_report.days_available} {t('logs.days_available')}"
-        )
+        if log_report.log_source == "file":
+            # v0.26.1 — only /var/log/ufw.log is read: measured on Mint, it
+            # held 3 days and ufw.log.1 the 7 before, and "3 day(s) of logs
+            # available" said the rest did not exist.
+            print_dim(t("logs.period_file", requested=log_report.log_days,
+                        days=log_report.days_available))
+        else:
+            print_dim(
+                f"{t('logs.period')} : {log_report.log_days} {t('logs.days_unit')} "
+                f"— {log_report.days_available} {t('logs.days_available')}"
+            )
         print()
 
     total = log_report.total
@@ -274,9 +281,9 @@ def display_log_results(logs_result, snapshot, log_report, config, t, report) ->
             for f in logs_result.findings
         )
         if _charged:
-            print_warn(t("logs.verdict_warn", total=total, days=log_report.log_days))
+            print_warn(t("logs.verdict_warn", total=total, days=log_report.days_covered))
         else:
-            print_ok(t("logs.verdict_ok", total=total, days=log_report.log_days))
+            print_ok(t("logs.verdict_ok", total=total, days=log_report.days_covered))
 
         # Repeated-block findings.
         #
@@ -840,6 +847,8 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
             "score":   t("report.field_score"),
             "risk":    t("report.field_risk"),
             "context": t("report.field_context"),
+            # Left as a template: write_summary fills it with the context and IP.
+            "context_with_ip": t("report.context_with_ip", context="{context}", ip="{ip}"),
             "profile": t("report.field_profile"),
             "visibility": t("scoring.visibility_label"),
             "scope": t("scoring.scope_label"),

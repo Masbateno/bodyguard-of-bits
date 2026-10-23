@@ -848,6 +848,9 @@ def _check_orphan_rules(
         display = port_proto if "/" in port_proto else f"{port_proto}/tcp+udp"
         result.info(
             message=t("firewall_rules.orphan_rule", port=display),
+            # v0.26.1 — nothing listening at audit time does not make the rule
+            # unused (Spotify Connect's on a Mint host: it listens while it runs).
+            detail=t("firewall_rules.orphan_rule_detail"),
             cmd=f"sudo ufw delete allow {port_proto}",
             key="firewall_rules.orphan_rule",
         )

@@ -36,7 +36,7 @@ if TYPE_CHECKING:  # avoid circular imports at runtime
     from bob.checks.services import ServiceSnapshot
     from bob.scoring import ScoreEngine
 
-from bob.sysinfo import chown_to_sudo_user, get_user_home
+from bob.sysinfo import chown_to_sudo_user, ensure_user_dir, get_user_home
 
 from bob.visibility import section_of
 
@@ -92,6 +92,14 @@ class AuditBaseline:
     # attributed to the controls behind it. None marks a baseline written
     # before the field existed; {} is a genuinely deduction-free audit.
     deduction_breakdown: dict[str, int] | None = None
+    # v0.26.1 — whether the run was an --exhaustive one. None marks a baseline
+    # written before the field existed: its mode is unknown, not "normal".
+    exhaustive: bool | None = None
+
+
+#: v0.26.1 — the sections only an --exhaustive run reads (the keys of
+#: runner._REQUIRES_EXHAUSTIVE; a guard holds the two equal).
+EXHAUSTIVE_SECTIONS = frozenset({"package_integrity", "world_writable"})
 
 
 @dataclass
@@ -120,6 +128,12 @@ class AuditDelta:
     unreevaluated_finding_keys: list[str] = field(default_factory=list)
     # True when this run could read less than the previous one.
     visibility_dropped: bool = False
+    # v0.26.1 — the two runs were not run the same way (--exhaustive on one
+    # side, or the previous mode not recorded): the exhaustive-only sections
+    # and the finding counts are left out of the comparison.
+    mode_mismatch: bool = False
+    prev_exhaustive: bool | None = None
+    curr_exhaustive: bool | None = None
     deduction_delta:       int = 0                                   # change in total raw deduction points
     # v0.18.3 — per-key point changes behind a variable-deductions move, as
     # (key, prev_points, curr_points), sorted by key. Populated only when both
@@ -152,6 +166,7 @@ def build_baseline(
     engine: "ScoreEngine",
     ports_snapshot: "PortsSnapshot",
     snapshots: "list[ServiceSnapshot]",
+    exhaustive: bool | None = None,
 ) -> AuditBaseline:
     """
     Build an AuditBaseline from the current audit results.
@@ -219,6 +234,7 @@ def build_baseline(
         hostname=_host or None,
         unverified=unverified,
         deduction_breakdown=deduction_breakdown,
+        exhaustive=exhaustive,
     )
 
 
@@ -230,8 +246,7 @@ def save_baseline(baseline: AuditBaseline, path: Path | None = None) -> None:
     """
     dest = path or (_CONFIG_DIR / _BASELINE_FILENAME)
     try:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        chown_to_sudo_user(dest.parent)
+        ensure_user_dir(dest.parent)
         atomic_write(
             dest,
             json.dumps(asdict(baseline), ensure_ascii=False, indent=2),
@@ -408,6 +423,7 @@ def load_baseline(path: Path | None = None, *, strict: bool = False) -> AuditBas
             # existed"); an empty list stays a legitimately clean run.
             unverified=(list(raw["unverified"]) if isinstance(raw.get("unverified"), list) else None),
             deduction_breakdown=deduction_breakdown,
+            exhaustive=(raw["exhaustive"] if isinstance(raw.get("exhaustive"), bool) else None),
         )
     except (KeyError, TypeError, AttributeError, ValueError) as exc:
         if strict:
@@ -441,12 +457,24 @@ def compute_delta(prev: AuditBaseline, curr: AuditBaseline) -> AuditDelta:
     prev_svcs = set(prev.active_services)
     curr_svcs = set(curr.active_services)
 
+    # v0.26.1 — measured on a Mint host: an --exhaustive run after a normal one
+    # said "This run could read less of the host" (package_integrity was
+    # unread, and had not been attempted before) and "6 new info notice(s)";
+    # the next normal run said "4 info notice(s) resolved" with nothing fixed.
+    # Those sections and the counts are only compared between runs of one mode.
+    mode_mismatch = curr.exhaustive is not None and prev.exhaustive != curr.exhaustive
+
+    def _compared(keys):
+        if not mode_mismatch:
+            return set(keys)
+        return {k for k in keys if section_of(k) not in EXHAUSTIVE_SECTIONS}
+
     # Only diff finding keys when the previous baseline is v1.22+ (finding_keys is not None).
     # None means an older baseline that never stored the key — skip to avoid false "new" noise.
     # An empty list [] is a legitimately clean audit and must be diffed normally.
     if prev.finding_keys is not None:
-        prev_keys = set(prev.finding_keys)
-        curr_keys = set(curr.finding_keys or [])
+        prev_keys = _compared(prev.finding_keys)
+        curr_keys = _compared(curr.finding_keys or [])
         new_finding_keys = sorted(curr_keys - prev_keys)
         vanished = prev_keys - curr_keys
         # A key whose section could not be read this time was not re-evaluated.
@@ -464,7 +492,7 @@ def compute_delta(prev: AuditBaseline, curr: AuditBaseline) -> AuditDelta:
     # not "nothing was unverified" — so no drop is claimed either way.
     visibility_dropped = (
         prev.unverified is not None
-        and set(curr.unverified or []) > set(prev.unverified)
+        and _compared(curr.unverified or []) > _compared(prev.unverified)
     )
 
     # v0.18.3 — per-key point changes. Only when both baselines carry the
@@ -476,20 +504,24 @@ def compute_delta(prev: AuditBaseline, curr: AuditBaseline) -> AuditDelta:
         curr_bd = curr.deduction_breakdown
         deduction_key_deltas = sorted(
             (k, prev_bd.get(k, 0), curr_bd.get(k, 0))
-            for k in (set(prev_bd) | set(curr_bd))
+            for k in _compared(set(prev_bd) | set(curr_bd))
             if prev_bd.get(k, 0) != curr_bd.get(k, 0)
         )
     else:
         deduction_key_deltas = []
 
+    _counts = not mode_mismatch
     return AuditDelta(
         prev_timestamp=prev.timestamp,
         score_delta=curr.score - prev.score,
         unreevaluated_finding_keys=unreevaluated_finding_keys,
         visibility_dropped=visibility_dropped,
-        alert_delta=curr.alert_count - prev.alert_count,
-        warn_delta=curr.warn_count - prev.warn_count,
-        info_delta=curr.info_count - prev.info_count,
+        mode_mismatch=mode_mismatch,
+        prev_exhaustive=prev.exhaustive,
+        curr_exhaustive=curr.exhaustive,
+        alert_delta=(curr.alert_count - prev.alert_count) if _counts else 0,
+        warn_delta=(curr.warn_count - prev.warn_count) if _counts else 0,
+        info_delta=(curr.info_count - prev.info_count) if _counts else 0,
         new_ports=sorted(curr_ports - prev_ports),
         closed_ports=sorted(prev_ports - curr_ports),
         new_services=sorted(curr_svcs - prev_svcs),
@@ -498,7 +530,8 @@ def compute_delta(prev: AuditBaseline, curr: AuditBaseline) -> AuditDelta:
         resolved_finding_keys=resolved_finding_keys,
         deduction_delta=(
             curr.deduction_total - prev.deduction_total
-            if prev.deduction_total is not None and curr.deduction_total is not None
+            if _counts and prev.deduction_total is not None and curr.deduction_total is not None
+            else sum(c - p for _k, p, c in deduction_key_deltas) if not _counts
             else 0
         ),
         deduction_key_deltas=deduction_key_deltas,
@@ -529,6 +562,14 @@ def display_delta(delta: AuditDelta, t, output_mod) -> None:
     # so afterwards is too late: the reader has already taken the green line.
     if delta.visibility_dropped:
         output_mod.print_warn(t("compare.visibility_dropped"))
+    if delta.mode_mismatch:
+        def _mode(v):
+            return t("compare.mode_unknown") if v is None else t(
+                "compare.mode_exhaustive" if v else "compare.mode_normal")
+        output_mod.print_info(t("compare.mode_changed",
+                                curr=_mode(delta.curr_exhaustive),
+                                prev=_mode(delta.prev_exhaustive),
+                                sections=", ".join(sorted(EXHAUSTIVE_SECTIONS))))
 
     # --- Score ---
     if delta.score_delta > 0 and delta.visibility_dropped:

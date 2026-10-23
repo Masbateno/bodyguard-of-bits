@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.26.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.26.1-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -115,7 +115,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 - **`--html` HTML export** — self-contained HTML file (no JS, no external resources); colored score circle; ALERT/WARN/INFO/OK badges; deductions table; XSS-safe
 - **`--format=FORMAT`** — unified output flag: `json | json-full | csv | markdown | html`; legacy flags kept as silent aliases. Since v0.18.0 the CSV's last column is `key`, the finding's stable identifier — the same one `--explain`, `--ignore` and the JSON carry; the fifteen columns before it keep their positions
 - **`--check LIST` / `--skip LIST`** — run only named checks (`--check=ssh,firewall`) or exclude them (`--skip=clamav,rootkit`); mutually exclusive; `--check=list` prints all 67 section names — the 57 filterable, plus the 10 always-on ones it also lists
-- **`--output-dir PATH`** — override report save directory for the current run; no persist
+- **`--output-dir PATH`** — override report save directory for the current run, not confined to your home (run with `sudo`, the report is written there and handed back to you, as asked); no persist
 - **Comparative report** — baseline saved after each audit (`~/.config/bob/last_baseline.json`); next run shows score delta, alert/warn changes, new/closed ports, started/stopped services; new and resolved ALERT+WARN finding keys tracked separately. A file that is not a BOB baseline (no `timestamp` and `score`) is refused by name rather than compared against as a baseline of zero
 - **Score history** — `--history` displays last N audit scores as a sparkline (▁▂▃▄▅▆▇█) with dates; automatic 1000-entry rotation. A line whose score or timestamp BOB cannot read is skipped, never repaired into a figure it did not measure
 - **Ignore list** — `--ignore KEY` adds a finding key to `ignore.yml`; `--show-ignored` runs the audit and displays suppressed findings in grey alongside the normal output (it is not a listing command); silences matching findings without scoring
@@ -398,7 +398,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.26.0  │  Linux hardening auditor                                     ║
+║  BOB 0.26.1  │  Linux hardening auditor                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
