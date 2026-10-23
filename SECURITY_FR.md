@@ -2,6 +2,68 @@
 
 *[Read in English](SECURITY.md)*
 
+## Vérification de la chaîne de publication : incident emSign
+
+> [!NOTE]
+> **Vérifié le 23 octobre 2026 : aucune différence entre les paquets publiés
+> de BOB et la source étiquetée dans ce dépôt.** Les 105 versions publiées sur
+> PyPI (wheels et sdists) et les 104 wheels construits par piwheels ont été
+> comparés, fichier par fichier, à leur étiquette git. BOB est publié sans
+> aucun jeton PyPI stocké. Deux étapes de la publication de la 0.26.0 ont
+> tourné avec des outils qui faisaient encore confiance aux autorités
+> concernées ; la prochaine version ferme ce point.
+
+Le 20 octobre 2026, un incident de sécurité touchant les autorités de
+certification eMudhra / emSign a été rendu public ([fil Python Discourse](https://discuss.python.org/t/information-for-python-users-regarding-emudhra-emsign-ca-certificate-security-incident/109576)) :
+leurs clés privées étaient trivialement faibles, si bien qu'un client TLS qui
+leur faisait encore confiance pouvait recevoir un certificat falsifié — pour
+pypi.org entre autres. pip avant la 26.2.2, et `pypa/gh-action-pypi-publish`
+avant la v1.14.3
+([GHSA-5xjx-3w67-w9x9](https://github.com/pypa/gh-action-pypi-publish/security/advisories/GHSA-5xjx-3w67-w9x9)),
+leur faisaient encore confiance.
+
+### Ce qui a été vérifié
+
+| Vérification | Résultat |
+|---|---|
+| **Contenu.** Les 105 versions (0.1.0 à 0.26.0) : wheel et sdist téléchargés depuis PyPI, SHA-256 contrôlé par rapport à l'index de PyPI, chaque fichier comparé à `git archive <étiquette>` | Aucune différence. Seules les métadonnées produites au build (`*.dist-info/`, `*.egg-info/`, `PKG-INFO`, `setup.cfg`) ne sont pas dans git ; on y trouve, dans chaque wheel, le point d'entrée de la commande `bob = bob.__main__:main`, et aucun wheel ne contient de fichier `.pth` ni de module compilé |
+| **piwheels.** Les 104 wheels construits pour Raspberry Pi (0.1.0 à 0.25.1), comparés de la même façon | Aucune différence. La 0.26.0 est encore dans la file d'attente de piwheels |
+| **Identifiants.** Comment BOB est publié | GitHub Actions, publication de confiance de PyPI (Trusted Publishing, OIDC), `.github/workflows/publish.yml`, environnement `release`. Aucun jeton d'API PyPI n'existe — aucun n'a pu fuiter, aucun à renouveler. Le jeton GitHub du job de build est en lecture seule |
+| **Provenance.** Attestations PyPI (PEP 740) | Les 105 versions en portent, avec pour éditeur `Masbateno/bodyguard-of-bits`, workflow `publish.yml`, et pour sujet l'empreinte du fichier |
+
+Ce que chaque vérification établit, et rien de plus : la comparaison montre que
+le code publié est la source étiquetée ; les attestations relient chaque
+fichier au workflow de publication de ce dépôt — elles disent qui l'a publié,
+pas que ce workflow ou ses outils étaient sains.
+
+### Ce que cela ne couvre pas
+
+- **La publication de la 0.26.0 (le 20 octobre 2026, jour de la
+  divulgation).** Son build a tourné avec pip 26.2.1 pour récupérer ses outils
+  (`build`, `setuptools`), et son envoi a utilisé `pypa/gh-action-pypi-publish`
+  v1.14.2 — tous deux faisant encore confiance aux autorités concernées ; la
+  v1.14.3 est sortie le jour même, quelques heures plus tard. La comparaison a trouvé les
+  fichiers publiés identiques à la source étiquetée ; elle ne prouve pas à elle
+  seule que l'environnement de build était sain, ni que rien d'autre ne s'est
+  produit pendant le build ou l'envoi.
+- **La référence est le dépôt lui-même.** Commits et étiquettes sont poussés
+  par SSH, qui ne dépend pas des autorités de certification.
+- **Votre propre machine** reste à vérifier de votre côté : mettez pip à jour
+  en 26.2.2 ou plus (ainsi que uv et certifi) comme l'indique le fil Python, et
+  gardez à jour le paquet `ca-certificates` de votre système.
+
+### Ce qui change dans la prochaine version
+
+Dans le workflow de publication, avant toute installation de dépendance de
+build :
+
+- pip est installé depuis un wheel épinglé par son SHA-256 (la méthode du fil
+  Python), et non mis à jour par le pip déjà en place — qui le téléchargerait
+  par la connexion même qui est en cause ;
+- le job échoue si pip est antérieur à 26.2.2, et journalise les versions avec
+  lesquelles il a construit ;
+- l'envoi utilise `pypa/gh-action-pypi-publish` v1.14.3 ou plus.
+
 ## Versions supportées
 
 Les correctifs de sécurité sont émis pour la dernière ligne de minor release uniquement. Les minor releases antérieures ne sont pas backportées.

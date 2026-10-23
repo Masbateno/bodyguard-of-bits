@@ -16,6 +16,12 @@
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora%20%7C%20openSUSE%20%7C%20Alpine%20%7C%20Raspberry%20Pi-informational)
 ![Python](https://img.shields.io/pypi/pyversions/bodyguard-of-bits)
 
+> [!NOTE]
+> **eMudhra / emSign certificate incident (October 2026): BOB's release chain checked on 23 October 2026.**
+> No difference found between the 105 releases published on PyPI (and the 104 wheels built by piwheels)
+> and the source tagged in this repository; BOB is published with no stored PyPI token.
+> What was checked, and what it does not cover: [SECURITY.md](SECURITY.md#release-chain-check-emsign-ca-incident).
+
 **Linux hardening auditor for sysadmins who read the output.**
 
 BOB is a CLI security audit and hardening tool for Linux systems. It runs 57 check sections across 6 score domains, maps findings to CIS benchmark sections when applicable, and shows not just *what* is wrong — but *why it matters* and *how to fix it with concrete commands*.

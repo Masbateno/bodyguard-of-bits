@@ -16,6 +16,12 @@
 ![Platform](https://img.shields.io/badge/platform-Debian%20%7C%20Ubuntu%20%7C%20Mint%20%7C%20Kali%20%7C%20Fedora%20%7C%20openSUSE%20%7C%20Alpine%20%7C%20Raspberry%20Pi-informational)
 ![Python](https://img.shields.io/pypi/pyversions/bodyguard-of-bits)
 
+> [!NOTE]
+> **Incident des certificats eMudhra / emSign (octobre 2026) : chaîne de publication de BOB vérifiée le 23 octobre 2026.**
+> Aucune différence entre les 105 versions publiées sur PyPI (et les 104 wheels construits par piwheels)
+> et la source étiquetée dans ce dépôt ; BOB est publié sans aucun jeton PyPI stocké.
+> Ce qui a été vérifié, et ce que cela ne couvre pas : [SECURITY_FR.md](SECURITY_FR.md#vérification-de-la-chaîne-de-publication--incident-emsign).
+
 **Auditeur de durcissement Linux pour les admins qui lisent vraiment la sortie.**
 
 BOB est un outil d'audit de sécurité et de durcissement Linux en ligne de commande. Il exécute 57 sections de vérification sur 6 domaines de score, mappe les résultats aux sections du benchmark CIS quand applicable, et vous dit non seulement *ce qui ne va pas* — mais *pourquoi c'est important* et *comment y remédier avec des commandes concrètes*.

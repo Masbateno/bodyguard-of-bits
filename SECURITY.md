@@ -2,6 +2,64 @@
 
 *[Lire en français](SECURITY_FR.md)*
 
+## Release chain check: emSign CA incident
+
+> [!NOTE]
+> **Checked on 23 October 2026: no difference found between BOB's published
+> packages and the source tagged in this repository.** All 105 releases on PyPI
+> (wheels and sdists) and the 104 wheels piwheels built were compared file by
+> file with their git tag. BOB is published without any stored PyPI token.
+> Two steps of the 0.26.0 publication ran with tools that still trusted the
+> affected certificate authorities; the next release closes that.
+
+On 20 October 2026 a security incident affecting eMudhra / emSign certificate
+authorities was disclosed ([Python Discourse thread](https://discuss.python.org/t/information-for-python-users-regarding-emudhra-emsign-ca-certificate-security-incident/109576)):
+their private keys were trivially weak, so a TLS client that still trusted them
+could be served a forged certificate — for pypi.org among others. pip below
+26.2.2, and `pypa/gh-action-pypi-publish` below v1.14.3
+([GHSA-5xjx-3w67-w9x9](https://github.com/pypa/gh-action-pypi-publish/security/advisories/GHSA-5xjx-3w67-w9x9)),
+still trusted them.
+
+### What was checked
+
+| Check | Result |
+|---|---|
+| **Content.** All 105 releases (0.1.0 to 0.26.0): wheel and sdist downloaded from PyPI, SHA-256 checked against PyPI's index, every file compared with `git archive <tag>` | No difference. Only the metadata generated at build time (`*.dist-info/`, `*.egg-info/`, `PKG-INFO`, `setup.cfg`) is not in git; in it, the command entry point is `bob = bob.__main__:main` in every wheel, and no wheel holds a `.pth` file or a compiled module |
+| **piwheels.** The 104 wheels built for Raspberry Pi (0.1.0 to 0.25.1), compared the same way | No difference. 0.26.0 is still queued on piwheels' side |
+| **Credentials.** How BOB is published | GitHub Actions, PyPI Trusted Publishing (OIDC), `.github/workflows/publish.yml`, environment `release`. No PyPI API token exists — none could leak, none to rotate. The build job's GitHub token is read-only |
+| **Provenance.** PyPI attestations (PEP 740) | All 105 releases carry them, with `Masbateno/bodyguard-of-bits`, workflow `publish.yml`, as publisher and the file's digest as subject |
+
+What each check establishes, and no more: the comparison shows the published
+code is the tagged source; the attestations tie each file to this repository's
+publish workflow — they say who published it, not that the workflow or its
+tools were sound.
+
+### What this does not cover
+
+- **The 0.26.0 publication (20 October 2026, the day of the disclosure).** Its
+  build ran with pip 26.2.1 to fetch its build tools (`build`, `setuptools`),
+  and its upload used `pypa/gh-action-pypi-publish` v1.14.2 — both still
+  trusting the affected authorities; v1.14.3 came out the same day, a few hours later. The
+  comparison found the published files identical to the tagged source; it does
+  not by itself prove that the build environment was uncompromised, or that
+  nothing else happened during the build or the upload.
+- **The repository itself is the reference.** Commits and tags are pushed over
+  SSH, which does not rely on certificate authorities.
+- **Your own machine** is yours to check: upgrade pip to 26.2.2 or later (and
+  uv, certifi) as the Python thread describes, and keep your system's
+  `ca-certificates` up to date.
+
+### What changes in the next release
+
+In the publish workflow, before any build dependency is installed:
+
+- pip is installed from a wheel pinned by its SHA-256 (the method of the
+  Python thread), not upgraded by the pip in place — which would fetch it over
+  the very connection at risk;
+- the job fails if pip is older than 26.2.2, and logs the versions it built
+  with;
+- the upload uses `pypa/gh-action-pypi-publish` v1.14.3 or later.
+
 ## Supported versions
 
 Security patches are issued for the latest minor release line only. Older minors
