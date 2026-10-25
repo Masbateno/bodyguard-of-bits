@@ -16,8 +16,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import textwrap
+
 import pytest
-import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
@@ -53,19 +54,23 @@ def test_the_test_jobs_install_the_pinned_pip():
 
 
 def test_dependabot_moves_the_actions():
-    conf = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
-    assert any(u["package-ecosystem"] == "github-actions" for u in conf["updates"])
+    # Read as text: the CI installs no YAML parser (found on the 0.27.0 CI run,
+    # where `import yaml` failed collection on every Python).
+    conf = (ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+    assert re.search(r"^version:\s*2\s*$", conf, re.M)
+    assert re.search(r"^\s*-\s*package-ecosystem:\s*[\"']?github-actions[\"']?\s*$", conf, re.M)
 
 
 def _tag_check_code():
+    """The build job's tag check, as the runner executes it (text, no YAML
+    parser: the CI installs none)."""
     text = (ROOT / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
-    jobs = yaml.safe_load(text)["jobs"]
-    steps = jobs["build"]["steps"]
-    names = [s.get("name", "") for s in steps]
-    i = names.index("Refuse a tag that is not this release's version")
-    assert i < names.index("Build sdist and wheel")
-    run = steps[i]["run"]
-    return run.split("<<'PY'\n", 1)[1].rsplit("PY", 1)[0]
+    build = text[text.index("\n  build:\n"):text.index("\n  publish:\n")]
+    step = build.index("- name: Refuse a tag that is not this release's version")
+    assert step < build.index("- name: Build sdist and wheel")
+    body = build[build.index("python - <<'PY'\n", step) + len("python - <<'PY'\n"):]
+    body = body[:body.index("\n          PY\n")]
+    return textwrap.dedent(body) + "\n"
 
 
 @pytest.mark.parametrize("tag, ok", [("0.26.1", True), ("9.9.9", False), ("1x.2.3y", False),
