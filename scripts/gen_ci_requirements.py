@@ -11,12 +11,17 @@ import json
 import urllib.request
 
 # Versions resolved on 2026-10-24 in a clean venv (pytest/beautifulsoup4/ruff/
-# build and their transitive deps), plus tomli/exceptiongroup for Python < 3.11.
+# build and their transitive deps), plus tomli/exceptiongroup for Python < 3.11;
+# each checked against Requires-Python for the whole 3.10-3.14 matrix.
 PINS = [
     ("pytest", "9.1.1", None), ("beautifulsoup4", "4.15.0", None), ("ruff", "0.17.2", None),
     ("build", "1.6.1", None), ("iniconfig", "2.3.1", None), ("packaging", "26.3", None),
     ("pluggy", "1.7.0", None), ("Pygments", "2.21.0", None), ("pyproject_hooks", "1.3.3", None),
-    ("soupsieve", "3.0.4", None), ("typing_extensions", "4.16.0", None),
+    # soupsieve 3.x requires Python >= 3.11.5 (found on the 0.27.0 CI run, 3.10
+    # job): 2.10 for the older interpreters of the matrix.
+    ("soupsieve", "3.0.4", 'python_full_version >= "3.11.5"'),
+    ("soupsieve", "2.10", 'python_full_version < "3.11.5"'),
+    ("typing_extensions", "4.16.0", None),
     ("tomli", "2.2.1", 'python_version < "3.11"'),
     ("exceptiongroup", "1.3.0", 'python_version < "3.11"'),
 ]

@@ -82,6 +82,10 @@ def test_only_the_bare_version_of_pyproject_is_built(tag, ok, tmp_path, monkeypa
     import os
     import subprocess
     import sys
+    if sys.version_info < (3, 11):
+        # The check runs in the build job, on Python 3.12; it reads
+        # pyproject.toml with tomllib, which exists from 3.11.
+        pytest.skip("the build job's tag check needs tomllib (Python 3.11+)")
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "0.26.1"\n')
     res = subprocess.run([sys.executable, "-c", _tag_check_code()], cwd=tmp_path,
                          env={**os.environ, "TAG": tag}, capture_output=True, text=True)
