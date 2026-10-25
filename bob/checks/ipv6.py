@@ -206,18 +206,15 @@ def _v6_rule_admits(rule: str, user_chains: "frozenset[str] | None") -> bool:
     return not (user_chains is not None and target in user_chains)
 
 
-def _ipv6_input_closed(snapshot: "IPv6Snapshot", *, extended: bool = True) -> bool:
+def _ipv6_input_closed(snapshot: "IPv6Snapshot") -> bool:
     """IPv6 INPUT drops everything but loopback — and nothing else can let a
     packet through: no rule on INPUT's path, user chains followed, admits.
 
-    *extended* False is the 0.26.0 reading (ufw-init's loopback rule alone).
-    v0.26.1 is a patch: with a global IPv6 address the extended reading would
-    lift the WARN −2 of the branch below, a score change, so it waits for
-    0.27.0 there (decided by the user, 22 October 2026)."""
+    v0.26.1 read this way only without a global IPv6 address, the 0.26.0
+    reading (ufw-init's loopback rule alone) standing there; v0.27.0 reads every
+    host this way (measured with 2001:db8:b0b::/64 in a network namespace)."""
     if snapshot.ip6_input_policy != "DROP" or snapshot.ip6_input_rules is None:
         return False
-    if not extended:
-        return set(snapshot.ip6_input_rules) <= _UFW_V6_OFF_RULES
     return not any(_v6_rule_admits(r, snapshot.ip6_user_chains)
                    for r in snapshot.ip6_input_rules)
 
@@ -230,7 +227,7 @@ def ipv6_closed_by_chains(snapshot: "IPv6Snapshot") -> bool:
     review: on Mint, ExpressVPN's and libvirt's chains sat on INPUT's path, and
     OUTPUT, not judged, could hold anything."""
     return (snapshot.ufw_ipv6_enabled is False and bool(snapshot.ipv6_listeners)
-            and _ipv6_input_closed(snapshot, extended=not snapshot.has_global_ipv6)
+            and _ipv6_input_closed(snapshot)
             and snapshot.ip6_ufw_init_shape is not True)
 
 
@@ -241,7 +238,7 @@ def ipv6_closed_by_chains(snapshot: "IPv6Snapshot") -> bool:
 _MAX_PORT_DEDUCTIONS = 3   # cap per-port deductions to avoid score collapse
 
 
-def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None, firewalld_active: bool = False, netfilter_active: bool = False, firewalld_policy: str = "") -> CheckResult:
+def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None, firewalld_active: bool = False, netfilter_active: bool = False, firewalld_policy: str = "", netfilter_v6_policy: str = "unknown", firewalld_family_rules: tuple = ()) -> CheckResult:
     """
     Check IPv6 firewall consistency.
 
@@ -273,6 +270,11 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
     if firewalld_active and not ufw_active:
         if firewalld_policy == "allow":
             result.info(message=_t("ipv6.firewalld_v6_open"), key="ipv6.firewalld_v6_open")
+        elif firewalld_family_rules:
+            # v0.27.0 — measured on Debian 13: a rich rule for family ipv6
+            # opened 80 over IPv6 only; "same zone rules as IPv4" was not so.
+            result.ok(message=_t("ipv6.firewalld_v6_family_rules",
+                                 rules=", ".join(firewalld_family_rules)), key="ipv6.firewalld_v6")
         else:
             result.ok(message=_t("ipv6.firewalld_v6"), key="ipv6.firewalld_v6")
         return result
@@ -284,10 +286,46 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
     # tables cover (inet and ip6 filter IPv6, ip does not).
     if not snapshot.ufw_present and not firewalld_active:
         if snapshot.ipv6_listeners:
-            key = "ipv6.netfilter_v6" if netfilter_active else "ipv6.no_firewall_v6"
-            result.info(message=_t(key, count=len(snapshot.ipv6_listeners),
-                                   ports=", ".join(snapshot.ipv6_listeners)),
-                        key=key)
+            ports = ", ".join(snapshot.ipv6_listeners)
+            count = len(snapshot.ipv6_listeners)
+            # v0.27.0 — the raw ruleset's IPv6 families are read (ip6, inet),
+            # as its IPv4 ones are: policies, and a rule taking every packet.
+            # Measured in a network namespace with nftables: an ip table only
+            # left 8099 open over IPv6; inet or ip6 at policy drop closed it; a
+            # drop behind an accept-everything rule left it open. A per-port
+            # accept is not weighed (8099 accepted at policy drop: open, read
+            # "denied by default") — the text says "by default".
+            if netfilter_active and netfilter_v6_policy in ("DROP", "REJECT"):
+                result.info(message=_t("ipv6.netfilter_v6_filtered", count=count, ports=ports,
+                                       policy=netfilter_v6_policy.lower()),
+                            key="ipv6.netfilter_v6_filtered")
+            elif netfilter_active and netfilter_v6_policy == "ACCEPT":
+                if snapshot.has_global_ipv6:
+                    result.warn_with_deduction(
+                        key="ipv6.netfilter_v6_open",
+                        message=_t("ipv6.netfilter_v6_open", count=count, ports=ports),
+                        points=2,
+                        detail=_t("ipv6.netfilter_v6_open_detail"),
+                        cmd="sudo nft list ruleset  # " + _t("ipv6.netfilter_v6_open_cmd_comment"),
+                        nature="action",
+                    )
+                    found_issue = True
+                else:
+                    result.info(message=_t("ipv6.netfilter_v6_open_link_local", count=count, ports=ports),
+                                key="ipv6.netfilter_v6_open_link_local")
+            elif netfilter_active and netfilter_v6_policy == "PARTIAL":
+                # Accepted by default, with rules that refuse some of it: which
+                # listeners they close is not established (measured: a drop for
+                # 8099, or a jump to a chain dropping it, closed 8099).
+                result.info(message=_t("ipv6.netfilter_v6_unweighed", count=count, ports=ports),
+                            key="ipv6.netfilter_v6")
+            elif netfilter_active:
+                # The raw ruleset's IPv6 default could not be read: a visibility gap.
+                result.info(message=_t("ipv6.netfilter_v6", count=count, ports=ports),
+                            key="ipv6.netfilter_v6")
+            else:
+                result.info(message=_t("ipv6.no_firewall_v6", count=count, ports=ports),
+                            key="ipv6.no_firewall_v6")
         elif not snapshot.listeners_readable:
             result.info(message=_t("ipv6.listeners_unknown"),
                         detail=_t("ipv6.listeners_unknown_detail"),
@@ -316,7 +354,10 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
     elif snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled is False:
         if snapshot.ipv6_listeners:
             listeners_str = ", ".join(snapshot.ipv6_listeners)
-            if ufw_active and _ipv6_input_closed(snapshot, extended=not snapshot.has_global_ipv6):
+            # v0.27.0 — the extended reading with a global address too
+            # (measured: a network namespace, 2001:db8:b0b::/64, the Mint
+            # host's chains empty: closed; one accepting 8099: open, withheld).
+            if ufw_active and _ipv6_input_closed(snapshot):
                 # v0.24.2: UFW with IPV6=no drops every IPv6 packet — the
                 # listeners are unreachable, not exposed. This used to be a
                 # WARN −2 for "services exposed without UFW IPv6 rules" (global

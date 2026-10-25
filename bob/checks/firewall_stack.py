@@ -91,13 +91,18 @@ class FirewallStackSnapshot:
         # v0.26.0 — what a mark rule accepts depends on who sets the mark:
         # measured with ufw 0.36 active, a mangle PREROUTING MARK on new
         # 8099 packets opened 8099 through `-m mark --mark … -j ACCEPT`.
-        mark_setters = _mark_setters(*(_run("iptables", "-t", table, "-S")
-                                       for table in ("raw", "mangle", "nat")))
         input_rules = (_input_path(_run("iptables", "-S"))
                        or [ln.strip() for ln in input_s.splitlines() if ln.startswith("-A ")])
         forward_raw = _parse_raw_accepts(forward_out)
 
         nft_out         = _run("nft", "list", "ruleset") if _command_exists("nft") else ""
+        # v0.27.0 — and native nftables marks too: measured in a network
+        # namespace, `meta mark set …` in an inet prerouting chain opened 8099
+        # through the same accept, and BOB, reading iptables only, called it
+        # conditional.
+        mark_setters = _mark_setters(*(_run("iptables", "-t", table, "-S")
+                                       for table in ("raw", "mangle", "nat")),
+                                     extra=_nft_mark_setters(nft_out))
         nftables_active = _has_user_nft_rules(nft_out)
 
         # Both `iptables -L` and `nft list ruleset` need CAP_NET_ADMIN and write
@@ -312,7 +317,7 @@ def _is_mark_op(rule: str) -> bool:
                 or _HMARK.search(rule) or _TPROXY_MARK.search(rule))
 
 
-def _mark_setters(*outputs: str) -> list[str]:
+def _mark_setters(*outputs: str, extra: "dict[str, list[str]] | None" = None) -> list[str]:
     """The rules of *outputs* (``iptables -t raw|mangle|nat -S``, in that
     order) that touch a mark on the inbound path, in the order a new inbound
     packet meets them: every table's PREROUTING, then every table's INPUT,
@@ -340,9 +345,101 @@ def _mark_setters(*outputs: str) -> list[str]:
                 ordered += expand(chains, m.group(1), seen)
         return ordered
 
-    sequence = [r for hook in ("PREROUTING", "INPUT") for chains in tables
-                for r in expand(chains, hook, frozenset())]
+    sequence = []
+    for hook in ("PREROUTING", "INPUT"):
+        sequence += [r for chains in tables for r in expand(chains, hook, frozenset())]
+        sequence += (extra or {}).get(hook, [])      # v0.27.0: native nftables, same hook
     return [r for r in sequence if _is_mark_op(r)]
+
+
+#: nft's named priorities (nft(8)).
+_NFT_PRIORITY = {"raw": -300, "mangle": -150, "dstnat": -100, "filter": 0, "security": 50, "srcnat": 100}
+_NUM = r"(0x[0-9a-fA-F]+|\d+)"
+#: A mark BOB cannot follow (a map, jhash, numgen…): HMARK past _HMARK_MAX_MOD,
+#: which _mark_reachable reads as "not established", never "conditional".
+_MARK_UNKNOWN = "-j HMARK --hmark-mod 65536 --hmark-offset 0x0"
+
+
+def _nft_mark_statement(rule: str) -> "str | None":
+    """One native nft rule's mark operation, in the iptables form
+    :func:`_mark_reachable` follows — or None when it sets no mark (v0.27.0)."""
+    full = 0xFFFFFFFF
+    # nft prints the operators as | and & (measured: "meta mark set meta mark
+    # | 0x00020000" for an input of "mark or 0x20000"); both spellings read.
+    m = re.search(rf"\bmeta mark set (?:meta )?mark (?:or|\|) {_NUM}\b", rule)
+    if m:
+        v = int(m.group(1), 0)
+        return f"-j MARK --set-xmark {v:#x}/{v:#x}"
+    m = re.search(rf"\bmeta mark set (?:meta )?mark (?:and|&) {_NUM}\b", rule)
+    if m:
+        return f"-j MARK --set-xmark 0x0/{~int(m.group(1), 0) & full:#x}"
+    if re.search(r"\bmeta mark set ct mark\b", rule):
+        return "-j CONNMARK --restore-mark"
+    if re.search(r"\bct mark set (?:meta )?mark\b(?! (?:or|and|\||&))", rule):
+        return "-j CONNMARK --save-mark"
+    m = re.search(rf"\bct mark set ct mark (?:or|\|) {_NUM}\b", rule)
+    if m:
+        v = int(m.group(1), 0)
+        return f"-j CONNMARK --set-xmark {v:#x}/{v:#x}"
+    m = re.search(rf"\bmeta mark set {_NUM}(?:\s|$)", rule)
+    if m:
+        return f"-j MARK --set-xmark {int(m.group(1), 0):#x}/{full:#x}"
+    m = re.search(rf"\bct mark set {_NUM}(?:\s|$)", rule)
+    if m:
+        return f"-j CONNMARK --set-xmark {int(m.group(1), 0):#x}/{full:#x}"
+    if re.search(r"\b(?:meta |ct )?mark set\b", rule):
+        return _MARK_UNKNOWN
+    return None
+
+
+def _nft_mark_setters(ruleset: str) -> "dict[str, list[str]]":
+    """The mark operations of native nftables chains on the inbound path, by
+    hook: every prerouting base chain, and input ones before the filter
+    (v0.27.0). Tables iptables-nft keeps (ip/ip6 raw, mangle, nat, filter
+    with its upper-case chains) are already read through iptables -S."""
+    out: "dict[str, list[str]]" = {"PREROUTING": [], "INPUT": []}
+    table = chain = hook = None
+    for line in ruleset.splitlines():
+        text = line.strip()
+        m = re.match(r"table\s+(\w+)\s+(\S+)\s*\{", text)
+        if m:
+            table, chain, hook = (m.group(1), m.group(2)), None, None
+            continue
+        m = re.match(r"chain\s+(\S+)\s*\{", text)
+        if m and table:
+            chain, hook = m.group(1), None
+            continue
+        if text == "}":
+            if chain is not None:
+                chain = hook = None          # end of a chain
+            else:
+                table = None                 # end of a table
+            continue
+        if chain is None or table is None:
+            continue
+        hm = re.search(r"\bhook\s+(\w+)\s+priority\s+(\S+?);", text)
+        if hm:
+            prio = hm.group(2)
+            value = _NFT_PRIORITY.get(prio.split("+")[0].split("-")[0], None) if not re.fullmatch(r"-?\d+", prio) else int(prio)
+            managed = table[0] in ("ip", "ip6") and table[1] in ("raw", "mangle", "nat", "filter", "security") \
+                and chain.isupper()
+            if managed:
+                hook = None
+            elif hm.group(1) == "prerouting":
+                hook = "PREROUTING"
+            elif hm.group(1) == "input" and (value is None or value <= 0):
+                # At the filter's own priority the order against iptables'
+                # INPUT is not established: such a mark reads "not established".
+                hook = "INPUT" if value is None or value < 0 else "INPUT_UNORDERED"
+            else:
+                hook = None
+            continue
+        if hook:
+            op = _nft_mark_statement(text)
+            if op:
+                out["INPUT" if hook == "INPUT_UNORDERED" else hook].append(
+                    _MARK_UNKNOWN if hook == "INPUT_UNORDERED" else op)
+    return out
 
 
 def _input_path(filter_s: str) -> list[str]:

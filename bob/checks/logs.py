@@ -19,7 +19,9 @@ Usage:
 
 from __future__ import annotations
 
+import gzip
 import logging
+import os
 import re
 import subprocess
 from collections import Counter, defaultdict
@@ -41,6 +43,15 @@ logger = logging.getLogger(__name__)
 UFW_LOG_PATH = Path("/var/log/ufw.log")
 BRUTEFORCE_THRESHOLD = 10   # attempts from same IP on same port within window
 BRUTEFORCE_WINDOW_S  = 60   # seconds
+#: v0.27.0 — a port scan: one source, many distinct destination ports. Measured
+#: on a Mint host with UFW's default logging (LOGLEVEL=low: a burst of 10 lines,
+#: then 3 a minute): a real 300-port scan from a VM left 10 distinct ports in
+#: 3 seconds, then one every 20 seconds. Over 30 days of that host's real logs
+#: no other source reached 6 ports in a minute or 13 in ten (a TV box).
+PORT_SCAN_PORTS      = 10   # distinct ports within PORT_SCAN_WINDOW_S
+PORT_SCAN_WINDOW_S   = 60
+PORT_SCAN_SLOW_PORTS = 25   # distinct ports within PORT_SCAN_SLOW_WINDOW_S
+PORT_SCAN_SLOW_WINDOW_S = 600
 TOP_N = 10                  # number of entries in top IPs / top ports tables
 
 # I-1 (v0.5.6): use the canonical helpers from sysinfo.py rather than a
@@ -151,6 +162,13 @@ class BruteforceHit:
         return f"{self.dst_port}/{self.proto.lower()}"
 
 @dataclass(frozen=True)
+class PortScanHit:
+    """One source that hit many distinct ports (v0.27.0)."""
+    src_ip:   str
+    ports:    int     # distinct destination ports in the busiest window
+    window_s: int
+
+@dataclass(frozen=True)
 class LogReportData:
     """Structured log analysis data passed from check_logs to display_log_results.
 
@@ -166,6 +184,12 @@ class LogReportData:
     svc_hits:       dict[str, int]
     #: v0.26.1 — "file" (/var/log/ufw.log only) or "journald".
     log_source:     str = "file"
+    #: v0.27.0 — the files read, newest first (ufw.log, ufw.log.1, …), those
+    #: needed but unreadable, and the [UFW BLOCK] lines left out, by reason.
+    files_read:     tuple = ()
+    files_unread:   tuple = ()
+    skipped:        "dict[str, int] | None" = None
+    port_scans:     tuple = ()
 
     @property
     def days_covered(self) -> int:
@@ -191,6 +215,15 @@ class LogsSnapshot:
     log_days:       int
     log_found:      bool = True
     log_source:     str  = "file"
+    files_read:     tuple = ()
+    files_unread:   tuple = ()
+    skipped:        "dict[str, int] | None" = None
+    #: v0.27.0, after review — a file read from its tail only, and whether the
+    #: reading stopped (unread or cut) before the oldest line reached the
+    #: window: the logs exist but were not all read, so what they would charge
+    #: is not established.
+    files_cut:      tuple = ()
+    window_gap:     bool = False
 
     @property
     def total(self) -> int:
@@ -214,45 +247,62 @@ class LogsSnapshot:
         """
         cutoff_dt = datetime.now() - timedelta(days=log_days)
 
-        # --- Primary source: /var/log/ufw.log ---
+        # --- Primary source: /var/log/ufw.log, then its rotations ---
+        # v0.27.0 — the rotated files are read, newest first, until the window
+        # is covered: measured on a Mint host, ufw.log held 3 days and
+        # ufw.log.1 the 7 before, so a 7-day window read 3.
         if path_exists(log_path):
-            _MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
-            # M-6 (v0.5.6): binary mode for the seek/tell arithmetic.
-            # TextIOBase.tell() returns "an opaque number" per Python
-            # docs — arithmetic on it is UB. CPython today returns
-            # byte offsets for utf-8 streams (working by accident),
-            # but binary mode is the documented contract. Decode the
-            # tail with errors="ignore" to preserve the original
-            # behaviour on encoding errors.
             try:
-                with log_path.open("rb") as fh:
-                    fh.seek(0, 2)
-                    file_size = fh.tell()
-                    fh.seek(max(file_size - _MAX_LOG_SIZE, 0))
-                    content = fh.read().decode("utf-8", errors="ignore")
-                days_available = _count_available_days(content)
-                entries = _parse_log(content, cutoff_dt)
+                content, cut = _read_log_tail_flagged(log_path)
+            except OSError as exc:
+                logger.warning("Cannot read %s: %s", log_path, exc)
+            else:
+                files_read, files_unread = [str(log_path)], []
+                files_cut = [str(log_path)] if cut else []
+                oldest = _oldest_timestamp(content)
+                for rotated in _rotated_logs(log_path):
+                    # A file read from its tail only leaves its head out: what is
+                    # older would not be contiguous either.
+                    if cut or (oldest is not None and oldest <= cutoff_dt):
+                        break
+                    try:
+                        older, cut = _read_log_tail_flagged(rotated)
+                        if cut:
+                            files_cut.append(str(rotated))
+                    except OSError as exc:
+                        logger.debug("Cannot read %s: %s", rotated, exc)
+                        files_unread.append(str(rotated))
+                        break   # a gap: what is older would not be contiguous
+                    content = older + ("" if older.endswith("\n") else "\n") + content
+                    files_read.append(str(rotated))
+                    oldest = _oldest_timestamp(older) or oldest
+                entries, skipped = _parse_log_counted(content, cutoff_dt)
+                stopped = bool(files_unread or files_cut)
                 return cls(
                     entries=entries,
-                    days_available=days_available,
+                    days_available=_count_available_days(content),
                     log_days=log_days,
                     log_found=True,
                     log_source="file",
+                    files_read=tuple(files_read),
+                    files_unread=tuple(files_unread),
+                    skipped=skipped,
+                    files_cut=tuple(files_cut),
+                    window_gap=stopped and (oldest is None or oldest > cutoff_dt),
                 )
-            except OSError as exc:
-                logger.warning("Cannot read %s: %s", log_path, exc)
 
         # --- Fallback: journald (Debian/systemd without rsyslog) ---
         content, journald_reachable = _read_from_journald(log_days)
         if content:
             days_available = _count_available_days(content)
-            entries = _parse_log(content, cutoff_dt)
+            entries, skipped = _parse_log_counted(content, cutoff_dt)
             return cls(
                 entries=entries,
                 days_available=days_available,
                 log_days=log_days,
                 log_found=True,
                 log_source="journald",
+                skipped=skipped,
             )
 
         if journald_reachable:
@@ -298,6 +348,13 @@ def check_logs(
     if snapshot.log_source == "journald":
         result.info(message=_t("logs.source_journald"), key="logs.source_journald")
 
+    # v0.27.0, after review — part of the window exists but was not read: what
+    # it would charge (a scan, repeated attempts) is not established. A ceiling.
+    if snapshot.window_gap:
+        result.info(message=_t("logs.window_partly_read",
+                               files=", ".join(snapshot.files_unread + snapshot.files_cut)),
+                    key="logs.window_partly_read")
+
     if snapshot.total == 0:
         if not ufw_active:
             # v0.26.0 — UFW off blocks nothing: an empty log is expected,
@@ -323,6 +380,7 @@ def check_logs(
     if audited_ports:
         svc_hits = _service_hits(snapshot.entries, audited_ports)
 
+    port_scans = _detect_port_scans(snapshot.entries)
     report_data = LogReportData(
         log_days=snapshot.log_days,
         days_available=snapshot.days_available,
@@ -332,6 +390,10 @@ def check_logs(
         top_ports=top_ports,
         svc_hits=svc_hits,
         log_source=snapshot.log_source,
+        files_read=snapshot.files_read,
+        files_unread=snapshot.files_unread,
+        skipped=snapshot.skipped,
+        port_scans=tuple(port_scans),
     )
 
     # Findings — repeated blocked traffic, classified by what the evidence
@@ -371,6 +433,39 @@ def check_logs(
                            port=hit.port_proto, attempts=hit.attempts),
                 reason=_t("deduction.blocked_repeat_public", ip=hit.src_ip,
                           port=hit.port_proto, attempts=hit.attempts),
+                points=1,
+                nature="action",
+            )
+
+    # v0.27.0 — port scans: one source across many ports, which the
+    # repeated-attempt check (one source, one port) never sees. Local: reported.
+    # Public: the same weight as a repeated public attempt, since BOB measured
+    # someone mapping this host's ports — and they were all dropped.
+    # v0.27.0, decided by the user after review: one public source costs one
+    # point. A source already charged for repeated attempts is reported for its
+    # scan too, without a second point.
+    _charged = {hit.src_ip for hit in brute_hits
+                if not _is_private_ip(hit.src_ip) and hit.proto == "TCP"}
+    for scan in port_scans:
+        if _is_private_ip(scan.src_ip):
+            result.info(
+                message=_t("logs.port_scan_local", ip=scan.src_ip, ports=scan.ports,
+                           seconds=scan.window_s),
+                key="logs.port_scan_local",
+            )
+        elif scan.src_ip in _charged:
+            result.warn(
+                message=_t("logs.port_scan_public", ip=scan.src_ip, ports=scan.ports,
+                           seconds=scan.window_s),
+                key="logs.port_scan_public",
+                nature="action",
+            )
+        else:
+            result.warn_with_deduction(
+                key="logs.port_scan_public",
+                message=_t("logs.port_scan_public", ip=scan.src_ip, ports=scan.ports,
+                           seconds=scan.window_s),
+                reason=_t("deduction.port_scan_public", ip=scan.src_ip, ports=scan.ports),
                 points=1,
                 nature="action",
             )
@@ -471,6 +566,50 @@ def _detect_bruteforce(
             ))
 
     return sorted(hits, key=lambda h: h.count, reverse=True)
+
+def _reply_like(entry: LogEntry) -> bool:
+    """A late reply to this host's own connection, not a probe: from a service
+    port (below 1024) to an ephemeral one (v0.27.0 — measured on a Mint host,
+    Cloudflare and Meta addresses answering on 443 after conntrack had let go:
+    up to 41 distinct "ports" a source, none of them a scan)."""
+    return entry.src_port is not None and entry.src_port < 1024 and entry.dst_port >= 32768
+
+
+def _max_distinct_ports(events: "list[LogEntry]", window_s: int) -> int:
+    """Most distinct destination ports in any *window_s* window."""
+    events = sorted(events, key=lambda e: e.timestamp)
+    seen: Counter = Counter()
+    best = start = 0
+    for e in events:
+        seen[e.dst_port] += 1
+        while (e.timestamp - events[start].timestamp).total_seconds() > window_s:
+            old = events[start].dst_port
+            seen[old] -= 1
+            if not seen[old]:
+                del seen[old]
+            start += 1
+        best = max(best, len(seen))
+    return best
+
+
+def _detect_port_scans(entries: "list[LogEntry]") -> "list[PortScanHit]":
+    """Sources that hit PORT_SCAN_PORTS distinct ports within a minute, or
+    PORT_SCAN_SLOW_PORTS within ten (v0.27.0), late replies left out."""
+    by_source: "dict[str, list[LogEntry]]" = defaultdict(list)
+    for e in entries:
+        if not _reply_like(e):
+            by_source[e.src_ip].append(e)
+    hits = []
+    for ip, events in by_source.items():
+        fast = _max_distinct_ports(events, PORT_SCAN_WINDOW_S)
+        if fast >= PORT_SCAN_PORTS:
+            hits.append(PortScanHit(src_ip=ip, ports=fast, window_s=PORT_SCAN_WINDOW_S))
+            continue
+        slow = _max_distinct_ports(events, PORT_SCAN_SLOW_WINDOW_S)
+        if slow >= PORT_SCAN_SLOW_PORTS:
+            hits.append(PortScanHit(src_ip=ip, ports=slow, window_s=PORT_SCAN_SLOW_WINDOW_S))
+    return sorted(hits, key=lambda h: h.ports, reverse=True)
+
 
 def _max_attempts_in_window(
     events: list[tuple[datetime, "int | None"]], window_s: int
@@ -689,10 +828,85 @@ def _read_from_journald(log_days: int) -> tuple[str, bool]:
         pass
     return "", False
 
+#: The newest bytes read from one log file (v0.14.x: 10 MB), and the most a
+#: compressed rotation may expand to before BOB stops reading it (v0.27.0).
+_MAX_LOG_SIZE = 10 * 1024 * 1024
+_MAX_GZ_EXPANDED = 256 * 1024 * 1024
+
+
+def _read_log_tail(path: Path) -> str:
+    """The last _MAX_LOG_SIZE bytes of a log file, plain or gzip (v0.27.0)."""
+    return _read_log_tail_flagged(path)[0]
+
+
+def _read_log_tail_flagged(path: Path) -> "tuple[str, bool]":
+    """:func:`_read_log_tail`, and whether the head of the file was left out.
+
+    A plain file is read from its tail with seek; a .gz one is streamed, the
+    newest _MAX_LOG_SIZE bytes kept, and refused (OSError) past
+    _MAX_GZ_EXPANDED expanded — a rotation is not where a bomb should land.
+    """
+    if path.name.endswith(".gz"):
+        tail = bytearray()
+        expanded = 0
+        with gzip.open(path, "rb") as fh:
+            while True:
+                chunk = fh.read(1024 * 1024)
+                if not chunk:
+                    break
+                expanded += len(chunk)
+                if expanded > _MAX_GZ_EXPANDED:
+                    raise OSError(f"{path} expands past {_MAX_GZ_EXPANDED} bytes")
+                tail += chunk
+                if len(tail) > _MAX_LOG_SIZE:
+                    del tail[:len(tail) - _MAX_LOG_SIZE]
+        return tail.decode("utf-8", errors="ignore"), expanded > _MAX_LOG_SIZE
+    # M-6 (v0.5.6): binary mode for the seek/tell arithmetic. TextIOBase.tell()
+    # returns "an opaque number" per Python docs — arithmetic on it is UB.
+    with path.open("rb") as fh:
+        fh.seek(0, 2)
+        file_size = fh.tell()
+        fh.seek(max(file_size - _MAX_LOG_SIZE, 0))
+        return fh.read().decode("utf-8", errors="ignore"), file_size > _MAX_LOG_SIZE
+
+
+def _rotated_logs(log_path: Path) -> "list[Path]":
+    """logrotate's names for *log_path*, newest first (v0.27.0): ufw.log.1,
+    ufw.log.2.gz, … and, with ``dateext``, ufw.log-20261017(.gz). An
+    unlistable directory gives none: nothing is invented."""
+    numbered = re.compile(re.escape(log_path.name) + r"\.(\d+)(\.gz)?")
+    dated = re.compile(re.escape(log_path.name) + r"-(\d{8})(\.gz)?")
+    try:
+        names = os.listdir(log_path.parent)
+    except OSError:
+        return []
+    found = []
+    for name in names:
+        m = numbered.fullmatch(name)
+        if m:
+            found.append(((0, int(m.group(1))), log_path.parent / name))
+            continue
+        m = dated.fullmatch(name)
+        if m:
+            found.append(((1, -int(m.group(1))), log_path.parent / name))
+    return [p for _, p in sorted(found)]
+
+
+def _oldest_timestamp(content: str) -> "datetime | None":
+    """The first timestamp BOB reads in a log, oldest first as logs are."""
+    now = datetime.now()
+    for line in content.splitlines():
+        ts = _parse_timestamp(line.lstrip("\x00"), now.year, now)
+        if ts is not None:
+            return ts
+    return None
+
+
 def _count_available_days(content: str) -> int:
     """Count the number of distinct calendar days in the log file."""
     dates: set[str] = set()
     for line in content.splitlines():
+        line = line.lstrip("\x00")   # v0.27.0, as in _parse_log_counted
         # ISO format: 2026-03-19T...
         iso = re.match(r"^(\d{4}-\d{2}-\d{2})", line)
         if iso:
@@ -711,8 +925,24 @@ def _count_available_days(content: str) -> int:
     return len(dates)
 
 def _parse_log(content: str, cutoff_dt: datetime) -> list[LogEntry]:
+    """The entries of :func:`_parse_log_counted`, without the tally."""
+    return _parse_log_counted(content, cutoff_dt)[0]
+
+
+#: Why a [UFW BLOCK] line in the window was not counted (v0.27.0).
+SKIP_NO_PORT = "no_port"            # no DPT: ICMP, IGMP (PROTO=2), …
+SKIP_NO_TIMESTAMP = "no_timestamp"  # no timestamp BOB reads
+SKIP_UNPARSED = "unparsed"          # no SRC or PROTO, or a port out of range
+
+
+def _parse_log_counted(content: str, cutoff_dt: datetime) -> "tuple[list[LogEntry], dict[str, int]]":
     """
     Parse UFW BLOCK lines from log content, filtering by cutoff_dt.
+
+    v0.27.0 — also returns how many [UFW BLOCK] lines were left out, and why:
+    measured on a Mint host, 1503 IGMP lines (no port) of 5018 went uncounted
+    and unsaid. A line without a readable timestamp is tallied whatever its
+    date, since BOB cannot place it.
 
     Supports:
       - ISO 8601: 2026-03-19T18:20:08.898446+01:00
@@ -726,6 +956,7 @@ def _parse_log(content: str, cutoff_dt: datetime) -> list[LogEntry]:
         List of parsed LogEntry objects.
     """
     entries: list[LogEntry] = []
+    skipped: Counter = Counter()
     # I-2 (v0.5.6): snapshot now once per parse to avoid year-boundary race
     # where current_year (computed earlier) and the rollback comparison
     # below could disagree on the year if the parse straddles midnight Dec 31.
@@ -739,11 +970,16 @@ def _parse_log(content: str, cutoff_dt: datetime) -> list[LogEntry]:
     block_re = re.compile(r"\[UFW BLOCK6?\]")
 
     for line in content.splitlines():
+        # v0.27.0 — NUL bytes before a line, as a log written across an unclean
+        # stop can hold: measured on the Mint host, 219 of them before one
+        # [UFW BLOCK] line, whose timestamp then went unread.
+        line = line.lstrip("\x00")
         if not block_re.search(line):
             continue
 
         ts = _parse_timestamp(line, current_year, now)
         if ts is None:
+            skipped[SKIP_NO_TIMESTAMP] += 1
             continue
 
         # Filter by cutoff
@@ -755,15 +991,21 @@ def _parse_log(content: str, cutoff_dt: datetime) -> list[LogEntry]:
         proto    = _extract_field(line, "PROTO")
         spt      = _extract_field(line, "SPT")
 
-        if not src_ip or not dpt or not proto:
+        if not dpt:
+            skipped[SKIP_NO_PORT] += 1
+            continue
+        if not src_ip or not proto:
+            skipped[SKIP_UNPARSED] += 1
             continue
 
         try:
             port_num = int(dpt)
         except ValueError:
+            skipped[SKIP_UNPARSED] += 1
             continue
 
         if not (1 <= port_num <= 65535):
+            skipped[SKIP_UNPARSED] += 1
             continue
 
         # M-8 (v0.5.6): normalise proto to uppercase at parse time. UFW
@@ -784,7 +1026,7 @@ def _parse_log(content: str, cutoff_dt: datetime) -> list[LogEntry]:
             src_port=src_port,
         ))
 
-    return entries
+    return entries, dict(skipped)
 
 def _parse_timestamp(
     line: str,

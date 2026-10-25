@@ -22,7 +22,8 @@ If neither source exists, the configured root PATH is genuinely unknown and BOB
 says so rather than guessing from its own environment.
 
 Findings:
-  - world-writable dir / ``.`` / empty / relative component : WARN −1 (dangerous)
+  - world-writable directory                               : WARN −2 (v0.27.0)
+  - ``.`` / empty / relative component                     : WARN −1 (dangerous)
   - dir writable by a non-root group                        : INFO (weaker)
   - sources present, every component clean                  : OK
   - no configured source found                              : INFO (unknown)
@@ -166,23 +167,40 @@ def check_root_path(snapshot: RootPathSnapshot,
                     key="root_path.unknown")
         return result
 
-    if snapshot.dangerous:
-        listed = ", ".join(f"{c} [{src}]" for src, c, _r in snapshot.dangerous)
+    # v0.27.0 — split, decided by the user (24 October 2026): a world-writable
+    # directory lets any account plant the binary root will run, with nothing
+    # more to wait for than root typing a common command — the weight of a
+    # NOPASSWD rule that is root anyway (−2). "." / empty / relative need root
+    # to stand in a directory that account controls first (−1, as before).
+    world = [d for d in snapshot.dangerous if d[2] == "world_writable"]
+    weak = [d for d in snapshot.dangerous if d[2] != "world_writable"]
+    if world:
+        listed = ", ".join(f"{c} [{src}]" for src, c, _r in world)
+        result.warn_with_deduction(
+            key="root_path.world_writable",
+            message=_t("root_path.world_writable", count=len(world), entries=listed),
+            reason=_t("root_path.world_writable_reason", count=len(world)),
+            points=2,
+            detail=_t("root_path.world_writable_detail"),
+            cmd_type="check",
+        )
+    if weak:
+        listed = ", ".join(f"{c} [{src}]" for src, c, _r in weak)
         result.warn_with_deduction(
             key="root_path.dangerous",
             message=_t("root_path.dangerous",
-                       count=len(snapshot.dangerous), entries=listed),
+                       count=len(weak), entries=listed),
             reason=_t("root_path.dangerous_reason",
-                      count=len(snapshot.dangerous)),
+                      count=len(weak)),
             points=1,
             detail=_t("root_path.dangerous_detail"),
             cmd_type="check",
         )
-    elif snapshot.group_writable:
+    if not snapshot.dangerous and snapshot.group_writable:
         listed = ", ".join(f"{c} [{src}]" for src, c, _r in snapshot.group_writable)
         result.info(message=_t("root_path.group_writable", entries=listed),
                     key="root_path.group_writable")
-    else:
+    elif not snapshot.dangerous:
         result.ok(message=_t("root_path.clean"), key="root_path.clean")
 
     return result

@@ -1,3 +1,18 @@
+bodyguard-of-bits (0.27.0-1) unstable; urgency=medium
+
+  * Minor, BREAKING for scores. The rotated UFW logs are read until the
+    window is covered, and a window partly read is a ceiling; port scans
+    (a public source costs 1, once); NOPASSWD and doas rules that are root
+    anyway cost 2 - interpreters, pagers, editors, writers onto protected
+    paths, sudoedit - with NOEXEC, runas_default and journalctl's secure
+    pager read as measured; a policy of accept with refusing rules is not
+    established, for IPv4 and IPv6; IPv6 behind IPV6=no read through the
+    chains; native nftables marks followed; a world-writable directory in
+    root's PATH costs 2; actions pinned by commit, CI tools by hash, and
+    only a tag equal to the version is built.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 25 Oct 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.26.1-1) unstable; urgency=medium
 
   * Patch, no score change: what the audit of a real Mint host showed. The

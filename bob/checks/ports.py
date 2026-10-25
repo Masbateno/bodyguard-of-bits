@@ -274,6 +274,9 @@ def check_ports(
     firewalld_active: bool = False,
     t: TranslationFunc | None = None,
     netfilter_active: bool = False,
+    #: v0.27.0 — a raw ruleset that accepts by default and refuses some
+    #: traffic BOB does not weigh: not "no active firewall".
+    netfilter_partial: bool = False,
     docker_rules_off: bool = False,
     #: v0.26.0 — firewalld's StrictForwardPorts=yes: Docker's published ports
     #: are rejected unless the zone forwards them (measured on Debian 13).
@@ -413,6 +416,12 @@ def check_ports(
                         key="ports.uncovered_netfilter",
                     )
                     continue
+                if netfilter_partial:
+                    result.info(
+                        message=_t("ports.uncovered_netfilter_unweighed", port=pp_info),
+                        key="ports.uncovered_netfilter_unweighed",
+                    )
+                    continue
                 result.info(
                     message=_t("ports.uncovered_ufw_inactive", port=pp_info),
                     key="ports.uncovered_ufw_inactive",
@@ -476,6 +485,8 @@ def check_ports(
                     key = "ports.uncovered_bound_address_firewalld"
                 elif netfilter_active:
                     key = "ports.uncovered_bound_address_netfilter"
+                elif netfilter_partial:
+                    key = "ports.uncovered_bound_address_netfilter_unweighed"
                 else:
                     key = "ports.uncovered_bound_address"
                 result.info(message=_t(key, port=pp, address=bound.address), key=key)

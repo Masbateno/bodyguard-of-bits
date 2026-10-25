@@ -29,15 +29,15 @@ class TestRichRuleGrant:
     def test_accept_port_rule_yields_port_proto(self):
         rule = ('rule family="ipv4" source address="10.0.0.0/8" '
                 'port port="5432" protocol="tcp" accept')
-        assert _rich_rule_grant(rule) == "5432/tcp (rich)"
+        assert _rich_rule_grant(rule) == "5432/tcp (rich, IPv4)"   # v0.27.0: the family named
 
     def test_accept_port_range_rule(self):
         rule = 'rule family="ipv6" port port="8000-8100" protocol="udp" accept'
-        assert _rich_rule_grant(rule) == "8000-8100/udp (rich)"
+        assert _rich_rule_grant(rule) == "8000-8100/udp (rich, IPv6)"
 
     def test_accept_service_rule_yields_service_name(self):
         rule = 'rule family="ipv4" service name="https" accept'
-        assert _rich_rule_grant(rule) == "https (rich)"
+        assert _rich_rule_grant(rule) == "https (rich, IPv4)"
 
     def test_reject_rule_grants_nothing(self):
         rule = 'rule family="ipv4" port port="23" protocol="tcp" reject'
@@ -49,7 +49,8 @@ class TestRichRuleGrant:
 
     def test_accept_without_recognisable_target_is_generic(self):
         rule = 'rule family="ipv4" source address="10.0.0.0/8" accept'
-        assert _rich_rule_grant(rule) == "rich rule"
+        assert _rich_rule_grant(rule) == "rich rule (IPv4)"      # v0.27.0: the family named
+        assert _rich_rule_grant('rule source address="10.0.0.0/8" accept') == "rich rule"
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +66,7 @@ class TestAllowsSummary:
             rich_rules=['rule family="ipv4" port port="5432" protocol="tcp" accept'],
         )
         summary = st.allows_summary()
-        assert "5432/tcp (rich)" in summary
+        assert "5432/tcp (rich, IPv4)" in summary
         # and it does not drop the plain services/ports it always showed
         assert "ssh" in summary and "8080/tcp" in summary
 
@@ -130,8 +131,8 @@ class TestFromSystem:
         assert st.forward_ports == ["port=80:proto=tcp:toport=8080:toaddr="]
         assert st.sources == ["10.0.0.0/8"]
         summary = st.allows_summary()
-        assert "5432/tcp (rich)" in summary
-        assert "https (rich)" in summary
+        assert "5432/tcp (rich, IPv4)" in summary
+        assert "https (rich, IPv4)" in summary
 
     def test_inactive_firewalld_collects_nothing(self, monkeypatch):
         monkeypatch.setattr(fw, "_command_exists", lambda _c: True)
@@ -163,4 +164,4 @@ def test_firewall_credit_line_names_rich_rule_port():
     result = check_firewall(status, firewalld=firewalld, t=_echo_t)
     finding = next(f for f in result.findings
                    if f.key == "firewall.firewalld_active")
-    assert "5432/tcp (rich)" in finding.message
+    assert "5432/tcp (rich, IPv4)" in finding.message

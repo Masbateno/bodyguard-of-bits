@@ -283,6 +283,24 @@
       }
     }
   },
+  "file_perms.nopass_root_equivalent": {
+    "ref": "CIS Ubuntu 22.04 L2 — 5.2.4 — Ensure users must provide password for privilege escalation (Automated)",
+    "code": "CIS:5.2.4",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "5.2.4",
+        "title": "Ensure users must provide password for privilege escalation (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "5.2.4",
+        "title": "Ensure users must provide password for privilege escalation (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "5.2.4",
+        "title": "Ensure users must provide password for escalation (Automated)"
+      }
+    }
+  },
   "file_perms.sudoers_nopasswd_all": {
     "ref": "CIS Ubuntu 22.04 L2 — 5.2.4 — Ensure users must provide password for privilege escalation (Automated)",
     "code": "CIS:5.2.4",
@@ -304,6 +322,11 @@
   "file_perms.doas_nopass_all": {
     "ref": "Best practice — Require a password for privilege escalation via doas: avoid 'permit nopass' without a 'cmd' clause in /etc/doas.conf (the doas equivalent of sudo NOPASSWD:ALL)",
     "ref_fr": "Bonne pratique — Exiger un mot de passe pour l'escalade de privilèges via doas : éviter « permit nopass » sans clause « cmd » dans /etc/doas.conf (l'équivalent doas de NOPASSWD:ALL de sudo)",
+    "code": null
+  },
+  "root_path.world_writable": {
+    "ref": "Best practice — Root PATH integrity: keep root's PATH free of world-writable directories, '.', empty and relative components (login.defs ENV_SUPATH, sudoers secure_path)",
+    "ref_fr": "Bonne pratique — Intégrité du PATH de root : garder le PATH de root sans répertoire world-writable, '.', composant vide ou relatif (ENV_SUPATH de login.defs, secure_path de sudoers)",
     "code": null
   },
   "root_path.dangerous": {
@@ -663,6 +686,10 @@
     "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — Ensure IPv6 firewall rules exist for all open ports",
     "code": "CIS:3.5.1.4"
   },
+  "ipv6.netfilter_v6_open": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — Ensure IPv6 firewall rules exist for all open ports",
+    "code": "CIS:3.5.1.4"
+  },
   "ipv6.ufw_disabled_listeners_present": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — Ensure IPv6 firewall rules exist for all open ports",
     "code": "CIS:3.5.1.4"
@@ -796,6 +823,11 @@
   "logs.blocked_repeat_public": {
     "ref": "Best practice — Brute-force activity detected; deploy fail2ban + key-only authentication",
     "ref_fr": "Bonne pratique — Activité de force brute détectée ; déployer fail2ban + authentification par clé uniquement",
+    "code": null
+  },
+  "logs.port_scan_public": {
+    "ref": "Best practice — Port scan detected; review the exposed services and block the source",
+    "ref_fr": "Bonne pratique — Balayage de ports détecté ; revoir les services exposés et bloquer la source",
     "code": null
   },
   "mac_policy.apparmor_complain_profiles": {

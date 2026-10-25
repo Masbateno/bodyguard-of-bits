@@ -116,9 +116,11 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "file_perms.world_writable",
         "file_perms.too_permissive",
         "file_perms.sudoers_nopasswd_all",
+        "file_perms.nopass_root_equivalent",
         "file_perms.doas_nopass_all",
         "file_perms.ssh_host_key_perms",
         "root_path.dangerous",
+        "root_path.world_writable",
     ]),
     ("Updates", [
         "updates.security_pending",
@@ -216,6 +218,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("UFW log analysis", [
         "logs.blocked_repeat_public",
+        "logs.port_scan_public",
     ]),
     ("SMTP", [
         "smtp.exposed",
@@ -243,6 +246,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("IPv6", [
         "ipv6.ufw_disabled_listeners_present",
+        "ipv6.netfilter_v6_open",
         "ipv6.port_no_v6_rule",
         "ipv6.ufw_enabled_kernel_disabled",
     ]),

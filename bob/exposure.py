@@ -92,6 +92,13 @@ def compute_exposure(
             icon="⚠", color="warn",
             detail=t("exposure.firewall_policy_unread", backend=_backend_label),
         ))
+    elif fw_policy == "partial":
+        # v0.27.0 — accept by default, with refusals not weighed port by port.
+        items.append(ExposureItem(
+            label=t("exposure.firewall"),
+            icon="⚠", color="warn",
+            detail=t("exposure.firewall_policy_partial", backend=_backend_label),
+        ))
     elif fw_policy not in ("deny", "reject"):
         items.append(ExposureItem(
             label=t("exposure.firewall"),

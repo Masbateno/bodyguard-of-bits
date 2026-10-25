@@ -29,6 +29,7 @@ from bob.checks._run import _command_exists, path_exists, run_result
 # and ``drop`` rules deny and must not be shown as things the zone "allows".
 _RICH_PORT = re.compile(r'port port="?(?P<port>\d+(?:-\d+)?)"?\s+protocol="?(?P<proto>\w+)"?')
 _RICH_SERVICE = re.compile(r'service name="?(?P<name>[\w.+-]+)"?')
+_RICH_FAMILY = re.compile(r'\bfamily="?(ipv4|ipv6)"?')
 _TARGET_LINE = re.compile(r"^\s*target:\s*(\S+)", re.MULTILINE)
 _INGRESS_LINE = re.compile(r"^\s*ingress-priority:\s*(-?\d+)\s*$", re.MULTILINE)
 
@@ -520,13 +521,18 @@ def _rich_rule_grant(rule: str) -> str | None:
     r = rule.strip()
     if not re.search(r'\baccept\b', r):
         return None
+    # v0.27.0 — the family, when the rule names one: measured on Debian 13
+    # (firewalld 2.3.1), `rule family="ipv6" port port="80" … accept` opened 80
+    # over IPv6 only, and the summary read "80/tcp (rich)" for both.
+    fam = _RICH_FAMILY.search(r)
+    tag = f"rich, {'IPv6' if fam.group(1) == 'ipv6' else 'IPv4'}" if fam else "rich"
     m = _RICH_PORT.search(r)
     if m:
-        return f"{m.group('port')}/{m.group('proto')} (rich)"
+        return f"{m.group('port')}/{m.group('proto')} ({tag})"
     m = _RICH_SERVICE.search(r)
     if m:
-        return f"{m.group('name')} (rich)"
-    return "rich rule"
+        return f"{m.group('name')} ({tag})"
+    return "rich rule" if not fam else f"rich rule ({tag[6:]})"
 
 
 @dataclass
@@ -732,6 +738,17 @@ class FirewalldStatus:
         each through the policies into HOST, and the most open of them is the
         host's."""
         return most_open(self.family_policy(f) for f in FAMILIES)
+
+    def family_scoped_accepts(self) -> "list[str]":
+        """The accept rich rules of the judged zones that name one family
+        (v0.27.0): firewalld then filters IPv6 and IPv4 by different rules."""
+        out = []
+        for zone in (self.judged_zones if self.zones_read else []):
+            for rule in zone.rich_rules:
+                grant = _rich_rule_grant(rule)
+                if grant and _RICH_FAMILY.search(rule):
+                    out.append(grant)
+        return out
 
     def allows_summary(self) -> str:
         """Everything the default zone permits, as one human-readable line.

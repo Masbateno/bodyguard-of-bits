@@ -463,6 +463,17 @@ class TestADV1DomainActiveReason:
         assert detection["active"] is False
         assert detection["reason"] == "profile_skipped"
 
+    def test_an_info_only_domain_is_not_a_bare_ten(self, minimal_args):
+        """v0.27.0 (decided with the user, 24 October 2026) — no asterisk on the
+        display: 0.25.0's "reported, not scored" says it beside the 10/10, and
+        here a consumer reads the same: inactive, reason info_only."""
+        eng = ScoreEngine()
+        r = CheckResult()
+        r.info(message="auditd is not installed", key="auditd.not_installed")
+        eng.apply(r, section="auditd")
+        detection = _build_v3(eng, minimal_args)["domain_scores"]["detection"]
+        assert detection["active"] is False and detection["reason"] == "info_only"
+
     def test_check_filter_reason_in_json(self, engine_clean, minimal_args):
         # --check=firewall runs only the firewall_network sections; every
         # EXPOSURE & SERVICES section is excluded, so that domain reads filtered.

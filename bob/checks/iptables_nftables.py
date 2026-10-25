@@ -212,8 +212,75 @@ def _nft_first_ipv4_chain_accepts_all(ruleset: str, hook: str) -> bool:
 _DROPS_EVERYTHING = re.compile(r"^(drop|reject(?:\s+with\s+[\w\s-]+)?)$")
 
 
-def _chain_verdict(chain: dict) -> "tuple[str, bool]":
+#: v0.27.0 — what a rule can do to a packet besides accepting it. Measured in
+#: a network namespace (24 October 2026), nftables, IPv4 and IPv6 alike: an
+#: input chain at policy accept with `tcp dport 8099 drop`, or with `jump x`
+#: where x drops 8099, left 8099 closed — and BOB read "accept" (−3 for IPv4,
+#: capped at 3/10 by "no firewall"; −2 for IPv6). A jump to a chain that only
+#: accepts, an empty chain and a log rule left it open.
+_NFT_REFUSES = re.compile(r"\b(?:drop|reject|queue)\b")
+_NFT_JUMP = re.compile(r"\b(?:jump|goto)\s+([\w.-]+)")
+#: A rule that matches only invalid packets refuses no new connection.
+_NFT_INVALID_ONLY = re.compile(r"^ct\s+state\s+(?:\{\s*)?invalid(?:\s*\})?\s+drop$")
+#: Measured after the review (24 October 2026): a refusal limited to some
+#: sources — fail2ban's `ip saddr @addr-set-sshd reject`, `ip saddr 10.77.0.99
+#: drop`, `-s 10.77.0.99 -j DROP`, a jump to fail2ban's chain of `-s … -j
+#: REJECT` — and the loopback guard `iifname != "lo" ip daddr 127.0.0.0/8 drop`
+#: left 8099 open to the others: the default still accepts them. A negated
+#: source (`ip saddr != …`, `! -s …`) refuses nearly everyone, and closed it.
+_NFT_SOME_SOURCES = re.compile(r"\bsaddr\s+(?!!=)|\bdaddr\s+(?:127\.|::1\b)")
+_IPT_SOME_SOURCES = re.compile(r"(?<!! )(?:-s|--source)\s+\S+|--match-set\s+\S+\s+src\b|(?<!! )-d\s+(?:127\.|::1/)")
+_QUOTED = re.compile(r'"[^"]*"')
+
+
+def _nft_all_chains(ruleset: str) -> "dict[tuple, list[str]]":
+    """Every chain's rules, base or not, keyed by (family, table, chain)."""
+    chains: dict = {}
+    table = current = None
+    for line in ruleset.splitlines():
+        text = line.strip()
+        m = re.match(r"table\s+(\w+)\s+(\S+)\s*\{", text)
+        if m:
+            table, current = (m.group(1), m.group(2)), None
+            continue
+        m = re.match(r"chain\s+(\S+)\s*\{", text)
+        if m and table:
+            current = chains.setdefault((table[0], table[1], m.group(1)), [])
+            continue
+        if current is None:
+            continue
+        if text == "}":
+            current = None
+        elif text and not re.search(r"\bhook\s+\w+", text):
+            current.append(text)
+    return chains
+
+
+def _nft_rule_may_refuse(rule: str, chains: dict, family: str, table: str, seen: "frozenset" = frozenset()) -> bool:
+    """Whether *rule* can drop or reject a new packet, following its jumps and
+    gotos into the chains they name (v0.27.0). A chain BOB cannot find may."""
+    text = _QUOTED.sub("", _RULE_NOISE.sub("", rule)).strip()
+    if _NFT_INVALID_ONLY.match(text) or _NFT_SOME_SOURCES.search(text):
+        return False
+    if _NFT_REFUSES.search(text):
+        return True
+    for target in _NFT_JUMP.findall(text):
+        key = (family, table, target)
+        if key in seen:
+            continue
+        if key not in chains:
+            return True
+        if any(_nft_rule_may_refuse(r, chains, family, table, seen | {key}) for r in chains[key]):
+            return True
+    return False
+
+
+def _chain_verdict(chain: dict, chains: "dict | None" = None) -> "tuple[str, bool]":
     """(the verdict every packet meets in *chain*, whether a rule gave it).
+
+    v0.27.0 — with *chains* (every chain of the ruleset), an accept reached
+    after a rule that can refuse a new packet is "PARTIAL": accepted by
+    default, with refusals BOB does not weigh port by port — not established.
 
     v0.26.0 — measured in a network namespace: a chain at policy accept whose
     last rule is a bare ``reject`` (nft) or ``-j REJECT`` (iptables) refused
@@ -222,13 +289,18 @@ def _chain_verdict(chain: dict) -> "tuple[str, bool]":
     accept-everything rule, or a drop/reject with no match. A rule with a
     match (``ip protocol tcp … reject``) leaves the rest to the policy.
     """
+    refused = False
     for rule in chain["rules"]:
         text = _RULE_NOISE.sub("", rule).strip()
         if text == "accept":
-            return "ACCEPT", True
+            return ("PARTIAL" if refused else "ACCEPT"), True
         m = _DROPS_EVERYTHING.match(text)
         if m:
             return ("DROP" if m.group(1) == "drop" else "REJECT"), True
+        if chains is not None and not refused:
+            refused = _nft_rule_may_refuse(text, chains, chain["family"], chain["table"])
+    if refused and chain["policy"] == "ACCEPT":
+        return "PARTIAL", False
     return chain["policy"], False
 
 
@@ -237,6 +309,43 @@ def _nft_policy_by_rule(ruleset: str, hook: str) -> bool:
     return any(v in ("DROP", "REJECT") and by_rule
                for v, by_rule in (_chain_verdict(c) for c in _nft_base_chains(ruleset, hook)
                                   if c["family"] in _IPV4_FAMILIES))
+
+
+#: v0.27.0 — the families whose base chains see IPv6.
+_IPV6_FAMILIES = ("ip6", "inet")
+
+
+def nft_input_policy_v6(ruleset: str) -> "str | None":
+    """The default verdict on the input hook for IPv6 in an nft ruleset, read as
+    :func:`_nft_policy` reads IPv4 (policies, and a rule that takes every
+    packet) — None when no ip6/inet base chain sits on input (v0.27.0)."""
+    chains = [c for c in _nft_base_chains(ruleset, "input") if c["family"] in _IPV6_FAMILIES]
+    if not chains:
+        return None
+    every = _nft_all_chains(ruleset)
+    effective = {_chain_verdict(c, every)[0] for c in chains}
+    return next((v for v in ("DROP", "REJECT", "PARTIAL") if v in effective), "ACCEPT")
+
+
+def read_input_policy_v6() -> str:
+    """IPv6's default inbound verdict on a host filtered by a raw ruleset:
+    "DROP", "REJECT", "ACCEPT" or "unknown" (v0.27.0). Until 0.26.1 BOB did not
+    read which families a raw ruleset covers and said so (``ipv6.netfilter_v6``).
+    nft first (iptables-nft's ip6 tables show there too), then ip6tables -S."""
+    nft_answered = False
+    if _command_exists("nft"):
+        res = run_result("nft", "list", "ruleset")
+        nft_answered = res.ok
+        if res.ok:
+            verdict = nft_input_policy_v6(res.stdout)
+            if verdict:
+                return verdict
+    if _command_exists("ip6tables"):
+        raw = _run("ip6tables", "-S")
+        if raw and re.search(r"^-P INPUT ", raw, re.MULTILINE):
+            return _ipt_effective_input_policy(raw)
+        return "unknown"
+    return "ACCEPT" if nft_answered else "unknown"
 
 
 def _accepts_everything(rule: str) -> bool:
@@ -261,8 +370,11 @@ def _nft_policy(ruleset: str, hook: str) -> str:
     chains = _nft_base_chains(ruleset, hook)
     if not chains:
         return "unknown"
-    effective = [_chain_verdict(c)[0] for c in chains if c["family"] in _IPV4_FAMILIES]
-    for restrictive in ("DROP", "REJECT"):
+    # v0.27.0 — on input, the refusals a chain's rules make are weighed
+    # (PARTIAL); forward keeps the 0.26.0 reading.
+    every = _nft_all_chains(ruleset) if hook == "input" else None
+    effective = [_chain_verdict(c, every)[0] for c in chains if c["family"] in _IPV4_FAMILIES]
+    for restrictive in ("DROP", "REJECT", "PARTIAL"):
         if restrictive in effective:
             return restrictive
     # No IPv4 base chain on the hook filters nothing for IPv4.
@@ -348,8 +460,40 @@ def _ipt_effective_input_policy(rules: str) -> str:
     DROP — the policy is never reached. As for nftables, BOB reads policies
     and this one rule; a rule accepting a whole interface is not weighed.
     """
-    terminal = _ipt_terminal_input(rules)
-    return terminal if terminal else _ipt_policy(rules, "INPUT")
+    refused = False
+    for line in rules.splitlines():
+        line = line.strip()
+        if not line.startswith("-A INPUT "):
+            continue
+        m = re.match(r"^-A INPUT -j (ACCEPT|DROP|REJECT)(?:\s+--reject-with\s+\S+)?\s*$", line)
+        if m:
+            return "PARTIAL" if m.group(1) == "ACCEPT" and refused else m.group(1)
+        refused = refused or _ipt_rule_may_refuse(line, rules)
+    policy = _ipt_policy(rules, "INPUT")
+    return "PARTIAL" if refused and policy == "ACCEPT" else policy
+
+
+#: v0.27.0 — see _NFT_REFUSES: the same reading for `iptables -S`.
+_IPT_TARGET = re.compile(r"\s-[jg]\s+(\S+)")
+_IPT_INVALID_ONLY = re.compile(r"-m (?:conntrack --ctstate|state --state) INVALID -j DROP\s*$")
+
+
+def _ipt_rule_may_refuse(line: str, rules: str, seen: "frozenset" = frozenset()) -> bool:
+    """Whether an ``iptables -S`` rule can drop or reject a new packet,
+    following a jump or goto into the user chain it names."""
+    if _IPT_INVALID_ONLY.search(line) or _IPT_SOME_SOURCES.search(line):
+        return False
+    m = _IPT_TARGET.search(line)
+    if not m:
+        return False
+    target = m.group(1)
+    if target in ("DROP", "REJECT", "NFQUEUE", "QUEUE"):
+        return True
+    if target in seen or not re.search(rf"^-N {re.escape(target)}\s*$", rules, re.MULTILINE):
+        return False        # a built-in target (ACCEPT, RETURN, LOG, MARK…)
+    prefix = f"-A {target} "
+    return any(_ipt_rule_may_refuse(r.strip(), rules, seen | {target})
+               for r in rules.splitlines() if r.strip().startswith(prefix))
 
 
 def _ipt_terminal_input(rules: str) -> str:
@@ -589,6 +733,14 @@ def check_iptables_nftables(
                 ),
                 nature="action",
             )
+    elif snapshot.input_policy == "PARTIAL":
+        # v0.27.0 — accepted by default, with rules that can refuse: which
+        # listeners they close is not established (a visibility gap, "≤").
+        result.info(
+            message=_t("firewall_iptables.input_accept_unweighed"),
+            detail=_t("firewall_iptables.input_accept_unweighed_detail"),
+            key="firewall_iptables.input_accept_unweighed",
+        )
     else:
         result.info(
             message=_t("firewall_iptables.input_unknown"),

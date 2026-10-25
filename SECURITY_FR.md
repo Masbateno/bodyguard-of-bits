@@ -52,6 +52,20 @@ pas que ce workflow ou ses outils étaient sains.
   en 26.2.2 ou plus (ainsi que uv et certifi) comme l'indique le fil Python, et
   gardez à jour le paquet `ca-certificates` de votre système.
 
+### Ce qui a changé en 0.27.0
+
+- chaque action utilisée par les workflows est épinglée par commit, sa version
+  écrite à côté, et Dependabot en propose les mises à jour ;
+- les outils de test, de lint et de build — pytest, beautifulsoup4, ruff, build
+  et ce qu'ils entraînent — sont installés par `pip install --require-hashes`
+  depuis `requirements-ci.txt`, qui épingle chacun par version et SHA-256 : un
+  fichier non listé fait échouer le job au lieu d'être installé ;
+- le build refuse toute étiquette autre qu'un `MAJEUR.MINEUR.CORRECTIF` nu égal
+  à la version de `pyproject.toml` ;
+- l'environnement `release` où s'exécute l'envoi vers PyPI exige l'approbation
+  d'un réviseur et n'admet que les étiquettes correspondant à
+  `[0-9]*.[0-9]*.[0-9]*` (un réglage du dépôt).
+
 ### Ce qui a changé en 0.26.1
 
 Dans le workflow de publication, avant toute installation de dépendance de
@@ -71,7 +85,8 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 
 | Version        | Supportée          |
 |----------------|--------------------|
-| 0.26.x         | ✅ courante         |
+| 0.27.x         | ✅ courante         |
+| 0.26.x         | ❌ fin de vie       |
 | 0.25.x         | ❌ fin de vie       |
 | 0.24.x         | ❌ fin de vie       |
 | 0.23.x         | ❌ fin de vie       |
@@ -91,12 +106,12 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 | 0.6.x          | ❌ fin de vie       |
 | ≤ 0.5.x        | ❌ fin de vie       |
 
-Les correctifs sortent en `0.26.x+1`. Un changement cassant incrémente la version mineure (`0.27.0`).
+Les correctifs sortent en `0.27.x+1`. Un changement cassant incrémente la version mineure (`0.28.0`).
 
-**v0.25.x est en fin de vie le jour où 0.26.0 sort**, selon la politique
+**v0.26.x est en fin de vie le jour où 0.27.0 sort**, selon la politique
 « ligne minor la plus récente uniquement » ci-dessus. Aucun correctif de
-sécurité ne sera backporté. Les utilisateurs sur v0.25.x doivent
-`pipx upgrade bodyguard-of-bits` vers v0.26.x.
+sécurité ne sera backporté. Les utilisateurs sur v0.26.x doivent
+`pipx upgrade bodyguard-of-bits` vers v0.27.x.
 
 La mise à jour change ce que le score **signifie** quand BOB ne peut pas lire
 une partie de l'hôte. Jusqu'en v0.16.0, le score était une somme sur les checks

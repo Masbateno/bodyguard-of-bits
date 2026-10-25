@@ -130,6 +130,7 @@ _MANUAL_BY_DESIGN = frozenset({
     "network_context.sensitive_remote",          # strategic: VPN, jump host, redesign
     "virt.snap_network",                         # audit-then-decide; snap remove vs keep
     "logs.blocked_repeat_public",                # trigger to install fail2ban (separate finding)
+    "logs.port_scan_public",                     # a policy choice: deny the source? (see --explain)
 
     # UEFI / firmware level — needs reboot + manual UEFI navigation:
     "secure_boot.disabled",                      # UEFI setting, no runtime command
@@ -148,8 +149,10 @@ _MANUAL_BY_DESIGN = frozenset({
     "samba.guest_writable",                      # per-share fix in smb.conf
     "samba.guest_readonly",                      # per-share fix in smb.conf
     "file_perms.sudoers_nopasswd_all",           # visudo edit, NEVER chmod (locking yourself out)
+    "file_perms.nopass_root_equivalent",  # visudo edit: which args to fix is the operator's call
     "file_perms.doas_nopass_all",                # /etc/doas.conf edit, no safe one-liner (as sudoers)
     "root_path.dangerous",                       # edit login.defs ENV_SUPATH / sudoers secure_path — depends on source + safe PATH, no one-liner
+    "root_path.world_writable",                  # as root_path.dangerous: which source, and remove or chmod o-w, is the operator's call
     "password_policy.weak_hash",
     "user_accounts.su_unrestricted",
     "package_authenticity.disabled",                  # import the repo's key the way its publisher documents, then drop the switch — per repo, no generic one-liner             # PAM edit + group choice; a wrong line locks su for everyone (test with a root shell open)                 # login.defs and/or PAM (authselect / pam-auth-update, never sed); yescrypt not universal; old hashes persist until each password change

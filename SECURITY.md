@@ -49,6 +49,20 @@ tools were sound.
   uv, certifi) as the Python thread describes, and keep your system's
   `ca-certificates` up to date.
 
+### What changed in 0.27.0
+
+- every action the workflows use is pinned by commit, with its version beside
+  it, and Dependabot proposes their updates;
+- the test, lint and build tools — pytest, beautifulsoup4, ruff, build and
+  what they pull in — are installed with `pip install --require-hashes` from
+  `requirements-ci.txt`, which pins each by version and SHA-256: a file not
+  listed fails the job instead of being installed;
+- the build refuses any tag other than a bare `MAJOR.MINOR.PATCH` equal to the
+  version in `pyproject.toml`;
+- the `release` environment the PyPI upload runs in requires a reviewer's
+  approval and admits only tags matching `[0-9]*.[0-9]*.[0-9]*` (a repository
+  setting).
+
 ### What changed in 0.26.1
 
 In the publish workflow, before any build dependency is installed:
@@ -68,7 +82,8 @@ are not backported.
 
 | Version        | Supported          |
 |----------------|--------------------|
-| 0.26.x         | ✅ current          |
+| 0.27.x         | ✅ current          |
+| 0.26.x         | ❌ end of life      |
 | 0.25.x         | ❌ end of life      |
 | 0.24.x         | ❌ end of life      |
 | 0.23.x         | ❌ end of life      |
@@ -88,11 +103,11 @@ are not backported.
 | 0.6.x          | ❌ end of life      |
 | ≤ 0.5.x        | ❌ end of life      |
 
-Patches release as `0.26.x+1`. A breaking change bumps the minor (`0.27.0`).
+Patches release as `0.27.x+1`. A breaking change bumps the minor (`0.28.0`).
 
-**v0.25.x is end-of-life as of the day 0.26.0 ships**, per the "latest minor
-line only" policy above. No security fixes will be backported. Users on v0.25.x
-must `pipx upgrade bodyguard-of-bits` to v0.26.x.
+**v0.26.x is end-of-life as of the day 0.27.0 ships**, per the "latest minor
+line only" policy above. No security fixes will be backported. Users on v0.26.x
+must `pipx upgrade bodyguard-of-bits` to v0.27.x.
 
 The upgrade changes what the score *means* when BOB cannot read part of the
 host. Until v0.16.0 the score was a sum over the checks that ran, and a check

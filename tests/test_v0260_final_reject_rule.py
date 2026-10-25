@@ -66,7 +66,11 @@ class TestTheNftChain:
         assert ipt._nft_has_loopback(IPTNFT_FINAL_REJECT)
 
     def test_a_rule_with_a_match_leaves_the_rest_to_the_policy(self):
-        assert ipt._nft_policy(TCP_ONLY, "input") == "ACCEPT"
+        # v0.27.0 — not "accept" any more: a reject for every TCP packet closes
+        # every TCP listener, which "all incoming traffic is allowed" denied
+        # (measured after the 0.27.0 review: a drop for one port at policy
+        # accept closed it). Not established — no rule gives the verdict.
+        assert ipt._nft_policy(TCP_ONLY, "input") == "PARTIAL"
         assert not ipt._nft_policy_by_rule(TCP_ONLY, "input")
 
     def test_an_accept_everything_rule_before_it_wins(self):
@@ -90,7 +94,7 @@ class TestTheIptablesChain:
 
     def test_a_rule_with_a_match_does_not(self):
         rules = "-P INPUT ACCEPT\n-A INPUT -p tcp -j REJECT --reject-with tcp-reset\n"
-        assert ipt._ipt_effective_input_policy(rules) == "ACCEPT"
+        assert ipt._ipt_effective_input_policy(rules) == "PARTIAL"     # v0.27.0, as above
 
 
 class TestTheVerdict:

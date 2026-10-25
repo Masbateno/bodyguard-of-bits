@@ -92,9 +92,17 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "firewall_iptables.forward_unknown",
     "firewall_iptables.firewalld_unreadable",
     "firewall_iptables.input_unknown",
+    "firewall_iptables.input_accept_unweighed",
+    "firewall.netfilter_unweighed",
+    "logs.window_partly_read",
     "firewall_iptables.ruleset_unreadable",
     "firmware.microcode_unknown",
     "ipv6.kernel_state_unknown",
+    # v0.27.0 — a raw ruleset whose IPv6 default could not be read, and UFW at
+    # IPV6=no with INPUT's path holding a rule BOB does not resolve: what
+    # reaches the IPv6 listeners is not established.
+    "ipv6.netfilter_v6",
+    "ipv6.ufw_v6_off_rules_unresolved",
     "ipv6.listeners_unknown",
     "ipv6.ufw_config_unreadable",
     "log_rotation.journal_dir_unreadable",

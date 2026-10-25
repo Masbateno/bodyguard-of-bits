@@ -330,6 +330,7 @@ def check_services(
     t: TranslationFunc | None = None,
     firewalld_active: bool = False,
     netfilter_active: bool = False,
+    netfilter_partial: bool = False,
 ) -> CheckResult:
     """
     Evaluate service snapshots and return findings and deductions.
@@ -349,7 +350,8 @@ def check_services(
     for snap in snapshots:
         _check_single_service(snap, result, network_context, ufw_active, _t,
                               firewalld_active=firewalld_active,
-                              netfilter_active=netfilter_active)
+                              netfilter_active=netfilter_active,
+                              netfilter_partial=netfilter_partial)
 
     return result
 
@@ -361,6 +363,7 @@ def _check_single_service(
     _t,
     firewalld_active: bool = False,
     netfilter_active: bool = False,
+    netfilter_partial: bool = False,
 ) -> None:
     """Evaluate a single service snapshot and add findings to result."""
 
@@ -473,7 +476,8 @@ def _check_single_service(
     for port, exposure in snap.exposures.items():
         _check_port_exposure(snap, port, exposure, result, network_context, ufw_active, _t,
                              firewalld_active=firewalld_active,
-                             netfilter_active=netfilter_active)
+                             netfilter_active=netfilter_active,
+                             netfilter_partial=netfilter_partial)
 
 def _check_port_exposure(
     snap: ServiceSnapshot,
@@ -485,6 +489,7 @@ def _check_port_exposure(
     _t,
     firewalld_active: bool = False,
     netfilter_active: bool = False,
+    netfilter_partial: bool = False,
 ) -> None:
     """Add findings for a single port exposure."""
 
@@ -499,6 +504,10 @@ def _check_port_exposure(
     # policy is the filter here; "no active firewall protection" was false.
     elif netfilter_active and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):
         exp_key = f"services.exposure.{exposure.value}_netfilter"
+    # v0.27.0 — accepted by default with refusals BOB does not weigh: not
+    # "no active firewall protection", which a closed port contradicted.
+    elif netfilter_partial and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):
+        exp_key = f"services.exposure.{exposure.value}_netfilter_unweighed"
     elif not ufw_active and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):
         exp_key = f"services.exposure.{exposure.value}_ufw_inactive"
     else:

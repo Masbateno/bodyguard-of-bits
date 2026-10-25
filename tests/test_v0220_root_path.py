@@ -44,12 +44,16 @@ class TestClassify:
 
 class TestCheck:
     def test_dangerous_warns_and_deducts(self):
+        # v0.27.0 — a world-writable directory has its own key (−2); "." keeps
+        # root_path.dangerous (−1).
         snap = RootPathSnapshot(
             dangerous=[("login.defs ENV_SUPATH", "/tmp/ww", "world_writable")],
             read_any=True)
         r = check_root_path(snap)
-        assert _key_levels(r).get("root_path.dangerous") == "warn"
+        assert _key_levels(r).get("root_path.world_writable") == "warn"
         assert r.deductions
+        snap = RootPathSnapshot(dangerous=[("sudoers secure_path", ".", "dot")], read_any=True)
+        assert _key_levels(check_root_path(snap)).get("root_path.dangerous") == "warn"
 
     def test_group_writable_is_info(self):
         snap = RootPathSnapshot(

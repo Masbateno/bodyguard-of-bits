@@ -101,8 +101,7 @@ def test_the_ports_ok_speaks_for_ipv4_when_ipv6_is_not_established():
 def test_the_runner_hands_the_ipv6_verdict():
     from bob import runner
     src = inspect.getsource(runner)
-    assert "and not _ipv6_input_closed(ipv6_snapshot,\n" in src
-    assert "extended=not ipv6_snapshot.has_global_ipv6))," in src
+    assert "and not _ipv6_input_closed(ipv6_snapshot))," in src
     assert "ipv6_unproven=(ipv6_snapshot.ufw_ipv6_enabled is False" in src
 
 
@@ -116,16 +115,16 @@ def test_the_ok_renders(lang, words):
     assert words in text and "IPV6=no" in text
 
 
-def test_with_a_global_address_the_0260_reading_stands(monkeypatch):
-    """A patch moves no score: with a global IPv6 address the extended reading
-    would lift the WARN −2 — it waits for 0.27.0 (decided 22 October 2026)."""
+def test_with_a_global_address_the_chains_are_read_too(monkeypatch):
+    """v0.27.0 — measured in a network namespace with 2001:db8:b0b::/64: the Mint
+    shape left 8099 closed; the WARN −2 "exposed" is lifted, as without one."""
     monkeypatch.setattr(ipv6_mod, "run_result", lambda *a, **k: _R(True, MINT))
     policy, rules, chains = ipv6_mod._read_ip6_filter()
     snap = IPv6Snapshot(kernel_ipv6_enabled=True, ufw_ipv6_enabled=False, ipv6_listeners=["22/tcp"],
                         has_global_ipv6=True, ufw_present=True, ip6_input_policy=policy,
                         ip6_input_rules=rules, ip6_user_chains=chains)
     keys = _keys(check_ipv6(snap, ufw_active=True, t=_t))
-    assert "ipv6.ufw_v6_off_blocked" not in keys and "ipv6.ufw_disabled_listeners_present" in keys
+    assert "ipv6.ufw_v6_off_blocked" in keys and "ipv6.ufw_disabled_listeners_present" not in keys
 
 
 class TestWhoClosesIt:

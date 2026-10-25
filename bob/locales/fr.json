@@ -199,6 +199,7 @@
     "ssh_ports_unknown_detail": "BOB n'a pas pu établir sur quels ports sshd répond — `ss -tulnp` n'a pas pu tourner, ou n'a nommé aucun processus (BOB n'a pas été lancé en root) — il ne donne donc aucune commande qui active le filtrage : une commande qui ne garderait que le port 22 couperait un sshd qui écoute ailleurs. Autorisez d'abord le port de votre session SSH, puis activez le filtrage.",
     "active": "Le pare-feu UFW est actif",
     "netfilter_active": "Aucun front-end pare-feu actif (UFW/firewalld), mais la couche netfilter filtre le trafic entrant — audité dans la section iptables/nftables",
+    "netfilter_unweighed": "Aucun front-end pare-feu actif (UFW/firewalld) ; le jeu de règles netfilter accepte le trafic entrant par défaut mais en refuse une partie — dans quelle mesure n'est pas établi, voir la section iptables/nftables",
     "awall_active": "awall est le front-end du pare-feu (activées : {policies}) — le jeu de règles iptables qu'il a généré filtre le trafic entrant, audité dans la section iptables/nftables",
     "firewalld_active": "firewalld est le pare-feu actif — la zone par défaut '{zone}' autorise : {services}",
     "firewalld_policy_open": "La zone par défaut firewalld '{zone}' accepte tout le trafic entrant (cible ACCEPT) — tous les ports sont ouverts sauf si une règle les bloque",
@@ -275,11 +276,13 @@
       "no_rule_ufw_inactive": "aucune protection pare-feu active",
       "no_rule_firewalld": "pare-feu géré par firewalld (pas UFW) — joignable seulement si sa zone autorise ce port",
       "no_rule_netfilter": "filtré par le jeu de règles nftables/iptables de l'hôte (ni UFW ni firewalld) — joignable seulement si ce jeu de règles autorise ce port",
+      "no_rule_netfilter_unweighed": "pas d'UFW/firewalld ; le jeu de règles nftables/iptables de l'hôte accepte par défaut et refuse une partie du trafic — que ce port soit joignable n'est pas établi",
       "loopback": "lié uniquement sur localhost — la règle UFW n'a aucun effet sur l'accès externe",
       "loopback_no_rule": "lié uniquement sur localhost — aucune règle UFW requise (couvert par refus par défaut)",
       "loopback_no_rule_ufw_inactive": "lié uniquement sur localhost — pas d'exposition externe",
       "loopback_no_rule_firewalld": "lié uniquement sur localhost — pas d'exposition externe (pare-feu géré par firewalld)",
       "loopback_no_rule_netfilter": "lié uniquement sur localhost — pas d'exposition externe (filtré par le jeu de règles nftables/iptables)",
+      "loopback_no_rule_netfilter_unweighed": "lié à localhost uniquement — aucune exposition externe",
       "not_listening": "n'écoute pas activement — port présent dans le registre mais non détecté sur ce système"
     },
     "port_exposure": "Port {port} — {exposure}"
@@ -295,6 +298,7 @@
     "uncovered_bound_address_deny": "Port {port} — lié uniquement à {address}, aucune règle UFW explicite, mais couvert par la politique de refus par défaut",
     "uncovered_bound_address_firewalld": "Port {port} — lié uniquement à {address} — régi par la zone firewalld de l'interface par laquelle on l'atteint, pas par une règle UFW",
     "uncovered_bound_address_netfilter": "Port {port} — lié uniquement à {address} — régi par le jeu de règles nftables/iptables (entrée refusée par défaut ; une règle peut encore autoriser ce port — BOB lit la politique par défaut, pas toutes les règles, et n'établit pas la joignabilité), pas par une règle UFW",
+    "uncovered_bound_address_netfilter_unweighed": "Port {port} — lié à {address} seulement — le jeu de règles nftables/iptables accepte le trafic entrant par défaut et en refuse une partie : que ce port soit joignable depuis ce réseau n'est pas établi",
     "system_port": "Port système interne — aucun danger (service OS légitime, pas de règle de pare-feu nécessaire) : {port} ({service})",
     "unreadable": "Les ports en écoute n'ont pas pu être déterminés",
     "unreadable_detail": "`ss -tulnp` n'a pas pu être exécuté — le binaire est absent (iproute2 n'est pas installé sur les images minimales ni dans beaucoup de conteneurs) ou il a échoué. Sa sortie est vide dans les deux cas, ce qui est indiscernable d'une machine sans rien en écoute : BOB signale donc la lacune au lieu d'annoncer zéro port ouvert. Vérifier avec : ss -tulnp",
@@ -307,7 +311,8 @@
     "uncovered_firewalld": "Port {port} en écoute sur toutes les interfaces — régi par la zone firewalld de l'interface par laquelle on l'atteint, pas par une règle UFW",
     "uncovered_firewalld_docker": "Port {port} en écoute sur toutes les interfaces — publié par Docker : avec Docker qui écrit ses propres règles de pare-feu et le StrictForwardPorts de firewalld désactivé (les deux valeurs par défaut), la zone firewalld ne filtrait pas un tel port lors des mesures (Fedora, openSUSE et Debian ; voir la section Docker)",
     "uncovered_firewalld_docker_forwarded": "Port {port} en écoute sur toutes les interfaces — publié par Docker : le StrictForwardPorts de firewalld est activé, mais une zone firewalld transfère aussi ce port, et firewalld laisse alors passer le trafic DNAT vers lui quelle que soit la zone d'entrée (issue firewalld #1536, confirmée en amont ; non reproduite ici ; voir la section Docker)",
-    "uncovered_netfilter": "Port {port} en écoute sur toutes les interfaces — régi par le jeu de règles nftables/iptables (entrée refusée par défaut ; une règle peut encore autoriser ce port — BOB lit la politique par défaut, pas toutes les règles, et n'établit pas la joignabilité), pas par une règle UFW"
+    "uncovered_netfilter": "Port {port} en écoute sur toutes les interfaces — régi par le jeu de règles nftables/iptables (entrée refusée par défaut ; une règle peut encore autoriser ce port — BOB lit la politique par défaut, pas toutes les règles, et n'établit pas la joignabilité), pas par une règle UFW",
+    "uncovered_netfilter_unweighed": "Port {port} en écoute sur toutes les interfaces — le jeu de règles nftables/iptables accepte le trafic entrant par défaut et en refuse une partie : que ce port soit joignable n'est pas établi"
   },
   "logs": {
     "no_logfile": "Fichier de log UFW introuvable (/var/log/ufw.log) et aucune entrée UFW dans journald — journalisation désactivée ?",
@@ -317,7 +322,15 @@
     "period": "Période analysée",
     "days_unit": "jour(s)",
     "days_available": "jour(s) de logs disponibles",
-    "period_file": "Fenêtre demandée : {requested} jour(s) ; {days} jour(s) couverts par /var/log/ufw.log. Les journaux rotatés (ufw.log.1 et plus anciens) n'ont pas été lus",
+    "period_files": "Fenêtre demandée : {requested} jour(s) ; {days} jour(s) couverts par {files}",
+    "period_files_unread": " — {files} n'a pas pu être lu, la fenêtre s'arrête donc là",
+    "window_partly_read": "Une partie de la fenêtre demandée n'a pas été lue ({files} : illisible, ou lu seulement sur ses 10 derniers Mo) : un balayage ou des tentatives répétées dans cette partie ne sont pas établis — le score est un plafond",
+    "skipped": "{count} ligne(s) [UFW BLOCK] de la fenêtre non comptée(s) : {reasons}",
+    "skip": {
+      "no_port": "{count} sans port de destination (ICMP, IGMP…)",
+      "no_timestamp": "{count} sans horodatage que BOB sache lire",
+      "unparsed": "{count} sans source, sans protocole ou sans port valide"
+    },
     "total_blocks": "tentative(s) bloquée(s) avec port de destination",
     "verdict_ok": "Activité normale — {total} tentative(s) bloquée(s) avec port de destination sur {days} jour(s), aucun motif d'attaque reconnu dans les événements analysés",
     "verdict_warn": "Activité suspecte — {total} tentative(s) bloquée(s) avec port de destination sur {days} jour(s)",
@@ -328,6 +341,9 @@
     "blocked_repeat_public": "{attempts} tentative(s) de connexion bloquée(s) depuis {ip} vers {port} en moins d'une minute",
     "blocked_repeat_local": "{attempts} tentative(s) de connexion bloquée(s) depuis {ip}, un appareil du réseau local, vers {port}",
     "blocked_repeat_udp": "{attempts} paquet(s) UDP bloqué(s) depuis {ip} vers {port} — UDP n'a ni poignée de main ni identifiant à deviner",
+    "port_scan_public": "{ip} a envoyé des paquets bloqués vers {ports} port(s) distinct(s) en {seconds} s — un balayage de ports, entièrement rejeté",
+    "port_scan_local": "{ip}, un appareil du réseau local, a envoyé des paquets bloqués vers {ports} port(s) distinct(s) en {seconds} s — un motif de balayage de ports : vérifiez de quel appareil il s'agit",
+    "verdict_ok_local_scan": "Aucune source publique retenue — {total} tentative(s) bloquée(s) avec port de destination sur {days} jour(s) ; un balayage de ports depuis le réseau local est signalé ci-dessous",
     "svc_hits": "Tentatives sur services installés",
     "svc_hits_none": "Aucune tentative sur les ports des services installés",
     "svc_hits_detail": "{count} tentative(s) sur {port}",
@@ -1218,13 +1234,20 @@
     "port_no_v6_rule": "Port {port} à l'écoute en IPv6 (::) sans règle UFW (v6) correspondante",
     "all_ports_covered": "Les {count} service(s) IPv6 sont couverts par des règles UFW (v6)",
     "firewalld_v6": "Les services IPv6 sont filtrés par firewalld (mêmes règles de zone qu'en IPv4)",
+    "firewalld_v6_family_rules": "Les services IPv6 sont filtrés par firewalld — par les mêmes zones que l'IPv4, dont des règles riches ouvrent certains ports à une seule famille : {rules}",
     "firewalld_v6_open": "Les services IPv6 ne sont pas filtrés — une zone firewalld portant une interface accepte tout le trafic entrant (cible ACCEPT)",
     "ufw_v6_off_blocked": "UFW IPv6 est désactivé, donc UFW bloque tout le trafic IPv6 hors boucle locale, en entrée comme en sortie (IPV6=no) — les {count} service(s) IPv6 sont injoignables depuis le réseau, et cet hôte n'a aucune connectivité IPv6 hors boucle locale",
     "ufw_v6_off_blocked_detail": "Services IPv6 : {ports}. Avec IPV6=no, ufw-init pose DROP sur les chaînes IPv6 INPUT, FORWARD et OUTPUT (loopback excepté). Pas une exposition — mais si cet hôte doit utiliser IPv6, mettre IPV6=yes dans /etc/default/ufw puis lancer : sudo ufw reload",
     "ufw_v6_off_blocked_chains": "L'IPv6 entrant est fermé — UFW tourne avec IPV6=no ; la politique d'INPUT est DROP et, hormis la règle ACCEPT de la boucle locale, aucune règle du chemin d'INPUT n'accepte de paquets : les {count} service(s) IPv6 sont injoignables depuis le réseau.{followed}",
     "ufw_v6_off_chains_followed": "Les chaînes qu'INPUT appelle ont été suivies : {chains}.",
     "ufw_v6_off_blocked_chains_detail": "Services IPv6 : {ports}. Seul l'entrant est évalué : l'usage de l'IPv6 en sortie par cet hôte n'est pas établi. Si cet hôte doit accepter l'IPv6, mettre IPV6=yes dans /etc/default/ufw puis lancer : sudo ufw reload",
-    "netfilter_v6": "{count} service(s) en écoute sur IPv6 ({ports}) — régis par le jeu de règles nftables/iptables, pas par UFW (non installé) ; une table inet ou ip6 filtre l'IPv6, une table ip non",
+    "netfilter_v6": "{count} service(s) en écoute sur IPv6 ({ports}) — régis par le jeu de règles nftables/iptables, dont BOB n'a pas pu lire le défaut IPv6 ; une table inet ou ip6 filtre l'IPv6, une table ip non",
+    "netfilter_v6_unweighed": "{count} service(s) en écoute sur IPv6 ({ports}) — le jeu de règles de l'hôte accepte l'IPv6 entrant par défaut mais en refuse une partie (un drop, un reject ou un saut que BOB ne pèse pas port par port) : que ces services soient joignables n'est pas établi",
+    "netfilter_v6_filtered": "{count} service(s) en écoute sur IPv6 ({ports}) — le jeu de règles de l'hôte refuse par défaut l'IPv6 entrant (une chaîne input ip6 ou inet en politique {policy}) ; une acceptation pour un seul port n'est pas évaluée",
+    "netfilter_v6_open": "{count} service(s) en écoute sur IPv6 ({ports}) avec une adresse globale — le jeu de règles de l'hôte accepte l'IPv6 entrant par défaut (aucune chaîne input ip6 ou inet ne le refuse), et aucune règle ne le refuse au-delà de sources désignées ou de paquets invalides",
+    "netfilter_v6_open_detail": "Une table ip ne filtre que l'IPv4 ; l'IPv6 demande une table ip6 ou inet, ou ip6tables. Mesuré dans un espace de noms réseau : une table ip en politique drop laissait un service IPv6 joignable, une table inet ou ip6 en politique drop le fermait.",
+    "netfilter_v6_open_cmd_comment": "ajoutez une chaîne input inet (ou ip6) en politique drop, en gardant SSH et l'ICMPv6",
+    "netfilter_v6_open_link_local": "{count} service(s) en écoute sur IPv6 ({ports}) — adresses link-local uniquement : pas joignables depuis internet, mais aucune chaîne input ip6 ou inet ne les refuse au réseau local",
     "no_firewall_v6": "{count} service(s) en écoute sur IPv6 ({ports}) — pas d'UFW sur cet hôte ni d'autre pare-feu filtrant l'entrant",
     "no_ufw_no_listeners": "UFW n'est pas installé et aucun service n'écoute sur IPv6",
     "ufw_v6_off_rules_unresolved": "{count} service(s) en écoute sur IPv6 (::), adresses link-local uniquement : pas joignable depuis internet — UFW IPv6 est désactivé et son DROP est en place, mais la chaîne INPUT IPv6 porte d'autres règles, donc BOB ne peut pas montrer si le réseau local les joint",
@@ -1252,6 +1275,7 @@
     "netbios_no_rule": "Port NetBIOS {port} sans règle UFW",
     "port_no_rule": "Port {port} sur 0.0.0.0 sans règle UFW",
     "blocked_repeat_public": "{attempts} tentatives de connexion bloquées depuis {ip} sur {port}",
+    "port_scan_public": "Balayage de ports depuis {ip} ({ports} ports distincts)",
     "service_open_world": "{label} {port} exposé sur internet"
   },
   "ignored": {
@@ -1361,6 +1385,14 @@
     "sudoers_nopasswd_all_empty_group": "NOPASSWD:ALL dans sudoers — sudo sans mot de passe illimité : {line} (groupe « {group} » vide — latent : aucun membre pour l'instant, mais tout utilisateur ajouté obtient un root sans mot de passe immédiat)",
     "sudoers_nopasswd_all_detail": "NOPASSWD:ALL accorde un accès root complet sans mot de passe. Restreindre à des commandes spécifiques si possible.",
     "sudoers_nopasswd_all_reason": "NOPASSWD:ALL présent dans sudoers",
+    "nopass_root_equivalent_escape": "Une règle sans mot de passe accorde {command} — un pager dont l'échappement vers un shell (!) s'exécute en root, quel que soit le fichier nommé : root sans mot de passe : {line}",
+    "nopass_root_equivalent_editor": "Une règle sans mot de passe accorde {command} — un éditeur écrit n'importe quel fichier en root, /etc/sudoers compris, quel que soit le fichier que nomme la règle : root sans mot de passe : {line}",
+    "nopass_root_equivalent_reads": "Une règle sans mot de passe accorde {command} — un pager : sous NOEXEC son échappement vers un shell est bloqué, mais il ouvre n'importe quel fichier en root (/etc/shadow, clés privées), quel que soit le fichier que nomme la règle : {line}",
+    "nopass_root_equivalent_writes": "Une règle sans mot de passe accorde {command} — elle écrit {what} en root, un fichier protégé (un drop-in sudoers, une tâche cron, une unité systemd, les bases de comptes, les clés de root) : root sans mot de passe : {line}",
+    "nopass_root_equivalent_arguments": "Une règle sans mot de passe accorde {command} avec ses arguments laissés libres — {what} exécute ce qu'on lui donne : root sans mot de passe : {line}",
+    "nopass_root_equivalent_writable": "Une règle sans mot de passe accorde {command}, qu'un autre compte peut modifier — {what} : root sans mot de passe pour ce compte : {line}",
+    "nopass_root_equivalent_detail": "Une règle limitée à une commande n'est pas plus étroite que la commande. Un interpréteur, un shell, find ou tar exécutent ce que disent leurs arguments, et env ou xargs la commande qu'on leur donne (l'étiquette NOEXEC de sudo arrête ces deux-là) ; un pager ouvre un shell (NOEXEC l'arrête, de même que le pager sécurisé de journalctl à partir de systemd 247 sous sudo — pas sous doas, ni quand SETENV, env_keep ou !env_reset laisse passer SYSTEMD_PAGERSECURE), et less ouvre encore n'importe quel fichier en root sous NOEXEC ; un éditeur, ou un outil d'écriture (cp, tee, dd, install) dont l'argument fixe est un chemin protégé, ou sudoedit / visudo / vipw, écrit un fichier en root — un drop-in sudoers, une tâche cron, une unité systemd ; un binaire ou un script qu'un autre compte que root peut réécrire exécute en root le code de ce compte. Chacun accorde ce qu'accorde NOPASSWD:ALL, et pèse autant.",
+    "nopass_root_equivalent_reason": "Règle sans mot de passe (NOPASSWD de sudo ou nopass de doas) pour une commande qui vaut root",
     "sudoers_nopasswd_specific": "{count} règle(s) sudoers accordent un accès sans mot de passe à des commande(s) spécifique(s)",
     "sudoers_nopasswd_specific_detail": "Le sudo sans mot de passe pour des commandes spécifiques est souvent intentionnel. Vérifier que chaque entrée est encore nécessaire.",
     "doas_nopass_all": "permit nopass dans doas.conf — root sans mot de passe et sans restriction : {line}",
@@ -1824,10 +1856,15 @@
         "why": "Des fichiers trop permissifs peuvent être lus ou écrits par des utilisateurs non autorisés. Des clés SSH lisibles par d'autres permettent l'usurpation d'identité. Des fichiers de configuration lisibles par tous peuvent exposer des credentials ou des chemins internes.",
         "how": "1. Notez les permissions attendues indiquées dans le rapport d'audit\n2. Appliquez les permissions correctes :\n   sudo chmod <attendu> <chemin>\n3. Vérifiez :\n   ls -la <chemin>"
       },
+      "nopass_root_equivalent": {
+        "title": "Une règle sans mot de passe pour une commande qui vaut root",
+        "why": "La règle (NOPASSWD de sudo, ou nopass de doas) nomme une commande, mais cette commande donne root à elle seule. Un interpréteur ou un shell (python3, perl, bash), ou un outil qui exécute ce qu'on lui donne (find -exec, tar --checkpoint-action, systemctl avec un fichier d'unité, apt-get et ses hooks, env, xargs), vaut root pour qui peut lui passer des arguments ; la règle les laisse libres quand elle n'en écrit aucun, ou les ouvre par un joker. Un pager (less, more, man) ouvre un shell avec ! quel que soit le fichier nommé, et celui de journalctl aussi avant systemd 247, sous doas, ou quand le SETENV de la règle, un env_keep ou !env_reset laisse passer SYSTEMD_PAGERSECURE=0 (mesuré sur Debian 13). Un éditeur (vi, nano) écrit n'importe quel fichier en root, /etc/sudoers compris. Et un binaire, ou le script donné à un interpréteur, qu'un autre compte que root peut réécrire exécute en root le code de ce compte. Chacun accorde ce qu'accorde NOPASSWD:ALL, sans mot de passe. L'étiquette NOEXEC de sudo arrête le shell d'un pager et ce qu'env ou xargs lanceraient ; elle n'empêche ni less d'ouvrir n'importe quel fichier en root, ni un éditeur, un interpréteur, bash ou find d'écrire des fichiers en root (mesuré sur Debian 13).",
+        "how": "1. Modifiez la règle sans risque :\n   sudo visudo -f /etc/sudoers.d/<fichier>\n2. Nommez un binaire appartenant à root, avec ses arguments écrits en entier, et rien qu'un compte puisse réécrire :\n   utilisateur ALL=(root) NOPASSWD: /usr/bin/systemctl restart nginx\n3. Pour un interpréteur, un pager ou un éditeur, exigez le mot de passe (retirez NOPASSWD), ou donnez à la tâche son propre script appartenant à root, sans argument.\n4. Vérifiez le résultat : sudo -l -U <utilisateur>"
+      },
       "sudoers_nopasswd_all": {
         "title": "NOPASSWD:ALL dans sudoers (sudo illimité sans mot de passe)",
         "why": "Accorde un accès root complet et illimité sans aucun mot de passe. Si ce compte est compromis — malware, jeton de session volé, mot de passe faible — l'attaquant a un contrôle total et immédiat du système sans effort supplémentaire.",
-        "how": "1. Éditez sudoers de manière sécurisée :\n   sudo visudo\n2. Remplacez NOPASSWD:ALL par une liste de commandes spécifiques, ex. :\n   utilisateur ALL=(ALL) NOPASSWD: /usr/bin/apt-get\n3. Si sudo sans mot de passe est nécessaire pour l'automatisation, isolez-le dans un compte de service dédié avec une liste minimale de commandes autorisées"
+        "how": "1. Éditez sudoers de manière sécurisée :\n   sudo visudo\n2. Remplacez NOPASSWD:ALL par une liste de commandes spécifiques, ex. :\n   utilisateur ALL=(root) NOPASSWD: /usr/bin/systemctl restart nginx\n   (un binaire appartenant à root, ses arguments écrits : un interpréteur, un pager ou apt-get aux arguments libres vaut root)\n3. Si sudo sans mot de passe est nécessaire pour l'automatisation, isolez-le dans un compte de service dédié avec une liste minimale de commandes autorisées"
       },
       "doas_nopass_all": {
         "title": "permit nopass dans doas.conf (root sans mot de passe, sans restriction)",
@@ -1931,6 +1968,11 @@
       }
     },
     "logs": {
+      "port_scan_public": {
+        "title": "Un balayage de ports depuis une source publique",
+        "why": "UFW a journalisé des paquets bloqués d'une même adresse publique vers de nombreux ports distincts en peu de temps — au moins 10 en une minute, ou 25 en dix minutes. C'est quelqu'un qui cartographie les ports auxquels cet hôte répond. Chaque paquet a été rejeté : cela établit une reconnaissance, pas un accès. Avec la journalisation par défaut d'UFW (LOGLEVEL=low), seules une rafale de dix lignes puis trois par minute sont écrites : le journal ne contient qu'une partie des sondes, et le décompte est un minimum. Les paquets d'un port de service (inférieur à 1024) vers un port éphémère sont écartés : ce sont des réponses tardives aux propres connexions de cet hôte, pas des sondes.",
+        "how": "1. Vérifiez ce que cet hôte expose, et que le pare-feu refuse le reste par défaut :\n   sudo ss -tulnp\n   sudo ufw status verbose\n2. Si la source revient, bloquez-la :\n   sudo ufw deny from <ip>\n3. Pour voir davantage d'un balayage pendant l'enquête, relevez le niveau de journalisation un temps — il journalise beaucoup plus :\n   sudo ufw logging medium"
+      },
       "blocked_repeat_public": {
         "title": "Tentatives de connexion bloquées répétées depuis une même source",
         "why": "UFW a journalisé plus de dix tentatives de connexion distinctes depuis une même adresse publique vers un même port en moins d'une minute, et les a toutes rejetées. C'est ce qui a été mesuré, et cela mérite d'être su : quelque chose sonde un port de cet hôte avec insistance. Ce que cela n'établit **pas**, c'est une attaque par force brute. Un UFW BLOCK est un paquet que le pare-feu a jeté — il n'a jamais atteint de service, aucun identifiant n'a donc été présenté, et une devinette répétée d'identifiants ne se lit pas dans des paquets rejetés. Ce constat disait pourtant « Bruteforce attempts », et il comptait des paquets plutôt que des tentatives, si bien qu'un seul client que le noyau réessayait pouvait franchir le seuil à lui seul. Il compte désormais les ports source distincts, ce qui sépare une retransmission d'une nouvelle tentative, et le trafic venu du réseau local ou passant par UDP est rapporté sans déduction, ni l'un ni l'autre ne pouvant être une attaque d'authentification.",
@@ -2288,8 +2330,8 @@
       },
       "exposed_port": {
         "title": "Un container Docker expose un port (le pare-feu de l'hôte est contourné ; joignable depuis le LAN)",
-        "why": "Le container publie un port via `-p HOST_PORT:CONTAINER_PORT` ou une déclaration `ports:`. Comme Docker pilote iptables (voir docker.iptables_bypass), ce port est joignable depuis au moins le LAN et possiblement l'internet public selon l'adresse de publish (défaut 0.0.0.0 = toutes interfaces). Les règles deny UFW pour ce port n'ont aucun effet, pas plus qu'une zone firewalld qui ne l'autorise pas (mesuré sur Fedora 44). Que cela soit un problème dépend de ce que le container offre : un dashboard auto-hébergé, une UI d'admin de base de données, ou un redis sans authentification sont autant d'incidents d'exposition Docker classiques.\n\nExemple DOCKER-USER (COMMENT, étape 3), mesuré sur Ubuntu 26.04 avec Docker 29.1.3 : autres hôtes du LAN refusés, hôte de confiance servi, DNS et Internet gardés par les conteneurs — leurs nouvelles connexions entrent par le pont Docker et leurs réponses repartent comme établies. Sans RETURN, ou avec un DROP nu en fin de chaîne, ils perdaient les deux. Le DROP vise toute nouvelle connexion transférée depuis cette interface, pas seulement les ports de Docker : sur un hôte qui route d'autres réseaux, le restreindre d'abord. Une connexion déjà établie peut continuer jusqu'à sa fermeture. Non mesuré : ce point, l'IPv6 (ip6tables a sa propre DOCKER-USER) et un hôte routeur.",
-        "how": "1. Auditer ce que le container expose :\n   docker ps\n   docker inspect <container> | jq '.[0].NetworkSettings.Ports'\n2. Si le service est interne uniquement, restreindre l'adresse de publish :\n   docker run -p 127.0.0.1:8080:8080 ...   # localhost seulement\n   docker run -p 192.168.1.10:8080:8080 ... # IP LAN spécifique seulement\n3. Si le container doit être joignable mais seulement depuis des clients spécifiques et que Docker utilise son backend iptables, filtrer dans la chaîne DOCKER-USER. Lancer dans cet ordre (-I insère en tête, RETURN se retrouve premier) ; le DROP touche aussi d'autres flux que l'hôte transfère depuis cette interface (voir POURQUOI) :\n   sudo iptables -I DOCKER-USER -i <interface-externe> ! -s <ip-de-confiance> -j DROP\n   sudo iptables -I DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN\n   Elles arrêtent les nouvelles connexions des autres sources ; une connexion déjà suivie avant elles passe jusqu'à son expiration.\n   Avec le backend nftables de Docker, il n'y a pas de chaîne DOCKER-USER : écrire vos propres règles nftables.",
+        "why": "Le container publie un port via `-p HOST_PORT:CONTAINER_PORT` ou une déclaration `ports:`. Comme Docker pilote iptables (voir docker.iptables_bypass), ce port est joignable depuis au moins le LAN et possiblement l'internet public selon l'adresse de publish (défaut 0.0.0.0 = toutes interfaces). Les règles deny UFW pour ce port n'ont aucun effet, pas plus qu'une zone firewalld qui ne l'autorise pas (mesuré sur Fedora 44). Que cela soit un problème dépend de ce que le container offre : un dashboard auto-hébergé, une UI d'admin de base de données, ou un redis sans authentification sont autant d'incidents d'exposition Docker classiques.\n\nExemple DOCKER-USER (COMMENT, étape 3), mesuré sur Ubuntu 26.04 avec Docker 29.1.3 : autres hôtes du LAN refusés, hôte de confiance servi, DNS et Internet gardés par les conteneurs — leurs nouvelles connexions entrent par le pont Docker et leurs réponses repartent comme établies. Sans RETURN, ou avec un DROP nu en fin de chaîne, ils perdaient les deux. Le DROP vise toute nouvelle connexion transférée depuis cette interface, pas seulement les ports de Docker : sur un hôte qui route d'autres réseaux, le restreindre d'abord. Une connexion déjà établie continue jusqu'à sa fermeture — mesuré : le RETURN prend ses paquets avant tout DROP placé après lui (voir COMMENT). Non mesuré : l'IPv6 (ip6tables a sa propre DOCKER-USER) et un hôte routeur.",
+        "how": "1. Auditer ce que le container expose :\n   docker ps\n   docker inspect <container> | jq '.[0].NetworkSettings.Ports'\n2. Si le service est interne uniquement, restreindre l'adresse de publish :\n   docker run -p 127.0.0.1:8080:8080 ...   # localhost seulement\n   docker run -p 192.168.1.10:8080:8080 ... # IP LAN spécifique seulement\n3. Si le container doit être joignable mais seulement depuis des clients spécifiques et que Docker utilise son backend iptables, filtrer dans la chaîne DOCKER-USER. Lancer dans cet ordre (-I insère en tête, RETURN se retrouve premier) ; le DROP touche aussi d'autres flux que l'hôte transfère depuis cette interface (voir POURQUOI) :\n   sudo iptables -I DOCKER-USER -i <interface-externe> ! -s <ip-de-confiance> -j DROP\n   sudo iptables -I DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN\n   Elles arrêtent les nouvelles connexions des autres sources ; une connexion déjà suivie avant elles passe jusqu'à son expiration. Un DROP que vous ajoutez ensuite après le RETURN ne coupe pas non plus les flux déjà ouverts du conteneur (mesuré : son compteur est resté à 0) ; ajoutez -i <interface-externe> au RETURN pour qu'il les coupe (mesuré : les nouvelles connexions ont reçu les mêmes verdicts).\n   Avec le backend nftables de Docker, il n'y a pas de chaîne DOCKER-USER : écrire vos propres règles nftables.",
         "server": {
           "why": "Sur un serveur, chaque port Docker exposé est potentiellement internet-facing. Traitez chaque déclaration `-p` comme une décision de port public, pas de port local."
         },
@@ -2585,6 +2627,11 @@
       }
     },
     "ipv6": {
+      "netfilter_v6_open": {
+        "title": "Services IPv6 qu'un jeu de règles brut ne filtre pas",
+        "why": "Cet hôte est filtré par son propre jeu de règles nftables ou iptables, et des services écoutent en IPv6 avec une adresse globale. Aucune chaîne input de la famille ip6 ou inet ne refuse par défaut l'IPv6 entrant — ou celle qui existe accepte tout d'abord. Une table ip, comme l'INPUT d'iptables, ne voit que l'IPv4 : les services sont donc joignables en IPv6 quoi que disent les règles IPv4. Mesuré dans un espace de noms réseau : une table ip en politique drop laissait un service IPv6 joignable, une table inet ou ip6 en politique drop le fermait. BOB lit les politiques et une règle qui prend tous les paquets, comme pour l'IPv4 ; une acceptation pour un seul port n'est pas évaluée.",
+        "how": "1. Voyez ce qui filtre l'IPv6 aujourd'hui :\n   sudo nft list ruleset\n2. Passez la chaîne input en famille inet (elle filtre alors les deux), ou ajoutez-en une ip6 en politique drop — en gardant SSH et l'ICMPv6, dont l'IPv6 a besoin :\n   sudo nft add table inet filter\n   sudo nft add chain inet filter input '{ type filter hook input priority 0; policy drop; }'\n   sudo nft add rule inet filter input ct state established,related accept\n   sudo nft add rule inet filter input iif lo accept\n   sudo nft add rule inet filter input meta l4proto ipv6-icmp accept\n   sudo nft add rule inet filter input tcp dport 22 accept   # SSH\n3. Rendez-le persistant (/etc/nftables.conf) et vérifiez depuis un autre hôte en IPv6."
+      },
       "ufw_disabled_listeners_present": {
         "title": "Services en écoute sur IPv6 mais le support UFW IPv6 est désactivé",
         "why": "Avec IPV6=no dans /etc/default/ufw, UFW bloque normalement l'IPv6 entièrement : ufw-init pose DROP sur les chaînes IPv6 INPUT, FORWARD et OUTPUT (loopback excepté), et BOB rapporte alors les services comme injoignables, non exposés. Cet avertissement n'apparaît que si BOB a lu la politique IPv6 INPUT comme ACCEPT, a trouvé dans cette chaîne d'autres règles que celle du loopback (Docker, libvirt ou un ACCEPT écrit à la main peuvent admettre un service), ou n'a pas pu la lire — typiquement parce qu'ip6tables ne fonctionnait pas au démarrage d'UFW. Dans ce cas BOB ne peut pas montrer que l'IPv6 est filtré, et tout service en écoute sur une adresse dual-stack (::) est joignable en IPv6, quoi qu'UFW affiche pour IPv4.",
@@ -3156,9 +3203,14 @@
       }
     },
     "root_path": {
+      "world_writable": {
+        "title": "Un répertoire modifiable par tous dans le PATH de root",
+        "why": "Quand root lance un nom de commande nu, le shell exécute la première correspondance trouvée le long du PATH. Un répertoire de ce PATH modifiable par tous les comptes permet à n'importe lequel d'y placer un binaire nommé `ls`, `sudo` ou `apt`, qui s'exécute en root la prochaine fois que root tape ce nom — sans exploit, sans autre étape. Un composant '.', vide ou relatif relève du même mécanisme mais demande d'abord que root se trouve dans un répertoire contrôlé par l'attaquant, d'où son poids moindre (root_path.dangerous).",
+        "how": "1. Trouvez la source qui pose l'entrée : grep -n ENV_SUPATH /etc/login.defs ; sudo grep -rn secure_path /etc/sudoers /etc/sudoers.d\n2. Retirez le répertoire de ce PATH, ou empêchez qu'il soit modifiable par tous :\n   sudo chmod o-w <répertoire>\n3. Vérifiez : ls -ld <répertoire> n'affiche pas de « w » pour les autres, et le répertoire appartient à root."
+      },
       "dangerous": {
         "title": "Un composant dangereux dans le PATH de root",
-        "why": "Quand root lance un nom de commande nu (`ls`, pas `/bin/ls`), le shell parcourt les répertoires du PATH dans l'ordre et exécute la première correspondance. Si l'un de ces répertoires est modifiable par un utilisateur non-root — un répertoire world-writable, ou `.`/vide/relatif, qui signifient « le répertoire courant » — cet utilisateur peut y planter un binaire portant un nom courant et le faire exécuter en root au prochain appel de cette commande par root. C'est l'une des escalades de privilèges locales les plus anciennes et fiables, et elle ne demande aucun exploit : juste un accès en écriture à un répertoire parcouru trop tôt.\n\nBOB lit le PATH root configuré dans des fichiers (ENV_SUPATH de login.defs, secure_path de sudoers), pas dans son propre environnement, donc le constat porte sur la politique du système, pas sur la façon dont cet audit a été lancé.",
+        "why": "Quand root lance un nom de commande nu (`ls`, pas `/bin/ls`), le shell parcourt les répertoires du PATH dans l'ordre et exécute la première correspondance. Un composant `.`, vide ou relatif signifie « le répertoire courant » : un utilisateur non-root qui dépose un binaire portant un nom courant dans un répertoire qu'il contrôle le fait exécuter en root la prochaine fois que root s'y place et tape cette commande. Aucun exploit n'est nécessaire, seulement que root travaille dans ce répertoire — une étape de plus qu'un répertoire modifiable par tous dans le PATH, que BOB signale à part (root_path.world_writable).\n\nBOB lit le PATH root configuré dans des fichiers (ENV_SUPATH de login.defs, secure_path de sudoers), pas dans son propre environnement, donc le constat porte sur la politique du système, pas sur la façon dont cet audit a été lancé.",
         "how": "1. Repérer quelle source porte le mauvais composant — le constat la nomme (ENV_SUPATH de login.defs ou secure_path de sudoers).\n2. Mettre le PATH de root à des répertoires absolus, appartenant à root, non world-writable uniquement, dans l'ordre habituel :\n   /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n   - login.defs : éditer la ligne ENV_SUPATH.\n   - sudoers : éditer `Defaults secure_path=...` avec visudo.\n3. Ne jamais mettre `.`, un composant vide (un `:` en tête, en fin ou doublé) ni un chemin relatif dans le PATH de root.\n4. Si un répertoire doit rester dans le PATH, s'assurer qu'il appartient à root et n'est pas modifiable groupe/autres : chown root:root <rep> && chmod go-w <rep>."
       }
     },
@@ -3741,9 +3793,12 @@
   },
   "root_path": {
     "unknown": "Le PATH configuré de root n'a pas pu être déterminé (ni ENV_SUPATH dans login.defs, ni secure_path dans sudoers)",
+    "world_writable": "{count} répertoire(s) modifiable(s) par tous dans le PATH configuré de root : {entries}",
+    "world_writable_reason": "un répertoire modifiable par tous dans le PATH de root laisse n'importe quel compte placer le binaire que root exécute pour un nom de commande nu",
+    "world_writable_detail": "N'importe quel compte peut déposer son propre `ls`, `sudo` ou `apt` dans un tel répertoire et attendre que root tape cette commande : elle s'exécute alors en root, sans exploit et sans rien d'autre à attendre. C'est root pour quiconque peut se connecter, et cela pèse autant qu'une règle NOPASSWD pour une commande qui vaut root.",
     "dangerous": "{count} composant(s) dangereux dans le PATH configuré de root : {entries}",
-    "dangerous_reason": "un composant de PATH world-writable, '.', vide ou relatif laisse un utilisateur non-root décider quel binaire root exécute pour un nom de commande nu",
-    "dangerous_detail": "Chacun de ces composants laisse quelqu'un qui n'est pas root contrôler quel binaire root exécute pour un nom de commande nu. Un répertoire world-writable : n'importe qui y dépose son propre `ls`. Un composant '.' ou vide : le binaire est pris dans le répertoire courant, quel qu'il soit au moment où root lance la commande. Un composant relatif : idem, résolu depuis le répertoire courant. Résultat : une escalade de privilèges directe — planter un fichier, attendre que root lance la commande correspondante. Corriger la source (ENV_SUPATH dans login.defs ou secure_path dans sudoers) pour que le PATH de root ne contienne que des répertoires absolus, appartenant à root, non world-writable, dans l'ordre habituel (/usr/sbin:/usr/bin:/sbin:/bin).",
+    "dangerous_reason": "un composant de PATH '.', vide ou relatif laisse un utilisateur non-root décider quel binaire root exécute pour un nom de commande nu, dès que root se place dans un répertoire que cet utilisateur contrôle",
+    "dangerous_detail": "Chacun de ces composants fait chercher à root un nom de commande nu dans le répertoire courant. Un composant '.' ou vide : le binaire est pris dans le répertoire courant, quel qu'il soit au moment où root lance la commande. Un composant relatif : idem, résolu depuis le répertoire courant. Quelqu'un qui n'est pas root dépose un fichier dans un répertoire qu'il contrôle et attend que root s'y place et lance la commande correspondante. Corriger la source (ENV_SUPATH dans login.defs ou secure_path dans sudoers) pour que le PATH de root ne contienne que des répertoires absolus, appartenant à root, non modifiables par tous, dans l'ordre habituel (/usr/sbin:/usr/bin:/sbin:/bin). Un répertoire modifiable par tous dans ce PATH est signalé à part (root_path.world_writable).",
     "group_writable": "Le PATH configuré de root contient un répertoire modifiable par un groupe non-root : {entries}",
     "clean": "Le PATH configuré de root est propre — chaque composant est un répertoire absolu, non world-writable"
   },
@@ -4125,6 +4180,7 @@
     "firewall_policy": "actif — politique par défaut {policy} en entrée",
     "firewall_policy_backend": "actif ({backend}) — politique par défaut {policy} en entrée",
     "firewall_policy_unread": "actif ({backend}) — politique d'entrée par défaut non lue",
+    "firewall_policy_partial": "actif ({backend}) — accepte l'entrant par défaut, en refuse une partie (non pesé port par port)",
     "open_ports": "Ports en écoute",
     "open_ports_unknown": "inconnu — `ss` n'a pas pu être exécuté",
     "no_open_ports": "aucun sur toutes interfaces",
@@ -4295,13 +4351,15 @@
     "ufw_inactive_context": "UFW est installé mais inactif — audit de la couche {backend} sous-jacente",
     "backend_detected": "Backend actif : {backend}",
     "firewalld_active": "firewalld est le pare-feu actif — la zone par défaut '{zone}' autorise : {services} ; la policy de chaîne de base reste ACCEPT par conception (firewalld filtre dans ses chaînes de zone)",
-    "input_accept": "Politique INPUT par défaut : ACCEPT — tout le trafic entrant est autorisé",
+    "input_accept": "Politique INPUT par défaut : ACCEPT — le trafic entrant est accepté par défaut, et aucune règle ne le refuse au-delà de sources désignées ou de paquets invalides",
     "runtime_only_detail": "Cette commande ne modifie que le jeu de règles en cours et n'enregistre rien : au prochain démarrage la politique revient à ACCEPT et ce constat reparaît, sauf si les règles sont enregistrées là où le backend les charge (netfilter-persistent save pour iptables ; /etc/nftables.conf pour nftables). Ses accept sont ajoutés après les règles déjà présentes dans la chaîne, qui continuent donc de décider en premier : une règle qui y refuse votre source SSH la refuse toujours.",
     "accept_all_detail": "Une règle de cette chaîne accepte chaque paquet avant que la politique ne soit atteinte : passer la politique à DROP ne changerait rien — mesuré, le port est resté ouvert. BOB ne donne pas de commande : retirez d'abord cette règle (repérez-la avec nft -a list ruleset ou iptables -S INPUT), en gardant des accept explicites pour les services nécessaires, puis posez la politique.",
     "input_ok": "Politique INPUT par défaut : {policy} (recommandé)",
     "input_ok_final_rule": "INPUT se termine par une règle qui répond {policy} à tout paquet restant — la politique de la chaîne n'est jamais atteinte (recommandé)",
     "input_ok_detail": "Lu dans les politiques par défaut des chaînes (pour nftables, chaque chaîne de base IPv4 du hook input, en tenant compte d'une règle qui accepte tout). Les règles ne sont pas évaluées une à une : que SSH, ou un port donné, franchisse chaque chaîne n'est pas établi ici.",
     "input_unknown": "Politique INPUT par défaut : indéterminée — vérification manuelle recommandée",
+    "input_accept_unweighed": "Politique INPUT par défaut : ACCEPT, avec des règles qui refusent une partie du trafic (un drop, un reject, ou un saut vers une chaîne qui en contient) — quels ports en écoute elles ferment n'est pas établi",
+    "input_accept_unweighed_detail": "BOB lit les politiques d'un jeu de règles et les règles qui prennent tous les paquets, et suit les sauts pour savoir si une chaîne peut refuser ; il ne pèse pas les ports que vise chaque règle. Mesuré dans un espace de noms réseau : en politique accept, un drop pour un port, ou un saut vers une chaîne qui le rejette, a fermé ce port ; un saut vers une chaîne qui ne fait qu'accepter, ou une règle de journalisation, non. Le score est une borne supérieure : vérifiez avec `sudo nft list ruleset` (ou `sudo iptables -S`) quels ports en écoute restent ouverts.",
     "no_loopback": "Aucune règle loopback (lo) — les services locaux peuvent être inaccessibles",
     "no_conntrack": "Aucune règle ESTABLISHED/RELATED — les connexions sortantes peuvent être bloquées en retour",
     "forward_accept": "Politique FORWARD par défaut : ACCEPT — le trafic de transit n'est pas filtré",

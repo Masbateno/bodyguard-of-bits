@@ -70,7 +70,7 @@ jobs:
           dnf install -y --setopt=install_weak_deps=False \
             python3 python3-pip git ca-certificates
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
 
       - name: Install BOB from source (in venv)
         # Use a venv to sidestep PEP 668 / --break-system-packages:
@@ -215,7 +215,7 @@ jobs:
 
       - name: Upload audit log (on failure)
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: audit-${{ strategy.job-index }}-${{ matrix.family }}
           path: audit.txt
@@ -244,10 +244,10 @@ jobs:
     # architecture-sensitive part of it is what this job asserts directly.
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
 
       - name: Register QEMU binfmt handlers
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3.7.0
         with:
           platforms: arm64
 

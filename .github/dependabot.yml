@@ -1,0 +1,10 @@
+# v0.27.0 — the actions are pinned by commit; Dependabot proposes the moves.
+# A pinned action never changes under the workflow (the 0.26.0 upload ran
+# gh-action-pypi-publish v1.14.2 from a moving branch); each update is a
+# reviewed pull request instead.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

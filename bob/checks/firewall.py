@@ -148,8 +148,10 @@ class FirewallPosture:
         backend: "ufw", "firewalld", "netfilter" (a raw ruleset with a
                  DROP/REJECT inbound policy and no managed front-end), or ""
                  when nothing filters inbound traffic.
-        policy:  "deny", "reject", "allow" or "unknown" — "unknown" when the
-                 backend's default was not read, never assumed.
+        policy:  "deny", "reject", "allow", "partial" or "unknown" — "unknown"
+                 when the backend's default was not read, never assumed;
+                 "partial" (v0.27.0) for a raw ruleset that accepts by default
+                 and refuses some traffic BOB does not weigh.
     """
     backend: str = ""
     policy:  str = "unknown"
@@ -175,6 +177,9 @@ def resolve_firewall_posture(
         return FirewallPosture("firewalld", firewalld.incoming_policy)
     if netfilter_policy in ("DROP", "REJECT"):
         return FirewallPosture("netfilter", "deny" if netfilter_policy == "DROP" else "reject")
+    if netfilter_policy == "PARTIAL":
+        # v0.27.0 — a ruleset that refuses some traffic BOB does not weigh.
+        return FirewallPosture("netfilter", "partial")
     return FirewallPosture()
 
 
@@ -422,6 +427,7 @@ def check_firewall(
     status: FirewallStatus,
     firewalld=None,
     netfilter_protective: bool | None = None,
+    netfilter_partial: bool = False,
     t: TranslationFunc | None = None,
     ssh_ports: "list[int] | None" = None,
     ssh_on_ipv6: "bool | None" = None,
@@ -583,6 +589,14 @@ def check_firewall(
                 message=_t("firewall.netfilter_active"),
                 key="firewall.netfilter_active",
             )
+            return result
+        # v0.27.0 — accepted by default with rules that refuse some traffic
+        # (measured closed in a network namespace, read "no firewall" and
+        # capped at 3/10 until 0.27.0): a firewall whose reach is not
+        # established — no alert, no cap, a ceiling.
+        if netfilter_partial:
+            result.info(message=_t("firewall.netfilter_unweighed"),
+                        key="firewall.netfilter_unweighed")
             return result
         # v0.26.0 — firewall-cmd present but silent (it failed and printed
         # nothing: a refusal, a timeout under load). Unknown is not absent: no

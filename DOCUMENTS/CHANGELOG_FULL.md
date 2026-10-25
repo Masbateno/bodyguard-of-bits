@@ -6,6 +6,481 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.27.0] — 2026-10-25
+
+**A minor release, BREAKING for scores: what the 0.26.0 audit of a real Linux
+Mint host, the 0.25 and 0.26 backlogs and the eMudhra / emSign incident left
+open — the UFW log read whole, port scans, NOPASSWD rules that are root anyway,
+an inbound default of accept read with the rules that refuse, IPv6 behind
+`IPV6=no` and behind a raw ruleset, marks set by native nftables, root's PATH,
+and the publish chain. Measured on a real Linux Mint 22.3 host, a real Debian 13
+host, an Alpine VM and network namespaces.**
+The global scoring formula is unchanged; no JSON-output-schema or CSV-column
+change; no section added or removed; no finding key renamed or removed. Four
+`--explain` keys and their CIS references are added (226 → 230).
+
+Scores that move:
+
+| Where | Before | 0.27.0 | § |
+|---|---|---|---|
+| a public source sending blocked packets to 10 distinct ports within 60 s, or 25 within 600 s | nothing | `logs.port_scan_public` WARN −1 per source — none for a source `logs.blocked_repeat_public` already charges | 2 |
+| a repeated public attempt that only a rotated UFW log holds | not seen | `logs.blocked_repeat_public` WARN −1 per source (existing key) | 1 |
+| a sudo NOPASSWD or doas `nopass` rule for a command that is root anyway | INFO "specific commands, often intentional" | `file_perms.nopass_root_equivalent` WARN per command, −2 once — none beside a NOPASSWD:ALL or doas `permit nopass` without `cmd`, which already deducts it | 3 |
+| a raw ruleset, neither UFW nor firewalld active, whose input chain is at policy accept and holds a rule that can refuse a new packet from every source — a drop, a reject, a queue, or a jump or goto to a chain that does; a rule limited to given sources, to invalid packets or guarding the loopback does not count | ALERT −3 `firewall_iptables.input_accept`, and the "no firewall" ALERT — `prerequisites.firewall_missing`, or `firewall.inactive` where UFW is installed but off — capped at 3/10 | INFO `firewall_iptables.input_accept_unweighed` and `firewall.netfilter_unweighed`, no points, a ceiling (**rises**) | 4 |
+| IPv6 listeners with a global address, UFW at `IPV6=no`, inbound closed by the host's ip6tables chains | WARN −2 `ipv6.ufw_disabled_listeners_present` | INFO `ipv6.ufw_v6_off_blocked`, no points (**rises by 2**) | 5 |
+| IPv6 listeners with a global address on a raw-ruleset host whose IPv6 input is accept by default, no rule refusing beyond given sources or invalid packets (§4's reading) | INFO `ipv6.netfilter_v6` | `ipv6.netfilter_v6_open` WARN −2 | 5 |
+| a mark-accept rule in INPUT beside an active UFW, the mark set by a native nftables table | INFO `firewall_drivers.iptables_accept_conditional` | `firewall_drivers.iptables_bypass` WARN −2 (existing key) | 6 |
+| a world-writable directory in root's configured PATH | `root_path.dangerous` WARN −1 | `root_path.world_writable` WARN −2 | 7 |
+
+A root PATH with a world-writable directory and a `.` loses 2 and 1: the two
+are reached differently (§7). A sudo NOPASSWD:ALL and a doas `permit nopass`
+without `cmd` keep deducting 2 each, as before.
+
+Five findings now mark the score as a ceiling ("≤", `unverified` in JSON) and
+move no points: `logs.window_partly_read` (new, §1);
+`firewall_iptables.input_accept_unweighed` and `firewall.netfilter_unweighed`
+(new, §4); `ipv6.netfilter_v6` (a raw ruleset
+whose IPv6 default BOB could not read, or that accepts by default and refuses
+some of it); `ipv6.ufw_v6_off_rules_unresolved` (UFW at `IPV6=no`, a rule on
+INPUT's path BOB does not resolve).
+
+New finding keys: `logs.port_scan_public`, `logs.port_scan_local` (INFO),
+`logs.window_partly_read` (INFO),
+`file_perms.nopass_root_equivalent`, `firewall_iptables.input_accept_unweighed`
+(INFO), `firewall.netfilter_unweighed` (INFO), `ports.uncovered_netfilter_unweighed`
+(INFO), `ports.uncovered_bound_address_netfilter_unweighed` (INFO),
+`ipv6.netfilter_v6_open`, `ipv6.netfilter_v6_filtered` (INFO),
+`ipv6.netfilter_v6_open_link_local` (INFO), `root_path.world_writable`. The
+NOPASSWD / doas finding is `file_perms.nopass_root_equivalent`, named for
+neither tool. An
+existing key changes meaning: `ipv6.netfilter_v6`, which 0.26.1 gave to every
+raw-ruleset host with IPv6 listeners, is now the case where the IPv6 default
+could not be read or is accept with refusals; on the others one of the three
+new `ipv6.netfilter_v6_*` keys takes its place.
+
+Outputs that change besides: the texts of `firewall_iptables.input_accept`
+("inbound traffic is accepted by default, and no rule refuses it beyond given
+sources or invalid packets", for "all incoming traffic is allowed") and of
+`ipv6.netfilter_v6_open`, which now say what was read; the UFW log section's
+period line (the files read,
+and the one that could not be read) and a new line counting the `[UFW BLOCK]`
+lines left out; the verdict's wording ("with a destination port", a variant when
+a local scan is reported); for a ruleset at accept with refusals, the services'
+exposure text and the summary's firewall line ("accepts inbound by default,
+refuses some of it"); the IPv6 firewalld line when a rich rule opens a port to
+one family only (`ipv6.firewalld_v6`, same key); "80/tcp (rich, IPv6)" in the
+firewalld grants; the texts of `root_path.dangerous` and of the NOPASSWD:ALL and
+Docker exposed-port explanations.
+
+### 1. The UFW log, rotations included
+
+Measured on the Mint host (24 October 2026): `/var/log/ufw.log` held 18 to 24
+October and `ufw.log.1` the week before. 0.26.1 read `ufw.log` alone and said
+so ("Rotated logs … were not read"): 3514 blocked attempts for a 7-day window
+that reached into `ufw.log.1`.
+
+- BOB now reads the rotations newest first — `ufw.log.1`, `ufw.log.2.gz`, …,
+  and logrotate's `dateext` names (`ufw.log-20261017`, `.gz` or not) — until
+  the oldest line read reaches the window. On the Mint host: 7170 entries over
+  7 days from `ufw.log` and `ufw.log.1`; 35976 over 30 days, `ufw.log` to
+  `ufw.log.4.gz`. No brute-force source in either: the Mint score did not move.
+- Each file is read from its last 10 MB, as `ufw.log` was. A file larger than
+  that ends the reading: its head is left out, and what is older would leave a
+  hole inside the window. A `.gz` is streamed and refused past 256 MB expanded;
+  a file that cannot be read ends the reading too, and the period line names it.
+- When the reading stopped that way before reaching the window — the logs
+  exist, but part of them was not read — what that part would charge (a scan,
+  repeated attempts) is not established: `logs.window_partly_read`, a ceiling
+  (found by the review of this changelog). A log that is simply shorter than
+  the window, or a cut file whose kept part still reaches it, is no gap.
+- A line led by NUL bytes (one of 5018 on the Mint host, 219 bytes) is read.
+- The lines in the window BOB does not count are counted and said — without a
+  destination port (ICMP, IGMP…), without a timestamp BOB reads, or without a
+  source, a protocol or a valid port. On the Mint host, in the 7-day run
+  above: 2218 without a port.
+- The verdict says what it counts: blocked attempts "with a destination port".
+
+Reading more can bring a `logs.blocked_repeat_public` finding (−1 per public
+source) that the current file alone did not show.
+
+### 2. Port scans
+
+0.26.1 recognised one source repeating attempts on one port, not one source
+across many ports. Measured on the Mint host: a TCP scan of 300 ports from a VM
+on the local network; UFW at `LOGLEVEL=low` logged 19 lines of it — a burst of
+10 within 3 seconds, then one every 20 seconds.
+
+- A source that sent blocked packets to 10 distinct ports within 60 seconds,
+  or 25 within 10 minutes, is a port scan. Calibrated on the Mint host's 30
+  days: no other source reached more than 6 ports within a minute or 13 within
+  ten (a TV box on the local network).
+- A late reply to this host's own connection — from a port below 1024 to one
+  of 32768 or above — is not counted: on the Mint host, Cloudflare and Meta
+  addresses answering on 443 after conntrack had let go reached up to 41
+  distinct "ports" each.
+- A local source (private or loopback address) is an INFO,
+  `logs.port_scan_local`; a public one a WARN, `logs.port_scan_public` (that
+  split decided with the user), of −1 — as much as a repeated public attempt.
+  On the Mint host the VM's scan read as INFO (12 ports within 60 s), with no
+  deduction.
+- A public source that both scans and repeats attempts on one port costs one
+  point: both findings are said, the scan without a second deduction (decided
+  with the user after review). Two sources cost two.
+
+### 3. A NOPASSWD rule for a command that is root anyway
+
+Found on the Mint host (0.26.0): a rule granting `/usr/bin/python3` without a
+password was an INFO, "specific commands, often intentional". It is root for
+whoever the rule names. Such a rule now weighs what NOPASSWD:ALL weighs (WARN,
+−2 once; decided with the user), with one WARN per command, and leaves the
+"often intentional" INFO. doas `permit nopass … cmd` rules are read the same
+way, under the same key, named for neither tool (`file_perms.nopass_root_equivalent`).
+Its CIS reference is NOPASSWD:ALL's, 5.2.4 — a sudo control; for a doas rule it
+is the analogous requirement, not a CIS measure of doas. Where a NOPASSWD:ALL or a doas
+`permit nopass` without `cmd` already deducts its 2 points, these rules are
+said and deduct nothing more: the same power counts once (decided with the
+user after review). Detection stays per rule and per mechanism — each rule is
+said — and the count is per host, as NOPASSWD:ALL's always was: NOPASSWD:ALL
+and doas `permit nopass` without `cmd` keep deducting 2 each (unchanged), and
+a root-equivalent rule beside either adds nothing.
+
+What BOB counts as root anyway, for a rule that runs as root (`root`, `ALL`,
+`#0`, or no run-as list where no `runas_default` other than root may apply),
+aliases (`Cmnd_Alias`) resolved and the NOPASSWD /
+PASSWD and NOEXEC / EXEC tags carried from one command to the next as sudo does:
+
+- an interpreter, a shell, or a tool that runs what it is handed — python3,
+  perl, bash, env, find, tar, xargs, systemctl, apt-get… — when the rule leaves
+  its arguments free (none written, or a wildcard); `""` (no argument allowed)
+  is not;
+- a pager — less, more, most, man — whatever file the rule names;
+- journalctl, where its pager is not in secure mode: from 247 (its NEWS),
+  systemd runs less in secure mode when it detects sudo, which refuses `!` and
+  `:e`. So it is counted with systemd older than 247; under doas, which systemd
+  does not detect (measured on Debian 13, systemd 257, opendoas: `!id` gave
+  uid 0 and `:e /etc/shadow` showed root's hash, `keepenv` or not); and under
+  sudo when the caller can hand `SYSTEMD_PAGERSECURE=0` through — the rule's
+  SETENV tag, an `env_keep` naming the variable, or `!env_reset` (measured:
+  SETENV and env_keep each turned the secure pager off; without them, "not
+  available"). A user-scoped Defaults setting is read across all command rules for that account. A systemd
+  version BOB cannot read is no claim of root;
+- an editor — vi, vim, nvim, nano, emacs, ed… — whatever file the rule names;
+- a binary, or the script an interpreter is given, that an account other than
+  root can change: its owner, a group other than root's, or everyone, on the
+  file or its directory;
+- a file-writer (cp, mv, dd, tee, install, ln, chmod, chown) whose arguments
+  are free, or whose fixed argument names a protected path — a sudoers drop-in,
+  a cron job, a systemd unit, the account databases, PAM, the dynamic linker,
+  root's home; sudoedit / `sudo -e` of such a path, left free or named; and
+  visudo / vipw / vigr, which edit the policy or account database whatever
+  their arguments (found by the fifth review of this changelog);
+- `ALL` listed among other commands.
+
+A rule with no run-as list runs as `runas_default`, which a Defaults line can
+set (found by the review of this changelog; measured on Debian 13: with
+`Defaults runas_default=daemon`, or `Defaults:bobesc runas_default=daemon`,
+`bobesc ALL = NOPASSWD: /usr/bin/python3` ran python3 as euid 1 and `-u root`
+asked for the password; without it, euid 0). Such a rule is counted only where
+no runas_default other than root may govern it: a global one, one for that
+account, and one whose scope BOB does not resolve (a group, an alias, a host)
+all keep it out — it stays among the "specific commands".
+
+sudo's NOEXEC tag is taken into account only where it is established on the
+host: sudo's `sudo_noexec.so` exists — at the `Path noexec` of
+`/etc/sudo.conf`, or in the libexec directory `sudo -V` reports it was built
+with — and the binary the rule names is dynamically linked (an ELF program
+with an interpreter), since the library is loaded into it: on both hosts
+measured, a statically linked busybox ran `sh -c id` as root under NOEXEC
+(Debian 13, sudo 1.9.16p2; Alpine 3.24, sudo 1.9.17p2) while the dynamic env
+ran nothing. Other sudo builds and kernels are not measured. Where both hold, a
+pager and a command whose only power is to run another (env, xargs, nice,
+timeout, stdbuf, taskset, ionice) are not counted, nor are more and man,
+which open nothing else. less and most still are — under NOEXEC their shell
+escape is blocked, but less's `:e` and most's Ctrl-X Ctrl-F open any file as
+root (measured: `/etc/shadow`, which the account could not read itself), said
+as such under the same key and weight (decided with the user after review). An editor, an interpreter, a shell and the other tools still are:
+NOEXEC stops them running a new program, not acting as root themselves
+(measured for vi, python3, bash and find, which wrote files as root).
+journalctl's secure pager refuses `:e` as well ("not available").
+
+Measured, as the account a rule names:
+
+- on the Alpine VM (sudo 1.9.17p2): `sudo -n python3 -c …`, `find … -exec id`,
+  `env id`, `tar --checkpoint-action=exec`, a script the account rewrote,
+  `less /etc/hosts` then `!id`, `vi /etc/hosts` then `:!id` — uid 0 each time;
+  BOB flagged all seven, and neither `/usr/bin/id` nor `python3 /opt/fixed.py`
+  (root-owned, arguments written out). Under NOEXEC (the library at
+  `/usr/lib/sudo/sudo_noexec.so`): `less` then `!id` and `env sh -c id` ran
+  nothing, while a statically linked busybox ran `sh -c id` as root;
+- on the Debian 13 host (sudo 1.9.16p2, systemd 257, the library at
+  `/usr/libexec/sudo/sudo_noexec.so`), in a pty: `less`, `more` and `man`
+  then `!id` — uid 0; under NOEXEC, nothing ran ("exec failed"), nor through
+  env, xargs, nice, timeout, stdbuf, taskset or ionice; vi, python3, bash and
+  find still wrote a file as root under NOEXEC; under NOEXEC `less` then
+  `:e /etc/shadow` showed root's hash, `more` and `man man` showed nothing;
+  `sudo journalctl` answered `!` and `:e` with "Command not available", while
+  root in its own session got its shell;
+  systemctl with free arguments (a unit the account wrote) and apt-get with
+  free arguments (an `APT::Update::Pre-Invoke` hook) gave uid 0;
+  `sudo -n /usr/bin/tee /etc/sudoers.d/pwn` and `sudo -n /usr/bin/cp x
+  /etc/sudoers.d/y` each wrote a sudoers drop-in owned by root, a benign
+  `tee /var/log/x` did not; `doas -n python3` gave euid 0; journalctl under SETENV with
+  `SYSTEMD_PAGERSECURE=0`, and under doas, then `!id` gave uid 0;
+- BOB replayed there: the rules for less and vi under NOEXEC (less said as
+  "opens any file as root"), `man man`, journalctl under SETENV, doas
+  journalctl and doas `python3` flagged (−2 once); env and more under NOEXEC,
+  plain sudo journalctl and `id -u` not; the doas "specific
+  commands" INFO counted only `id -u`. Same findings in English and French.
+  This replay also caught a defect the tests had not: the noexec-library check
+  handed a string where a path was expected, and the whole sudoers section
+  failed on the host ("an internal error prevented this check from running");
+  corrected, and guarded without the mock that had hidden it;
+- on the Mint host, its four NOPASSWD rules (root-owned, none reading its
+  arguments): none flagged.
+
+The NOPASSWD:ALL explanation suggested `NOPASSWD: /usr/bin/apt-get` as the
+narrower rule; apt-get with free arguments is root (measured above). It now
+suggests `systemctl restart nginx`, a root-owned binary with its arguments
+written out.
+
+### 4. An inbound default of accept, with rules that refuse
+
+Found by the review of this changelog, then measured in a network namespace,
+nftables and iptables, IPv4 and IPv6 alike: an input chain at policy accept
+holding `tcp dport 8099 drop` (`-p tcp --dport 8099 -j DROP`), or a jump to a
+chain dropping 8099, left 8099 closed. BOB read it as "accept": for IPv4, the
+ALERT "Default INPUT policy: ACCEPT — all incoming traffic is allowed" (−3) and,
+with neither UFW nor firewalld active, "no firewall" (or "UFW inactive")
+capped at 3/10 — a reading as old as the raw-ruleset check; for IPv6, this release's new WARN −2. A jump to a
+chain that only accepts, an empty chain, a log rule, `ct state invalid drop`
+alone (`--ctstate INVALID -j DROP`) and a comment saying "drop" left 8099 open;
+so did a refusal limited to some sources — fail2ban's shapes (`ip saddr @set
+reject`, a jump to a chain of `-s … -j REJECT`), `ip saddr <host> drop`,
+`-s <host> -j DROP` — and the loopback guard `iifname != "lo" ip daddr
+127.0.0.0/8 drop`, for every other source. A negated source (`ip saddr !=
+<host> … drop`, `! -s <host> … -j DROP`) closed 8099 to everyone else.
+
+- An input chain at policy accept (or reaching an accept-everything rule) after
+  a rule that can refuse a new packet — a drop, a reject, a queue, or a jump or
+  goto into a chain that can, followed through the chains the ruleset defines;
+  a chain BOB cannot find counts as one that can — now reads "accept by
+  default, with refusals BOB does not weigh port by port": not established.
+  A rule matching only invalid packets, a rule limited to given sources (a
+  positive source match, a source set) and the loopback guard refuse no new
+  connection from the others, and count for nothing. The same reading for
+  `nft list ruleset` and `iptables -S` / `ip6tables -S`; the eighteen cases
+  above, replayed, read as measured. Found while correcting: without the
+  source rule, a host with no firewall but fail2ban would have read "not
+  established" instead of its −3.
+- Several base chains on the input hook are read together, each family apart:
+  a drop by default in any of them denies; otherwise a refusal in any makes it
+  not established. Measured after the review, two tables at priorities 0 and
+  10 (or −10): an empty accepting chain beside one dropping 8099 — closed, read
+  not established; a chain dropping 8099 beside one accepting everything first
+  — closed, not established; an accept-everything rule beside a chain at
+  policy drop — closed, read "drop"; an `ip` chain dropping 8099 beside an
+  empty `inet` one — closed over IPv4 (not established), open over IPv6
+  (read "accept").
+- For IPv4 that is two INFO findings, `firewall_iptables.input_accept_unweighed`
+  and, with no front-end, `firewall.netfilter_unweighed` — no deduction, no cap,
+  a ceiling; the services, ports and summary lines say that the ruleset accepts
+  by default and refuses some of it, not "no active firewall" (measured in the
+  render: the port line said "no active firewall to filter it" for 8099, which
+  the ruleset dropped). For IPv6 it is `ipv6.netfilter_v6`, a ceiling. A full
+  audit rendered in a network namespace, English and French: the firewall,
+  ports, summary and IPv6 lines as above, the score "≤", no ALERT, no cap.
+- An accept with no rule refusing beyond given sources or invalid packets
+  keeps its weight — −3 for IPv4, −2 for IPv6 with a global address — and its
+  text now says just that, not "all incoming traffic is allowed": a ban list
+  refuses those sources, and the default lets every other in.
+
+### 5. IPv6, read to the end
+
+- **Behind UFW's `IPV6=no`, with a global address.** 0.26.1 read the host's
+  ip6tables chains only on a host without a global IPv6 address, and left the
+  0.26.0 reading — WARN −2 whenever listeners were present — on the others,
+  since a patch moves no score. The chains are now read on every host.
+  Measured in a network namespace with 2001:db8:b0b::/64 — a documentation
+  prefix, configured there with global scope so that BOB reads the host as
+  having a global address; it tests the reading of the chains, not
+  reachability from the internet: the Mint host's shape
+  (INPUT at DROP, jumps to two empty chains) left a listener closed and now
+  reads "blocked", no points; a chain accepting ICMPv6 and that port left it
+  open and keeps the WARN −2.
+- **Not established is a ceiling.** UFW at `IPV6=no` with a rule BOB does not
+  resolve on INPUT's path (`ipv6.ufw_v6_off_rules_unresolved`) now marks the
+  score "≤", as other visibility gaps do.
+- **A raw ruleset's IPv6.** With UFW not installed and firewalld not running,
+  on a host whose nftables or iptables ruleset filters, 0.26.1 said the
+  ruleset governed IPv6 and that "an inet or ip6 table filters IPv6, an ip
+  table does not", without reading which. BOB now reads the input chains of the
+  ip6 and inet families as it reads IPv4's (§4) from `nft list ruleset`, then
+  `ip6tables -S`. Measured in a network namespace with nftables, from a peer
+  over IPv6: an ip table at policy drop only — open, read "accept"; an inet or
+  ip6 table at policy drop — closed, read "drop"; inet at policy drop behind an
+  accept-everything rule — open, read "accept". A default of drop or reject is
+  an INFO (`ipv6.netfilter_v6_filtered`, "denies IPv6 inbound by default");
+  accept with no rule refusing beyond given sources or invalid packets is a
+  WARN −2 with a global address
+  (`ipv6.netfilter_v6_open`) and an INFO on link-local addresses only; accept
+  with refusals, or a default BOB could not read, is `ipv6.netfilter_v6`, a
+  ceiling.
+- **firewalld and one family.** Measured on the Debian 13 host (firewalld
+  2.3.1), probed from a network namespace over a veth: a rich rule
+  `family="ipv6" … port 80 accept` opened 80 over IPv6 only, and BOB said
+  "80/tcp (rich)" and "same zone rules as IPv4". It now says
+  "80/tcp (rich, IPv6)" in the grants, and the IPv6 line names the rules that
+  open a port to one family only. Replayed on that host, English and French.
+  The default zone and a zone with target ACCEPT read correctly there (both
+  families measured).
+
+### 6. Marks set by native nftables
+
+0.26.0 followed the marks that iptables' raw, mangle and nat tables set
+(MARK, CONNMARK, HMARK, TPROXY) before weighing a mark-accept rule beside an
+active UFW, and wrote down the limit: `meta mark set` in a native nftables
+table was not read. Measured in a network namespace, INPUT at DROP with
+`-m mark --mark 0x20000/0x20000 -j ACCEPT`: an inet prerouting chain setting
+the mark on 8099 — `meta mark set mark or 0x20000`, `meta mark set 0x20000`, or
+`ct mark set 0x20000` then `meta mark set ct mark` — opened 8099, and BOB said
+"conditional" (INFO). Marking 8098 with 0x40000 left 8099 closed.
+
+- BOB now reads `meta mark set` and `ct mark set` (values, `|` / `&`, a copy
+  between packet and connection) in prerouting chains and in input chains
+  before the filter's priority; nft prints the OR back as
+  `meta mark | 0x00020000`. A marking it cannot follow (`jhash`, a map) is "not
+  established", never "conditional". An input chain at the filter's own
+  priority counts as not established: the order is not known. Tables kept by
+  iptables-nft are left to `iptables -S`, which already reads them.
+- The three measured cases now read `firewall_drivers.iptables_bypass`
+  (WARN −2); the other port and mark stays conditional.
+
+### 7. root's PATH
+
+A world-writable directory in root's configured PATH was one of the components
+of `root_path.dangerous` (−1). Measured on the Alpine VM: with a 0777 directory
+first in root's PATH, an `ls` placed there by an unprivileged account ran as
+uid 0 when root typed `ls` in `/root`; with `.`, only when root stood in that
+account's directory. The two are now apart: `root_path.world_writable` (WARN
+−2, any account plants the binary and waits) and `root_path.dangerous` for `.`,
+empty and relative components (−1, as before). Decided with the user.
+
+A domain made only of INFO findings has shown "reported, not scored" since
+0.25.0; JSON already carries `active: false, reason: "info_only"`, now guarded.
+
+### 8. The publish and test workflows
+
+After 0.26.1 pinned the upload action by commit:
+
+- every action the three workflows use is pinned by commit, with its version as
+  a comment — checkout v6.1.0, setup-python v6.3.0, upload-artifact v7.0.2,
+  download-artifact v8.0.2, setup-qemu v3.7.0, action-gh-release v3.0.3,
+  gh-action-pypi-publish v1.14.3 — the commits the 0.26.1 run executed;
+- Dependabot proposes their updates weekly (`.github/dependabot.yml`);
+- the test, lint and build jobs bootstrap pip 26.2.2 from a wheel pinned by its
+  SHA-256, then install their tools — pytest, beautifulsoup4, ruff, build and
+  the transitive deps — with `pip install --require-hashes -r requirements-ci.txt`,
+  a file pinning each by version and SHA-256 (the linux x86_64 wheels, the
+  pure-python wheels and the sdists; `--require-hashes` fails closed if pip
+  needs a file not listed). Regenerated by `scripts/gen_ci_requirements.py`
+  from PyPI. No job upgrades pip from the index any more;
+- the build job refuses any tag other than a bare `MAJOR.MINOR.PATCH` equal to
+  the version in `pyproject.toml`, before building: a tag pushed before the
+  version bump can no longer publish the previous version, and neither can a
+  legacy `v` tag. Run on its own: `0.26.1` with pyproject at 0.26.1 passes;
+  `0.27.0`, `1x.2.3y`, `v0.26.1` and `0.26.1-rc1` are refused.
+
+Separately from the code, the `release` environment the PyPI upload runs in
+now requires a reviewer's approval and admits only tags matching the glob
+`[0-9]*.[0-9]*.[0-9]*` — a repository setting, read back from GitHub's API on
+24 October 2026. That glob is not a version check (`1x.2.3y` matches it); the
+build step above is.
+
+### 9. Docker's DOCKER-USER chain
+
+The explanation of a published container port shows a DOCKER-USER pair: a
+DROP for new connections from untrusted sources on the external interface,
+then a RETURN for established traffic inserted above it. Measured in a network
+namespace (a router forwarding to DOCKER-USER, an outside host, a container; no
+Docker):
+
+- the shipped pair and its variant with `-i <external interface>` on the
+  RETURN gave the same verdicts for new connections: the untrusted outside host
+  refused, the trusted one answered, and the container's own new connections to
+  the outside answered, their replies returned as established;
+- a connection the container opened to the outside and held open, then a DROP
+  the operator appends for that traffic (from the container's interface, to
+  that port): with the shipped RETURN, which matches established packets in
+  both directions, the container's packets went past it (the DROP counter at
+  0); with `-i <external interface>`, only the replies coming in from outside
+  are returned, and the container's packets met the DROP (counter 4). New
+  connections to that port were refused in both;
+- a connection from an untrusted outside host established before the pair was
+  inserted (conntrack already tracking it, as on a Docker host): its packets
+  met the RETURN in both variants (counter 7, then 4) and the DROP not at all
+  (counter 0) — it goes on until it closes, as the explanation says.
+
+The explanation says it was measured, and gives the `-i` variant for a DROP the
+operator adds later that must also stop the containers' flows already open. The
+counters are the measure: a sending socket reports no error while TCP holds
+data the firewall drops.
+
+### Not in this release, and known limits
+
+- Kubernetes beyond the node (API server, RBAC, anonymous auth, etcd) is a
+  release of its own, 0.28.0.
+- An inbound default is read from policies, rules that take every packet and
+  rules that can refuse: an accept for one port at policy drop is not weighed
+  (measured: 8099 accepted at policy drop was open and read "denied by default"
+  — the text says "by default"), and which ports a refusing rule matches is not
+  weighed either — one refusal makes the default "not established". The
+  forward hook keeps the 0.26.0 reading. Marks set from a chain a base chain
+  jumps to are not followed.
+- On a host where UFW is installed but not active, the raw ruleset's IPv6 is
+  not read (as in 0.26.1): the IPv6 section reads UFW's `IPV6=` setting.
+- A source that sends from a port below 1024 to ports of 32768 or above is
+  taken for a late reply, not a scan. UFW at `LOGLEVEL=low` logs part of a scan
+  (19 lines of 300 ports measured): BOB counts what UFW logged.
+- The commands counted root-equivalent are a finite, measured list, and the
+  protected write targets are too (sudoers, cron, systemd, the account
+  databases, PAM, the dynamic linker, root's home): a dangerous rule outside
+  these — a writer to another sensitive path, a tool not on the list — is not
+  flagged, and reads as a "specific command". sudoedit and a file-writer with a
+  benign fixed target are deliberately not flagged.
+- A NOEXEC set by a `Defaults` line, rather than on the rule, is not read: such
+  a rule is still counted. A `runas_default` scoped to a group, an alias or a
+  host is not resolved: the rules it may govern are not counted, even for an
+  account it does not cover. NOEXEC is not established when BOB runs without
+  root (`sudo -V` then reports no build options) or on a binary it cannot read.
+  A journalctl rule on a systemd older than 247 that carries a backported fix for
+  CVE-2023-26604 is still counted; an env_keep that admits variables by a
+  wildcard is not read as admitting SYSTEMD_PAGERSECURE. The list of interpreters, pagers, editors
+  and tools is BOB's; the measured ones are listed in §3.
+- DOCKER-USER was measured over IPv4 on one routing shape; IPv6 and other
+  shapes are not measured.
+- firewalld's severity is not graded by the share of public sources (0.26.0's
+  idea): no measurement base.
+- The workflows pin pip and the test/lint/build tools by hash
+  (`requirements-ci.txt`), the linux x86_64 and pure-python files only; a build
+  on another platform, or needing a file not listed, fails closed rather than
+  installing an unpinned one. The package under test installs from the checkout
+  (`pip install -e .`), not pinned — it is the repository itself.
+
+### Counters
+
+Tests 15112 → **15948**, mutations 894 → **1026**, locale keys 2988 →
+**3036** per language, `--explain` keys and CIS references 226 → **230**;
+sections (57) unchanged.
+
+### Guards
+
+`test_v0270_ufw_rotated_logs.py`, `test_v0270_port_scans.py`,
+`test_v0270_nopasswd_root_equivalent.py`, `test_v0270_accept_with_refusals.py`,
+`test_v0270_ipv6_complete.py`, `test_v0270_firewalld_family_rules.py`,
+`test_v0270_nft_marks.py`, `test_v0270_root_path_split.py`,
+`test_v0270_release_chain_pins.py`, `test_v0270_docker_user_measured.py`. Every
+guard has a mutation that brings its defect back.
+
 ## [0.26.1] — 2026-10-23
 
 **A patch: what the audit of a real Linux Mint 22.3 host showed BOB saying

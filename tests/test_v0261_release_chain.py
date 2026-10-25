@@ -41,7 +41,8 @@ def test_the_build_tools_come_after_the_check():
     steps = _build_steps()
     pinned = steps.index(f"#sha256={_PIP_WHEEL_SHA}")
     check = steps.index("Refuse a pip older than 26.2.2")
-    tools = steps.index("python -m pip install build")
+    # v0.27.0 — build and the other tools come from the hashed requirements.
+    tools = steps.index("python -m pip install --require-hashes -r requirements-ci.txt")
     assert pinned < check < tools < steps.index("python -m build\n")
 
 

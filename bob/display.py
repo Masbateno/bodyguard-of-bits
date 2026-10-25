@@ -215,13 +215,15 @@ def display_risk_context(label: str, lang: str, t, report,
 def check_single_service_display(snap, network_context, t, report, verbose,
                                   quiet: bool = False, ufw_active: bool = True,
                                   firewalld_active: bool = False,
-                                  netfilter_active: bool = False):
+                                  netfilter_active: bool = False,
+                                  netfilter_partial: bool = False):
     """Run check for a single service and return its CheckResult."""
     from bob.checks.services import check_services
     result = check_services([snap], network_context=network_context,
                             ufw_active=ufw_active, t=t,
                             firewalld_active=firewalld_active,
-                            netfilter_active=netfilter_active)
+                            netfilter_active=netfilter_active,
+                            netfilter_partial=netfilter_partial)
     display_result(result, report, verbose, quiet=quiet)
     return result
 
@@ -229,6 +231,31 @@ def check_single_service_display(snap, network_context, t, report, verbose,
 # ---------------------------------------------------------------------------
 # Log results display
 # ---------------------------------------------------------------------------
+
+def _period_files_line(log_report, t) -> str:
+    """The window asked for, the days it covered and the files that covered
+    it (v0.27.0); a rotation needed but unreadable is named, the window
+    stopping there."""
+    line = t("logs.period_files", requested=log_report.log_days, days=log_report.days_covered,
+             files=", ".join(log_report.files_read) or "/var/log/ufw.log")
+    if log_report.files_unread:
+        line += t("logs.period_files_unread", files=", ".join(log_report.files_unread))
+    return line
+
+
+_SKIP_ORDER = ("no_port", "no_timestamp", "unparsed")
+
+
+def _skipped_line(log_report, t) -> str:
+    """The [UFW BLOCK] lines in the window not counted, and why (v0.27.0,
+    measured on a Mint host: 1503 IGMP lines of 5018, unsaid until 0.26.1).
+    Empty when none was."""
+    skipped = log_report.skipped or {}
+    if not sum(skipped.values()):
+        return ""
+    reasons = "; ".join(t(f"logs.skip.{k}", count=skipped[k]) for k in _SKIP_ORDER if skipped.get(k))
+    return t("logs.skipped", count=sum(skipped.values()), reasons=reasons)
+
 
 def display_log_results(logs_result, snapshot, log_report, config, t, report) -> None:
     """Display structured log analysis results.
@@ -251,16 +278,19 @@ def display_log_results(logs_result, snapshot, log_report, config, t, report) ->
 
     if not quiet:
         if log_report.log_source == "file":
-            # v0.26.1 — only /var/log/ufw.log is read: measured on Mint, it
-            # held 3 days and ufw.log.1 the 7 before, and "3 day(s) of logs
-            # available" said the rest did not exist.
-            print_dim(t("logs.period_file", requested=log_report.log_days,
-                        days=log_report.days_available))
+            # v0.27.0 — the files read are named, rotations included: in 0.26.0
+            # only /var/log/ufw.log was, and "3 day(s) of logs available" said
+            # the rest did not exist (measured on Mint).
+            print_dim(_period_files_line(log_report, t))
         else:
             print_dim(
                 f"{t('logs.period')} : {log_report.log_days} {t('logs.days_unit')} "
                 f"— {log_report.days_available} {t('logs.days_available')}"
             )
+        print()
+
+    if not quiet and _skipped_line(log_report, t):
+        print_dim(_skipped_line(log_report, t))
         print()
 
     total = log_report.total
@@ -277,11 +307,17 @@ def display_log_results(logs_result, snapshot, log_report, config, t, report) ->
         # used to fire on any repeated block at all, so a NAS remounting a
         # share put the word "suspicious" at the head of the section.
         _charged = any(
-            f.key == "logs.blocked_repeat_public" and f.level == FindingLevel.WARN
+            f.key in ("logs.blocked_repeat_public", "logs.port_scan_public")
+            and f.level == FindingLevel.WARN
             for f in logs_result.findings
         )
+        # v0.27.0 — a local port scan is a pattern BOB recognised: the verdict
+        # does not say "no recognised attack pattern" above it.
+        _local_scan = any(f.key == "logs.port_scan_local" for f in logs_result.findings)
         if _charged:
             print_warn(t("logs.verdict_warn", total=total, days=log_report.days_covered))
+        elif _local_scan:
+            print_ok(t("logs.verdict_ok_local_scan", total=total, days=log_report.days_covered))
         else:
             print_ok(t("logs.verdict_ok", total=total, days=log_report.days_covered))
 
@@ -298,6 +334,8 @@ def display_log_results(logs_result, snapshot, log_report, config, t, report) ->
             "logs.blocked_repeat_public",
             "logs.blocked_repeat_local",
             "logs.blocked_repeat_udp",
+            "logs.port_scan_public",   # v0.27.0
+            "logs.port_scan_local",
         }
         for finding in logs_result.findings:
             if finding.key not in _REPEAT_KEYS:
@@ -348,6 +386,10 @@ def display_log_results(logs_result, snapshot, log_report, config, t, report) ->
         )
         report.write_raw(f"{t('logs.total_blocks')} : {total}")
         report.write_raw(f"{t('logs.days_available')}    : {log_report.days_available}")
+        if log_report.files_read:
+            report.write_raw(_period_files_line(log_report, t))
+        if _skipped_line(log_report, t):
+            report.write_raw(_skipped_line(log_report, t))
         report.write_raw("")
         report.write_raw(f"--- {t('logs.top_ips')} ---")
         for ip, count in log_report.top_ips:

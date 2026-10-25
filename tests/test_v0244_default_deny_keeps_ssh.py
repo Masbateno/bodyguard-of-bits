@@ -31,8 +31,14 @@ _MINT = """table ip filter {
 \t\ttype filter hook input priority filter; policy accept;
 \t\tcounter packets 78971 bytes 59497363 jump evpn.INPUT
 \t}
+
+\tchain evpn.a.100.protectLoopback {
+\t}
 }
 """
+# v0.27.0 — the chain the jump names, which `nft list ruleset` prints in the
+# same table; its rules were not part of this 0.24.4 excerpt. BOB now follows
+# jumps (a chain it cannot find may refuse), so the excerpt names it, empty.
 _MINT_STDERR = ("# Warning: table ip filter is managed by iptables-nft, do not touch!\n"
                 "# Warning: table ip mangle is managed by iptables-nft, do not touch!\n"
                 "# Warning: table ip6 mangle is managed by iptables-nft, do not touch!\n")

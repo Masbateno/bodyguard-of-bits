@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.26.1
+Version:        0.27.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,13 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun Oct 25 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.27.0-1
+- Minor, BREAKING for scores: rotated UFW logs read, a window partly read
+  a ceiling; port scans; NOPASSWD and doas rules that are root anyway
+  (-2); an accept policy with refusing rules not established (IPv4,
+  IPv6); IPv6 behind IPV6=no read through the chains; native nftables
+  marks; a world-writable directory in root's PATH (-2); a pinned
+  publish chain (actions, CI tools, tag = version).
 * Fri Oct 23 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.26.1-1
 - Patch, no score change: the IPv6 INPUT chain followed into its user
   chains; the ports OK says IPv4 when IPv6 is not established; the UFW log

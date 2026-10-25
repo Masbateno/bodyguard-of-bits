@@ -287,6 +287,21 @@ East-Asian-Wide code point so the banner box stays aligned.
 - **`/etc/os-release`** is the reliable distro identifier everywhere; hostname is
   not (a reinstalled/cloned box keeps an inherited name — several test boxes read
   `debiantest` regardless of the actual OS).
+- **Debian starts a firewall at install time:** `apt-get install firewalld` on
+  Debian 13 (firewalld 2.3.1) enables and starts it in the same transaction —
+  measured 24 October 2026, `systemctl is-active firewalld` read `active` as the
+  install returned. A rollback armed *after* the install comes too late. Arm it
+  first (`systemd-run --on-active=… /bin/sh -c "nft flush ruleset; systemctl stop
+  firewalld; nft flush ruleset"`, the kernel reopened before the tool is
+  stopped, the tool never restarted). The default zone `public` kept SSH that
+  time; a host whose default zone does not would have been cut off.
+- **A host with UFW at `IPV6=no` cannot probe over IPv6:** ufw-init leaves the
+  IPv6 OUTPUT chain at DROP, so the Mint development host's IPv6 probes to a
+  peer time out whatever the peer allows (measured 24 October 2026: port 22,
+  open on the peer, timed out). Probe from the measured host itself, through a
+  network namespace on a veth pair — firewalld puts an interface it has no zone
+  for in the default zone, so the namespace's packets meet the same filtering as
+  the LAN's.
 
 ## 10. Performance note (not a distro quirk, but bites field tests)
 

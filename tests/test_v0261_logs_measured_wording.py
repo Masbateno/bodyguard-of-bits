@@ -51,7 +51,7 @@ def test_the_section_says_what_it_read(capsys):
     res, rep = check_logs(snap, t=i18n.t)
     display_log_results(res, snap, rep, AuditConfig(), i18n.t, _Report())
     out = capsys.readouterr().out
-    assert "Requested window: 7 day(s); 3 day(s) covered by /var/log/ufw.log" in out and "were not read" in out
+    assert "Requested window: 7 day(s); 3 day(s) covered by /var/log/ufw.log" in out
     assert "over 3 day(s)" in out and "over 7 day(s)" not in out
 
 
@@ -75,7 +75,7 @@ def test_the_texts_render(lang, words):
     i18n.init(lang)
     try:
         text = i18n.t("logs.local_dominance", ip="192.168.1.50", count=1, total=2, pct=50, protos="UDP", ports=3)
-        period = i18n.t("logs.period_file", requested=7, days=3)
+        period = i18n.t("logs.period_files", requested=7, days=7, files="/var/log/ufw.log, /var/log/ufw.log.1")
     finally:
         i18n.init(lang="en")
     assert words in text and "UDP" in text and "ufw.log.1" in period

@@ -282,7 +282,11 @@ class TestExplainAuditInvariants:
         # → 225: kubernetes.privileged_pod, host_mount, kubelet_anonymous,
         # kubelet_readonly_port (v0.25.0).
         # → 226: disk_encryption.data_unencrypted (v0.25.0).
-        assert len(EXPLAIN_KEYS) == 226, (
+        # → 227: logs.port_scan_public (v0.27.0).
+        # → 228: file_perms.nopass_root_equivalent (v0.27.0).
+        # → 229: ipv6.netfilter_v6_open (v0.27.0).
+        # → 230: root_path.world_writable (v0.27.0).
+        assert len(EXPLAIN_KEYS) == 230, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."

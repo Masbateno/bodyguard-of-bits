@@ -41,7 +41,7 @@ from bob.checks.firewall import (
     resolve_firewall_posture,
 )
 from bob.checks._firewalld import FirewalldStatus
-from bob.checks.iptables_nftables import IptablesNftSnapshot, check_iptables_nftables
+from bob.checks.iptables_nftables import IptablesNftSnapshot, check_iptables_nftables, read_input_policy_v6
 from bob.checks.umask import UmaskSnapshot, check_umask
 from bob.checks.firewall_stack import FirewallStackSnapshot, check_firewall_stack
 from bob.checks.network_context import NetworkContextSnapshot, check_network_context
@@ -687,6 +687,7 @@ def run_checks(
     # v0.24.1: also when UFW is installed but inactive — Ubuntu's default state.
     _netfilter_protective: bool | None = None
     _netfilter_policy: str | None = None
+    _netfilter_partial = False     # v0.27.0 — accept by default, refusals not weighed
     # v0.26.0 — awall (Alpine) is read only where no managed front-end runs,
     # the only case check_firewall consults it. A failure there degrades the
     # section and leaves the 0.25.1 reading (no front-end named), not a lie.
@@ -696,12 +697,16 @@ def run_checks(
         _netfilter_protective = (
             _nf_snap.backend != "none" and _nf_snap.input_policy in ("DROP", "REJECT")
         )
-        if _netfilter_protective:
+        _netfilter_partial = _nf_snap.backend != "none" and _nf_snap.input_policy == "PARTIAL"
+        if _netfilter_protective or _netfilter_partial:
             _netfilter_policy = _nf_snap.input_policy
         from bob.checks._awall import AwallStatus
         with _core("firewall"):
             _awall = AwallStatus.from_system()
     fw_posture = resolve_firewall_posture(fw_status, fwd_status, _netfilter_policy)
+    # v0.27.0 — the services and ports texts for a raw ruleset say it denies by
+    # default; a PARTIAL one (accept, refusals not weighed) does not.
+    _netfilter_denies = fw_posture.backend == "netfilter" and fw_posture.policy in ("deny", "reject")
     # v0.24.4: the listening set is read before the firewall check — its
     # enable fixes allow the ports sshd answers on first (a bare `ufw enable`
     # cut a remote operator off, measured on a Raspberry Pi).
@@ -709,6 +714,7 @@ def run_checks(
     fw_result  = check_firewall(
         fw_status, firewalld=fwd_status,
         netfilter_protective=_netfilter_protective, t=t,
+        netfilter_partial=_netfilter_partial,
         ssh_ports=ports_snapshot.ssh_ports,
         ssh_on_ipv6=ports_snapshot.ssh_on_ipv6,
         awall=_awall,
@@ -811,10 +817,17 @@ def run_checks(
     ipv6_snapshot = IPv6Snapshot()
     with _core("ipv6"):
         ipv6_snapshot = IPv6Snapshot.from_system()
+    # v0.27.0 — a raw ruleset's IPv6 default, read as its IPv4 one is.
+    _v6_policy = "unknown"
+    if fw_posture.backend == "netfilter" and not ipv6_snapshot.ufw_present:
+        with _core("ipv6"):
+            _v6_policy = read_input_policy_v6()
     _sec("ipv6", ipv6_snapshot, check_ipv6, ufw_active=fw_status.active,
          firewalld_active=fwd_status.active,
          netfilter_active=fw_posture.backend == "netfilter",
-         firewalld_policy=fwd_status.family_policy("ipv6") if fwd_status.active else "")
+         firewalld_policy=fwd_status.family_policy("ipv6") if fwd_status.active else "",
+         firewalld_family_rules=tuple(fwd_status.family_scoped_accepts()) if fwd_status.active else (),
+         netfilter_v6_policy=_v6_policy)
 
     # =========================================================================
     # GROUP 2 — EXPOSITION & SERVICES
@@ -887,7 +900,8 @@ def run_checks(
             snap, network_context, t, report, config.verbose,
             quiet=config.quiet, ufw_active=fw_status.active,
             firewalld_active=fwd_status.active,
-            netfilter_active=fw_posture.backend == "netfilter",
+            netfilter_active=_netfilter_denies,
+            netfilter_partial=_netfilter_partial,
         )
         engine.apply(svc_result, section="services")
         # v0.17.1 — only a service BOB judged *active* has really had its ports
@@ -934,7 +948,8 @@ def run_checks(
         default_incoming_policy=fw_status.incoming_policy,
         ufw_active=fw_status.active,
         firewalld_active=fwd_status.active,
-        netfilter_active=fw_posture.backend == "netfilter",
+        netfilter_active=_netfilter_denies,
+        netfilter_partial=_netfilter_partial,
         t=t,
         # v0.26.0 — with {"iptables": false} Docker writes no IPv4 rule for its
         # ports: the zone filters them (measured on openSUSE, Docker 29.4.0).
@@ -945,8 +960,7 @@ def run_checks(
         # where the IPv6 section established that inbound is closed.
         ipv6_unproven=(ipv6_snapshot.ufw_ipv6_enabled is False
                        and bool(ipv6_snapshot.ipv6_listeners)
-                       and not _ipv6_input_closed(ipv6_snapshot,
-                                                  extended=not ipv6_snapshot.has_global_ipv6)),
+                       and not _ipv6_input_closed(ipv6_snapshot)),
         ipv6_closed_by_chains=ipv6_closed_by_chains(ipv6_snapshot),
     )
     engine.apply(ports_result, section="ports")
