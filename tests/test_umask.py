@@ -116,9 +116,10 @@ class TestUmaskRegexParsing:
         m = _LOGIN_DEFS_RE.search("UMASK 0022\n")
         assert m and m.group(1) == "0022"
 
-    def test_login_defs_case_insensitive(self):
-        m = _LOGIN_DEFS_RE.search("umask 027\n")
-        assert m and m.group(1) == "027"
+    def test_login_defs_lowercase_is_not_read(self):
+        # v0.28.0 — shadow ignores a lowercase key (measured on Debian 13:
+        # `umask 077` left the home at 755); BOB read it as in force.
+        assert _LOGIN_DEFS_RE.search("umask 027\n") is None
 
     def test_pam_umask_inline(self):
         line = "session optional pam_umask.so umask=027\n"

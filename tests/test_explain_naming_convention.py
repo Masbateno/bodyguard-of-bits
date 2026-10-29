@@ -286,7 +286,12 @@ class TestExplainAuditInvariants:
         # → 228: file_perms.nopass_root_equivalent (v0.27.0).
         # → 229: ipv6.netfilter_v6_open (v0.27.0).
         # → 230: root_path.world_writable (v0.27.0).
-        assert len(EXPLAIN_KEYS) == 230, (
+        # → 234: kubernetes.apiserver_anonymous, apiserver_always_allow,
+        # cluster_admin_broad, runtime_socket_open (v0.28.0, the cluster
+        # beyond the node, measured on MicroK8s 1.35.6).
+        # → 235: ports.uncovered_netfilter_open (v0.28.0, lot 4 scoring: a
+        # listener the PARTIAL raw ruleset reaches by default is scored).
+        assert len(EXPLAIN_KEYS) == 235, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."

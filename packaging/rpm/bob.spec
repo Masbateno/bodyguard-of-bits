@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.27.0
+Version:        0.28.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,13 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Thu Oct 29 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.28.0-1
+- Minor, BREAKING for scores: MicroK8s API server authorisation,
+  anonymous reads, broad cluster-admin bindings, an open runtime socket;
+  each IPv4 listener weighed under a raw accept-with-refusals ruleset;
+  marks from jumped-to chains; FORWARD read as INPUT; IPv6 with UFW
+  stopped; sudo Defaults scopes; login.defs and smb.conf read as their
+  tools do; runs compared over the sections both read.
 * Sun Oct 25 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.27.0-1
 - Minor, BREAKING for scores: rotated UFW logs read, a window partly read
   a ceiling; port scans; NOPASSWD and doas rules that are root anyway

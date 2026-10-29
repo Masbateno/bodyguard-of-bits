@@ -75,6 +75,7 @@ def save_score(
     score: int,
     level: str,
     level_score_only: str | None = None,
+    partial: bool = False,
 ) -> None:
     """Append current audit score to history.jsonl.
 
@@ -96,6 +97,8 @@ def save_score(
         }
         if level_score_only is not None:
             entry_dict["level_score_only"] = level_score_only
+        if partial:
+            entry_dict["partial"] = True
         entry = json.dumps(entry_dict)
         # I-5 (v0.6.1): explicit mode=0o600 on creation. Python's default
         # `Path.open("a")` uses the process umask (typically 0o644 → world-
@@ -190,10 +193,17 @@ def load_history(max_entries: int = 50, *, strict: bool = False) -> list[dict]:
 
 
 def _trend(entries: list[dict], idx: int) -> str:
-    """Return ↑, ↓ or → comparing entry at idx to the previous one."""
-    if idx <= 0 or idx >= len(entries):
+    """Return ↑, ↓ or → comparing entry at idx to the previous one.
+
+    v0.28.0 — a partial run (--check / --skip) gets no arrow, and a full run is
+    compared with the previous full one: a score over some sections is not a
+    move of the host's score."""
+    if idx <= 0 or idx >= len(entries) or entries[idx].get("partial") is True:
         return " "
-    delta = entries[idx]["score"] - entries[idx - 1]["score"]
+    prev = next((entries[j] for j in range(idx - 1, -1, -1) if entries[j].get("partial") is not True), None)
+    if prev is None:
+        return " "
+    delta = entries[idx]["score"] - prev["score"]
     if delta > 0:
         return "↑"
     if delta < 0:
@@ -213,7 +223,7 @@ def render_history(entries: list[dict], t: TranslationFunc | None = None) -> lis
     if not entries:
         return [f"  {_t('history.no_entries')}"]
 
-    spark = "".join(_score_to_spark(e.get("score", 0)) for e in entries)
+    spark = "".join(_score_to_spark(e.get("score", 0)) for e in entries if e.get("partial") is not True)
 
     lines: list[str] = [
         f"  {_t('history.title')}",
@@ -240,7 +250,8 @@ def render_history(entries: list[dict], t: TranslationFunc | None = None) -> lis
         # which formats as the string "None" on the operator's screen.
         level = e.get("level") or ""
         trend = _trend(entries, orig_idx)
-        lines.append(f"  {ts_str}   {score}/10  {trend}  {level}")
+        tag = f"  {_t('history.partial')}" if e.get("partial") is True else ""
+        lines.append(f"  {ts_str}   {score}/10  {trend}  {level}{tag}")
 
     return lines
 

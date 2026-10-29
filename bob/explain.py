@@ -184,6 +184,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("Listening ports", [
         "ports.uncovered",
+        "ports.uncovered_netfilter_open",
         "ports.uncovered_netbios",
     ]),
     ("NTP / time sync", [
@@ -362,6 +363,10 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "kubernetes.host_mount",
         "kubernetes.kubelet_anonymous",
         "kubernetes.kubelet_readonly_port",
+        "kubernetes.apiserver_anonymous",
+        "kubernetes.apiserver_always_allow",
+        "kubernetes.cluster_admin_broad",
+        "kubernetes.runtime_socket_open",
     ]),
     ("Kernel Hardening", [
         "kernel_hardening.aslr_disabled",
@@ -940,6 +945,13 @@ def run_explain(key: str, t) -> bool:
     print(_DIVIDER_WIDE)
 
     if _has_profile_variants(norm, t):
+        # v0.28.0 — the generic WHY first: it was never printed beside the
+        # profile sections, while it carries the measurements (DOCKER-USER,
+        # Docker over IPv6, firewalld) that the HOW sends the reader to.
+        print()
+        print(t("explain.ui.why_title"))
+        print(_DIVIDER_SHORT)
+        print(why_val)
         # Profile-differentiated display — one section per profile
         for profile in _EXPLAIN_PROFILES:
             pwhy_key = f"explain.{norm}.{profile}.why"
@@ -1199,6 +1211,13 @@ def _detail_screen(stdscr, key: str, t) -> None:
         lines.append(("  " + "─" * min(56, w - 4), dim))
 
         if _has_profile_variants(norm, t):
+            # v0.28.0 — the generic WHY first (see run_explain).
+            lines.append(("", normal))
+            lines.append(("  " + t("explain.ui.why_title"), bold))
+            lines.append(("  " + "─" * 10, dim))
+            for para in why_val.split("\n"):
+                for wrapped in textwrap.wrap(para, w - 4) or [""]:
+                    lines.append((f"  {wrapped}", normal))
             # One section per profile
             for profile in _EXPLAIN_PROFILES:
                 pwhy_key = f"explain.{norm}.{profile}.why"

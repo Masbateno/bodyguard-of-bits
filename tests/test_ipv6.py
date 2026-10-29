@@ -537,9 +537,13 @@ class TestUfwInactiveIPv6:
         assert total_deductions(result) == 0
 
     def test_global_ipv6_ufw_inactive_key_still_present(self):
+        # v0.28.0 — UFW installed but not running filters nothing: its IPV6=
+        # setting no longer decides; with no other filter, no firewall
+        # filters these listeners (test_v0280_ipv6_ufw_inactive.py).
         result = check_ipv6(self._snap(), ufw_active=False, t=_t)
         keys = [f.key for f in result.findings]
-        assert "ipv6.ufw_disabled_listeners_present" in keys
+        assert "ipv6.no_firewall_v6" in keys
+        assert "ipv6.ufw_disabled_listeners_present" not in keys
 
     def test_global_ipv6_ufw_active_still_warns(self):
         result = check_ipv6(self._snap(), ufw_active=True, t=_t)

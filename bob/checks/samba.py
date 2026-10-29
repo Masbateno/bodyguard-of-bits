@@ -19,7 +19,7 @@ Usage:
 
 from __future__ import annotations
 
-import configparser
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -356,51 +356,96 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
 # Helpers
 # ---------------------------------------------------------------------------
 
+class _Params(dict):
+    """A section's parameters, looked up as samba matches names (v0.28.0):
+    case and whitespace in a parameter name do not matter (smb.conf(5):
+    "internal whitespace in section and parameter names is irrelevant"). An
+    underscore does: measured with testparm 4.22.11, `serverminprotocol = NT1`
+    read NT1 and `server_min_protocol = NT1` was ignored (SMB2_02, the
+    default) — reading it as NT1 would claim an SMB1 samba does not run."""
+
+    @staticmethod
+    def _norm(key: object) -> object:
+        return re.sub(r"\s+", "", key).lower() if isinstance(key, str) else key
+
+    def __setitem__(self, key, value):
+        super().__setitem__(self._norm(key), value)
+
+    def __getitem__(self, key):
+        return super().__getitem__(self._norm(key))
+
+    def __contains__(self, key):
+        return super().__contains__(self._norm(key))
+
+    def get(self, key, default=None):
+        return super().get(self._norm(key), default)
+
+
 def _read_smb_conf(path: Path) -> dict[str, dict[str, str]]:
     """
-    Parse a smb.conf file and return a dict of {section: {key: value}}.
+    Parse a smb.conf file and return {section: {parameter: value}}, as samba's
+    own parser reads it (v0.28.0).
 
-    Uses configparser with Samba-specific settings:
-    - Comment prefixes: # and ;
-    - Delimiter: = only (Samba uses spaces in key names like "min protocol")
-    - optionxform normalises keys to lowercase and strips whitespace
+    Until 0.27.0 this was configparser, and it diverged from ``testparm``
+    (measured on Debian 13, samba 4.22.11): a line indented deeper than the one
+    before was read as that line's continuation, so ``server min protocol =
+    NT1`` vanished; a ``\\`` continuation raised a parsing error; ``Server  Min
+    Protocol`` (internal spaces) was not recognised — testparm read NT1 every
+    time, BOB read nothing. samba's rules: a trailing backslash joins the next
+    line; leading whitespace means nothing; a line starting with ``#`` or ``;``
+    is a comment (no inline comments); only the first ``=`` counts; the value's
+    leading and trailing whitespace is dropped; a repeated parameter keeps its
+    last value and a repeated section merges.
+
+    The bytes are read with ``read_text_capped`` (a FIFO or an oversized file is
+    refused, v0.20.1) and an unreadable file raises OSError for the caller —
+    never an empty config (v0.15.x).
     """
-    parser = configparser.RawConfigParser(
-        comment_prefixes=("#", ";"),
-        inline_comment_prefixes=("#", ";"),
-        delimiters=("=",),
-        strict=False,
-    )
-    # Preserve keys with spaces (e.g. "min protocol") by only lowercasing
-    parser.optionxform = lambda opt: opt.strip().lower()  # type: ignore[assignment]
-
-    # Read the bytes ourselves rather than handing the path to
-    # ``RawConfigParser.read``. Two failure modes forced this:
-    #
-    #   * ``.read`` takes a *list* of candidate files and silently skips any it
-    #     cannot open, returning only those it did read. That turned an
-    #     unreadable smb.conf into an empty config rather than an error, so the
-    #     caller's ``except OSError`` guard never fired and every setting fell
-    #     back to its default — the host was told SMB1 was disabled and null
-    #     passwords refused by a parser that had read nothing.
-    #   * ``.read`` calls ``open(path).read()`` with no guard, so a smb.conf
-    #     that is a FIFO **blocked forever** — the exact hang ``read_text_capped``
-    #     was written to prevent (v0.14.1), re-introduced here by parsing the
-    #     path directly. Found by the v0.20.x Debian stress pass: mkfifo over
-    #     /etc/samba/smb.conf, ``--check samba`` never returned.
-    #
-    # ``read_text_capped`` rejects non-regular files and caps the size; on any
-    # OSError the caller degrades to an unreadable-config snapshot.
-    parser.read_string(read_text_capped(path, encoding="utf-8"), source=str(path))
-
+    text = read_text_capped(path, encoding="utf-8")
     result: dict[str, dict[str, str]] = {}
-    for section in parser.sections():
-        opts: dict[str, str] = {}
-        for key, val in parser.items(section):
-            opts[key] = val.strip() if val else ""
-        result[section.lower()] = opts
+    state: "dict[str, dict[str, str] | None]" = {"current": None}
 
+    def feed(text: str, seen: frozenset) -> None:
+        pending = ""
+        for raw in text.splitlines():
+            line = pending + raw
+            if line.endswith("\\"):
+                pending = line[:-1]
+                continue
+            pending = ""
+            line = line.strip()
+            if not line or line[0] in "#;":
+                continue
+            if line.startswith("["):
+                name = " ".join(line[1:].split("]", 1)[0].split()).lower()
+                state["current"] = result.setdefault(name, _Params())
+                continue
+            current = state["current"]
+            if current is None or "=" not in line:
+                continue
+            key, _eq, value = line.partition("=")
+            if not key.strip():
+                continue
+            value = value.strip()
+            if _Params._norm(key) == "include":
+                # v0.28.0 — measured with testparm: the included file is read
+                # in place (its unsectioned parameters join the current
+                # section, its sections are created, the file goes on after
+                # it); a missing one is skipped. A %-substituted path names a
+                # file per client: no single file to follow.
+                if "%" in value or not value or value in seen or len(seen) > 16:
+                    continue
+                try:
+                    included = read_text_capped(Path(value), encoding="utf-8")
+                except FileNotFoundError:
+                    continue
+                feed(included, seen | {value})
+                continue
+            current[key.strip()] = value
+
+    feed(text, frozenset({str(path)}))
     return result
+
 
 def _section_get(opts: dict[str, str], *keys: str) -> str:
     """Return the first present option among *keys*, or ''.

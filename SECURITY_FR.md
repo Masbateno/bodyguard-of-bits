@@ -52,6 +52,15 @@ pas que ce workflow ou ses outils étaient sains.
   en 26.2.2 ou plus (ainsi que uv et certifi) comme l'indique le fil Python, et
   gardez à jour le paquet `ca-certificates` de votre système.
 
+### Pas encore couvert (écrit en 0.28.0)
+
+L'épinglage ci-dessus couvre ce que les workflows installent avec pip. Il ne
+couvre pas le backend de build : `python -m build` crée un environnement isolé et
+y installe `setuptools` d'après le `requires = ["setuptools>=77"]` de
+`pyproject.toml`, sans version ni empreinte épinglée — une publication peut être
+construite avec la version de setuptools du jour. Une modification distincte du
+workflow de publication l'épinglera.
+
 ### Ce qui a changé en 0.27.0
 
 - chaque action utilisée par les workflows est épinglée par commit, sa version
@@ -85,7 +94,8 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 
 | Version        | Supportée          |
 |----------------|--------------------|
-| 0.27.x         | ✅ courante         |
+| 0.28.x         | ✅ courante         |
+| 0.27.x         | ❌ fin de vie       |
 | 0.26.x         | ❌ fin de vie       |
 | 0.25.x         | ❌ fin de vie       |
 | 0.24.x         | ❌ fin de vie       |
@@ -106,12 +116,12 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 | 0.6.x          | ❌ fin de vie       |
 | ≤ 0.5.x        | ❌ fin de vie       |
 
-Les correctifs sortent en `0.27.x+1`. Un changement cassant incrémente la version mineure (`0.28.0`).
+Les correctifs sortent en `0.28.x+1`. Un changement cassant incrémente la version mineure (`0.29.0`).
 
-**v0.26.x est en fin de vie le jour où 0.27.0 sort**, selon la politique
+**v0.27.x est en fin de vie le jour où 0.28.0 sort**, selon la politique
 « ligne minor la plus récente uniquement » ci-dessus. Aucun correctif de
-sécurité ne sera backporté. Les utilisateurs sur v0.26.x doivent
-`pipx upgrade bodyguard-of-bits` vers v0.27.x.
+sécurité ne sera backporté. Les utilisateurs sur v0.27.x doivent
+`pipx upgrade bodyguard-of-bits` vers v0.28.x.
 
 La mise à jour change ce que le score **signifie** quand BOB ne peut pas lire
 une partie de l'hôte. Jusqu'en v0.16.0, le score était une somme sur les checks

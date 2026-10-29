@@ -245,7 +245,7 @@ def build_html_output(
           f"<th>{_h(t('html_output.col_score'))}</th>"
           f"<th>{_h(t('html_output.col_status'))}</th></tr></thead><tbody>")
         for r in _rows:
-            _score = f"{r['score']}/10" if r["active"] else "—"
+            _score = (("≤ " if r.get("ceiling") else "") + f"{r['score']}/10") if r["active"] else "—"
             _status = "" if r["active"] else _h(r["reason"])
             a(f"<tr><td>{_h(r['label'])}</td><td>{_score}</td><td>{_status}</td></tr>")
         a("</tbody></table>")

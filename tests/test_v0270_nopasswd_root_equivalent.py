@@ -71,9 +71,10 @@ class TestTheRuleIsRead:
         ("u ALL=(root) NOEXEC: NOPASSWD: /usr/bin/less /etc/hosts", [("/usr/bin/less /etc/hosts", True, False)]),
         ("u ALL=(root) NOPASSWD:NOEXEC: /usr/bin/less /etc/hosts, EXEC: /usr/bin/env",
          [("/usr/bin/less /etc/hosts", True, False), ("/usr/bin/env", False, False)]),
-        ("u ALL=(root) NOPASSWD: /usr/bin/env", [("/usr/bin/env", False, False)]),
+        # v0.28.0 — no tag reads None: the Defaults decide.
+        ("u ALL=(root) NOPASSWD: /usr/bin/env", [("/usr/bin/env", None, False)]),
         ("u ALL=(root) NOPASSWD:SETENV: /usr/bin/journalctl, NOSETENV: /usr/bin/id",
-         [("/usr/bin/journalctl", False, True), ("/usr/bin/id", False, False)]),
+         [("/usr/bin/journalctl", None, True), ("/usr/bin/id", None, False)]),
     ])
     def test_noexec_carries_and_exec_switches_back(self, line, grants):
         assert fp._nopasswd_grants(line, {}) == grants
@@ -448,8 +449,9 @@ class TestRunasDefault:
         ("Defaults runas_default=daemon\n", "bobesc", True),
         ("Defaults:bobesc runas_default=daemon\n", "bobesc", True),
         ("Defaults:alice runas_default=daemon\n", "bobesc", False),
-        ("Defaults:%wheel runas_default=daemon\n", "bobesc", True),      # group: not resolved
-        ("Defaults@web1 runas_default=daemon\n", "bobesc", True),        # host: not resolved
+        ("Defaults:%wheel runas_default=daemon\n", "nosuchbobaccount", True),   # unknown account: not resolved
+        # v0.28.0 — a host scope is resolved: web1 is not this host.
+        ("Defaults@web1 runas_default=daemon\n", "bobesc", False),
         ('Defaults runas_default="root"\n', "bobesc", False),
         ("Defaults env_reset\n", "bobesc", False),
     ])

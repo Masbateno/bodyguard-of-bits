@@ -441,7 +441,9 @@ class TestReadSmbConf:
             workgroup = WORKGROUP  # inline comment
         """)
         result = _read_smb_conf(conf)
-        assert result["global"]["workgroup"] == "WORKGROUP"
+        # v0.28.0 — samba has no inline comments: testparm read the value as
+        # "WORKGROUP # INLINE COMMENT" (measured, samba 4.22.11).
+        assert result["global"]["workgroup"] == "WORKGROUP  # inline comment"
 
     def test_ignores_semicolon_comments(self, tmp_path):
         conf = self._write_conf(tmp_path, """\
@@ -450,7 +452,8 @@ class TestReadSmbConf:
             workgroup = WORKGROUP ; inline
         """)
         result = _read_smb_conf(conf)
-        assert result["global"]["workgroup"] == "WORKGROUP"
+        assert "semicolon comment" not in str(result)
+        assert result["global"]["workgroup"] == "WORKGROUP ; inline"     # measured, as above
 
     def test_case_insensitive_section_names(self, tmp_path):
         conf = self._write_conf(tmp_path, """\

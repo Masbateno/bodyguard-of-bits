@@ -88,7 +88,7 @@ class TestUmaskFixMatchesDetection:
     @pytest.mark.parametrize("line", [
         "UMASK\t002",       # canonical (tab)
         "UMASK 002",        # a space
-        "umask 002",        # lowercase (login.defs is read case-insensitively)
+        "   UMASK 002",     # indented: shadow applies it (v0.28.0, measured)
     ])
     def test_login_defs_roundtrip(self, tmp_path, line):
         defs = tmp_path / "login.defs"

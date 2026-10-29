@@ -288,6 +288,9 @@ def check_ports(
     #: v0.26.1, after review — IPv6 inbound is closed, but by chains on its path
     #: beyond UFW's (UFW runs with IPV6=no): the OK does not credit UFW for it.
     ipv6_closed_by_chains: bool = False,
+    #: v0.28.0 — (port, proto) → (verdict, by) for IPv4 in a raw ruleset
+    #: (IptablesNftSnapshot.port_verdict), or None.
+    netfilter_port_verdict=None,
 ) -> CheckResult:
     """
     Evaluate listening ports and return findings.
@@ -410,15 +413,41 @@ def check_ports(
                     continue
                 # v0.24.1: same for a raw nftables/iptables ruleset whose
                 # inbound default is DROP/REJECT — "no active firewall" was false.
+                weighed = _weighed(netfilter_port_verdict, lport) if (netfilter_active or netfilter_partial) else None
                 if netfilter_active:
                     result.info(
-                        message=_t("ports.uncovered_netfilter", port=pp_info),
+                        message=(_t("ports.uncovered_netfilter_weighed", port=pp_info, verdict=_t(weighed))
+                                 if weighed else _t("ports.uncovered_netfilter", port=pp_info)),
+                        detail=_t("ports.netfilter_port.detail") if weighed else "",
                         key="ports.uncovered_netfilter",
                     )
                     continue
                 if netfilter_partial:
+                    # v0.28.0 — the permissive default reaches this port and no
+                    # rule refuses it: a measured exposure, scored like an
+                    # uncovered UFW port (−1 local / −2 public). A port a rule
+                    # accepts (the operator opened it) or drops, or one BOB
+                    # could not weigh, stays INFO.
+                    if _reachable_by_default(netfilter_port_verdict, lport):
+                        if lport.process:
+                            result.warn(
+                                message=_t("ports.uncovered_netfilter_open", port=pp_info),
+                                nature="action", key="ports.uncovered_netfilter_open",
+                                note=_t("ports.process_disclaimer", process=lport.process))
+                        else:
+                            result.alert(
+                                message=_t("ports.uncovered_netfilter_open", port=pp_info),
+                                nature="action", key="ports.uncovered_netfilter_open")
+                        result.add_deduction(
+                            reason=_t("deduction.port_no_rule", port=pp),
+                            points=2 if network_context in ("public", "ddns") else 1,
+                            context=network_context, key="ports.uncovered_netfilter_open",
+                        )
+                        continue
                     result.info(
-                        message=_t("ports.uncovered_netfilter_unweighed", port=pp_info),
+                        message=(_t("ports.uncovered_netfilter_weighed", port=pp_info, verdict=_t(weighed))
+                                 if weighed else _t("ports.uncovered_netfilter_unweighed", port=pp_info)),
+                        detail=_t("ports.netfilter_port.detail") if weighed else "",
                         key="ports.uncovered_netfilter_unweighed",
                     )
                     continue
@@ -489,7 +518,14 @@ def check_ports(
                     key = "ports.uncovered_bound_address_netfilter_unweighed"
                 else:
                     key = "ports.uncovered_bound_address"
-                result.info(message=_t(key, port=pp, address=bound.address), key=key)
+                weighed = (_weighed(netfilter_port_verdict, bound)
+                           if key.startswith("ports.uncovered_bound_address_netfilter") else None)
+                if weighed:
+                    result.info(message=_t("ports.uncovered_bound_address_netfilter_weighed", port=pp,
+                                           address=bound.address, verdict=_t(weighed)),
+                                detail=_t("ports.netfilter_port.detail"), key=key)
+                else:
+                    result.info(message=_t(key, port=pp, address=bound.address), key=key)
 
     if not has_uncovered_public and ufw_active:
         # v0.24.1: under a deny/reject default, a port with no rule is covered
@@ -503,6 +539,29 @@ def check_ports(
             result.ok(message=_t("ports.all_covered"), key="ports.all_covered")
 
     return result
+
+
+def _reachable_by_default(verdict_of, lport: "ListeningPort") -> bool:
+    """v0.28.0 — True when the raw ruleset reaches *lport* over IPv4 only
+    because its permissive default accepted it, no rule naming this port: the
+    exposure the PARTIAL posture left open and BOB has now measured. A port a
+    rule accepts (opened on purpose) or drops, or one BOB cannot weigh, is not
+    this case."""
+    if verdict_of is None or ":" in lport.address:
+        return False
+    return verdict_of(lport.port, lport.proto) == ("ACCEPT", "default")
+
+
+def _weighed(verdict_of, lport: "ListeningPort") -> "str | None":
+    """v0.28.0 — the locale key of what the raw ruleset does to a new IPv4
+    connection to *lport*, or None when BOB did not establish it (no verdict
+    function, an IPv6-only listener, or a rule BOB does not weigh)."""
+    if verdict_of is None or ":" in lport.address:
+        return None
+    verdict, by = verdict_of(lport.port, lport.proto)
+    if verdict not in ("ACCEPT", "DROP") or by not in ("rule", "default"):
+        return None
+    return f"ports.netfilter_port.{verdict.lower()}_{by}"
 
 
 # ---------------------------------------------------------------------------

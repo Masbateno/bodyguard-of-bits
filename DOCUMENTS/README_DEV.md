@@ -37,8 +37,8 @@ This separation allows the entire business logic to be tested by instantiating s
 
 | Module | Role |
 |---|---|
-| `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~1054 lines) |
-| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (57 filterable + 10 always-on sections), `_section_enabled()` (~1290 lines) |
+| `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~1059 lines) |
+| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (57 filterable + 10 always-on sections), `_section_enabled()` (~1326 lines) |
 | `cli.py` | Argument parsing — returns an `AuditConfig` dataclass |
 | `config.py` | User configuration — `UserConfig` (`~/.config/bob/config.conf`), `EmailStore` |
 | `display.py` | Terminal output helpers — `display_result()`, `print_audit_summary()`, etc. |
@@ -54,8 +54,8 @@ This separation allows the entire business logic to be tested by instantiating s
 | `sysinfo.py` | System info — `collect_system_info()`, `detect_network_context()`, `get_user_home()` |
 | `compare.py` | Comparative report — `AuditBaseline` (with `finding_keys`), `AuditDelta` (with `new_finding_keys`/`resolved_finding_keys`), `build_baseline()`, `save_baseline()`, `load_baseline()`, `compute_delta()`, `display_delta()` |
 | `plugin_checks.py` | Plugin loader — `PluginCheck`, `load_plugin_checks()`, ANSI sanitization |
-| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 230-key canonical list in 62 prefixes, per-profile prose for 73 keys (server, desktop and container sections for 69 of them, server and desktop for 2, container only for 2 — shown after the generic text), CIS reference lookup via `cis_refs.py` |
-| `cis_refs.py` | CIS benchmark reference lookup — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` with `lru_cache`; data from `data/cis_refs.json` (230 entries: 119 formal CIS, 100 best-practice, 7 Docker, 4 Kubernetes) |
+| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 235-key canonical list in 62 prefixes, per-profile prose for 73 keys (server, desktop and container sections for 69 of them, server and desktop for 2, container only for 2 — each shown after the generic text, which every key prints), CIS reference lookup via `cis_refs.py` |
+| `cis_refs.py` | CIS benchmark reference lookup — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` with `lru_cache`; data from `data/cis_refs.json` (235 entries: 120 formal CIS, 101 best-practice, 7 Docker, 7 Kubernetes) |
 | `domain_scores.py` | Per-domain sub-scores — `compute_domain_scores()`, `render_domain_scores()`, 6-domain attribution (`backup` → `health_resilience`) |
 | `webhook.py` | Webhook delivery — `build_generic_payload()`, `build_slack_payload()`, `send_webhook()`, format auto-detection |
 | `correlation.py` | Signal correlation engine — `CorrelationRule` (all_of/any_of frozensets), `CorrelatedFinding`, `run_correlations()`, 6 built-in compound-risk rules |
@@ -172,7 +172,7 @@ bob/
 ├── csv_output.py        # CSV output formatter (--format csv)
 ├── display.py           # Terminal output helpers (display_result, print_audit_summary…)
 ├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — backup→health_resilience attribution
-├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 230 keys in 62 prefixes
+├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 235 keys in 62 prefixes
 ├── exposure.py          # Port exposure grouping — interface scope + risk level
 ├── fixes.py             # Fix mode UI (interactive + auto-fix)
 ├── formatter.py         # bob.formatter — locale-independent rendering via Finding.template_vars (v0.4.1)
@@ -304,7 +304,7 @@ bob/
 │   └── world_writable.py       # WorldWritableSnapshot + check_world_writable() — --exhaustive (v0.24.0)
 ├── data/
 │   ├── services.json            # Declarative registry of the 38 services
-│   ├── cis_refs.json            # CIS benchmark references — 230 entries {ref, code}
+│   ├── cis_refs.json            # CIS benchmark references — 235 entries {ref, code}
 │   ├── profiles/                # Built-in audit profiles: server, desktop, workstation, container (.conf)
 │   ├── schemas/                 # JSON Schemas: service entry, services list, plugin file
 │   └── bob.bash-completion  # Bash completion script
@@ -542,8 +542,8 @@ print(f'Same order: {en == fr}')
 
 Expected output — the two files hold the same keys **in the same order**:
 ```
-EN keys: 3036
-FR keys: 3036
+EN keys: 3090
+FR keys: 3090
 Missing in FR: none
 Same order: True
 ```
@@ -560,7 +560,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Translate all values
 
-The file contains exactly 3036 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
+The file contains exactly 3090 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
 
 Example:
 ```json

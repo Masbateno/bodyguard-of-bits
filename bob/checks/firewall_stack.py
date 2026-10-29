@@ -392,28 +392,46 @@ def _nft_mark_statement(rule: str) -> "str | None":
     return None
 
 
+#: v0.28.0 — a jump or goto to a regular chain, also inside a verdict map
+#: (``tcp dport vmap { 8099 : jump mk }``).
+_NFT_CHAIN_CALL = re.compile(r"\b(?:jump|goto)\s+([\w.-]+)")
+
+
 def _nft_mark_setters(ruleset: str) -> "dict[str, list[str]]":
     """The mark operations of native nftables chains on the inbound path, by
     hook: every prerouting base chain, and input ones before the filter
     (v0.27.0). Tables iptables-nft keeps (ip/ip6 raw, mangle, nat, filter
-    with its upper-case chains) are already read through iptables -S."""
+    with its upper-case chains) are already read through iptables -S.
+
+    v0.28.0 — a jump or goto from such a chain to a regular chain of the same
+    table is followed inline, nested ones too (measured in a network
+    namespace with the INPUT mark-accept rule: a mark set in a chain reached
+    by jump, goto, two jumps or a vmap jump from prerouting opened 8099, which
+    BOB called conditional; the same chain never jumped to, or jumped to from
+    an output chain only, left it closed)."""
     out: "dict[str, list[str]]" = {"PREROUTING": [], "INPUT": []}
-    table = chain = hook = None
+    tables: "dict[tuple, dict[str, list[str]]]" = {}
+    hooks: "list[tuple[tuple, str, str]]" = []     # (table, chain, hook), in order
+    table = chain = None
     for line in ruleset.splitlines():
         text = line.strip()
         m = re.match(r"table\s+(\w+)\s+(\S+)\s*\{", text)
         if m:
-            table, chain, hook = (m.group(1), m.group(2)), None, None
+            table, chain = (m.group(1), m.group(2)), None
+            tables.setdefault(table, {})
             continue
         m = re.match(r"chain\s+(\S+)\s*\{", text)
         if m and table:
-            chain, hook = m.group(1), None
+            chain = m.group(1)
+            tables[table].setdefault(chain, [])
             continue
         if text == "}":
-            if chain is not None:
-                chain = hook = None          # end of a chain
-            else:
-                table = None                 # end of a table
+            # The end of a chain. Outside one it may close a set, a map or a
+            # flowtable as well as the table: the table changes at the next
+            # "table" line (v0.28.0, measured: a named set declared before
+            # the prerouting chain reset the table here, the chain was never
+            # read, and 8099, opened by its mark, read "conditional").
+            chain = None
             continue
         if chain is None or table is None:
             continue
@@ -424,18 +442,29 @@ def _nft_mark_setters(ruleset: str) -> "dict[str, list[str]]":
             managed = table[0] in ("ip", "ip6") and table[1] in ("raw", "mangle", "nat", "filter", "security") \
                 and chain.isupper()
             if managed:
-                hook = None
+                pass
             elif hm.group(1) == "prerouting":
-                hook = "PREROUTING"
+                hooks.append((table, chain, "PREROUTING"))
             elif hm.group(1) == "input" and (value is None or value <= 0):
                 # At the filter's own priority the order against iptables'
                 # INPUT is not established: such a mark reads "not established".
-                hook = "INPUT" if value is None or value < 0 else "INPUT_UNORDERED"
-            else:
-                hook = None
+                hooks.append((table, chain, "INPUT" if value is None or value < 0 else "INPUT_UNORDERED"))
             continue
-        if hook:
-            op = _nft_mark_statement(text)
+        if text:
+            tables[table][chain].append(text)
+
+    def expand(chains: "dict[str, list[str]]", name: str, seen: frozenset) -> "list[str]":
+        ordered: "list[str]" = []
+        for rule in chains.get(name, []):
+            ordered.append(rule)
+            for target in _NFT_CHAIN_CALL.findall(rule):
+                if target in chains and target not in seen:
+                    ordered += expand(chains, target, seen | {target})
+        return ordered
+
+    for tbl, name, hook in dict.fromkeys(hooks):      # a chain listed twice is read once
+        for rule in expand(tables[tbl], name, frozenset({name})):
+            op = _nft_mark_statement(rule)
             if op:
                 out["INPUT" if hook == "INPUT_UNORDERED" else hook].append(
                     _MARK_UNKNOWN if hook == "INPUT_UNORDERED" else op)

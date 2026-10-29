@@ -284,7 +284,12 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
     # is a statement about this host. Say which filter governs the listeners and
     # claim no more: BOB does not read which address families a raw ruleset's
     # tables cover (inet and ip6 filter IPv6, ip does not).
-    if not snapshot.ufw_present and not firewalld_active:
+    # v0.28.0 — UFW installed but not running filters nothing either: its
+    # IPV6= setting and its (v6) rules describe nothing here. Measured in a
+    # network namespace on a host with UFW installed: the section said "UFW is
+    # not configured for IPv6" (or, with IPV6=yes, "config OK" and −1 per port
+    # for a missing UFW v6 rule) beside a raw nftables ruleset it never read.
+    if (not snapshot.ufw_present or not ufw_active) and not firewalld_active:
         if snapshot.ipv6_listeners:
             ports = ", ".join(snapshot.ipv6_listeners)
             count = len(snapshot.ipv6_listeners)
@@ -324,14 +329,17 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
                 result.info(message=_t("ipv6.netfilter_v6", count=count, ports=ports),
                             key="ipv6.netfilter_v6")
             else:
-                result.info(message=_t("ipv6.no_firewall_v6", count=count, ports=ports),
+                # v0.28.0 — said as it is: UFW installed but not running.
+                result.info(message=_t("ipv6.no_firewall_v6_ufw_inactive" if snapshot.ufw_present
+                                       else "ipv6.no_firewall_v6", count=count, ports=ports),
                             key="ipv6.no_firewall_v6")
         elif not snapshot.listeners_readable:
             result.info(message=_t("ipv6.listeners_unknown"),
                         detail=_t("ipv6.listeners_unknown_detail"),
                         key="ipv6.listeners_unknown")
         else:
-            result.info(message=_t("ipv6.no_ufw_no_listeners"), key="ipv6.no_ufw_no_listeners")
+            result.info(message=_t("ipv6.ufw_inactive_no_listeners" if snapshot.ufw_present
+                                   else "ipv6.no_ufw_no_listeners"), key="ipv6.no_ufw_no_listeners")
         return result
 
     # Unknown heads the chain rather than sitting beside it. Falling through
@@ -357,7 +365,10 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
             # v0.27.0 — the extended reading with a global address too
             # (measured: a network namespace, 2001:db8:b0b::/64, the Mint
             # host's chains empty: closed; one accepting 8099: open, withheld).
-            if ufw_active and _ipv6_input_closed(snapshot):
+            # v0.28.0 — UFW is active here: inactive, it returned above (beside
+            # firewalld, or through the raw ruleset), so a DROP read here is
+            # ufw-init's.
+            if _ipv6_input_closed(snapshot):
                 # v0.24.2: UFW with IPV6=no drops every IPv6 packet — the
                 # listeners are unreachable, not exposed. This used to be a
                 # WARN −2 for "services exposed without UFW IPv6 rules" (global

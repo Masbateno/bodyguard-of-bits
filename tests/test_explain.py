@@ -563,11 +563,12 @@ class TestRunExplainProfileVariants:
         assert "[ desktop ]" in out
         assert "[ container ]" in out
 
-    def test_profile_key_no_generic_why_header(self):
-        """Profile-variant keys must NOT show a generic 'WHY IT IS A RISK' header."""
+    def test_profile_key_generic_why_header_once(self):
+        """v0.28.0 — the generic 'WHY IT IS A RISK' is shown once, above the
+        profile sections (it used to be replaced by them, and the measurements
+        it carried were never shown)."""
         out = self._capture("hardening.rp_filter_disabled")
-        # The generic header should not appear — replaced by profile sections
-        assert "WHY IT IS A RISK" not in out
+        assert out.count("WHY IT IS A RISK") == 1
 
     def test_profile_key_how_to_fix_in_each_section(self):
         out = self._capture("hardening.rp_filter_disabled")
@@ -608,9 +609,13 @@ class TestRunExplainProfileVariants:
         assert "[ container ]" in out
 
     @pytest.mark.parametrize("key", _PROFILE_VARIANT_KEYS)
-    def test_all_variant_keys_have_no_generic_why(self, key):
+    def test_all_variant_keys_show_the_generic_why_first(self, key):
+        # v0.28.0 — until then the generic WHY was never printed beside the
+        # profile sections (pinned here since v0.1.0), while it had come to
+        # carry measurements the HOW sends the reader to ("see WHY").
         out = self._capture(key)
-        assert "WHY IT IS A RISK" not in out
+        assert "WHY IT IS A RISK" in out
+        assert out.index("WHY IT IS A RISK") < out.index("[ server ]")
 
 
 # ---------------------------------------------------------------------------

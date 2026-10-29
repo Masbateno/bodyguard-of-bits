@@ -50,6 +50,7 @@ The section only runs where a kubelet process runs.
 from __future__ import annotations
 
 import json
+import re
 import secrets
 import ssl
 import urllib.error
@@ -133,6 +134,17 @@ class KubernetesSnapshot:
     anonymous_run_text:   str = ""
     anonymous_exec_status: "int | None" = None
     anonymous_exec_text:   str = ""
+    #: v0.28.0 — the API server, where this node runs it (MicroK8s: its args
+    #: file). None: not read. ``apiserver_anonymous_status`` is the HTTP status
+    #: of an anonymous ``GET /api/v1/namespaces`` on localhost.
+    apiserver_port:             "int | None" = None
+    apiserver_anonymous_status: "int | None" = None
+    authorization_modes:        "tuple[str, ...] | None" = None
+    #: cluster-admin bindings to a subject every identity (or none) belongs to,
+    #: as "binding: Kind/name"; None when the bindings were not read.
+    broad_admin_bindings:       "list[str] | None" = None
+    #: the container runtime's socket: (path, mode, group, members) or None.
+    runtime_socket:             "tuple[str, int, str, tuple[str, ...]] | None" = None
 
     @classmethod
     def from_system(cls) -> "KubernetesSnapshot":
@@ -158,7 +170,86 @@ class KubernetesSnapshot:
             snap.run_probed = True
             snap.anonymous_run_status, snap.anonymous_run_text = _probe_run()
             snap.anonymous_exec_status, snap.anonymous_exec_text = _probe_exec()
+        _read_apiserver(snap)
+        snap.runtime_socket = _runtime_socket()
         return snap
+
+
+#: v0.28.0 — where MicroK8s keeps the API server's arguments (measured on
+#: Ubuntu 26.04, MicroK8s 1.35.6: `--authorization-mode=AlwaysAllow` and
+#: `--secure-port=16443`; with the rbac addon, `RBAC,Node`). Other
+#: distributions are not read: not measured.
+_MICROK8S_APISERVER_ARGS = Path("/var/snap/microk8s/current/args/kube-apiserver")
+#: Subjects every request, or every authenticated one, carries.
+_BROAD_SUBJECTS = frozenset({("Group", "system:authenticated"), ("Group", "system:unauthenticated"),
+                             ("Group", "system:serviceaccounts"), ("User", "system:anonymous")})
+
+
+def _read_apiserver(snap: "KubernetesSnapshot") -> None:
+    """The API server's authorization mode and port (MicroK8s args file), its
+    answer to an anonymous read, and the cluster-admin bindings (read-only,
+    through MicroK8s' own kubectl). Leaves the fields None where not read."""
+    try:
+        text = _MICROK8S_APISERVER_ARGS.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return
+    args = {}
+    for line in text.splitlines():
+        m = re.match(r"^\s*(--[\w-]+)(?:[=\s]+(.*))?$", line)
+        if m:
+            args[m.group(1)] = (m.group(2) or "").strip().strip('"')
+    port = args.get("--secure-port", "6443")
+    snap.apiserver_port = int(port) if port.isdigit() else None
+    modes = args.get("--authorization-mode")
+    # Absent: the upstream default is not assumed (not measured) — "not read".
+    snap.authorization_modes = tuple(x.strip() for x in modes.split(",") if x.strip()) if modes else ()
+    if snap.apiserver_port:
+        snap.apiserver_anonymous_status = _probe(f"https://127.0.0.1:{snap.apiserver_port}/api/v1/namespaces")
+    if "RBAC" in snap.authorization_modes and _command_exists("microk8s"):
+        res = run_result("microk8s", "kubectl", "get", "clusterrolebindings", "-o", "json", timeout=_CTR_TIMEOUT)
+        if res.ok:
+            snap.broad_admin_bindings = _broad_admin_bindings(res.stdout)
+
+
+def _broad_admin_bindings(raw: str) -> "list[str] | None":
+    """The cluster-admin bindings naming a subject in ``_BROAD_SUBJECTS``.
+    MicroK8s with RBAC ships one binding to cluster-admin, to Group
+    system:masters (measured): not flagged."""
+    try:
+        items = json.loads(raw).get("items", [])
+    except (ValueError, AttributeError):
+        return None
+    out = []
+    for item in items:
+        if (item.get("roleRef") or {}).get("name") != "cluster-admin":
+            continue
+        for subj in item.get("subjects") or []:
+            if (subj.get("kind"), subj.get("name")) in _BROAD_SUBJECTS:
+                out.append(f"{(item.get('metadata') or {}).get('name', '?')}: {subj.get('kind')}/{subj.get('name')}")
+    return out
+
+
+def _runtime_socket() -> "tuple[str, int, str, tuple[str, ...]] | None":
+    """The first container-runtime socket present: its mode, group and the
+    group's members (v0.28.0; measured on MicroK8s 1.35.6:
+    /var/snap/microk8s/common/run/containerd.sock, 0660 root:microk8s)."""
+    import grp
+    import os
+    import stat
+    for path in _RUNTIME_SOCKETS:
+        try:
+            st = os.stat(path)
+        except OSError:
+            continue
+        if not stat.S_ISSOCK(st.st_mode):
+            continue
+        try:
+            g = grp.getgrgid(st.st_gid)
+            group, members = g.gr_name, tuple(g.gr_mem)
+        except KeyError:
+            group, members = str(st.st_gid), ()
+        return path, stat.S_IMODE(st.st_mode), group, members
+    return None
 
 
 def _ctr_command() -> "tuple[str, ...]":
@@ -527,4 +618,75 @@ def check_kubernetes(snapshot: KubernetesSnapshot, t: "TranslationFunc | None" =
             detail=_t("kubernetes.kubelet_readonly_port_detail"),
             points=1, nature="action",
         )
+    _check_apiserver(snapshot, result, _t)
+    _check_runtime_socket(snapshot, result, _t)
     return result
+
+
+def _check_apiserver(snapshot: "KubernetesSnapshot", result: CheckResult, _t) -> None:
+    """v0.28.0 — the cluster beyond the node, as far as this node reads it."""
+    if snapshot.authorization_modes is None:
+        return
+    anon = snapshot.apiserver_anonymous_status
+    if anon is not None and 200 <= anon < 300:
+        # After review: a 2xx here establishes that anonymous requests may list
+        # namespaces, not what else they may do — WARN −1, as the kubelet's
+        # anonymous read (0.25.0). Under AlwaysAllow the two findings add up.
+        result.warn_with_deduction(
+            key="kubernetes.apiserver_anonymous",
+            message=_t("kubernetes.apiserver_anonymous", port=snapshot.apiserver_port),
+            reason=_t("kubernetes.apiserver_anonymous_reason"),
+            points=1, nature="action",
+        )
+    elif anon in (401, 403):
+        result.ok(message=_t("kubernetes.apiserver_anonymous_refused", status=anon,
+                             port=snapshot.apiserver_port),
+                  key="kubernetes.apiserver_anonymous_refused")
+    else:
+        result.info(message=_t("kubernetes.apiserver_anonymous_unprobed", answer=_answer(anon)),
+                    key="kubernetes.apiserver_anonymous_unprobed")
+    if "AlwaysAllow" in snapshot.authorization_modes:
+        result.alert_with_deduction(
+            key="kubernetes.apiserver_always_allow",
+            message=_t("kubernetes.apiserver_always_allow"),
+            reason=_t("kubernetes.apiserver_always_allow_reason"),
+            detail=_t("kubernetes.apiserver_always_allow_detail"),
+            points=2, nature="action",
+        )
+    elif "RBAC" in snapshot.authorization_modes:
+        if snapshot.broad_admin_bindings:
+            result.alert_with_deduction(
+                key="kubernetes.cluster_admin_broad",
+                message=_t("kubernetes.cluster_admin_broad", bindings=", ".join(snapshot.broad_admin_bindings)),
+                reason=_t("kubernetes.cluster_admin_broad_reason"),
+                points=3, nature="action",
+            )
+        elif snapshot.broad_admin_bindings is None:
+            result.info(message=_t("kubernetes.cluster_admin_unread"), key="kubernetes.cluster_admin_unread")
+        else:
+            result.ok(message=_t("kubernetes.cluster_admin_ok"), key="kubernetes.cluster_admin_ok")
+    else:
+        result.info(message=_t("kubernetes.apiserver_authz_unread",
+                               modes=",".join(snapshot.authorization_modes) or "—"),
+                    key="kubernetes.apiserver_authz_unread")
+
+
+def _check_runtime_socket(snapshot: "KubernetesSnapshot", result: CheckResult, _t) -> None:
+    sock = snapshot.runtime_socket
+    if sock is None:
+        return
+    path, mode, group, members = sock
+    if mode & 0o002:
+        result.alert_with_deduction(
+            key="kubernetes.runtime_socket_open",
+            message=_t("kubernetes.runtime_socket_open", path=path, mode=f"{mode:04o}"),
+            reason=_t("kubernetes.runtime_socket_open_reason"),
+            points=3, nature="action",
+        )
+    elif mode & 0o020:
+        result.info(message=_t("kubernetes.runtime_socket_group", path=path, mode=f"{mode:04o}", group=group,
+                               members=", ".join(members) or _t("kubernetes.runtime_socket_no_member")),
+                    key="kubernetes.runtime_socket_group")
+    else:
+        result.ok(message=_t("kubernetes.runtime_socket_ok", path=path, mode=f"{mode:04o}"),
+                  key="kubernetes.runtime_socket_ok")

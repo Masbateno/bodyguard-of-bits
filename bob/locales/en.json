@@ -277,6 +277,8 @@
       "no_rule_firewalld": "firewall managed by firewalld (not UFW) — reachable only if its zone permits this port",
       "no_rule_netfilter": "filtered by the host's nftables/iptables ruleset (no UFW/firewalld) — reachable only if that ruleset permits this port",
       "no_rule_netfilter_unweighed": "no UFW/firewalld; the host's nftables/iptables ruleset accepts by default and refuses some traffic — whether this port is reachable is not established",
+      "no_rule_netfilter_weighed": "over IPv4, {verdict}",
+      "netfilter_open": "reachable from the network — the nftables/iptables ruleset accepts it by default over IPv4 and no rule refuses this port (no UFW/firewalld)",
       "loopback": "bound to localhost only — UFW rule has no effect on external access",
       "loopback_no_rule": "bound to localhost only — no UFW rule needed (covered by default deny)",
       "loopback_no_rule_ufw_inactive": "bound to localhost only — no external exposure",
@@ -312,7 +314,17 @@
     "uncovered_firewalld_docker": "Port {port} listening on all interfaces — published by Docker: with Docker writing its own firewall rules and firewalld's StrictForwardPorts off (both the defaults), the firewalld zone did not filter such a port when measured (Fedora, openSUSE and Debian; see the Docker section)",
     "uncovered_firewalld_docker_forwarded": "Port {port} listening on all interfaces — published by Docker: firewalld's StrictForwardPorts is on, but a firewalld zone also forwards this port, and firewalld then lets DNAT'd traffic to it through whatever the ingress zone (firewalld issue #1536, confirmed upstream; not reproduced here; see the Docker section)",
     "uncovered_netfilter": "Port {port} listening on all interfaces — governed by the nftables/iptables ruleset (inbound default: refuse; a rule may still allow this port — BOB reads the default policy, not every rule, and does not establish reachability), not a UFW rule",
-    "uncovered_netfilter_unweighed": "Port {port} listening on all interfaces — the nftables/iptables ruleset accepts inbound traffic by default and refuses some of it: whether this port is reachable is not established"
+    "uncovered_netfilter_unweighed": "Port {port} listening on all interfaces — the nftables/iptables ruleset accepts inbound traffic by default and refuses some of it: whether this port is reachable is not established",
+    "uncovered_netfilter_open": "Port {port} listening on all interfaces — over IPv4, the nftables/iptables ruleset accepts it by default and no rule refuses this port: reachable from the network",
+    "uncovered_netfilter_weighed": "Port {port} listening on all interfaces — over IPv4, {verdict}",
+    "uncovered_bound_address_netfilter_weighed": "Port {port} — bound to {address} only — over IPv4, {verdict}",
+    "netfilter_port": {
+      "accept_rule": "a rule of the nftables/iptables ruleset for this port accepts it: reachable from the network",
+      "accept_default": "the nftables/iptables ruleset accepts it by default and no rule refuses this port: reachable from the network",
+      "drop_rule": "a rule of the nftables/iptables ruleset for this port refuses it: not reachable from the network",
+      "drop_default": "the nftables/iptables ruleset refuses it by default and no rule accepts this port first: not reachable from the network",
+      "detail": "BOB read the input chains in order and weighed the rules naming this port's number (a single port, a list, a range, multiport), set aside the loopback, established/related and invalid-only rules, and followed unconditional jumps; any other rule would have left the port not established, as would a rule before the input hook (prerouting, ingress, the raw, mangle and security tables) that may refuse it. Measured in a network namespace: such rules opened or closed exactly the ports they name. Not weighed: IPv6 (see the IPv6 section), rules limited to some sources or interfaces, sets and maps."
+    }
   },
   "logs": {
     "no_logfile": "UFW log file not found (/var/log/ufw.log) and no UFW entries in journald — logging disabled?",
@@ -376,7 +388,7 @@
     "exposed_ports": "Ports exposed by Docker",
     "iptables_bypass_detail1": "This is an architectural choice, not a simple fix — two options:",
     "iptables_bypass_detail2": "  1. Disable Docker iptables (advanced): set {\"iptables\": false} in daemon.json — you manage networking yourself: containers then lose outbound access (no NAT) until you write those rules",
-    "iptables_bypass_detail3": "  2. Keep it: publish a port that should stay on the host on 127.0.0.1 (-p 127.0.0.1:8080:8080), and to limit who reaches a published port, filter in the DOCKER-USER chain of Docker's iptables backend (bob --explain docker.exposed_port) — a host firewall rule does not filter it",
+    "iptables_bypass_detail3": "  2. Keep it: publish a port that should stay on the host on 127.0.0.1 (-p 127.0.0.1:8080:8080), and to limit who reaches a published port, filter in the DOCKER-USER chain of Docker's iptables backend (bob --explain docker.exposed_port) — over IPv4 a host firewall rule does not filter it; over IPv6 that depends on the container's network (see the same explain)",
     "iptables_bypass_detail3_nftables": "  2. Keep it: publish a port that should stay on the host on 127.0.0.1 (-p 127.0.0.1:8080:8080), and to limit who reaches a published port, add your own nftables rules — Docker's nftables backend has no DOCKER-USER chain",
     "iptables_bypass_docs": "  → Read before acting: https://docs.docker.com/network/iptables/",
     "exposed_bypass_ufw": "bypasses the host firewall via iptables",
@@ -999,6 +1011,11 @@
     "key_resolved": "Resolved: {finding}",
     "visibility_dropped": "This run could read less of the host than the previous one — the comparison below is not like for like",
     "mode_changed": "This run and the previous one were not run the same way ({curr} now, {prev} before): the sections only --exhaustive reads ({sections}) and the finding counts are left out of the comparison",
+    "sections_changed": "This run and the previous one did not read the same sections (--check, --skip or the profile): only in this run: {only_curr}; only in the previous one: {only_prev}. Findings are compared over the sections both read; the score and the finding counts are not compared",
+    "sections_none": "none",
+    "score_not_compared": "Score {curr}/10, previous {prev}/10 — not compared: the two runs did not read the same sections",
+    "sections_unrecorded": "The previous run was recorded before BOB noted which sections a run reads (before 0.28.0): only the always-on sections' findings are compared; the score and the finding counts are not",
+    "score_not_compared_unrecorded": "Score {curr}/10, previous {prev}/10 — not compared: the previous run's sections were not recorded",
     "mode_exhaustive": "with --exhaustive",
     "mode_normal": "without --exhaustive",
     "mode_unknown": "not recorded",
@@ -1249,7 +1266,9 @@
     "netfilter_v6_open_cmd_comment": "add an inet (or ip6) input chain at policy drop, keeping SSH and ICMPv6",
     "netfilter_v6_open_link_local": "{count} service(s) listening on IPv6 ({ports}) — link-local addresses only: not reachable from the internet, but no ip6 or inet input chain denies them to the local network",
     "no_firewall_v6": "{count} service(s) listening on IPv6 ({ports}) — no UFW on this host and no other firewall filtering inbound traffic",
+    "no_firewall_v6_ufw_inactive": "{count} service(s) listening on IPv6 ({ports}) — UFW is installed but not active, and no other firewall filters inbound traffic",
     "no_ufw_no_listeners": "UFW is not installed and no service listens on IPv6",
+    "ufw_inactive_no_listeners": "UFW is installed but not active, and no service listens on IPv6",
     "ufw_v6_off_rules_unresolved": "{count} service(s) listening on IPv6 (::), link-local addresses only: not reachable from the internet — UFW IPv6 is disabled and its DROP is in place, but the IPv6 INPUT chain holds other rules, so BOB cannot show whether the local network reaches them",
     "ufw_disabled_listeners_link_local": "{count} service(s) listening on IPv6 (::) but UFW IPv6 is disabled — link-local addresses only: not reachable from the internet, but reachable from the local network without UFW filtering them",
     "kernel_state_unknown": "Kernel IPv6 state could not be read",
@@ -2329,9 +2348,9 @@
         }
       },
       "exposed_port": {
-        "title": "Docker container exposes a port (the host firewall is bypassed; LAN-reachable)",
-        "why": "The container is publishing a port via `-p HOST_PORT:CONTAINER_PORT` or a `ports:` declaration. Because Docker manages iptables (see docker.iptables_bypass), this port is reachable from at least the LAN and possibly the public internet depending on the publish address (default 0.0.0.0 = all interfaces). UFW deny rules for this port have no effect, and neither does a firewalld zone that does not allow it (measured on Fedora 44). Whether this is a problem depends on what the container offers: a self-hosted dashboard, a database admin UI, or a redis with no auth are all classic Docker exposure incidents.\n\nAbout the DOCKER-USER example (HOW, step 3). Measured on Ubuntu 26.04 with Docker 29.1.3: other LAN hosts refused, the trusted one answered, and the containers kept DNS and internet access — their new connections enter from the Docker bridge, not the external interface, and their replies are returned as established. Without the RETURN rule, or with a bare DROP at the end of the chain, they lost both. The DROP matches every new connection the host forwards from that interface, not only Docker's ports: a host that also routes other networks must narrow it first. It stops new connections from other sources; one already established goes on until it closes — measured: the RETURN takes its packets before any DROP placed after it (see HOW). Not measured: IPv6 (ip6tables has its own DOCKER-USER) and a routing host.",
-        "how": "1. Audit what the container exposes:\n   docker ps\n   docker inspect <container> | jq '.[0].NetworkSettings.Ports'\n2. If the service is internal-only, restrict the publish address:\n   docker run -p 127.0.0.1:8080:8080 ...   # localhost only\n   docker run -p 192.168.1.10:8080:8080 ... # specific LAN IP only\n3. If the container must be reachable but only from specific clients and Docker uses its iptables backend, filter in the DOCKER-USER chain. Run in this order (-I inserts at the top, so RETURN ends up first); the DROP also hits other traffic the host forwards from that interface (see WHY):\n   sudo iptables -I DOCKER-USER -i <external-interface> ! -s <trusted-ip> -j DROP\n   sudo iptables -I DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN\n   They stop new connections from other sources; a connection already tracked before them is let through until it expires. A DROP you add later after the RETURN does not cut the container's flows already open either (measured: its counter stayed at 0); add -i <external-interface> to the RETURN for it to (measured: new connections met the same verdicts).\n   With Docker's nftables backend there is no DOCKER-USER chain: write your own nftables rules.",
+        "title": "Docker container exposes a port (the host firewall is bypassed over IPv4; LAN-reachable)",
+        "why": "The container is publishing a port via `-p HOST_PORT:CONTAINER_PORT` or a `ports:` declaration. Because Docker manages iptables (see docker.iptables_bypass), this port is reachable from at least the LAN and possibly the public internet depending on the publish address (by default every IPv4 and IPv6 address: 0.0.0.0 and ::). Over IPv4, UFW deny rules for this port have no effect, and neither does a firewalld zone that does not allow it (measured on Fedora 44). Whether this is a problem depends on what the container offers: a self-hosted dashboard, a database admin UI, or a redis with no auth are all classic Docker exposure incidents.\n\nAbout the DOCKER-USER example (HOW, step 3). Measured on Ubuntu 26.04 with Docker 29.1.3: other LAN hosts refused, the trusted one answered, and the containers kept DNS and internet access — their new connections enter from the Docker bridge, not the external interface, and their replies are returned as established. Without the RETURN rule, or with a bare DROP at the end of the chain, they lost both. The DROP matches every new connection the host forwards from that interface, not only Docker's ports: a host that also routes other networks must narrow it first. It stops new connections from other sources; one already established goes on until it closes — measured: the RETURN takes its packets before any DROP placed after it (see HOW). IPv6 is filtered elsewhere (measured): see docker.exposed_bypass_ufw. Not measured: a routing host.",
+        "how": "1. Audit what the container exposes:\n   docker ps\n   docker inspect <container> | jq '.[0].NetworkSettings.Ports'\n2. If the service is internal-only, restrict the publish address:\n   docker run -p 127.0.0.1:8080:8080 ...   # localhost only\n   docker run -p 192.168.1.10:8080:8080 ... # specific LAN IP only\n3. If the container must be reachable but only from specific clients and Docker uses its iptables backend, filter in the DOCKER-USER chain. Run in this order (-I inserts at the top, so RETURN ends up first); the DROP also hits other traffic the host forwards from that interface (see WHY):\n   sudo iptables -I DOCKER-USER -i <external-interface> ! -s <trusted-ip> -j DROP\n   sudo iptables -I DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN\n   They stop new connections from other sources; a connection already tracked before them is let through until it expires. A DROP you add later after the RETURN does not cut the container's flows already open either (measured: its counter stayed at 0); add -i <external-interface> to the RETURN for it to (measured: new connections met the same verdicts).\n   These filter IPv4 only: for IPv6, see bob --explain docker.exposed_bypass_ufw (measured).\n   With Docker's nftables backend there is no DOCKER-USER chain: write your own nftables rules.",
         "server": {
           "why": "On a server, every exposed Docker port is potentially internet-facing. Treat each `-p` declaration as a public-port decision, not a local-port decision."
         },
@@ -2344,8 +2363,8 @@
       },
       "exposed_bypass_ufw": {
         "title": "Docker container port is exposed AND Docker iptables management is bypassing the host firewall",
-        "why": "Two issues combined: the container is publishing a port (`-p`) and Docker is configured to write iptables rules that bypass the host firewall (UFW, or the firewalld zones). The result is that the port is fully reachable on whatever publish address was specified (default 0.0.0.0 = every interface, including the public one), with the host firewall unable to block it. This is the worst-case Docker exposure pattern — visible in the wild every time a developer ships a 'just for testing' container to a public-IP VPS. CVEs in the exposed application are now public-facing.",
-        "how": "Two simultaneous fixes needed:\n1. Restrict the publish address of the offending container:\n   - Stop and recreate the container with -p 127.0.0.1:HOST_PORT:CONTAINER_PORT\n   - Or edit docker-compose.yml: 'ports: [\"127.0.0.1:HOST_PORT:CONTAINER_PORT\"]'\n2. Decide on the Docker / host firewall integration (see docker.iptables_bypass for the long form):\n   - Bind explicitly (simpler): keep iptables=true, always specify the publish address\n   - Or disable Docker's iptables (advanced): /etc/docker/daemon.json {\"iptables\": false}\n3. Re-verify with:\n   sudo iptables -L DOCKER-USER -n\n   ss -tlnp | grep <port>",
+        "why": "Two issues combined: the container is publishing a port (`-p`) and Docker is configured to write iptables rules that bypass the host firewall (UFW, or the firewalld zones). The result is that the port is fully reachable on whatever publish address was specified (by default every IPv4 and IPv6 address, the public ones included), with the host firewall unable to block it over IPv4 (over IPv6 it depends on the container's network). Measured with Docker 29.9.2 (iptables backend, userland proxy on): the port also listens on [::]. On a network without IPv6 (the default bridge), IPv6 reaches it through docker-proxy, on the host's INPUT: no DOCKER-USER rule stopped it, iptables or ip6tables (the counter stayed at 0), and the host's IPv6 input filter did — an IPv6 input at DROP, or an ip6tables INPUT rule for the port. On a network created with --ipv6, ip6tables' DOCKER-USER stopped it and iptables' alone did not. This is the worst-case Docker exposure pattern — visible in the wild every time a developer ships a 'just for testing' container to a public-IP VPS. CVEs in the exposed application are now public-facing.",
+        "how": "Two simultaneous fixes needed:\n1. Restrict the publish address of the offending container:\n   - Stop and recreate the container with -p 127.0.0.1:HOST_PORT:CONTAINER_PORT\n   - Or edit docker-compose.yml: 'ports: [\"127.0.0.1:HOST_PORT:CONTAINER_PORT\"]'\n2. Decide on the Docker / host firewall integration (see docker.iptables_bypass for the long form):\n   - Bind explicitly (simpler): keep iptables=true, always specify the publish address\n   - Or disable Docker's iptables (advanced): /etc/docker/daemon.json {\"iptables\": false}\n3. Over IPv6 (see WHY): on a network created with --ipv6, write the DOCKER-USER rules with ip6tables too; on a network without IPv6 the host's IPv6 input firewall decides; -p 0.0.0.0:HOST_PORT:CONTAINER_PORT keeps the port off IPv6 (measured).\n4. Re-verify with:\n   sudo iptables -L DOCKER-USER -n\n   ss -tlnp | grep <port>",
         "server": {
           "why": "On a public-facing server, this combination means a container is internet-exposed despite the host firewall saying otherwise. Fix immediately — rotate any credentials that may have been exposed."
         },
@@ -2482,6 +2501,11 @@
         "container": {
           "why": "Containerised Samba publishes its ports through the host. Restrict at the UFW level on the host."
         }
+      },
+      "uncovered_netfilter_open": {
+        "title": "Listening port reachable because the raw ruleset accepts by default",
+        "why": "The host filters with a raw nftables/iptables ruleset (no UFW, no firewalld) whose inbound default is accept, with some refusals BOB does not weigh port by port. For this port BOB followed the chains and found no rule refusing it, on the input hook or before it: the permissive default reaches it, so a new connection from the network is accepted. Measured in a network namespace against a real listener. A port a rule explicitly accepts (opened on purpose) or drops is not this finding; one BOB cannot weigh is reported without a deduction.",
+        "how": "Decide whether the port should be reachable:\n1. It should → add an explicit accept so the intent is on record, and set the chain's default to drop:\n   sudo nft add rule inet filter input tcp dport <PORT> accept   # adapt to your table/chain\n   sudo nft chain inet filter input '{ policy drop; }'\n   (iptables: sudo iptables -A INPUT -p tcp --dport <PORT> -j ACCEPT ; sudo iptables -P INPUT DROP — keep a loopback and established accept first, and your SSH port, or you lock yourself out)\n2. It should not → refuse it:\n   sudo nft add rule inet filter input tcp dport <PORT> drop\n   (iptables: sudo iptables -A INPUT -p tcp --dport <PORT> -j DROP)\nMake the ruleset persistent (nftables.conf, or netfilter-persistent save). A host firewall front-end (ufw, firewalld) with a default-deny policy covers every port at once."
       }
     },
     "ntp": {
@@ -2680,7 +2704,7 @@
       "weak_hash": {
         "title": "Weak password-hashing algorithm (MD5 / DES / bigcrypt)",
         "why": "The hash algorithm decides how long a stolen /etc/shadow resists an offline cracker. MD5-crypt, DES and bigcrypt are fast to compute on a GPU, so common and medium-strength passwords fall within hours; yescrypt and SHA512-crypt are deliberately slow and memory-hard. The risk is not that someone reads shadow on a healthy host — it is that a copy ends up somewhere it should not (a backup, a dumped container image, a compromised admin account), and the algorithm is then the only thing between that copy and working passwords. Two settings name it: ENCRYPT_METHOD in /etc/login.defs (used by useradd, chpasswd, newusers) and the option on the pam_unix.so password line (used by passwd); a weak value in either produces weak hashes for the accounts that path writes.",
-        "how": "Debian / Ubuntu / Mint / Kali → use the distribution's own defaults:\n1. Set the login.defs method:\n   sudo sed -i 's/^ENCRYPT_METHOD.*/ENCRYPT_METHOD YESCRYPT/' /etc/login.defs\n2. Check the pam_unix option in the password stack (common-password, or system-auth on the RPM family) names yescrypt or sha512, not md5:\n   grep pam_unix.so /etc/pam.d/common-password\n3. Existing hashes are only rewritten when each user changes their password — ask users with old hashes to run passwd."
+        "how": "Debian / Ubuntu / Mint / Kali → use the distribution's own defaults:\n1. Set the login.defs method:\n   sudo sed -i 's/^[[:space:]]*ENCRYPT_METHOD[[:space:]].*/ENCRYPT_METHOD YESCRYPT/' /etc/login.defs; grep -q '^[[:space:]]*ENCRYPT_METHOD[[:space:]]' /etc/login.defs || echo 'ENCRYPT_METHOD YESCRYPT' | sudo tee -a /etc/login.defs\n2. Check the pam_unix option in the password stack (common-password, or system-auth on the RPM family) names yescrypt or sha512, not md5:\n   grep pam_unix.so /etc/pam.d/common-password\n3. Existing hashes are only rewritten when each user changes their password — ask users with old hashes to run passwd."
       },
       "no_expiry": {
         "title": "No password expiry policy configured",
@@ -3325,6 +3349,26 @@
         "title": "Kubelet read-only port open",
         "why": "Port 10255 is the kubelet's unauthenticated read-only API. Anyone who reaches it reads every pod spec on the node — images, commands, environment variables (where credentials are often placed) — and the node's details: a map for the next step, with no credential needed and no trace in the API server.",
         "how": "1. Set --read-only-port=0 (readOnlyPort: 0 in the kubelet configuration file).\n2. Restart the kubelet.\n3. Verify: curl -s http://127.0.0.1:10255/pods should fail to connect."
+      },
+      "apiserver_anonymous": {
+        "title": "API server lets anonymous requests list namespaces",
+        "why": "The API server is the cluster's control plane: read access lists every secret, config map and pod spec; write access creates pods, which on most clusters means running code on any node. BOB asks for the namespace list with no token and no client certificate. A 2xx establishes that anonymous requests are authorised for that read; what else they may do depends on what the anonymous identity was granted, which BOB does not list — under AlwaysAllow it is everything (see kubernetes.apiserver_always_allow, which adds up with this finding). This combines two settings: --anonymous-auth=true turns the anonymous identity on, and the authorizer (RBAC, or AlwaysAllow) then lets it through.",
+        "how": "1. Turn anonymous authentication off:\n   --anonymous-auth=false on the API server (MicroK8s: /var/snap/microk8s/current/args/kube-apiserver, then microk8s stop; microk8s start)\n2. Keep the authorizer on RBAC: --authorization-mode=RBAC,Node\n3. Re-check:\n   curl -sk -o /dev/null -w '%{http_code}\\n' https://127.0.0.1:<port>/api/v1/namespaces   # expect 401 or 403\n4. Do not publish the API server port to untrusted networks; put it behind the host firewall."
+      },
+      "apiserver_always_allow": {
+        "title": "API server authorizes every request (AlwaysAllow)",
+        "why": "--authorization-mode=AlwaysAllow makes the API server grant every request that authenticates, whatever RBAC rules exist. Any token or client certificate the cluster accepts — a pod's service account token (mounted into pods by default, unless automounting is disabled), a kubeconfig for any user — then has full control of the cluster. RBAC is not consulted. This is a development default; measured on MicroK8s 1.35.6 it is the stock mode, and enabling the rbac addon switched it to RBAC,Node.",
+        "how": "1. Set the authorizer to RBAC (and Node for kubelet authorization):\n   --authorization-mode=RBAC,Node\n   MicroK8s: microk8s enable rbac\n2. Review what your workloads' service accounts are granted before switching, so RBAC does not deny something they relied on:\n   kubectl get clusterrolebindings,rolebindings -A\n3. Restart the API server and confirm a default service account is now denied:\n   kubectl auth can-i list secrets --as=system:serviceaccount:default:default   # expect no"
+      },
+      "cluster_admin_broad": {
+        "title": "cluster-admin granted to a broad subject",
+        "why": "cluster-admin is the built-in role with full control of the cluster. Bound to a broad subject — system:authenticated (every authenticated user), system:serviceaccounts (every pod's service account), or system:anonymous — it hands that control to far more than an administrator. A single pod's token, or any user the cluster authenticates, becomes cluster-admin. The stock binding is to the group system:masters, which the control-plane certificates use; measured on MicroK8s with the rbac addon, that is the only cluster-admin binding.",
+        "how": "1. List what cluster-admin is bound to:\n   kubectl get clusterrolebindings -o json | jq -r '.items[]|select(.roleRef.name==\"cluster-admin\")|.metadata.name + \": \" + (.subjects//[]|map(.kind+\"/\"+.name)|join(\",\"))'\n2. Delete the broad binding, or point it at the named administrators who need it:\n   kubectl delete clusterrolebinding <name>\n3. Grant narrow roles instead: a Role or ClusterRole with only the verbs and resources a subject needs."
+      },
+      "runtime_socket_open": {
+        "title": "Container runtime socket writable beyond its owner",
+        "why": "The container runtime's socket (containerd, CRI-O, Docker) is a full control channel for the node: whoever can write to it starts a container, and a container that mounts the host root or runs privileged is root on the node. World-writable, any local account owns the node; writable by a group, every member does. The socket should be reachable only by root and the kubelet. Measured on MicroK8s 1.35.6: /var/snap/microk8s/common/run/containerd.sock is 0660 root:microk8s with no extra members.",
+        "how": "1. Check the socket's mode, group and members:\n   ls -l <socket> ; getent group <group>\n2. Remove the world bit, or narrow the group to the accounts that must drive the runtime:\n   sudo chmod o-rwx <socket>\n3. Keep the kubelet's own user in the group it needs; do not add ordinary user accounts to it."
       }
     },
     "services_health": {
@@ -3633,6 +3677,7 @@
   "history": {
     "title": "Score History",
     "no_entries": "No score history found — run an audit first",
+    "partial": "(partial run: --check / --skip, not in the trend)",
     "unreadable": "Score history exists but cannot be read ({path}: {error}) — owned by {owner}, mode {mode}. To read it: sudo bob --history",
     "unreadable_hand_back": "It is a regular file owned by another account: the next audit run with sudo bob gives it back to yours, through the same checked descriptor as every write — no chown to type, whose path the shell would resolve again"
   },
@@ -4318,7 +4363,24 @@
     "kubelet_unprobed": "The kubelet did not answer on 127.0.0.1:10250 within 15 seconds — its anonymous access was not assessed",
     "kubelet_readonly_port": "The kubelet's read-only port 10255 answers without authentication (asked from this host) — pod specifications, including literal environment values, and node details are readable",
     "kubelet_readonly_port_reason": "kubelet read-only port open",
-    "kubelet_readonly_port_detail": "Set --read-only-port=0 (readOnlyPort: 0 in the kubelet configuration) and restart the kubelet. See: bob --explain kubernetes.kubelet_readonly_port"
+    "kubelet_readonly_port_detail": "Set --read-only-port=0 (readOnlyPort: 0 in the kubelet configuration) and restart the kubelet. See: bob --explain kubernetes.kubelet_readonly_port",
+    "apiserver_anonymous": "API server on :{port} lets anonymous requests list namespaces (GET /api/v1/namespaces, 2xx) — what else they may do is not established",
+    "apiserver_anonymous_reason": "anonymous namespace listing on the API server",
+    "apiserver_anonymous_refused": "API server anonymous read refused ({status} on :{port})",
+    "apiserver_anonymous_unprobed": "API server anonymous read not established ({answer})",
+    "apiserver_always_allow": "API server authorization-mode is AlwaysAllow — every authenticated request is granted, RBAC is not enforced",
+    "apiserver_always_allow_reason": "API server grants every request (AlwaysAllow)",
+    "apiserver_always_allow_detail": "With --authorization-mode=AlwaysAllow the API server authorises every request that authenticates, whatever RBAC says. Any token or client certificate the cluster accepts is then cluster-admin in effect. Set --authorization-mode=RBAC,Node (on MicroK8s: microk8s enable rbac). Measured on MicroK8s 1.35.6: the stock mode is AlwaysAllow; enabling rbac set it to RBAC,Node and a default service account could no longer list secrets.",
+    "apiserver_authz_unread": "API server authorization mode: {modes} — not weighed here",
+    "cluster_admin_broad": "cluster-admin is bound to a broad subject: {bindings} — every request it covers has full cluster control",
+    "cluster_admin_broad_reason": "cluster-admin granted to a broad subject",
+    "cluster_admin_ok": "cluster-admin is not bound to anonymous, all authenticated users or all service accounts",
+    "cluster_admin_unread": "cluster-admin bindings not read",
+    "runtime_socket_open": "container runtime socket {path} is world-writable ({mode}) — any local account drives the runtime and owns the node",
+    "runtime_socket_open_reason": "container runtime socket writable by everyone",
+    "runtime_socket_group": "container runtime socket {path} ({mode}) is writable by group {group}: {members} — each drives the runtime and owns the node",
+    "runtime_socket_no_member": "no member",
+    "runtime_socket_ok": "container runtime socket {path} ({mode}) is restricted to its owner and group"
   },
   "docker_hardening": {
     "scan_error": "Container runtime not reachable — container security check skipped",
@@ -4359,11 +4421,15 @@
     "input_ok_detail": "Read from the chains' default policies (for nftables, every IPv4 base chain on the input hook, a rule accepting everything taken into account). Rules are not evaluated one by one: whether SSH, or any given port, passes every chain is not established here.",
     "input_unknown": "Default INPUT policy: undetermined — manual verification recommended",
     "input_accept_unweighed": "Default INPUT policy: ACCEPT, with rules that refuse some traffic (a drop, a reject, or a jump to a chain that does) — which listening ports they close is not established",
-    "input_accept_unweighed_detail": "BOB reads a ruleset's policies and the rules that take every packet, and follows jumps to see whether a chain can refuse; it does not weigh which ports each rule matches. Measured in a network namespace: at policy accept, a drop for one port, or a jump to a chain dropping it, closed that port; a jump to a chain that only accepts, or a log rule, did not. The score is a ceiling: check with `sudo nft list ruleset` (or `sudo iptables -S`) which listening ports stay open.",
+    "input_accept_unweighed_detail": "BOB reads a ruleset's policies and the rules that take every packet, and follows jumps to see whether a chain can refuse; it does not weigh which ports each rule matches. Measured in a network namespace: at policy accept, a drop for one port, or a jump to a chain dropping it, closed that port; a jump to a chain that only accepts, or a log rule, did not. The ports section weighs each listening port against the rules naming its number, where every rule on its path is one BOB weighs (over IPv4). The score is a ceiling: check with `sudo nft list ruleset` (or `sudo iptables -S`) which listening ports stay open.",
     "no_loopback": "No loopback (lo) rule — local services may be unreachable",
     "no_conntrack": "No ESTABLISHED/RELATED rule — return traffic for outgoing connections may be dropped",
-    "forward_accept": "Default FORWARD policy: ACCEPT — transit traffic is not filtered",
+    "forward_accept": "Default FORWARD policy: ACCEPT — routed traffic is accepted by default, and no rule refuses it beyond given sources or invalid packets",
     "forward_ok": "Default FORWARD policy: {policy} (recommended)",
+    "forward_ok_final_rule": "FORWARD ends with a rule that answers {policy} to every remaining packet — the chain's policy is never reached (recommended)",
+    "forward_accept_unweighed": "Default FORWARD policy: ACCEPT, with rules that refuse some routed traffic (a drop, a reject, or a jump to a chain that does) — which traffic they stop is not established",
+    "forward_accept_unweighed_detail": "BOB reads a ruleset's policies and the rules that take every packet, and follows jumps to see whether a chain can refuse; it does not weigh which ports or destinations each rule matches. Measured in network namespaces, with a router between two networks: at policy accept, a drop for one port, or a jump to a chain dropping it, stopped that port while the others passed; a log rule or a drop for one source did not stop the rest. The score is a ceiling: check with `sudo nft list ruleset` (or `sudo iptables -S FORWARD`) what is still forwarded.",
+    "forward_accept_all_detail": "A rule in this chain accepts every packet before the policy is ever reached, so setting the policy to DROP would change nothing — measured: forwarded traffic still passed. BOB gives no command: remove that rule first (find it with nft -a list ruleset or iptables -S FORWARD), keeping explicit accepts for the traffic this host must route, then set the policy.",
     "forward_unknown": "Default FORWARD policy: undetermined — manual verification recommended",
     "ruleset_unreadable": "Firewall ruleset could not be read",
     "firewalld_unreadable": "firewalld is installed but could not be queried — the base chains are not judged, since a running firewalld filters in its own chains",

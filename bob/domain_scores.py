@@ -625,6 +625,7 @@ def render_domain_scores(
 
     from bob.output import score_bar
     profile_name = getattr(profile, "name", "") or ""
+    partial = partially_read_domains(engine) if engine is not None else set()
 
     for domain in DOMAINS:
         if domain not in scores:
@@ -636,7 +637,8 @@ def render_domain_scores(
         if is_active:
             score = scores[domain]["score"]
             bar   = score_bar(int(score * _BAR_WIDTH / MAX_SCORE))
-            lines.append(f"  {label:<{label_width}}  {score:>2}/10  {bar}")
+            mark  = "≤" if domain in partial else " "
+            lines.append(f"  {label:<{label_width}} {mark}{score:>2}/10  {bar}")
         else:
             # v0.12.1: show the domain, but with its reason instead of a score,
             # dimmed and kept out of the average.
@@ -648,6 +650,20 @@ def render_domain_scores(
             )
 
     return lines
+
+
+def partially_read_domains(engine) -> "set[str]":
+    """v0.28.0 — the scored domains with an input BOB could not read: their
+    score is a ceiling, as the global one is. Measured on the user's Mint host
+    (0.27.0, --exhaustive, debsums absent): "Score ≤ 9/10" above, and
+    "System hardening 9/10" below with package_integrity unread inside it."""
+    scores = getattr(engine, "domain_scores", None) or {}
+    active = getattr(engine, "active_domains", None) or set()
+    return {
+        dom for key in getattr(engine, "unverified", []) or []
+        if (dom := _PREFIX_TO_DOMAIN.get(key.split(".")[0])) is not None
+        and dom in scores and dom in active
+    }
 
 
 def domain_rows(engine: "ScoreEngine", t=None, profile=None, config=None) -> list[dict]:
@@ -671,6 +687,7 @@ def domain_rows(engine: "ScoreEngine", t=None, profile=None, config=None) -> lis
     active = engine.active_domains or active_domains_from_engine(engine)
     profile_name = getattr(profile, "name", "") or ""
     rows: list[dict] = []
+    partial = partially_read_domains(engine)
     for domain in DOMAINS:
         if domain not in scores:
             continue
@@ -681,7 +698,8 @@ def domain_rows(engine: "ScoreEngine", t=None, profile=None, config=None) -> lis
                 label = translated
         if domain in active:
             rows.append({"key": domain, "label": label,
-                         "score": scores[domain]["score"], "active": True, "reason": ""})
+                         "score": scores[domain]["score"], "active": True, "reason": "",
+                         "ceiling": domain in partial})
         else:
             reason = domain_inactive_reason(domain, engine, profile, config)
             rows.append({"key": domain, "label": label, "score": None,

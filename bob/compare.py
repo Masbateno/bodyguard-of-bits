@@ -95,6 +95,9 @@ class AuditBaseline:
     # v0.26.1 — whether the run was an --exhaustive one. None marks a baseline
     # written before the field existed: its mode is unknown, not "normal".
     exhaustive: bool | None = None
+    # v0.28.0 — the filterable sections this run read (--check, --skip and the
+    # profile decide). None marks a baseline written before the field existed.
+    sections: list[str] | None = None
 
 
 #: v0.26.1 — the sections only an --exhaustive run reads (the keys of
@@ -134,6 +137,17 @@ class AuditDelta:
     mode_mismatch: bool = False
     prev_exhaustive: bool | None = None
     curr_exhaustive: bool | None = None
+    # v0.28.0 — the two runs did not read the same sections (--check, --skip,
+    # another profile): findings are compared over the sections both read, and
+    # the score and the counts are not compared.
+    sections_mismatch: bool = False
+    # v0.28.0, after review — the previous baseline predates the field: its
+    # coverage is unknown, so only the always-on sections are compared and the
+    # score and the counts are not (an unknown is not a full audit).
+    sections_unrecorded: bool = False
+    prev_score: int = 0
+    sections_only_prev: list[str] = field(default_factory=list)
+    sections_only_curr: list[str] = field(default_factory=list)
     deduction_delta:       int = 0                                   # change in total raw deduction points
     # v0.18.3 — per-key point changes behind a variable-deductions move, as
     # (key, prev_points, curr_points), sorted by key. Populated only when both
@@ -167,6 +181,7 @@ def build_baseline(
     ports_snapshot: "PortsSnapshot",
     snapshots: "list[ServiceSnapshot]",
     exhaustive: bool | None = None,
+    sections: "list[str] | None" = None,
 ) -> AuditBaseline:
     """
     Build an AuditBaseline from the current audit results.
@@ -235,6 +250,7 @@ def build_baseline(
         unverified=unverified,
         deduction_breakdown=deduction_breakdown,
         exhaustive=exhaustive,
+        sections=sorted(sections) if sections is not None else None,
     )
 
 
@@ -424,6 +440,7 @@ def load_baseline(path: Path | None = None, *, strict: bool = False) -> AuditBas
             unverified=(list(raw["unverified"]) if isinstance(raw.get("unverified"), list) else None),
             deduction_breakdown=deduction_breakdown,
             exhaustive=(raw["exhaustive"] if isinstance(raw.get("exhaustive"), bool) else None),
+            sections=(list(raw["sections"]) if isinstance(raw.get("sections"), list) else None),
         )
     except (KeyError, TypeError, AttributeError, ValueError) as exc:
         if strict:
@@ -464,10 +481,36 @@ def compute_delta(prev: AuditBaseline, curr: AuditBaseline) -> AuditDelta:
     # Those sections and the counts are only compared between runs of one mode.
     mode_mismatch = curr.exhaustive is not None and prev.exhaustive != curr.exhaustive
 
+    # v0.28.0 — measured on the user's Mint host: the run before was a
+    # `--check=firewall` one, and the full run after it said "Score degraded by
+    # 1 point(s)" and "New finding" for three keys whose sections had simply
+    # not run; reproduced with --check=ssh then --check=clamav ("7 info
+    # notice(s) resolved", nothing fixed). A key is compared only where its
+    # section ran both times; a key of an always-on section always is; a
+    # correlation (corr.*) spans sections and is compared only between runs
+    # that read the same ones.
+    #
+    # After review: a baseline without the field (written before 0.28.0) may
+    # itself come from a --check run — the Mint host's did — so its coverage is
+    # unknown, not full: as for an unrecorded --exhaustive mode, only the
+    # always-on sections are compared, and neither the score nor the counts.
+    both_known = prev.sections is not None and curr.sections is not None
+    sections_unrecorded = prev.sections is None and curr.sections is not None
+    sections_mismatch = both_known and set(prev.sections) != set(curr.sections)
+    common = set(prev.sections) & set(curr.sections) if both_known else set()
+    restricted = sections_mismatch or sections_unrecorded
+    if restricted:
+        from bob.runner import _ALL_SECTIONS
+        filterable = set(_ALL_SECTIONS)
+
     def _compared(keys):
-        if not mode_mismatch:
-            return set(keys)
-        return {k for k in keys if section_of(k) not in EXHAUSTIVE_SECTIONS}
+        out = set(keys)
+        if mode_mismatch:
+            out = {k for k in out if section_of(k) not in EXHAUSTIVE_SECTIONS}
+        if restricted:
+            out = {k for k in out if section_of(k) != "corr"
+                   and (section_of(k) not in filterable or section_of(k) in common)}
+        return out
 
     # Only diff finding keys when the previous baseline is v1.22+ (finding_keys is not None).
     # None means an older baseline that never stored the key — skip to avoid false "new" noise.
@@ -499,7 +542,12 @@ def compute_delta(prev: AuditBaseline, curr: AuditBaseline) -> AuditDelta:
     # breakdown (None on either = an old baseline; fall back to the single
     # total line, which stays correct). A key present in one and absent in the
     # other counts as 0 on the missing side.
-    if prev.deduction_breakdown is not None and curr.deduction_breakdown is not None:
+    # v0.28.0 — not across different sections: an always-on section's points
+    # can depend on what another one read (measured: firewall.inactive 7 → 6
+    # between a --check=ssh run and a --check=clamav one).
+    if restricted:
+        deduction_key_deltas = []
+    elif prev.deduction_breakdown is not None and curr.deduction_breakdown is not None:
         prev_bd = prev.deduction_breakdown
         curr_bd = curr.deduction_breakdown
         deduction_key_deltas = sorted(
@@ -510,7 +558,7 @@ def compute_delta(prev: AuditBaseline, curr: AuditBaseline) -> AuditDelta:
     else:
         deduction_key_deltas = []
 
-    _counts = not mode_mismatch
+    _counts = not mode_mismatch and not restricted
     return AuditDelta(
         prev_timestamp=prev.timestamp,
         score_delta=curr.score - prev.score,
@@ -519,6 +567,11 @@ def compute_delta(prev: AuditBaseline, curr: AuditBaseline) -> AuditDelta:
         mode_mismatch=mode_mismatch,
         prev_exhaustive=prev.exhaustive,
         curr_exhaustive=curr.exhaustive,
+        sections_mismatch=sections_mismatch,
+        sections_unrecorded=sections_unrecorded,
+        prev_score=prev.score,
+        sections_only_prev=sorted(set(prev.sections or []) - common) if sections_mismatch else [],
+        sections_only_curr=sorted(set(curr.sections or []) - common) if sections_mismatch else [],
         alert_delta=(curr.alert_count - prev.alert_count) if _counts else 0,
         warn_delta=(curr.warn_count - prev.warn_count) if _counts else 0,
         info_delta=(curr.info_count - prev.info_count) if _counts else 0,
@@ -571,8 +624,23 @@ def display_delta(delta: AuditDelta, t, output_mod) -> None:
                                 prev=_mode(delta.prev_exhaustive),
                                 sections=", ".join(sorted(EXHAUSTIVE_SECTIONS))))
 
+    if delta.sections_mismatch:
+        none = t("compare.sections_none")
+        output_mod.print_info(t("compare.sections_changed",
+                                only_curr=", ".join(delta.sections_only_curr) or none,
+                                only_prev=", ".join(delta.sections_only_prev) or none))
+
+    if delta.sections_unrecorded:
+        output_mod.print_info(t("compare.sections_unrecorded"))
+
     # --- Score ---
-    if delta.score_delta > 0 and delta.visibility_dropped:
+    if delta.sections_mismatch or delta.sections_unrecorded:
+        # v0.28.0 — two scores over different (or unknown) sections are not
+        # one host's change: no "degraded" or "improved".
+        output_mod.print_info(t("compare.score_not_compared" if delta.sections_mismatch
+                                else "compare.score_not_compared_unrecorded",
+                                prev=delta.prev_score, curr=delta.prev_score + delta.score_delta))
+    elif delta.score_delta > 0 and delta.visibility_dropped:
         # Deliberately not print_ok: the delta is real but it is not a verdict
         # about the host, because part of the host was not looked at this time.
         output_mod.print_info(t("compare.score_up_but_blinder",

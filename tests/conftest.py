@@ -59,7 +59,10 @@ def _ensure_i18n_initialised_for_tests(request):
     if request.module.__name__.endswith("test_i18n"):
         yield
         return
-    if not i18n._initialized:
+    # v0.28.0 — and in English: a test that switched to French and did not
+    # switch back (test_v0111's French cases) made a later test that reads
+    # the English text fail when run after it, as `-k sudo` ordered them.
+    if not i18n._initialized or i18n._lang != "en":
         i18n.init(lang="en")
     yield
 

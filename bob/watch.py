@@ -25,7 +25,7 @@ from bob.compare import (
 )
 from bob.ignore import load_ignore_keys
 from bob.report import AuditReport
-from bob.runner import run_checks
+from bob.runner import run_checks, sections_run
 from bob.scoring import ScoreEngine, score_out_of_ten
 from bob.sysinfo import detect_network_context
 
@@ -124,6 +124,7 @@ def run_watch(
             curr_baseline = build_baseline(
                 engine, result.ports_snapshot, result.snapshots,
                 exhaustive=config.exhaustive,
+                sections=sections_run(config, active_profile),   # v0.28.0
             )
             save_baseline(curr_baseline)
             from bob.sysinfo import say_refused_redirects

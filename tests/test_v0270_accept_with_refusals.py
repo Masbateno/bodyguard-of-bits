@@ -129,9 +129,11 @@ class TestTheMeasuredRulesets:
         loop = "\tchain x {\n\t\tjump y\n\t}\n\tchain y {\n\t\tjump x\n\t}\n"
         assert nf._nft_policy(_inet("jump x", extra=loop), "input") == "ACCEPT"
 
-    def test_forward_keeps_its_reading(self):
+    def test_forward_is_read_the_same_way(self):
+        # v0.28.0 — 0.27.0 kept forward's 0.26.0 reading; measured since, it
+        # refuses the same way (tests/test_v0280_forward_refusals.py).
         ruleset = _inet("tcp dport 8099 drop").replace("hook input", "hook forward")
-        assert nf._nft_policy(ruleset, "forward") == "ACCEPT"
+        assert nf._nft_policy(ruleset, "forward") == "PARTIAL"
 
 
 def _snap(policy):

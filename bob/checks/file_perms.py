@@ -185,12 +185,20 @@ class FilePermsSnapshot:
         noexec_lib = _sudo_noexec_library() if snap.sudoers_nopasswd_specific else None
         env_passes = _sudo_env_passes_pager_secure(texts)
         runas_overrides = _runas_default_overrides(texts)
+        defaults = _sudo_defaults(texts)
         for line in snap.sudoers_nopasswd_specific:
             # With no Runas_Spec the rule runs as runas_default, root unless a
             # Defaults says otherwise (measured: daemon, euid 1).
             if not _has_runas_spec(line) and _runas_default_may_apply(line.split()[0], runas_overrides):
                 continue
             for command, noexec, setenv in _nopasswd_grants(line, aliases) or []:
+                if noexec is None:
+                    # v0.28.0 — no tag: `Defaults noexec` in a scope that
+                    # applies (measured: global, :user, :%group, !command,
+                    # Cmnd_Alias, >root all blocked exec). One BOB cannot
+                    # resolve counts, so that no −2 rests on an exec it did not
+                    # establish.
+                    noexec = _defaults_noexec(defaults, line.split()[0], command, aliases) is not False
                 # NOEXEC holds only where it is established: sudo's library
                 # present, and a dynamically linked binary it can load into.
                 noexec = noexec and noexec_lib is not None and _dynamically_linked(command.split()[0])
@@ -456,10 +464,10 @@ def _nopasswd_commands(line: str, aliases: "dict[str, list[str]]") -> "list[str]
     return None if grants is None else [command for command, *_tags in grants]
 
 
-def _nopasswd_grants(line: str, aliases: "dict[str, list[str]]") -> "list[tuple[str, bool, bool]] | None":
+def _nopasswd_grants(line: str, aliases: "dict[str, list[str]]") -> "list[tuple[str, bool | None, bool]] | None":
     """(command, under NOEXEC, under SETENV) for each command of
     :func:`_nopasswd_commands`. NOEXEC / EXEC and SETENV / NOSETENV carry over
-    like NOPASSWD / PASSWD (v0.27.0)."""
+    like NOPASSWD / PASSWD (v0.27.0). NOEXEC is None when no tag says it."""
     m = re.match(r"^\S+\s+\S+\s*=\s*(\([^)]*\))?\s*(.*)$", line)
     if not m:
         return None
@@ -469,7 +477,10 @@ def _nopasswd_grants(line: str, aliases: "dict[str, list[str]]") -> "list[tuple[
         names = {u.strip() for u in users.split(",") if u.strip()}
         if names and not names & {"ALL", "root", "#0"}:
             return None
-    commands, nopasswd, noexec, setenv = [], False, False, False
+    # v0.28.0 — noexec starts as None: no tag, so the Defaults decide (an
+    # EXEC tag, measured, overrides `Defaults noexec`; NOEXEC overrides
+    # `Defaults !noexec`).
+    commands, nopasswd, noexec, setenv = [], False, None, False
     for entry in re.split(r"(?<!\\),", rest):
         entry = entry.strip()
         tags = _SUDO_TAG.match(entry)
@@ -567,38 +578,190 @@ def _dynamically_linked(path: str) -> bool:
 
 
 def _runas_default_overrides(texts: "list[str]") -> "list[tuple[str, str]]":
-    """(scope, account) for each Defaults line setting runas_default to an
-    account other than root (v0.27.0, after the third review). Measured on
+    """(scope, account) for each Defaults line setting runas_default, in the
+    order sudo applies them (v0.27.0, after the third review). Measured on
     Debian 13: with `Defaults runas_default=daemon`, or `Defaults:bobesc
     runas_default=daemon`, a rule with no Runas_Spec ran python3 as euid 1, and
-    `-u root` asked for the password; without it, euid 0."""
+    `-u root` asked for the password; without it, euid 0. v0.28.0 — root lines
+    are kept too: a later one sets root back."""
     out = []
-    for text in texts:
-        for line in _join_continuations(text.splitlines()):
-            line = _strip_sudoers_comment(line).strip()
-            m = re.match(r"^Defaults(\S*)\s+(.*)$", line)
-            if not m:
-                continue
-            v = re.search(r"\brunas_default\s*=\s*\"?([^\",\s]+)", m.group(2))
-            if v and v.group(1) not in ("root", "#0"):
-                out.append((m.group(1), v.group(1)))
+    for scope, body in _sudo_defaults(texts):
+        v = re.search(r"\brunas_default\s*=\s*\"?([^\",\s]+)", body)
+        if v:
+            out.append((scope, v.group(1)))
     return out
 
 
 def _runas_default_may_apply(user: str, overrides: "list[tuple[str, str]]") -> bool:
-    """Whether a runas_default other than root may govern *user*'s rules: a
-    global Defaults, a Defaults:<user>, or a scope BOB does not resolve (a
-    group, an alias, a host, a command) — counted as applying, so that no −2
-    rests on an account BOB did not establish."""
-    for scope, _account in overrides:
-        if not scope:
-            return True
-        if not scope.startswith(":"):
-            return True
-        names = {n.strip() for n in scope[1:].split(",") if n.strip()}
-        if user in names or any(n[0] in "%+" or n.isupper() for n in names):
-            return True
+    """Whether a runas_default other than root may govern *user*'s rules.
+
+    v0.28.0 — each scope is resolved (:func:`_defaults_scope_applies`): the
+    account's real groups, its negation, the host. Measured on Debian 13: with
+    `Defaults:%grpout runas_default=daemon` (bobesc not a member), `Defaults:
+    ALL,!bobesc …` or `Defaults@elsewhere …`, python3 ran as euid 0 — and BOB,
+    counting every group or host scope as applying, called the rule not root.
+    With bobesc in the group (supplementary or primary) or the host its own,
+    euid 1. A scope BOB cannot resolve (an alias, a netgroup, a runas or
+    command scope) still counts as applying, so that no −2 rests on an account
+    BOB did not establish."""
+    state = "root"
+    for scope, account in overrides:
+        applies = _defaults_scope_applies(scope, user) if scope[:1] in ("", ":", "@") else None
+        if applies is True:
+            state = account
+        elif applies is None:
+            state = account if state == account else "may"
+    return state not in ("root", "#0")
+
+
+#: v0.28.0 — the order sudo applies Defaults in: generic, host, user, runas,
+#: then command (sudoers(5)); a later setting overrides an earlier one.
+_DEFAULTS_ORDER = {"": 0, "@": 1, ":": 2, ">": 3, "!": 4}
+
+
+def _sudo_defaults(texts: "list[str]") -> "list[tuple[str, str]]":
+    """(scope, options) for each Defaults line, in the order sudo applies them;
+    *scope* keeps its sigil: "" (generic), "@host", ":user", ">runas", "!cmnd"."""
+    lines = []
+    for text in texts:
+        for line in _join_continuations(text.splitlines()):
+            line = _strip_sudoers_comment(line).strip()
+            m = re.match(r"^Defaults([@:>!]\S*)?\s+(.*)$", line)
+            if m:
+                lines.append(((m.group(1) or "").replace(" ", ""), m.group(2)))
+    return sorted(lines, key=lambda sb: _DEFAULTS_ORDER.get(sb[0][:1], 0))
+
+
+def _account_groups(user: str) -> "tuple[int, set[int], set[str]] | None":
+    """(uid, gids, group names) of *user* as sudo matches them — the primary
+    group and every supplementary one — or None when the account is unknown."""
+    import grp
+    import pwd
+    try:
+        pw = pwd.getpwnam(user)
+        gids = set(os.getgrouplist(user, pw.pw_gid))
+    except (KeyError, OSError):
+        return None
+    names = set()
+    for gid in gids:
+        try:
+            names.add(grp.getgrgid(gid).gr_name)
+        except KeyError:
+            pass
+    return pw.pw_uid, gids, names
+
+
+def _match_account(name: str, user: str) -> "bool | None":
+    """Whether a Defaults user (or runas) item names *user*: True, False, or
+    None when BOB cannot resolve it (an alias, a netgroup, a non-Unix group, or
+    a rule written for a group or an alias)."""
+    if name == "ALL":
+        return True
+    if user.startswith("%") or user.startswith("+") or re.fullmatch(r"[A-Z][A-Z0-9_]*", user):
+        return True if name == user else None
+    if name.startswith(("+", "%:")) or re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
+        return None
+    if name.startswith("%") or name.startswith("#"):
+        acct = _account_groups(user)
+        if acct is None:
+            return None
+        uid, gids, names = acct
+        if name.startswith("%#"):
+            return name[2:].isdigit() and int(name[2:]) in gids
+        if name.startswith("%"):
+            return name[1:] in names
+        return name[1:].isdigit() and int(name[1:]) == uid
+    return name == user
+
+
+def _match_host(name: str) -> "bool | None":
+    import socket
+    if name == "ALL":
+        return True
+    short = socket.gethostname()
+    if name in (short, short.split(".")[0]):
+        return True
+    if name.startswith("+") or re.fullmatch(r"[A-Z][A-Z0-9_]*", name) or "." in name or "/" in name or ":" in name:
+        return None          # an alias, a netgroup, a domain name, an address: not resolved
     return False
+
+
+def _match_command(name: str, command: str, aliases: "dict[str, list[str]]") -> "bool | None":
+    if name == "ALL":
+        return True
+    if re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
+        if name not in aliases:
+            return None
+        found = [_match_command(c, command, aliases) for c in aliases[name] if c != name]
+        return True if True in found else None if None in found else False
+    want, have = name.split(), command.split()
+    if not want or not have or any(ch in want[0] for ch in "*?[\\"):
+        return None
+    if want[0].endswith("/"):
+        return os.path.dirname(have[0]) + "/" == want[0]
+    if want[0] != have[0]:
+        return False
+    return True if len(want) == 1 or want[1:] == have[1:] else None
+
+
+def _defaults_scope_applies(scope: str, user: str, command: "str | None" = None,
+                            aliases: "dict[str, list[str]] | None" = None) -> "bool | None":
+    """Whether a Defaults *scope* governs *user* running *command* as root:
+    True, False, or None when BOB cannot establish it (v0.28.0). Items match
+    left to right, the last match deciding, ``!`` negating (sudoers(5))."""
+    if not scope:
+        return True
+    kind, body = scope[0], scope[1:]
+    result: "bool | None" = False
+    for item in (i.strip() for i in re.split(r"(?<!\\),", body)):
+        if not item:
+            continue
+        neg = item.startswith("!")
+        name = item.lstrip("!").strip()
+        if kind == ":":
+            m = _match_account(name, user)
+        elif kind == ">":
+            m = True if name in ("root", "#0") else _match_account(name, "root") if name.startswith("%") \
+                else None if name.startswith("+") or re.fullmatch(r"[A-Z][A-Z0-9_]*", name) else name == "ALL"
+        elif kind == "@":
+            m = _match_host(name)
+        elif kind == "!" and command is not None:
+            m = _match_command(name, command, aliases or {})
+        else:
+            m = None
+        if m is None:
+            result = None
+        elif m:
+            result = not neg
+    return result
+
+
+def _defaults_noexec(defaults: "list[tuple[str, str]]", user: str, command: str,
+                     aliases: "dict[str, list[str]]") -> "bool | None":
+    """Whether the Defaults set noexec for *user* running *command* as root:
+    True, False, or None when a scope BOB cannot resolve may decide (v0.28.0,
+    measured on Debian 13, sudo 1.9.16p2, `env sh -c id`: `Defaults noexec`,
+    `Defaults:bobesc`, `Defaults:%group` (a member, supplementary or primary),
+    `Defaults!/usr/bin/env`, `Defaults!ALIAS`, `Defaults>root` blocked it; a
+    group bobesc is not in, `Defaults>daemon`, another command, and `Defaults
+    noexec` then `Defaults:bobesc !noexec` did not)."""
+    state: "bool | None" = False
+    for scope, body in defaults:
+        value = None
+        for opt in re.split(r",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", body):
+            opt = opt.strip()
+            if re.fullmatch(r"noexec", opt):
+                value = True
+            elif re.fullmatch(r"!\s*noexec", opt):
+                value = False
+        if value is None:
+            continue
+        applies = _defaults_scope_applies(scope, user, command, aliases)
+        if applies is True:
+            state = value
+        elif applies is None and state is not value:
+            state = None
+    return state
 
 
 def _has_runas_spec(line: str) -> bool:

@@ -100,7 +100,7 @@ No `sudo` needed — `--explain` is a standalone, profile-aware lookup. The outp
 You can list every explainable key :
 
 ```bash
-bob --explain list                          # 230 keys at v0.27.x, grouped by CIS family
+bob --explain list                          # 235 keys at v0.28.x, grouped by CIS family
 bob --explain                               # interactive picker (↑↓/jk, PgUp/PgDn, g/G, Enter, Esc back; l language and q quit on the first screen)
 ```
 
@@ -352,7 +352,7 @@ sudo bob --french                           # shortcut for --lang=fr
 sudo bob --lang=fr                          # explicit
 ```
 
-All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 3036 keys × 2 locales — except three things, described below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
+All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 3090 keys × 2 locales — except three things, described below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
 
 Three things stay English on purpose, and a bilingual diff of the audit output in v0.15.4 confirmed they are the only ones: **shell commands** in remediation lines (a command is not prose), **CIS benchmark references** that carry a numbered code (v0.11.2 decision — the uncoded "Best practice" ones *are* translated), and the **38 service labels**, such as `Samba (Windows file sharing)` or `Apache Web Server`, treated as product names even when they carry English words. The labels also key the `service_risk.*` entries and go into the audit baseline, so translating them at the source would rename 114 locale entries and make `--diff` report phantom changes on a locale switch.
 

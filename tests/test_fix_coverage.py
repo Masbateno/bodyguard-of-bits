@@ -102,6 +102,10 @@ _MANUAL_BY_DESIGN = frozenset({
     "kubernetes.host_mount",
     "kubernetes.kubelet_anonymous",
     "kubernetes.kubelet_readonly_port",
+    "kubernetes.apiserver_anonymous",            # --anonymous-auth + authorizer, shown in --explain
+    "kubernetes.apiserver_always_allow",         # switch to RBAC after reviewing bindings (--explain)
+    "kubernetes.cluster_admin_broad",            # identify + delete/narrow the binding (--explain)
+    "kubernetes.runtime_socket_open",            # chmod/group the socket, kubelet user kept (--explain)
     # v0.18.0 — a service enabled at boot and not running. There is no one-line
     # remediation because the finding does not know why it is down: a crash, a
     # start that failed on a bad config, a dependency that never came up, or a
@@ -143,6 +147,7 @@ _MANUAL_BY_DESIGN = frozenset({
     "firewall_drivers.iptables_bypass",            # inspect rules, find source, remove cleanly
     "firewall_drivers.iptables_forward_bypass",    # idem (forward chain)
     "firewall_drivers.nftables_parallel",          # choice between UFW vs nftables, then purge other
+    "ports.uncovered_netfilter_open",            # raw ruleset: add nft/iptables rule or a front-end (--explain)
     "services.exposure.open_local",              # LAN trust-level decision, multiple fix paths
     "services.state.active_disabled",            # service name is variable — `systemctl enable <SVC>`
     "samba.null_passwords",                      # smb.conf section to identify + auth-mode choice

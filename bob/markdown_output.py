@@ -245,7 +245,7 @@ def build_markdown_output(
         )
         lines.append("|--------|--------|--------|")
         for r in _rows:
-            _score = f"{r['score']}/10" if r["active"] else "—"
+            _score = (("≤ " if r.get("ceiling") else "") + f"{r['score']}/10") if r["active"] else "—"
             _status = "" if r["active"] else _md_escape(r["reason"])
             lines.append(f"| {_md_escape(r['label'])} | {_score} | {_status} |")
         lines.append("")

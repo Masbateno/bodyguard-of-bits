@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import difflib
 import logging
+import re
 import sys
 import traceback
 from typing import NamedTuple
@@ -256,6 +257,13 @@ def _section_enabled(section: str, config: "AuditConfig", profile: "AuditProfile
         if any(section == tok or section.startswith(tok) for tok in config.skip_checks):
             return False
     return profile is None or not profile.should_skip_section(section)
+
+
+def sections_run(config: "AuditConfig", profile: "AuditProfile | None") -> "list[str]":
+    """v0.28.0 — the filterable sections this run reads, as the baseline
+    records them so that a later run compares only what both read."""
+    return sorted(s for s in _ALL_SECTIONS if _section_enabled(s, config, profile)
+                  and (s not in _REQUIRES_EXHAUSTIVE or config.exhaustive))
 
 
 def validate_check_filters(config: "AuditConfig") -> str | None:
@@ -688,6 +696,7 @@ def run_checks(
     _netfilter_protective: bool | None = None
     _netfilter_policy: str | None = None
     _netfilter_partial = False     # v0.27.0 — accept by default, refusals not weighed
+    _nf_snap = None                # v0.28.0 — read again for the per-port verdicts
     # v0.26.0 — awall (Alpine) is read only where no managed front-end runs,
     # the only case check_firewall consults it. A failure there degrades the
     # section and leaves the 0.25.1 reading (no front-end named), not a lie.
@@ -707,6 +716,27 @@ def run_checks(
     # v0.27.0 — the services and ports texts for a raw ruleset say it denies by
     # default; a PARTIAL one (accept, refusals not weighed) does not.
     _netfilter_denies = fw_posture.backend == "netfilter" and fw_posture.policy in ("deny", "reject")
+
+    def _v4_port_verdict(port: int, proto: str) -> "tuple[str, str]":
+        """v0.28.0 — the raw ruleset's IPv4 verdict for a service's port, given
+        only where that port listens on IPv4 (a service does not keep its
+        listeners' address family)."""
+        if _nf_snap is None or not (_netfilter_denies or _netfilter_partial):
+            return "UNKNOWN", ""
+        if not any(lp.port == port and lp.proto == proto and ":" not in lp.address
+                   and not lp.is_loopback for lp in ports_snapshot.ports):
+            return "UNKNOWN", ""
+        return _nf_snap.port_verdict(port, proto)
+
+    def _v4_on_all_interfaces(port: str) -> bool:
+        """v0.28.0, after review — a service port ("22/tcp") listening on every
+        IPv4 interface (0.0.0.0). Only such a service is scored as exposed by a
+        permissive raw ruleset, as only an all-interfaces port is in the ports
+        section: one bound to a single address is said, not scored."""
+        m = re.fullmatch(r"(\d+)/(tcp|udp)", port)
+        return bool(m) and any(lp.port == int(m.group(1)) and lp.proto == m.group(2)
+                               and lp.is_all_interfaces and ":" not in lp.address
+                               for lp in ports_snapshot.ports)
     # v0.24.4: the listening set is read before the firewall check — its
     # enable fixes allow the ports sshd answers on first (a bare `ufw enable`
     # cut a remote operator off, measured on a Raspberry Pi).
@@ -819,7 +849,8 @@ def run_checks(
         ipv6_snapshot = IPv6Snapshot.from_system()
     # v0.27.0 — a raw ruleset's IPv6 default, read as its IPv4 one is.
     _v6_policy = "unknown"
-    if fw_posture.backend == "netfilter" and not ipv6_snapshot.ufw_present:
+    # v0.28.0 — also with UFW installed but not active (it filters nothing).
+    if fw_posture.backend == "netfilter" and not (ipv6_snapshot.ufw_present and fw_status.active):
         with _core("ipv6"):
             _v6_policy = read_input_policy_v6()
     _sec("ipv6", ipv6_snapshot, check_ipv6, ufw_active=fw_status.active,
@@ -902,6 +933,8 @@ def run_checks(
             firewalld_active=fwd_status.active,
             netfilter_active=_netfilter_denies,
             netfilter_partial=_netfilter_partial,
+            netfilter_port_verdict=_v4_port_verdict,
+            netfilter_all_interfaces=_v4_on_all_interfaces,
         )
         engine.apply(svc_result, section="services")
         # v0.17.1 — only a service BOB judged *active* has really had its ports
@@ -950,6 +983,9 @@ def run_checks(
         firewalld_active=fwd_status.active,
         netfilter_active=_netfilter_denies,
         netfilter_partial=_netfilter_partial,
+        # v0.28.0 — each listener weighed against the rules for its port.
+        netfilter_port_verdict=(_nf_snap.port_verdict
+                                if _nf_snap is not None and (_netfilter_denies or _netfilter_partial) else None),
         t=t,
         # v0.26.0 — with {"iptables": false} Docker writes no IPv4 rule for its
         # ports: the zone filters them (measured on openSUSE, Docker 29.4.0).

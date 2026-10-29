@@ -73,6 +73,7 @@ from bob.recurrence import load_recurrence, save_recurrence, update_recurrence
 from bob.runner import (
     _ALL_SECTIONS, _section_enabled as _se, init_report, run_checks,
     validate_check_filters,
+    sections_run,
 )
 from bob.scoring import ScoreEngine
 from bob.sysinfo import collect_system_info, detect_default_profile, detect_network_context
@@ -779,7 +780,8 @@ def _run(argv=None) -> int:
             # ------------------------------------------------------------------------
 
             curr_baseline = build_baseline(engine, ports_snapshot, snapshots,
-                                           exhaustive=config.exhaustive)
+                                           exhaustive=config.exhaustive,
+                                           sections=sections_run(config, active_profile))
             save_baseline(curr_baseline)
 
             # v0.16.0 — always called, quiet handled inside.
@@ -855,6 +857,9 @@ def _run(argv=None) -> int:
                 engine.score,
                 engine.effective_level.value,
                 level_score_only=engine.level.value,
+                # v0.28.0 — a --check / --skip run read part of the host: its
+                # score is not a point of the trend.
+                partial=bool(config.check_only or config.skip_checks),
             )
             # v0.26.1 — a write refused under a redirected home is said, not
             # dropped: the baseline, history or report the user expects is missing.

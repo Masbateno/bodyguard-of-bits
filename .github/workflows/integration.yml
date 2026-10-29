@@ -56,13 +56,23 @@ jobs:
           # Kali rolling rotates packages aggressively — `apt-get update` may
           # cache references to .debs that 404 by the time `apt-get install`
           # runs. Retry once with a fresh package list before giving up.
+          # 0.28.0 — the step fails itself when every attempt failed: the loop
+          # used to end on `sleep 5`, so a mirror down (Kali, 25 October 2026,
+          # twice) passed here and surfaced one step later as exit 127.
+          ok=""
           for attempt in 1 2 3; do
-            apt-get update -qq
-            apt-get install -y --no-install-recommends \
-              python3 python3-pip python3-venv git ca-certificates && break
+            if apt-get update -qq && apt-get install -y --no-install-recommends \
+                 python3 python3-pip python3-venv git ca-certificates; then
+              ok=1
+              break
+            fi
             echo "::warning::apt attempt $attempt failed, retrying after 5s..."
             sleep 5
           done
+          if [ -z "$ok" ]; then
+            echo "::error::apt could not install python3, pip, venv and git after 3 attempts (a mirror unreachable?)"
+            exit 1
+          fi
 
       - name: Install system deps (Fedora)
         if: matrix.family == 'fedora'

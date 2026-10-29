@@ -331,6 +331,8 @@ def check_services(
     firewalld_active: bool = False,
     netfilter_active: bool = False,
     netfilter_partial: bool = False,
+    netfilter_port_verdict=None,
+    netfilter_all_interfaces=None,
 ) -> CheckResult:
     """
     Evaluate service snapshots and return findings and deductions.
@@ -351,7 +353,9 @@ def check_services(
         _check_single_service(snap, result, network_context, ufw_active, _t,
                               firewalld_active=firewalld_active,
                               netfilter_active=netfilter_active,
-                              netfilter_partial=netfilter_partial)
+                              netfilter_partial=netfilter_partial,
+                              netfilter_port_verdict=netfilter_port_verdict,
+                              netfilter_all_interfaces=netfilter_all_interfaces)
 
     return result
 
@@ -364,6 +368,8 @@ def _check_single_service(
     firewalld_active: bool = False,
     netfilter_active: bool = False,
     netfilter_partial: bool = False,
+    netfilter_port_verdict=None,
+    netfilter_all_interfaces=None,
 ) -> None:
     """Evaluate a single service snapshot and add findings to result."""
 
@@ -477,7 +483,31 @@ def _check_single_service(
         _check_port_exposure(snap, port, exposure, result, network_context, ufw_active, _t,
                              firewalld_active=firewalld_active,
                              netfilter_active=netfilter_active,
-                             netfilter_partial=netfilter_partial)
+                             netfilter_partial=netfilter_partial,
+                             netfilter_port_verdict=netfilter_port_verdict,
+                             netfilter_all_interfaces=netfilter_all_interfaces)
+
+def _reachable_by_default(verdict_of, port: str) -> bool:
+    """v0.28.0 — True when the raw ruleset reaches *port* over IPv4 only
+    because its permissive default accepted it, no rule naming the port. Mirror
+    of ports._reachable_by_default, keyed off a ``"N/proto"`` service port."""
+    m = re.fullmatch(r"(\d+)/(tcp|udp)", port)
+    if verdict_of is None or not m:
+        return False
+    return verdict_of(int(m.group(1)), m.group(2)) == ("ACCEPT", "default")
+
+
+def _port_weighed(verdict_of, port: str) -> "str | None":
+    """v0.28.0 — the ports.netfilter_port.* key for ``"22/tcp"``, or None
+    when BOB did not establish what the raw ruleset does to it."""
+    m = re.fullmatch(r"(\d+)/(tcp|udp)", port)
+    if verdict_of is None or not m:
+        return None
+    verdict, by = verdict_of(int(m.group(1)), m.group(2))
+    if verdict not in ("ACCEPT", "DROP") or by not in ("rule", "default"):
+        return None
+    return f"ports.netfilter_port.{verdict.lower()}_{by}"
+
 
 def _check_port_exposure(
     snap: ServiceSnapshot,
@@ -490,6 +520,8 @@ def _check_port_exposure(
     firewalld_active: bool = False,
     netfilter_active: bool = False,
     netfilter_partial: bool = False,
+    netfilter_port_verdict=None,
+    netfilter_all_interfaces=None,
 ) -> None:
     """Add findings for a single port exposure."""
 
@@ -512,7 +544,26 @@ def _check_port_exposure(
         exp_key = f"services.exposure.{exposure.value}_ufw_inactive"
     else:
         exp_key = f"services.exposure.{exposure.value}"
-    port_msg = _t("services.port_exposure", port=port, exposure=_t(exp_key))
+    # v0.28.0 — the listener weighed against the rules for its port (IPv4).
+    weighed = (_port_weighed(netfilter_port_verdict, port)
+               if exposure == Exposure.NO_RULE and (netfilter_active or netfilter_partial) else None)
+    port_msg = (_t("services.port_exposure", port=port,
+                   exposure=_t("services.exposure.no_rule_netfilter_weighed", verdict=_t(weighed)))
+                if weighed else _t("services.port_exposure", port=port, exposure=_t(exp_key)))
+
+    # v0.28.0 — under a PARTIAL raw ruleset (no front-end), a service the
+    # permissive default reaches with no rule refusing it is a measured
+    # exposure: score it as open-world (the criticality logic below), reusing
+    # the services.exposed.<id> key. A rule that accepts it (opened on purpose)
+    # or drops it, or one BOB cannot weigh, is not this case.
+    # After review: only a service listening on every IPv4 interface — fail
+    # closed when that is not given — as in the ports section.
+    if (exposure == Exposure.NO_RULE and netfilter_partial
+            and netfilter_all_interfaces is not None and netfilter_all_interfaces(port)
+            and _reachable_by_default(netfilter_port_verdict, port)):
+        exposure = Exposure.OPEN_WORLD
+        port_msg = _t("services.port_exposure", port=port,
+                      exposure=_t("services.exposure.netfilter_open"))
 
     if exposure == Exposure.OPEN_WORLD:
         # High/critical services exposed to internet get extra penalty in public context

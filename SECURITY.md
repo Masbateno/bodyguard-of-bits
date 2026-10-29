@@ -49,6 +49,15 @@ tools were sound.
   uv, certifi) as the Python thread describes, and keep your system's
   `ca-certificates` up to date.
 
+### Not covered yet (written at 0.28.0)
+
+The pinning above covers what the workflows install with pip. It does not cover
+the build backend: `python -m build` creates an isolated environment and
+installs `setuptools` there from `pyproject.toml`'s `requires =
+["setuptools>=77"]`, with no version or hash pinned — a publication can be built
+with whichever setuptools release is current that day. A separate change to the
+publish workflow will pin it.
+
 ### What changed in 0.27.0
 
 - every action the workflows use is pinned by commit, with its version beside
@@ -82,7 +91,8 @@ are not backported.
 
 | Version        | Supported          |
 |----------------|--------------------|
-| 0.27.x         | ✅ current          |
+| 0.28.x         | ✅ current          |
+| 0.27.x         | ❌ end of life      |
 | 0.26.x         | ❌ end of life      |
 | 0.25.x         | ❌ end of life      |
 | 0.24.x         | ❌ end of life      |
@@ -103,11 +113,11 @@ are not backported.
 | 0.6.x          | ❌ end of life      |
 | ≤ 0.5.x        | ❌ end of life      |
 
-Patches release as `0.27.x+1`. A breaking change bumps the minor (`0.28.0`).
+Patches release as `0.28.x+1`. A breaking change bumps the minor (`0.29.0`).
 
-**v0.26.x is end-of-life as of the day 0.27.0 ships**, per the "latest minor
-line only" policy above. No security fixes will be backported. Users on v0.26.x
-must `pipx upgrade bodyguard-of-bits` to v0.27.x.
+**v0.27.x is end-of-life as of the day 0.28.0 ships**, per the "latest minor
+line only" policy above. No security fixes will be backported. Users on v0.27.x
+must `pipx upgrade bodyguard-of-bits` to v0.28.x.
 
 The upgrade changes what the score *means* when BOB cannot read part of the
 host. Until v0.16.0 the score was a sum over the checks that ran, and a check

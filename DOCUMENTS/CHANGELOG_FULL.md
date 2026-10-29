@@ -6,6 +6,389 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.28.0] — 2026-10-29
+
+**A minor release, BREAKING for scores: the 0.28.0 backlog emptied — the
+Kubernetes cluster beyond the node, each listening port weighed against the
+rules for its number, the limits 0.27.0 wrote down (marks set from a jumped-to
+chain, the forward hook, IPv6 with UFW installed but not running, `Defaults
+noexec` and `runas_default` scopes, DOCKER-USER over IPv6), `/etc/login.defs`
+and `smb.conf` read as their own tools read them, and comparisons between runs
+that did not read the same sections. Measured on a real Ubuntu Server 26.04
+host running MicroK8s, Debian 13 containers, Docker-in-Docker and network
+namespaces.**
+BREAKING for scores means: the same host can score differently under 0.27.0
+and 0.28.0 — the global score, the per-domain scores and the `--history` trend
+across the upgrade — because the findings that feed the formula changed. The
+global scoring formula is unchanged; no JSON-output-schema or CSV-column
+change; no section added or removed; no finding key renamed or removed. Five
+`--explain` keys and their CIS references are added (230 → 235).
+
+Scores that move:
+
+| Where | Before | 0.28.0 | § |
+|---|---|---|---|
+| MicroK8s API server with `--authorization-mode=AlwaysAllow` (MicroK8s' stock mode) | nothing | `kubernetes.apiserver_always_allow` ALERT −2 | 1 |
+| an API server that answers an anonymous `GET /api/v1/namespaces` with a 2xx | nothing | `kubernetes.apiserver_anonymous` WARN −1 — with `AlwaysAllow` too, −3 in all | 1 |
+| RBAC on, cluster-admin bound to `Group/system:authenticated`, `Group/system:unauthenticated`, `Group/system:serviceaccounts` or `User/system:anonymous` | nothing | `kubernetes.cluster_admin_broad` ALERT −3 | 1 |
+| a container-runtime socket (containerd, CRI-O, Docker) writable by everyone, on a node | nothing | `kubernetes.runtime_socket_open` ALERT −3 | 1 |
+| a raw ruleset at policy accept with refusals (no UFW, no firewalld), a known service on all interfaces whose port no rule names | INFO | `services.exposed.<id>` (existing key) — WARN −1; a high or critical service ALERT −2, −3 on a public host | 2 |
+| the same, a port on all interfaces that is not a known service | INFO `ports.uncovered_netfilter_unweighed` | `ports.uncovered_netfilter_open` WARN or ALERT −1, −2 on a public host | 2 |
+| UFW active; a mark-accept rule in INPUT whose mark a native nftables chain sets from a chain it reaches by `jump`, `goto` or a verdict map, or in a table that declares a set before its chains | INFO `firewall_drivers.iptables_accept_conditional` | `firewall_drivers.iptables_bypass` WARN −2 (existing key) | 3 |
+| no front-end; FORWARD at policy accept with a rule that can refuse a new packet from every source | `firewall_iptables.forward_accept` WARN −1 | INFO `firewall_iptables.forward_accept_unweighed`, no points, a ceiling (**rises by 1**) | 4 |
+| no front-end, ruleset read through `iptables -S` (no nft); `-P FORWARD DROP` then `-A FORWARD -j ACCEPT` | OK `firewall_iptables.forward_ok` ("DROP (recommended)") | `firewall_iptables.forward_accept` WARN −1 | 4 |
+| UFW installed but not running, IPv6 listeners with a global address: the IPv6 section now reads the host's ruleset | UFW's setting decided: `IPV6=no` → `ipv6.ufw_disabled_listeners_present` WARN −2; `IPV6=yes` → `ipv6.port_no_v6_rule` WARN −1 per listener | the raw-ruleset reading of 0.27.0: `ipv6.netfilter_v6_open` WARN −2 when it accepts by default, INFO (no points) when it closes IPv6, a ceiling when it accepts with refusals, INFO when there is no ruleset (the firewall section's cap at 3/10 for UFW installed but off is unchanged) | 5 |
+| a sudo NOPASSWD rule for a command NOEXEC stops (`env`, `xargs`…), under `Defaults noexec` in a scope that governs it, sudo's noexec library present | `file_perms.nopass_root_equivalent` WARN −2 | not root-equivalent (**rises by 2**, unless another command of the rules is) | 6 |
+| a rule with no Runas_Spec, `runas_default` set by a `Defaults:%group` the account is not in, a `Defaults:ALL,!account`, or a `Defaults@host` for another host | taken for non-root, nothing | root: `file_perms.nopass_root_equivalent` WARN −2 when the command is root-equivalent | 6 |
+| `smb.conf` with `server min protocol = NT1` on a line indented deeper than the one before, continued by a backslash, written `Server  Min   Protocol`, or in a file it includes | not seen | `samba.smb1_enabled` WARN −2 (existing key) | 7 |
+| a guest share in a file `smb.conf` includes | not seen | `samba.guest_writable` (−2) or `samba.guest_readonly` (−1) (existing keys) | 7 |
+| `/etc/login.defs` with an indented `UMASK` line, or a lowercase `umask` line | the indented line was not read; the lowercase one was read as in force | read as shadow reads it: the indented line applies, the lowercase one is ignored — `umask.group_writable` (−1) / `umask.world_writable` (−2) can appear or go | 7 |
+
+A deny-default raw ruleset (`netfilter_active`) never gives §2's deduction: a
+port a rule accepts there was opened on purpose, like a UFW allow rule.
+
+One finding now marks the score as a ceiling ("≤", `unverified` in JSON) and
+moves no points: `firewall_iptables.forward_accept_unweighed` (new, §4).
+
+New finding keys: `kubernetes.apiserver_anonymous`,
+`kubernetes.apiserver_always_allow`, `kubernetes.cluster_admin_broad`,
+`kubernetes.runtime_socket_open`, `ports.uncovered_netfilter_open`;
+`kubernetes.apiserver_anonymous_refused` (OK), `kubernetes.apiserver_anonymous_unprobed`
+(INFO), `kubernetes.apiserver_authz_unread` (INFO), `kubernetes.cluster_admin_ok`
+(OK), `kubernetes.cluster_admin_unread` (INFO), `kubernetes.runtime_socket_group`
+(INFO), `kubernetes.runtime_socket_ok` (OK), `firewall_iptables.forward_accept_unweighed`
+(INFO). Existing keys now also cover: `services.exposed.<id>` a service a raw
+ruleset reaches by default (§2); `firewall_drivers.iptables_bypass` a mark set
+from a jumped-to chain (§3); `ipv6.no_firewall_v6` and the `ipv6.netfilter_v6*`
+keys a host where UFW is installed but not running (§5).
+
+Outputs that change besides: on a raw-ruleset host, each listening port and
+each service's port line now says what the rules for its number do over IPv4
+— accepted by a rule, accepted by default, refused by a rule, refused by
+default — or keeps "not established" (§2); the text of
+`firewall_iptables.forward_accept` ("routed traffic is accepted by default, and
+no rule refuses it beyond given sources or invalid packets", for "transit
+traffic is not filtered"), a variant of `firewall_iptables.forward_ok` when a
+final rule decides, and no command under `forward_accept` behind an
+accept-everything rule (§4); the IPv6 lines on a host where UFW is installed
+but not running say so (§5); the Docker exposure explanations and one Docker
+hint now say over which family a firewall rule filters a published port (§8);
+`--explain` prints a key's generic WHY above its per-profile sections, for the
+68 keys that have them (§8); the comparison with the previous run, `--history`
+and the per-domain scores (§9).
+
+### 1. Kubernetes beyond the node
+
+0.25.0 audited the node — its containers, its kubelet. This release reads the
+cluster as far as the node can without credentials it was not given, measured
+on a real Ubuntu Server 26.04 host running MicroK8s 1.35.6:
+
+- **The API server's authorisation mode**, read from MicroK8s' arguments file
+  (`/var/snap/microk8s/current/args/kube-apiserver`). The stock mode is
+  `AlwaysAllow`: asked with `kubectl auth can-i`, the default service account —
+  whose token is mounted into pods by default, unless automounting is disabled —
+  could list every secret in every namespace.
+  `microk8s enable rbac` set the mode to `RBAC,Node`, and the same question was
+  answered "no". `AlwaysAllow` is `kubernetes.apiserver_always_allow` (ALERT −2,
+  CIS Kubernetes 2.0 1.2.6). A mode BOB does not weigh is said
+  (`kubernetes.apiserver_authz_unread`); an absent argument is read as not
+  known, not as a default BOB did not measure.
+- **Anonymous namespace listing**: BOB asks the API server on localhost for
+  `/api/v1/namespaces` with no credential. Measured: 401 under `AlwaysAllow`
+  (MicroK8s keeps `--anonymous-auth` off), 403 under `RBAC,Node` — both refusals
+  (`kubernetes.apiserver_anonymous_refused`, OK). A 2xx is
+  `kubernetes.apiserver_anonymous` (WARN −1, CIS Kubernetes 2.0 1.2.1): it
+  establishes that anonymous requests may list namespaces, not what else they
+  may do — the weight of the kubelet's anonymous read (0.25.0). The two
+  findings are two gates: `AlwaysAllow` lets every identity that holds a
+  credential do anything, the anonymous read needs no credential; both open
+  add up to −3.
+- **cluster-admin bindings**, listed through MicroK8s' own `kubectl` (a read) when RBAC is on —
+  a targeted check of four broad subjects, not an audit of the cluster's RBAC.
+  MicroK8s ships one, to `Group/system:masters`, which the control-plane
+  certificates use: not flagged. A binding to `Group/system:authenticated` was
+  flagged −3 and deleted after the measurement
+  (`kubernetes.cluster_admin_broad`, CIS Kubernetes 2.0 5.1.1).
+- **The container-runtime socket**: measured
+  `/var/snap/microk8s/common/run/containerd.sock`, 0660 `root:microk8s`, the
+  group with no members — said with its members
+  (`kubernetes.runtime_socket_group`, INFO). World-writable is
+  `kubernetes.runtime_socket_open` (ALERT −3, best practice: no CIS control
+  covers the runtime socket).
+
+The containerd workloads (0.25.0) and `ip_forward` on a Kubernetes node were
+checked on the same host: the three pods were read, calico-node's privileged
+host-network pod in kube-system said and not deducted, and IP forwarding
+credited to Kubernetes with no deduction — no change was needed.
+
+### 2. Each listening port, weighed against the rules for its number
+
+0.27.0 left a raw ruleset at policy accept with refusals "not established" for
+every listener. BOB now reads the input chains in order and weighs, for each
+listener over IPv4, the rules that name its port: a single port, a list, a
+range, `meta l4proto`, `-p … --dport N[:M]`, `-m multiport`. Loopback,
+established/related and invalid-only rules are set aside; a drop limited to
+given sources is set aside, as in 0.27.0 — the port stays reachable from every
+other source; unconditional jumps, gotos and returns are followed; every
+ip/inet base chain must accept. Any other rule — an accept limited to given
+sources, a refusal of all sources but some, a rule limited to an interface —
+leaves the port not established, and BOB stops there: the other ports of that
+chain are not established either. Measured in the same namespace, the client
+at 10.77.0.1: a drop limited to 10.77.0.99 left 8099 open, read reachable;
+`ip saddr != 10.77.0.99 … drop` and a drop on the client's interface closed it,
+read not established — in nftables and through `iptables -S` alike. Measured in a network namespace with real
+listeners, nftables and iptables: 16 rulesets, and the 28 port verdicts BOB
+established each matched a TCP probe; it left the other 4 not established
+(iptables-nft's `multiport` as nft prints it, an accept limited to another
+source) (`tcp dport 8099 drop` at policy accept closed 8099 only; at policy drop
+`{ 8098, 8099 }` and `--dports 8098,8099` opened both, `8090-8098` and
+`--dport 8090:8098` opened 8098 and not 8099, `udp dport 8099 accept` did not
+open the TCP listener; an accept for 8099 before a drop for it won).
+
+Found in review, measured in the same namespace (input at policy accept with a
+drop for 22): a drop for 8099 in a prerouting chain (nft at raw priority, or
+`iptables -t raw`), at a netdev ingress hook, in mangle INPUT or in security
+INPUT closed 8099, and BOB read it "accepted by default" — it walked the input
+hook only, and `iptables -S` prints the filter table only. A hook before input
+that may refuse the port, or one of those tables BOB could not read, now leaves
+it not established; a drop for another port and a mark do not (11 cases, each
+verdict BOB established matched the probe; the 22 earlier rulesets, re-run,
+kept their verdicts).
+
+The rule BOB scores on: every ip/inet input chain read to its end, no rule
+naming the port other than those set aside above, an accept policy deciding,
+and nothing before the input hook that may refuse it. That is a measured
+exposure. Anything short of it is "not established": no points, and the
+firewall section's ceiling stays — the absence of a proof that the port is
+blocked is never scored.
+
+Each port line now says the verdict. Where the default reaches the port and no
+rule names it, the port is exposed, and it is scored: a known service as open
+to the network, by its criticality (`services.exposed.<id>`); another
+listening port `ports.uncovered_netfilter_open` (−1, −2 on a public host, CIS
+Ubuntu 22.04 3.5.1.7, as `ports.uncovered`). A port held by a known service is
+weighed once, as that service — never also as a port. "Public" is what the
+network-context section establishes (a public or DDNS address); when it
+establishes nothing, the host counts as local, the lower weight. Measured in a network namespace
+at policy accept: the listener the default reached was flagged, the one a rule
+accepted and the one a rule dropped were not. A port a rule accepts was opened on purpose and is not a finding, as
+under UFW. A listener bound to one address — a port or a service — is said,
+not scored, as before (measured with a full run in a network namespace: SSH on
+one address was said, on 0.0.0.0 it was `services.exposed.ssh`, scored).
+
+The firewall section's "accepts by default, refuses some of it" stays a
+ceiling: the default is still accept, and a port opened tomorrow would be
+exposed.
+
+### 3. Marks set from a jumped-to chain
+
+0.27.0 read `meta mark set` in prerouting chains and wrote down the limit: a
+`jump` from such a chain was not followed. Measured in a network namespace
+with INPUT at policy drop and `-m mark --mark 0x20000/0x20000 -j ACCEPT`: a mark on 8099 set in a chain reached from
+prerouting by `jump`, `goto`, two jumps or a vmap jump opened 8099, and BOB
+said "conditional"; the same chain never jumped to, or jumped to from an
+output chain only, left it closed. BOB now follows them, in the same table,
+nested, with a loop guard. Found reading the same code: a named set or map
+declared before the chains closed the table on its `}` and the chains after it
+were never read — measured, 8099 opened by a prerouting mark read
+"conditional". Fixed.
+
+### 4. The forward hook, read as the input hook
+
+0.27.0 weighed the refusals on input and kept forward's 0.26.0 reading.
+Measured with a router between two networks: FORWARD at policy accept with a
+drop for 8099, or a jump to a chain dropping it, stopped 8099 while 9000
+passed, and BOB said "transit traffic is not filtered" (−1). Forward now reads
+PARTIAL in that case: not established, a ceiling — "≤" says the score is an
+upper bound: BOB established neither a weakness there nor its absence. Through `iptables -S`
+(nft not visible), `-P FORWARD DROP` then `-A FORWARD -j ACCEPT` forwarded
+both ports, and BOB said "Default FORWARD policy: DROP (recommended)": it is
+now `forward_accept` (−1), with no `-P FORWARD DROP` command — that would change
+nothing behind the accept-everything rule. A drop for one source, a log rule,
+or no rule at all left both ports open, and stay `forward_accept`.
+
+### 5. IPv6 with UFW installed but not running
+
+UFW installed and not running filters nothing, yet the IPv6 section judged by
+its configuration. Measured in a network namespace (UFW installed, `IPV6=no`,
+not running; a listener on `[::]:8099`, a global documentation address): no
+ruleset, an inet chain at policy drop, policy accept with a drop for 8099,
+policy accept with nothing refusing — BOB now reads the host's ruleset in each
+case, as on a host without UFW, and says that UFW is installed but not
+running.
+
+### 6. sudo's Defaults, in the scope they govern
+
+Measured in Debian 13 containers (sudo 1.9.16p2), `bobesc ALL=(root) NOPASSWD: /usr/bin/env`
+then `sudo -n /usr/bin/env sh -c 'id -u'`:
+
+- **NOEXEC set by Defaults.** 0.27.0 read NOEXEC from the rule's tag only.
+  `Defaults noexec`, `Defaults:bobesc`, `Defaults:%group` (a member, primary or
+  supplementary), `Defaults!/usr/bin/env`, `Defaults!ALIAS` and `Defaults>root`
+  blocked the shell — BOB said root-equivalent. A group the account is not in,
+  `Defaults>daemon`, another command, and `Defaults noexec` then
+  `Defaults:bobesc !noexec` did not. An `EXEC:` tag overrides `Defaults
+  noexec`; a `NOEXEC:` tag overrides `Defaults !noexec`.
+- **runas_default scopes.** With a rule that names no runas user, python3 ran as
+  root under `Defaults:%grpout runas_default=daemon` (not a member),
+  `Defaults:ALL,!bobesc …` and `Defaults@elsewhere …` — BOB, counting every
+  group or host scope as applying, called the rule non-root. It ran as daemon
+  under `Defaults:%grpin`, `Defaults:%bobesc` and `Defaults@<this host>`.
+
+One resolver now reads every Defaults scope, in the order sudoers(5) gives:
+generic, host, user and runas, then command, the last match deciding and `!`
+negating; an account's groups are its
+primary and supplementary ones; the host is matched against this host's name.
+A scope it cannot resolve (an alias, a netgroup, a non-Unix group, a domain
+name) is counted as possibly applying, so that no −2 rests on an account BOB
+did not establish; the rule is then not reported, and the score does not say
+it may be lower (see the limits). 22 cases compared with sudo; BOB's reading
+matched each.
+
+### 7. login.defs and smb.conf, as their own tools read them
+
+The 0.19.0 notes left two fragilities for later.
+
+- **`/etc/login.defs`**, measured with Debian 13's `useradd`: an indented
+  `   UMASK 077` was applied (home created 700) and BOB did not read it; a
+  lowercase `umask 077` was ignored (home created 755) and BOB read 077 — a
+  stricter umask than the one in force. The line is now read as shadow reads it
+  (indentation allowed, the key in upper case), and the fix rewrites an
+  indented line. The weak-hash explanation's `ENCRYPT_METHOD` command changed
+  nothing on a commented-out or absent line; it now rewrites the line or adds
+  it. `/etc/default/ufw`'s fix already matched its reader.
+- **`smb.conf`**, measured with `testparm` 4.22.11: `server min protocol = NT1`
+  read NT1 for testparm in every case below, and the former parser
+  (configparser) read nothing on a line indented deeper than the one before
+  (taken for a continuation), raised an error on a backslash continuation, and
+  did not recognise `Server  Min   Protocol`. BOB now reads `smb.conf` as
+  smb.conf(5) describes it: a trailing backslash joins the next line, leading
+  whitespace means nothing, `#` and `;` open a comment only at the start of a
+  line, only the first `=` counts, case and spaces in a parameter name do not
+  matter — an underscore does (measured: `serverminprotocol = NT1` read NT1,
+  `server_min_protocol = NT1` was ignored) —, a repeated parameter keeps its last
+  value and a repeated section merges (measured). `include =` is followed in place, as testparm
+  does (measured: the included file's unsectioned parameters joined the
+  current section, its sections were created, the file went on after it; a
+  missing file was skipped).
+
+### 8. Docker over IPv6, and the explain pages
+
+The DOCKER-USER example (0.27.0) was measured over IPv4; IPv6 was not. Measured
+with Docker 29.9.2 (iptables backend, userland proxy on) in Docker-in-Docker: a
+published port also listens on `[::]`. On a network without IPv6 (the default
+bridge), IPv6 reaches it through docker-proxy, on the host's INPUT: neither an
+iptables nor an ip6tables DOCKER-USER rule stopped it (the ip6tables counter
+stayed at 0); an IPv6 input at policy drop, or an ip6tables INPUT rule for the
+port, did. On a network created with `--ipv6`, the same rules in ip6tables'
+DOCKER-USER stopped it, and the iptables ones alone did not. Publishing on
+`0.0.0.0` kept the port off IPv6. The explanations of `docker.exposed_port` and
+`docker.exposed_bypass_ufw`, and one runtime hint, now say this — explanations
+only: no Docker verdict or score changes.
+
+Found while writing them: for the 68 keys with per-profile sections, `--explain`
+never printed the generic WHY — since 0.1.0, and a test pinned it — while that
+WHY carried measurements (DOCKER-USER, firewalld, the UFW log) and the HOW
+pointed to it ("see WHY"). It is now printed once, above the profile sections,
+in the terminal and in the interactive screen.
+
+### 9. Two runs that did not read the same sections
+
+Found on a real Linux Mint host: the run before a full audit had been a
+`--check` one, and the full audit said "Score degraded by 1 point(s)" and "New
+finding" for three keys whose sections had simply not run. Reproduced with a
+throwaway home: `--check=ssh` then `--check=clamav` said "Score degraded by
+1 point(s)", "7 info notice(s) resolved" with nothing fixed, and "Variable
+deductions -1 pt(s)". The baseline now records the sections a run read. A later run compares a
+finding only where its section ran both times (always for the always-on
+sections; never for a correlation, which spans sections), and says which
+sections differ; the score, the counts and the variable deductions are not
+compared ("Score X/10, previous Y/10 — not compared: the two runs did not read
+the same sections"). A baseline written before 0.28.0 has no such field, and
+may itself come from a `--check` run (the Mint host's did): its coverage is
+unknown, not full. Only the always-on sections' findings are compared against
+it, neither the score nor the counts, and BOB says so; the first run after the
+upgrade compares less, then the new baseline carries its sections (measured,
+throwaway home: a 0.27.0 `--check=ssh`, then 0.28.0 `--check=clamav` said
+"Score 7/10, previous 8/10 — not compared: the previous run's sections were not
+recorded"; a 0.28.0 `--check=ssh` after it named the sections only each run
+read).
+
+`--history` marks a `--check` or `--skip` run as partial: it gets no trend
+arrow and is left out of the sparkline; the next full run's arrow compares that
+run with the previous full one.
+
+A domain with an input BOB could not read shows "≤ 9/10", as the global score
+does (seen on a real host: "Score ≤ 9/10" above "System hardening 9/10",
+package_integrity unread) — in the terminal, Markdown and HTML reports; the JSON output is
+unchanged.
+
+### 10. The integration workflow
+
+The Debian/Ubuntu/Kali step retried apt three times and ended on `sleep`, which
+succeeds: with a mirror unreachable it passed, and the next step failed with
+exit 127, which says nothing about a mirror. It now fails itself after three
+failed attempts and says why.
+
+### Not in this release, and known limits
+
+- The API server is read on MicroK8s only (its arguments file); kubeadm and k3s
+  are not read: not measured. The anonymous-read 2xx was not produced on the
+  measured node (`--anonymous-auth` did not take effect there). The API
+  server's insecure port (removed in Kubernetes 1.20) is not probed, and etcd is
+  not audited (MicroK8s runs dqlite on 127.0.0.1). Of the RBAC bindings, only
+  cluster-admin to the four broad subjects is weighed.
+- The per-port verdict is IPv4; IPv6 stays with the IPv6 section. A set, a map,
+  a verdict map, an accept limited to sources, a refusal of all sources but some,
+  a rule limited to an interface and iptables-nft's `multiport` as nft prints it
+  leave a port not established — and the other ports of that chain with it; so
+  does any rule before the input hook that may refuse it. A rule that accepts a
+  wide range is taken as intent, as under UFW: its breadth is not weighed. A
+  listener bound to one address is not scored. The firewall posture (0.27.0) and
+  the IPv6 section still read the input hook only. A forward refusal limited to one interface
+  (libvirt's bridge) counts as a refusal: forward then reads "not established".
+- A mark set by an expression BOB cannot follow (a map, `jhash`, `numgen`), or
+  by an input chain at the filter's own priority, reads not established (0.27.0).
+- sudo: an alias, a netgroup, a non-Unix group and a host given as a domain
+  name are not resolved; a command scope with arguments or wildcards is not
+  resolved; the host is matched by its own name. Such a scope counts as
+  possibly applying, so no −2 rests on it — and BOB does not say that the rule
+  was set aside.
+- samba: `--fix` writes `smb.conf`, not a file it includes; a `%`-substituted
+  include names a file per client and is not followed; a value followed by
+  `# …` or `; …` is read as samba reads it — part of the value — and samba
+  refuses to load such a file for a boolean or a protocol (measured): BOB does
+  not say so.
+- DOCKER-USER over IPv6 was measured with the iptables backend and the userland
+  proxy on; the nftables backend, the proxy off and a routing host were not.
+- The Python 3.14 pathlib predicates added since 0.19.0 were judged: six, all in
+  BOB's cron installer (`bob/cron/`: whether `crontab` is there, where the job
+  lives, which BOB binary the job runs, the install itself). None feeds an
+  audit verdict; a refusal there makes the installer use another crontab path,
+  say the job is not installed, or stop — left as they are, under the
+  13 September 2026 decision to change no site that already fails safe.
+- The publish workflow installs pip and the test, lint and build tools by hash;
+  the build backend `python -m build` installs in its isolated environment
+  (setuptools, `>=77`) is not pinned.
+
+### Counters
+
+Tests collected 15948 → **16731**, test files 412 → **424**, test functions
+~7779 → **~7910**, mutations 1026 → **1138**, locale keys 3036 → **3090** per
+language, `--explain` keys and CIS references 230 → **235** (CIS Kubernetes
+2.0 4 → 7, best practice 100 → 101, CIS Ubuntu 22.04 118 → 119).
+
+### Guards
+
+`test_v0280_k8s_cluster.py`, `test_v0280_port_verdict.py`,
+`test_v0280_netfilter_exposed_scored.py`, `test_v0280_nft_mark_jumps.py`,
+`test_v0280_forward_refusals.py`, `test_v0280_ipv6_ufw_inactive.py`,
+`test_v0280_sudo_defaults_scope.py`, `test_v0280_login_defs_as_shadow_reads.py`,
+`test_v0280_samba_as_testparm_reads.py`, `test_v0280_explain_generic_why.py`,
+`test_v0280_compare_by_sections.py`, `test_v0280_ci_apt_step.py`, each with its
+mutations. Each test now starts in English (a test that switched to French made
+a later one fail when run after it).
+
 ## [0.27.0] — 2026-10-25
 
 **A minor release, BREAKING for scores: what the 0.26.0 audit of a real Linux

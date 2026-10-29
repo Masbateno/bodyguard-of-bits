@@ -1922,5 +1922,26 @@
     "ref": "Best practice — Replace the distribution's default account with one whose username an attacker has to discover",
     "ref_fr": "Bonne pratique — Remplacer le compte par défaut de la distribution par un compte dont l'attaquant doit deviner le nom",
     "code": null
+  },
+  "kubernetes.apiserver_anonymous": {
+    "ref": "CIS Kubernetes 2.0 — 1.2.1 — Ensure that the --anonymous-auth argument is set to false",
+    "code": "CIS Kubernetes:1.2.1"
+  },
+  "kubernetes.apiserver_always_allow": {
+    "ref": "CIS Kubernetes 2.0 — 1.2.6 — Ensure that the --authorization-mode argument is not set to AlwaysAllow",
+    "code": "CIS Kubernetes:1.2.6"
+  },
+  "kubernetes.cluster_admin_broad": {
+    "ref": "CIS Kubernetes 2.0 — 5.1.1 — Ensure that the cluster-admin role is only used where required",
+    "code": "CIS Kubernetes:5.1.1"
+  },
+  "kubernetes.runtime_socket_open": {
+    "ref": "Best practice — Restrict the container runtime socket (containerd/CRI-O/Docker) to root and the kubelet; a writable socket is root on the node",
+    "ref_fr": "Bonne pratique — Restreindre le socket du runtime de conteneurs (containerd/CRI-O/Docker) à root et au kubelet ; un socket modifiable vaut root sur le nœud",
+    "code": null
+  },
+  "ports.uncovered_netfilter_open": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.7 — Ensure ufw default deny firewall policy, or add an explicit rule",
+    "code": "CIS:3.5.1.7"
   }
 }

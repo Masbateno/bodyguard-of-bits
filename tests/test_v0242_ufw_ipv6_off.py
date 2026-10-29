@@ -64,10 +64,13 @@ def test_an_unread_policy_is_not_taken_for_drop():
     assert "ipv6.ufw_disabled_listeners_present" in _keys(result)
 
 
-def test_a_drop_with_ufw_inactive_is_not_credited_to_ufw():
+@pytest.mark.parametrize("firewalld", [False, True])
+def test_a_drop_with_ufw_inactive_is_not_credited_to_ufw(firewalld):
     """ufw-init only runs when UFW is active; a DROP then comes from elsewhere,
-    and "UFW drops all IPv6" would name the wrong cause."""
-    result = check_ipv6(_snap("DROP"), ufw_active=False, t=_t)
+    and "UFW drops all IPv6" would name the wrong cause. v0.28.0 — both cases
+    return before UFW's IPV6= setting is read: beside firewalld, or through
+    the raw ruleset (tests/test_v0280_ipv6_ufw_inactive.py)."""
+    result = check_ipv6(_snap("DROP"), ufw_active=False, firewalld_active=firewalld, t=_t)
     assert "ipv6.ufw_v6_off_blocked" not in _keys(result)
 
 

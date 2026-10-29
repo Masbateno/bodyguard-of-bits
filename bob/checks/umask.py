@@ -25,7 +25,11 @@ from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
 
 _UMASK_RE = re.compile(r"^(?!\s*#)\s*(?:umask|UMASK)\s+([0-7]{3,4})\b", re.MULTILINE)
-_LOGIN_DEFS_RE = re.compile(r"^UMASK\s+([0-7]{3,4})", re.MULTILINE | re.IGNORECASE)
+#: v0.28.0 — as shadow reads it: measured on Debian 13 with useradd, an
+#: indented `   UMASK 077` was applied (home 700) and BOB did not read it; a
+#: lowercase `umask 077` was ignored (home 755) and BOB read 077 — a stricter
+#: umask than the one in force.
+_LOGIN_DEFS_RE = re.compile(r"^[ \t]*UMASK[ \t]+([0-7]{3,4})", re.MULTILINE)
 _PAM_UMASK_RE  = re.compile(r"pam_umask\.so.*umask=([0-7]{3,4})", re.MULTILINE)
 # pam_umask.so without explicit umask= — effective value comes from login.defs or default 022
 _PAM_UMASK_NOARG_RE = re.compile(r"^\s*session\s+\S+\s+pam_umask\.so\s*$", re.MULTILINE)
@@ -49,14 +53,14 @@ def _fix_cmd(source: str | None) -> str:
     """Return the fix command appropriate for the file where the umask was found.
 
     Each sed matches what the corresponding detection regex matches, or the fix
-    is a no-op that leaves the finding standing forever. login.defs is detected
-    case-insensitively (``_LOGIN_DEFS_RE`` has re.IGNORECASE) → GNU sed ``I``
-    flag; the shell-file and PAM forms allow a tab or several spaces as the
+    is a no-op that leaves the finding standing forever. login.defs is read as
+    shadow reads it (v0.28.0, measured): indentation allowed, the key in upper
+    case only; the shell-file and PAM forms allow a tab or several spaces as the
     separator (``\\s+``) → ``[[:space:]]+`` under ``-E``, not one literal space.
     A plain ``umask 002`` fixed, but ``umask\\t002`` (a tab) did not.
     """
     if not source or source == "/etc/login.defs":
-        return "sudo sed -i 's/^UMASK[[:space:]].*/UMASK\\t\\t022/I' /etc/login.defs"
+        return "sudo sed -i 's/^[[:space:]]*UMASK[[:space:]].*/UMASK\\t\\t022/' /etc/login.defs"
     if "/pam.d/" in source:
         return f"sudo sed -i -E 's/umask=[0-7]+/umask=022/' {source}"
     return f"sudo sed -i -E 's/\\bumask[[:space:]]+[0-7]+/umask 022/' {source}"

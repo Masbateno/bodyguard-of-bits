@@ -93,6 +93,7 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "firewall_iptables.firewalld_unreadable",
     "firewall_iptables.input_unknown",
     "firewall_iptables.input_accept_unweighed",
+    "firewall_iptables.forward_accept_unweighed",
     "firewall.netfilter_unweighed",
     "logs.window_partly_read",
     "firewall_iptables.ruleset_unreadable",
