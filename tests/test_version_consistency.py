@@ -79,8 +79,8 @@ def test_init_version_matches_pyproject_version():
 def test_pyproject_version_matches_pep440():
     """Sanity guard: the declared version must be a valid PEP 440 string
     so PyPI accepts it. The minimal regex covers stable (``X.Y.Z``) and
-    pre-release suffixes (``X.Y.ZaN``, ``X.Y.ZbN``, ``X.Y.ZrcN``, ``X.Y.Z.devN``)
-    — the same patterns publish.yml detects via its ``IS_PRERELEASE`` check."""
+    pre-release suffixes (``X.Y.ZaN``, ``X.Y.ZbN``, ``X.Y.ZrcN``, ``X.Y.Z.devN``).
+    publish.yml builds a bare X.Y.Z only (0.28.2 removed its pre-release path)."""
     v = _read_pyproject_version()
     assert re.match(
         r"^\d+\.\d+\.\d+(?:(?:a|b|rc)\d+|\.dev\d+|\.post\d+)?$",

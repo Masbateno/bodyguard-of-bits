@@ -8,3 +8,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # 0.28.2 — a release is proposed once it is a week old: a compromised
+    # action version is usually found and pulled within days (zizmor:
+    # dependabot-cooldown).
+    cooldown:
+      default-days: 7

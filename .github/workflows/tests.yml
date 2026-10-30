@@ -6,12 +6,24 @@ on:
   pull_request:
     branches: ["**"]
 
+# 0.28.2 — the token's rights said here, not inherited from the repository
+# setting (read today); a newer push to the same ref cancels the older run.
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     name: ruff — correctness gate (bob/ only)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
@@ -29,11 +41,53 @@ jobs:
       - name: Lint shipped package
         run: ruff check bob/
 
+  build-backend-pin:
+    name: build backend — the pin must bite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pip and the build tools by hash
+        run: python -m pip install --disable-pip-version-check "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70" && pip install --require-hashes -r requirements-ci.txt
+
+      # 0.28.2 — publish.yml hands requirements-build.txt to the isolated build
+      # environment through PIP_CONSTRAINT (0.28.1). Its log cannot show that
+      # the constraint was applied while the pinned setuptools is also the
+      # newest one, so this job proves it on every push, before any tag: the
+      # same build with the pinned file passes, and with its hashes replaced it
+      # must fail on the hash check — not on anything else.
+      - name: The pinned backend builds, another hash is refused
+        run: |
+          set -eu
+          PIP_CONSTRAINT="$PWD/requirements-build.txt" python -m build --outdir /tmp/dist-pinned > /tmp/pinned.log 2>&1 || { tail -20 /tmp/pinned.log; echo "::error::the build with the pinned backend failed"; exit 1; }
+          grep -E "setuptools==" /tmp/pinned.log | head -2
+          sed -E 's/(--hash=sha256:)[0-9a-f]{64}/\10000000000000000000000000000000000000000000000000000000000000000/' requirements-build.txt > /tmp/requirements-build-tampered.txt
+          if cmp -s requirements-build.txt /tmp/requirements-build-tampered.txt; then echo "::error::the tampered copy is identical"; exit 1; fi
+          if ! diff <(sed -E 's/sha256:[0-9a-f]{64}//' requirements-build.txt) <(sed -E 's/sha256:[0-9a-f]{64}//' /tmp/requirements-build-tampered.txt) > /dev/null; then echo "::error::the tampered copy differs by more than its hashes"; exit 1; fi
+          set +e
+          PIP_CONSTRAINT=/tmp/requirements-build-tampered.txt python -m build --outdir /tmp/dist-tampered > /tmp/tampered.log 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then echo "::error::a setuptools with another hash was used: the constraint did not reach the isolated build"; exit 1; fi
+          if ! grep -q "DO NOT MATCH THE HASHES" /tmp/tampered.log; then tail -20 /tmp/tampered.log; echo "::error::the tampered build failed for another reason than the hash"; exit 1; fi
+          echo "the tampered constraint was refused (exit $rc): the pin bites"
+
   mutation:
     name: mutation — every guard must still bite
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
@@ -41,7 +95,7 @@ jobs:
           python-version: "3.12"
 
       - name: Upgrade pip and install package
-        run: python -m pip install --disable-pip-version-check "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70" && pip install --require-hashes -r requirements-ci.txt && pip install -e .
+        run: python -m pip install --disable-pip-version-check "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70" && pip install --require-hashes -r requirements-ci.txt && pip install --require-hashes -r requirements-build.txt && pip install --no-build-isolation -e .
 
       # A guard that cannot fail reports safety it does not provide. Until
       # v0.16.4 that was checked by hand from a shell heredoc and reported in a
@@ -64,6 +118,7 @@ jobs:
   pytest:
     name: pytest — Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     strategy:
       fail-fast: false
@@ -72,6 +127,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
@@ -79,7 +136,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Upgrade pip and install package
-        run: python -m pip install --disable-pip-version-check "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70" && pip install --require-hashes -r requirements-ci.txt && pip install -e .
+        run: python -m pip install --disable-pip-version-check "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70" && pip install --require-hashes -r requirements-ci.txt && pip install --require-hashes -r requirements-build.txt && pip install --no-build-isolation -e .
 
       - name: Run tests
         run: python -m pytest tests/ -v --tb=short

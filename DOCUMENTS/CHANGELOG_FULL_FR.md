@@ -6,6 +6,70 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.28.2] — 31-10-2026
+
+**Une version corrective qui porte sur la façon dont BOB est construit et publié, pas sur ce qu'il audite : la chaîne CI/CD a été auditée de bout en bout, mesurée, et durcie partout où l'audit a montré un manque.**
+Rien de ce qu'affiche BOB ne change : aucune clé de constat, aucun point, aucun changement du schéma de sortie JSON, des colonnes CSV, des sections, des clés `--explain` ni des références CIS. Ce qui change se trouve dans `.github/`, `ci/arm64_smoke.sh`, les tests qui les tiennent et la documentation ; et quatre réglages du dépôt.
+
+Comment l'audit a été mené, le 30 octobre 2026 : les réglages du dépôt lus par l'API GitHub ; les trois workflows lus ligne à ligne ; le code de chaque action lu au commit où elle est épinglée ; les journaux de la publication 0.28.1 lus ; [zizmor](https://docs.zizmor.sh/) 1.31.1, un analyseur statique des workflows GitHub, lancé hors ligne comme contre-vérification (31 constats avant, 9 après — voir les limites). Chaque changement a été mesuré avant d'être fait : dans podman sur chaque image de la matrice, sous émulation arm64, dans un environnement jetable pour le build, en Release brouillon pour l'étape de Release. Toute la chaîne est désormais décrite dans [`DOCUMENTS/CI_FR.md`](CI_FR.md) (en anglais : `CI.md`).
+
+### 1. Une publication seulement depuis un commit vert
+
+« Ne taguer qu'un commit dont la CI est verte » était la règle du mainteneur : `publish.yml` relançait pytest sur le commit tagué, mais ni les distributions, ni arm64, ni les mutations, ni la preuve de l'épinglage de setuptools. Un job `ci-green` interroge désormais l'API GitHub sur les runs `Tests` et `Integration` du commit tagué poussé sur `main`, et le build l'attend : un run rouge arrête la publication, un run en cours est attendu (jusqu'à une heure), un commit jamais poussé sur `main` est refusé. Ce qui compte comme réussi : pour chacun des deux workflows, identifié par son fichier, le run le plus récent du SHA tagué exact poussé sur `main`, dans l'état de sa dernière tentative, doit être `completed` et `success`. Le job n'a que `actions: read` — aucun accès au code. Mesuré avec l'API : le commit de la 0.28.1 est passé ; `29657ca`, aux tests en échec, a été refusé ; un commit présent seulement sur une branche Dependabot a été refusé ; et un run en échec puis réussi à sa seconde tentative est listé avec le succès de la seconde.
+
+### 2. Le conteneur d'envoi vers PyPI, épinglé par digest
+
+`pypa/gh-action-pypi-publish` était épinglée par commit (0.27.0), mais ce qui s'exécute est le conteneur qu'elle lance : `ghcr.io/pypa/gh-action-pypi-publish:<commit>`, tiré **par tag** — lu dans le code de l'action à ce commit (`create-docker-action.py`), et dans le journal de la publication 0.28.1 (« Unable to find image … locally », puis le téléchargement, digest `sha256:411241df…`). Ce conteneur détient le jeton OIDC que PyPI accepte. Une étape du job de publication le tire désormais par ce digest — celui que ghcr.io servait pour le tag le 30 octobre 2026 — et lui donne le nom que l'action demande : l'action trouve l'image et ne télécharge rien. Un test garde ce nom égal au commit où l'action est épinglée. L'étape échoue si l'image locale n'est pas ce digest, et une étape après l'envoi le revérifie : si l'action avait retiré le tag, le nom pointerait ailleurs. Le journal de la publication 0.28.2 est le run qui le montre : l'action ne doit plus dire « Unable to find image … locally ».
+
+### 3. La Release, par la CLI de GitHub
+
+La Release GitHub était créée par `softprops/action-gh-release`, une action tierce qui détenait `contents: write`. Elle l'est désormais par `gh release create … --verify-tag`, sur le runner. Mesuré avant le changement : la même commande a créé une Release brouillon avec le titre de la 0.28.1, ses notes octet pour octet et les deux fichiers joints, n'a créé aucun tag, et a été supprimée. Avant que la Release soit créée, une étape compare le SHA-256 de chaque fichier à joindre aux empreintes que PyPI publie pour la version (en attendant jusqu'à dix minutes que PyPI la liste) : la Release porte les fichiers de PyPI, ou n'est pas créée. Mesuré sur la 0.28.1 : les vrais fichiers sont passés, un octet ajouté au sdist a été refusé, une version que PyPI ne liste pas a été refusée. L'étape du titre et des notes, rejouée depuis le workflow sur le tag 0.28.1, a donné le titre publié et les mêmes notes octet pour octet. Le déclencheur de publication sur les anciens tags `v*`, et le chemin des pré-versions (notes a/b/rc tirées de git log), sont retirés : le build refuse tout tag autre qu'un `X.Y.Z` nu égal à la version, si bien qu'aucun des deux ne pouvait servir.
+
+### 4. Chaque build épinglé, et l'épinglage prouvé
+
+- **L'épinglage de setuptools de la 0.28.1 est prouvé en CI.** Son journal de publication montrait setuptools 84.2.1 — aussi la version la plus récente, si bien qu'il ne pouvait pas montrer que la contrainte avait été appliquée. Un job de `tests.yml` construit désormais comme la publication, puis à nouveau avec les empreintes remplacées, et exige que le second build échoue sur la vérification d'empreinte (« THESE PACKAGES DO NOT MATCH THE HASHES »), et non sur autre chose — en vérifiant que la copie altérée ne diffère de la vraie que par ses empreintes. Mesuré en local, avec un contrôle négatif : quand la copie altérée n'est pas transmise au build, ce build réussit et le job échoue avec « the constraint did not reach the isolated build ».
+- **Les builds de test** (`pip install -e .` dans les jobs de test, `pip install .` dans les conteneurs et en arm64) résolvaient setuptools sans épinglage — et, dans les conteneurs, avec le pip de la distribution : celui d'openSUSE Leap 16 est en 26.1.2, plus ancien que le 26.2.2 qui ne fait plus confiance aux autorités eMudhra / emSign. Mesuré : un `PIP_CONSTRAINT` haché fait refuser à pip le projet local (« no single file to hash »). Chaque build installe désormais pip 26.2.2 et setuptools depuis `requirements-build.txt` par empreinte, puis construit BOB avec eux (`--no-build-isolation`). Mesuré sur les neuf images et en arm64 : pip 26.2.2, setuptools 84.2.1, chaque étape réussie.
+
+### 5. Les workflows durcis
+
+- chaque workflow déclare `contents: read` ; seuls l'envoi vers PyPI (`id-token`) et la Release (`contents`) écrivent ;
+- aucun checkout ne laisse le jeton dans `.git/config` (`persist-credentials: false`) ;
+- chaque job a un délai maximal, de 10 à 45 minutes (le run le plus long mesuré : 10 minutes) — six heures avant ;
+- un push plus récent annule les runs `tests` et `integration` plus anciens de la même référence ; les publications ne se chevauchent jamais et ne sont jamais annulées ;
+- aucune expression `${{ … }}` n'est développée dans un script (une l'était, un code de sortie d'audit) ;
+- l'image QEMU, lancée en `--privileged` pour enregistrer l'émulateur, était `tonistiigi/binfmt:latest`, mise en cache par l'action : épinglée par digest, cache désactivé ;
+- Dependabot propose une mise à jour d'action une fois la version âgée d'une semaine.
+
+Les six actions épinglées ont chacune été comparées au tag de leur version dans leur propre dépôt : les six correspondaient.
+
+### 6. La CI sur des versions supportées seulement
+
+La matrice d'intégration faisait tourner Ubuntu 25.04 (fin de support le 17 janvier 2026) et Fedora 41 (le 15 décembre 2025), que le README disait « validées en CI », et aucune famille du Tier 1 hors Debian. Elle fait désormais tourner Debian 12 et 13, Ubuntu 22.04, 24.04 et 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 et Kali Rolling, chacune passée d'abord par toutes les étapes dans podman. La règle : seulement des versions encore supportées — la ligne LTS ou stable là où la distribution en a une, la version du Tier 1 là où elle n'en a pas. La fin de support de chaque image (mesurée sur endoflife.date) est dans un test ; passé cette date, la suite échoue jusqu'à ce que l'image soit remplacée. Kali, en rolling, n'a pas de date de fin : elle porte la date de sa dernière revue complète (le 30 octobre 2026), et la suite échoue six mois plus tard tant qu'elle n'est pas refaite.
+
+### 7. Les réglages du dépôt
+
+Modifiés par l'API le 30 octobre 2026, puis relus : épinglage des actions par commit **imposé** (`sha_pinning_required` ; chaque action l'était déjà) ; scanner de secrets et protection au push **actifs** ; alertes de vulnérabilités Dependabot **actives** (aucune ouverte). Déjà en place et lus : jeton par défaut en lecture seule, approbation des runs des nouveaux contributeurs, `main` et les tags de version protégés par des rulesets, l'approbation de l'environnement `release` sans contournement par un administrateur, aucun secret stocké. Ces réglages vivent sur GitHub, pas dans le dépôt, et le jeton des workflows ne peut pas lire la plupart d'entre eux : `scripts/check_repo_settings.py` lit les 13 avec la session `gh` du mainteneur et dit lequel a changé (lancé avant un push qui mène à une version ; vérifié hors ligne par un test, avec une réponse mesurée et sept réglages modifiés).
+
+### Hors de cette version, et limites connues
+
+- Les images sur lesquelles la CI teste sont prises par tag, pas par digest — un choix : un tag suit les mises à jour de sécurité de chaque distribution, un digest les figerait. Ce sont les 9 constats que zizmor relève encore (des constats d'analyse statique, pas des vulnérabilités).
+- Le filtre de tags de l'environnement `release` est un motif glob (`[0-9]*.[0-9]*.[0-9]*`, qui admet aussi `1x.2.3y`) ; le contrôle strict est celui du job de build.
+- `main` n'a pas de vérification de statut obligatoire : un commit arrive sur `main` avant que sa CI tourne (une seule branche). Une publication, elle, est tenue par `ci-green`.
+- Les réglages du dépôt sont vérifiés par un script que lance le mainteneur, pas par la CI : le jeton des workflows ne peut pas les lire.
+- L'image du runner (`ubuntu-latest`), son Python et son système sont ceux de GitHub.
+- Épingler une action par commit fixe son code, pas ce qu'elle récupère à l'exécution, sauf là où ce dépôt l'épingle (l'image QEMU, le conteneur d'envoi).
+- Dependabot ne propose pas les mises à jour des outils Python épinglés ; ils se régénèrent avec `scripts/gen_ci_requirements.py`, et une vulnérabilité déclenche une alerte.
+- Le pré-tirage par digest, la Release par `gh`, le contrôle d'identité, le job `ci-green` et les conteneurs Alpine et openSUSE ne sont prouvés sur les runners de GitHub que par le push et la publication de cette version.
+- Trois pull requests Dependabot ouvertes le 25 octobre 2026 (actions/checkout 7, actions/setup-python 7, docker/setup-qemu-action 4 — des versions majeures) échouaient sur une base antérieure au correctif de la 0.27.0 pour le module `yaml` manquant ; elles ne font pas partie de cette version.
+
+### Compteurs
+
+Tests collectés 16836 → **16997**, fichiers de test 426 → **427**, fonctions de test ~7930 → **~7950**, mutations 1158 → **1189** ; clés de locale (3095), clés `--explain` et références CIS (235) et sections inchangées.
+
+### Gardes
+
+`test_v0282_ci_hardening.py` (les workflows, le fichier Dependabot, le script arm64 et la matrice documentée, lus comme du texte ; le contrôle des réglages du dépôt, avec les réponses mesurées et sept réglages modifiés), avec ses mutations ; `test_v0270_release_chain_pins.py` de la 0.27.0 corrigé — il lisait le mot « build » dans `--no-build-isolation` comme un outil non épinglé.
+
 ## [0.28.1] — 30-10-2026
 
 **Une version corrective, sans changement de score : `--manage-logs` donne la taille et la date de création de chaque dossier de logs, et le backend de build isolé de la publication est épinglé par empreinte.**

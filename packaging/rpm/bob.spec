@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.28.1
+Version:        0.28.2
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,11 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sat Oct 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.28.2-1
+- Patch, no change to BOB itself: the CI/CD audited end to end. A
+  publication waits for green CI on the tagged commit; the PyPI upload
+  container pinned by digest; the release made by gh, its files checked
+  against PyPI; every build pinned by hash; CI on supported releases only.
 * Fri Oct 30 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.28.1-1
 - Patch, no score change: --manage-logs says each log directory's report
   count, their total size and the directory's creation date (statx; unknown

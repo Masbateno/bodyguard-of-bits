@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.28.1-brightgreen)
+![Release](https://img.shields.io/badge/version-0.28.2-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -184,7 +184,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 - Linux — the platform badge covers eight names, on three different kinds of evidence:
   - **daily-driven**: Linux Mint 22.3, Debian 13.4.0
   - **real hardware** (stress-tested across the v0.20.x–v0.22.x cycles): Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, no systemd — what the OpenRC support was written against), Kali Rolling — plus the two daily-driven hosts above; see the support-tier table in the main README
-  - **CI-validated** (containers, every push to `main` and every pull request to it): Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (emulated). Earlier releases were also hand-audited on throwaway VMs (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — since retired, those families are now on real hardware above
+  - **CI-validated** (containers, every push to `main` and every pull request to it): Debian 12/13, Ubuntu 22.04/24.04/26.04, Kali Rolling, Fedora 44, openSUSE Leap 16, Alpine 3.24 · Debian Bookworm arm64 (emulated). Earlier releases were also hand-audited on throwaway VMs (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — since retired, those families are now on real hardware above
   - **Raspberry Pi**: audited on real hardware for the first time in v0.18.1 — a Pi Zero W (ARMv6, 426 MB) on Raspbian 13 trixie. Full audits took 71–108 s. The pass found BOB's SSH brute-force detection blind on OpenSSH ≥ 9.8 and the boot-partition check looking for the wrong provisioning file; both are fixed and replayed on the board. It is one board and one OS release, not a matrix
 - Python 3.10+
 - `ss` recommended (`iproute2` package) — available by default on modern systems
@@ -200,7 +200,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 - Linux — the platform badge covers eight names, on three different kinds of evidence:
   - **daily-driven**: Linux Mint 22.3, Debian 13.4.0
   - **real hardware** (stress-tested across the v0.20.x–v0.22.x cycles): Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, no systemd — what the OpenRC support was written against), Kali Rolling — plus the two daily-driven hosts above; see the support-tier table in the main README
-  - **CI-validated** (containers, every push to `main` and every pull request to it): Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (emulated). Earlier releases were also hand-audited on throwaway VMs (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — since retired, those families are now on real hardware above
+  - **CI-validated** (containers, every push to `main` and every pull request to it): Debian 12/13, Ubuntu 22.04/24.04/26.04, Kali Rolling, Fedora 44, openSUSE Leap 16, Alpine 3.24 · Debian Bookworm arm64 (emulated). Earlier releases were also hand-audited on throwaway VMs (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — since retired, those families are now on real hardware above
   - **Raspberry Pi**: audited on real hardware for the first time in v0.18.1 — a Pi Zero W (ARMv6, 426 MB) on Raspbian 13 trixie. Full audits took 71–108 s. The pass found BOB's SSH brute-force detection blind on OpenSSH ≥ 9.8 and the boot-partition check looking for the wrong provisioning file; both are fixed and replayed on the board. It is one board and one OS release, not a matrix
 - pipx *(isolated Python app installer)*:
 
@@ -398,7 +398,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.28.1  │  Linux hardening auditor                                     ║
+║  BOB 0.28.2  │  Linux hardening auditor                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║

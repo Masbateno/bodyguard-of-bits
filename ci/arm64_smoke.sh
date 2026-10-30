@@ -19,7 +19,11 @@ apt-get update -qq
 apt-get install -y -qq --no-install-recommends python3 python3-venv ca-certificates >/dev/null
 
 python3 -m venv /opt/bobenv
-/opt/bobenv/bin/pip install --quiet . 
+# 0.28.2 — pip by hash, setuptools by hash, BOB built against it (see the
+# install step of integration.yml).
+/opt/bobenv/bin/python -m pip install --quiet --disable-pip-version-check "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"
+/opt/bobenv/bin/pip install --quiet --require-hashes -r requirements-build.txt
+/opt/bobenv/bin/pip install --quiet --no-build-isolation .
 PATH="/opt/bobenv/bin:$PATH"; export PATH
 
 echo "=== smoke ==="

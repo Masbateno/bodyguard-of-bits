@@ -52,6 +52,39 @@ pas que ce workflow ou ses outils étaient sains.
   en 26.2.2 ou plus (ainsi que uv et certifi) comme l'indique le fil Python, et
   gardez à jour le paquet `ca-certificates` de votre système.
 
+Toute la chaîne — workflows, droits, épinglages, réglages du dépôt et ce qui
+n'est pas couvert — est décrite dans [DOCUMENTS/CI_FR.md](DOCUMENTS/CI_FR.md).
+
+### Ce qui a changé en 0.28.2
+
+La CI/CD a été auditée de bout en bout (détail et limites dans
+[DOCUMENTS/CI_FR.md](DOCUMENTS/CI_FR.md)) :
+
+- une publication attend que `Tests` et `Integration` aient réussi sur le
+  commit tagué, poussé sur `main` — « ne taguer qu'un commit vert » était une
+  règle, c'est désormais un verrou ;
+- le conteneur que lance l'action d'envoi vers PyPI, qui détient le jeton OIDC,
+  était tiré par tag ; il est désormais tiré par digest avant que l'action
+  tourne, et revérifié après ;
+- les fichiers joints à la Release GitHub sont comparés, par SHA-256, aux
+  fichiers que PyPI publie pour la version ;
+- `scripts/check_repo_settings.py` lit les 13 réglages du dépôt dont dépend la
+  chaîne, qu'aucun fichier ne contient ;
+- la Release est créée par la CLI de GitHub au lieu d'une action tierce qui
+  détenait `contents: write` ;
+- les builds de test installent eux aussi pip 26.2.2 et setuptools par
+  empreinte, dans chaque conteneur et en arm64 — la limite de la 0.28.1 est
+  fermée ;
+- chaque workflow déclare un jeton en lecture seule ; aucun checkout ne laisse
+  le jeton dans `.git/config` ; chaque job a un délai maximal ; aucune
+  expression n'est développée dans un script ; l'image QEMU, qui tourne en mode
+  privilégié, est épinglée par digest et n'est pas mise en cache ;
+- le dépôt impose l'épinglage des actions par commit, et le scanner de secrets,
+  la protection au push et les alertes Dependabot sont actifs ;
+- la CI ne fait tourner que des versions supportées — Ubuntu 25.04 et Fedora 41
+  remplacées, Alpine 3.24 et openSUSE Leap 16 ajoutées — et un test échoue
+  quand l'une atteint sa fin de support.
+
 ### Ce qui a changé en 0.28.1
 
 Le backend de build est épinglé par empreinte. `python -m build` crée un

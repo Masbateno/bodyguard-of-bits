@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.28.1-brightgreen)
+![Release](https://img.shields.io/badge/version-0.28.2-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -184,7 +184,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - Linux — le badge de plateformes couvre huit noms, sur trois natures de preuve différentes :
   - **utilisé au quotidien** : Linux Mint 22.3, Debian 13.4.0
   - **matériel réel** (stress-testé au fil des cycles v0.20.x–v0.22.x) : Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, sans systemd — ce contre quoi le support OpenRC a été écrit), Kali Rolling — plus les deux hôtes quotidiens ci-dessus ; voir la table des tiers de support dans le README principal
-  - **validé en CI** (conteneurs, à chaque push sur `main` et à chaque pull request vers `main`) : Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (émulé). Les releases précédentes ont aussi été auditées à la main sur des VM jetables (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — depuis abandonnées, ces familles sont désormais sur matériel réel ci-dessus
+  - **validé en CI** (conteneurs, à chaque push sur `main` et à chaque pull request vers `main`) : Debian 12/13, Ubuntu 22.04/24.04/26.04, Kali Rolling, Fedora 44, openSUSE Leap 16, Alpine 3.24 · Debian Bookworm arm64 (émulé). Les releases précédentes ont aussi été auditées à la main sur des VM jetables (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — depuis abandonnées, ces familles sont désormais sur matériel réel ci-dessus
   - **Raspberry Pi** : audité sur du vrai matériel pour la première fois en v0.18.1 — un Pi Zero W (ARMv6, 426 Mo) sous Raspbian 13 trixie. Un audit complet y prend 71 à 108 s. La passe a montré la détection de force brute SSH aveugle sous OpenSSH ≥ 9.8 et le contrôle de la partition de démarrage cherchant le mauvais fichier de provisionnement ; les deux sont corrigés et rejoués sur la carte. C'est une carte et une version d'OS, pas une matrice
 - Python 3.10+
 - `ss` recommandé (paquet `iproute2`) — disponible par défaut sur les systèmes modernes
@@ -200,7 +200,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - Linux — le badge de plateformes couvre huit noms, sur trois natures de preuve différentes :
   - **utilisé au quotidien** : Linux Mint 22.3, Debian 13.4.0
   - **matériel réel** (stress-testé au fil des cycles v0.20.x–v0.22.x) : Ubuntu Server 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 (OpenRC, sans systemd — ce contre quoi le support OpenRC a été écrit), Kali Rolling — plus les deux hôtes quotidiens ci-dessus ; voir la table des tiers de support dans le README principal
-  - **validé en CI** (conteneurs, à chaque push sur `main` et à chaque pull request vers `main`) : Debian 12/13, Ubuntu 22.04/24.04/25.04, Kali Rolling, Fedora 41 · Debian Bookworm arm64 (émulé). Les releases précédentes ont aussi été auditées à la main sur des VM jetables (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — depuis abandonnées, ces familles sont désormais sur matériel réel ci-dessus
+  - **validé en CI** (conteneurs, à chaque push sur `main` et à chaque pull request vers `main`) : Debian 12/13, Ubuntu 22.04/24.04/26.04, Kali Rolling, Fedora 44, openSUSE Leap 16, Alpine 3.24 · Debian Bookworm arm64 (émulé). Les releases précédentes ont aussi été auditées à la main sur des VM jetables (Fedora 43, openSUSE Leap 15.6, Alpine 3.22, v0.17.1/v0.18.0) — depuis abandonnées, ces familles sont désormais sur matériel réel ci-dessus
   - **Raspberry Pi** : audité sur du vrai matériel pour la première fois en v0.18.1 — un Pi Zero W (ARMv6, 426 Mo) sous Raspbian 13 trixie. Un audit complet y prend 71 à 108 s. La passe a montré la détection de force brute SSH aveugle sous OpenSSH ≥ 9.8 et le contrôle de la partition de démarrage cherchant le mauvais fichier de provisionnement ; les deux sont corrigés et rejoués sur la carte. C'est une carte et une version d'OS, pas une matrice
 - pipx *(installateur d'applications Python isolées)* :
 
@@ -398,7 +398,7 @@ Exemple (tronqué pour la lisibilité) :
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.28.1  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.28.2  │  Auditeur de durcissement Linux                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║

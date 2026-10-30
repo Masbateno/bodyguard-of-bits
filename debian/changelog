@@ -1,3 +1,14 @@
+bodyguard-of-bits (0.28.2-1) unstable; urgency=medium
+
+  * Patch, no change to BOB itself: the CI/CD audited end to end. A
+    publication waits for Tests and Integration to have passed on the tagged
+    commit; the container the PyPI upload action starts is pulled by digest;
+    the release is made by GitHub's CLI and its files are checked against
+    PyPI; every build installs pip and setuptools by hash; CI runs only
+    supported distribution releases. See DOCUMENTS/CI.md.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 31 Oct 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.28.1-1) unstable; urgency=medium
 
   * Patch, no score change. --manage-logs says each log directory's report

@@ -1,27 +1,40 @@
 name: Publish to PyPI + GitHub Release
 
-# Triggers on version tags pushed to main (bare SemVer, e.g. 0.25.1; legacy v* kept).
+# Triggers on version tags pushed to main (bare SemVer, e.g. 0.28.2).
 # Pipeline: tests → build (sdist + wheel) → PyPI publish (OIDC) → GitHub Release.
 # If PyPI publish fails, the GitHub release is not created.
 on:
   push:
     tags:
-      # SemVer tags with no "v" prefix (v0.21.0 onward). The legacy "v*" form is
-      # kept so the last "v"-tagged release (v0.20.5) still triggers a publish.
+      # SemVer tags with no "v" prefix (0.21.0 onward). 0.28.2 — the legacy
+      # "v*" form is gone: the build refuses any tag but a bare X.Y.Z equal to
+      # the version, so a "v" tag could no longer publish anything.
       - "[0-9]+.[0-9]+.[0-9]+"
-      - "v*"
+
+# 0.28.2 — read only unless a job says otherwise (publish: id-token, the
+# release: contents). Two publications never run at once, and none is
+# cancelled by another tag.
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
 
 jobs:
   # Run the full test suite before publishing
   test:
     name: Tests — Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: true
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
@@ -29,18 +42,74 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install package and test runner
-        run: python -m pip install --disable-pip-version-check "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70" && pip install --require-hashes -r requirements-ci.txt && pip install -e .
+        run: python -m pip install --disable-pip-version-check "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70" && pip install --require-hashes -r requirements-ci.txt && pip install --require-hashes -r requirements-build.txt && pip install --no-build-isolation -e .
 
       - name: Run tests
         run: python -m pytest tests/ --tb=short -q
+
+  # 0.28.2 — the rule "tag only a commit whose CI is green" was the
+  # maintainer's, not the repository's: this job holds it. Tests (lint, the
+  # setuptools pin proof, mutations, pytest) and Integration (every
+  # distribution, arm64) must have passed on this very commit, pushed to
+  # main; a red run stops the publication, a run still going is waited for,
+  # a commit that was never pushed to main is refused. Measured with the
+  # GitHub API: 12dbbba (0.28.1) green, 29657ca (Tests failed) red, a
+  # Dependabot branch commit never on main refused.
+  ci-green:
+    name: CI green on the tagged commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: read   # to read the Tests and Integration runs of the tagged commit
+    steps:
+      - name: Require Tests and Integration to have passed on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          attempts="${ATTEMPTS:-55}"
+          for attempt in $(seq 1 "$attempts"); do
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&event=push&branch=main&per_page=100" > /tmp/runs.json
+            verdict=$(python3 - <<'PY'
+          import json
+          runs = json.load(open("/tmp/runs.json"))["workflow_runs"]
+          required = (".github/workflows/tests.yml", ".github/workflows/integration.yml")
+          states = []
+          for path in required:
+              mine = sorted((r for r in runs if r["path"] == path and r["head_branch"] == "main"), key=lambda r: r["id"])
+              if not mine:
+                  states.append(f"{path}: no run on main for this commit")
+                  continue
+              last = mine[-1]
+              states.append(f"{path}: {last['status']} {last['conclusion']}")
+          if all(s.endswith("completed success") for s in states):
+              print("green")
+          elif any("completed" in s and not s.endswith("success") for s in states):
+              print("red " + "; ".join(states))
+          else:
+              print("wait " + "; ".join(states))
+          PY
+          )
+            echo "attempt $attempt: $verdict"
+            case "$verdict" in
+              green) exit 0 ;;
+              red*) echo "::error::CI is not green on the tagged commit $GITHUB_SHA: ${verdict#red }"; exit 1 ;;
+            esac
+            [ "$attempt" -lt "$attempts" ] && sleep "${PAUSE:-60}"
+          done
+          echo "::error::CI never finished on main for the tagged commit $GITHUB_SHA: ${verdict#wait }"
+          exit 1
 
   # Build the sdist + wheel
   build:
     name: Build distribution
     runs-on: ubuntu-latest
-    needs: test
+    timeout-minutes: 15
+    needs: [test, ci-green]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
@@ -110,6 +179,7 @@ jobs:
   publish:
     name: Publish to PyPI
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: build
     environment: release
     permissions:
@@ -121,6 +191,27 @@ jobs:
           name: dist
           path: dist/
 
+      # 0.28.2 — the upload action below is pinned by commit, but what runs is
+      # the container it starts: ghcr.io/pypa/gh-action-pypi-publish:<commit>,
+      # pulled by tag (create-docker-action.py at that commit; the 0.28.1 log:
+      # "Unable to find image ... locally", then the pull). That container
+      # holds the PyPI OIDC token. The image is pulled here by digest and given
+      # the name the action asks for, so `docker run` finds it and pulls
+      # nothing. REF must be the commit the action is pinned to (a test holds
+      # them together); the digest is what ghcr.io served for that tag on
+      # 30 October 2026 and on the 0.28.1 publication.
+      - name: Pull the upload container by digest
+        env:
+          IMAGE: ghcr.io/pypa/gh-action-pypi-publish
+          REF: 7245906fb61fa33a13554f9d5fb856fe61758086
+          DIGEST: sha256:411241df99067c98b6d08fd8e26d14e86740a22460599c2af571e6dc26e27ffc
+        run: |
+          set -eu
+          docker pull "$IMAGE@$DIGEST"
+          docker tag "$IMAGE@$DIGEST" "$IMAGE:$REF"
+          docker image inspect "$IMAGE:$REF" --format '{{join .RepoDigests " "}}' | tee /tmp/digests.txt
+          grep -qF "$IMAGE@$DIGEST" /tmp/digests.txt || { echo "::error::the local $IMAGE:$REF is not $DIGEST"; exit 1; }
+
       - name: Publish to PyPI
         # Pinned by commit: v1.14.3, the first release with the fix for
         # GHSA-5xjx-3w67-w9x9 (certifi trusting eMudhra / emSign). Moved on
@@ -129,16 +220,31 @@ jobs:
         with:
           skip-existing: true
 
+      # 0.28.2 — had the action pulled the tag again, the local name would
+      # now point at whatever ghcr.io served: it must still be the digest.
+      - name: The upload ran in the pinned container
+        env:
+          IMAGE: ghcr.io/pypa/gh-action-pypi-publish
+          REF: 7245906fb61fa33a13554f9d5fb856fe61758086
+          DIGEST: sha256:411241df99067c98b6d08fd8e26d14e86740a22460599c2af571e6dc26e27ffc
+        run: |
+          set -eu
+          docker image inspect "$IMAGE:$REF" --format '{{join .RepoDigests " "}}' | tee /tmp/digests.txt
+          grep -qF "$IMAGE@$DIGEST" /tmp/digests.txt || { echo "::error::$IMAGE:$REF changed during the upload: it is no longer $DIGEST"; exit 1; }
+
   # Create a GitHub Release with notes extracted from DOCUMENTS/CHANGELOG_FULL.md
   # and the built sdist + wheel attached as assets.
   github-release:
     name: GitHub Release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: publish
     permissions:
       contents: write   # required to create the release
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Download build artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
@@ -150,84 +256,47 @@ jobs:
         id: extract
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME}"   # e.g. 0.21.0 (tagless) or legacy v0.4.6
-          BASE="${VERSION#v}"            # strip a legacy leading "v" for matching
+          # 0.28.2 — a bare X.Y.Z only: the build job refuses any other tag,
+          # so the pre-release branch (a/b/rc, notes from git log) and the
+          # legacy "v" prefix could no longer run and are gone.
+          VERSION="${GITHUB_REF_NAME}"
 
-          # --- Detect pre-release per PEP 440 suffix (a/b/rc/.dev followed by digits)
-          IS_PRERELEASE="false"
-          if [[ "$VERSION" =~ (a|b|rc|\.dev)[0-9]+$ ]]; then
-            IS_PRERELEASE="true"
-          fi
-          echo "is_prerelease=$IS_PRERELEASE"
-          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
-
-          # --- Body: section between "## [X.Y.Z]" (v optional, tagless from
-          #           0.21.0 on) and the next "## [" header of any form, in
-          #           DOCUMENTS/CHANGELOG_FULL.md (the header line is skipped).
-          awk -v marker="$BASE" '
-            $0 ~ "^## \\[v?" marker "\\]" { flag=1; next }
+          # --- Body: the section between "## [X.Y.Z]" and the next "## ["
+          #           header in DOCUMENTS/CHANGELOG_FULL.md (header line skipped).
+          awk -v marker="$VERSION" '
+            $0 ~ "^## \\[" marker "\\]" { flag=1; next }
             flag && /^## \[/ { exit }
             flag { print }
           ' DOCUMENTS/CHANGELOG_FULL.md > /tmp/notes.md
 
           if [ ! -s /tmp/notes.md ]; then
-            if [ "$IS_PRERELEASE" = "true" ]; then
-              # Pre-release without a CHANGELOG section is allowed: synthesise
-              # minimal notes from git log so VM validation can ship a wheel
-              # without forcing a changelog edit per beta drop.
-              PREV_TAG=$(git describe --tags --abbrev=0 --match='v[0-9]*' HEAD^ 2>/dev/null || echo "")
-              {
-                echo "## Pre-release $VERSION"
-                echo ""
-                echo "Pre-release build for testing. Install with:"
-                echo ""
-                echo '    pipx install --pip-args="--pre" bodyguard-of-bits'
-                echo ""
-                if [ -n "$PREV_TAG" ]; then
-                  echo "### Commits since $PREV_TAG"
-                  echo ""
-                  git log --oneline "$PREV_TAG..HEAD" --no-decorate
-                fi
-              } > /tmp/notes.md
-            else
-              echo "::error::No release notes extracted for $VERSION."
-              echo "DOCUMENTS/CHANGELOG_FULL.md must contain a section starting with:"
-              echo "  ## [$BASE] — YYYY-MM-DD"
-              exit 1
-            fi
+            echo "::error::No release notes extracted for $VERSION."
+            echo "DOCUMENTS/CHANGELOG_FULL.md must contain a section starting with:"
+            echo "  ## [$VERSION] — YYYY-MM-DD"
+            exit 1
           fi
 
-          # --- Title: "vX.Y.Z — <headline>", where <headline> is the BOLD LEAD
+          # --- Title: "X.Y.Z — <headline>", where <headline> is the BOLD LEAD
           #            of the CHANGELOG.md table row: "**<lead>.** <body...>".
           #
           # v0.15.3: this used to cut at the first " — " instead. The lead
-          # itself contains em dashes ("**First v0.15.3 work — the backlog
-          # v0.15.2 left.** Samba..."), so every release since at least v0.14.0
-          # was titled mid-phrase and carried a stray "**":
-          #     v0.15.3 — **First v0.15.3 work
-          # Take the span between the first pair of "**" instead; fall back to
-          # the first sentence when a row has no bold lead.
-          HEADLINE=$(awk -F'|' -v ver="${VERSION#v}" '
-            $2 ~ "\\[v?" ver "\\]" { print $4; exit }
+          # itself contains em dashes, so releases were titled mid-phrase and
+          # carried a stray "**". Take the span between the first pair of "**";
+          # fall back to the first sentence when a row has no bold lead.
+          HEADLINE=$(awk -F'|' -v ver="$VERSION" '
+            $2 ~ "\\[" ver "\\]" { print $4; exit }
           ' CHANGELOG.md)
           HEADLINE=$(printf '%s' "$HEADLINE" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
           case "$HEADLINE" in
             '**'*) HEADLINE=$(printf '%s' "$HEADLINE" | sed -E 's/^\*\*//; s/\*\*.*$//') ;;
             *)     HEADLINE=$(printf '%s' "$HEADLINE" | sed -E 's/\. .*$//') ;;
           esac
-          # No length cut: `cut -c` counts BYTES in GNU coreutils, so a lead
-          # containing em dashes was truncated shorter than intended and could
-          # split a multibyte character outright. The bold lead is the headline
-          # by convention; its length is enforced on CHANGELOG.md — where a
-          # human can shorten it — rather than mutilated here.
+          # No length cut: `cut -c` counts BYTES in GNU coreutils and could split
+          # a multibyte character; the lead's length is enforced on CHANGELOG.md.
           HEADLINE=$(printf '%s' "$HEADLINE" | sed -E 's/[[:space:]]+$//; s/\.$//')
 
           if [ -z "$HEADLINE" ]; then
-            if [ "$IS_PRERELEASE" = "true" ]; then
-              TITLE="$VERSION (pre-release)"
-            else
-              TITLE="$VERSION"
-            fi
+            TITLE="$VERSION"
           else
             TITLE="$VERSION — $HEADLINE"
           fi
@@ -239,14 +308,46 @@ jobs:
           echo "..."
           echo "Total lines: $(wc -l </tmp/notes.md)"
 
+      # 0.28.2 — the files attached are the files PyPI has: their SHA-256 are
+      # compared with the digests PyPI lists for this version (waited for, up
+      # to ten minutes). Measured on 0.28.1: identical files pass, a byte
+      # appended to the sdist is refused, a version PyPI does not list is
+      # refused.
+      - name: The files to attach are the files PyPI has
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, sys, time, urllib.request
+          version = os.environ["GITHUB_REF_NAME"]
+          url = f"https://pypi.org/pypi/bodyguard-of-bits/{version}/json"
+          tries = int(os.environ.get("TRIES", "20"))
+          for attempt in range(1, tries + 1):
+              try:
+                  with urllib.request.urlopen(url, timeout=30) as response:
+                      data = json.load(response)
+                  break
+              except Exception as exc:
+                  print(f"attempt {attempt}: PyPI does not list {version} yet ({exc})")
+                  if attempt < tries:
+                      time.sleep(30)
+          else:
+              sys.exit(f"PyPI did not list {version}: the release is not made")
+          pypi = {f["filename"]: f["digests"]["sha256"] for f in data["urls"]}
+          local = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(pathlib.Path("dist").iterdir())}
+          for name, digest in local.items():
+              print(f"{name}  local {digest}  PyPI {pypi.get(name, 'absent')}")
+          if local != pypi:
+              sys.exit("the files to attach are not the files PyPI has: the release is not made")
+          print("the files to attach are byte for byte the files PyPI has")
+          PY
+
+      # 0.28.2 — GitHub's own CLI, on the runner, in place of a third-party
+      # action holding contents: write (zizmor: superfluous-actions). Measured
+      # before the change: the same command made a draft release with the
+      # 0.28.1 title, the 0.28.1 notes byte for byte and both files attached
+      # (deleted after). --verify-tag refuses to create a tag; a missing file
+      # in dist/ fails the step.
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
-        with:
-          name: ${{ steps.extract.outputs.title }}
-          body_path: /tmp/notes.md
-          files: dist/*
-          fail_on_unmatched_files: true
-          # Pre-release tags (v0.7.0b1, v0.7.0a2, …) do NOT override the
-          # latest-stable badge on the GitHub releases page.
-          make_latest: ${{ steps.extract.outputs.is_prerelease == 'false' }}
-          prerelease: ${{ steps.extract.outputs.is_prerelease == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ steps.extract.outputs.title }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TITLE" --notes-file /tmp/notes.md --latest

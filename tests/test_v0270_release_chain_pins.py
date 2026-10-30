@@ -102,7 +102,9 @@ def test_the_ci_tools_are_installed_from_the_hashed_requirements():
         for run in re.findall(r"run:.*", text):
             if "pip install" not in run:
                 continue
-            if re.search(r"pip install\b(?!.*--require-hashes)(?:(?!&&).)*\b(pytest|ruff|build|beautifulsoup4)\b", run):
+            # 0.28.2 — a tool is an argument, not part of an option: the word
+            # "build" inside --no-build-isolation is not the build tool.
+            if re.search(r"pip install\b(?!.*--require-hashes)(?:(?!&&).)*\s(pytest|ruff|build|beautifulsoup4)(?=[\s=<>]|$)", run):
                 # a tool install that is not the hashed one — unless it is the
                 # package itself (`pip install -e .` / `pip install .`)
                 raise AssertionError(f"{wf.name}: unpinned tool install: {run.strip()}")

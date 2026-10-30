@@ -21,10 +21,20 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# 0.28.2 — the token's rights said here, not inherited from the repository
+# setting (read today); a newer push to the same ref cancels the older run.
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   smoke:
     name: ${{ matrix.distro }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     strategy:
       fail-fast: false
@@ -38,12 +48,21 @@ jobs:
             family: debian
           - distro: ubuntu:24.04
             family: debian
-          - distro: ubuntu:25.04
+          # 0.28.2 — ubuntu:25.04 (end of life 17 January 2026) and fedora:41
+          # (end of life 15 December 2025) replaced by the releases BOB is
+          # validated on (Tier 1), and the two Tier 1 families CI did not run:
+          # Alpine (musl, BusyBox, OpenRC) and openSUSE (zypper). Measured in
+          # podman before adding them: every step below passed on each.
+          - distro: ubuntu:26.04
             family: debian
           - distro: kalilinux/kali-rolling
             family: debian
-          - distro: fedora:41
+          - distro: fedora:44
             family: fedora
+          - distro: alpine:3.24
+            family: alpine
+          - distro: opensuse/leap:16.0
+            family: suse
 
     container:
       image: ${{ matrix.distro }}
@@ -80,7 +99,17 @@ jobs:
           dnf install -y --setopt=install_weak_deps=False \
             python3 python3-pip git ca-certificates
 
+      - name: Install system deps (Alpine)
+        if: matrix.family == 'alpine'
+        run: apk add --no-cache python3 py3-pip git ca-certificates
+
+      - name: Install system deps (openSUSE)
+        if: matrix.family == 'suse'
+        run: zypper -n --gpg-auto-import-keys install python3 python3-pip git-core ca-certificates
+
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Install BOB from source (in venv)
         # Use a venv to sidestep PEP 668 / --break-system-packages:
@@ -96,9 +125,19 @@ jobs:
         # of bob/checks/ssh/ and bob/cron/ shipped a wheel missing those
         # subpackages because the include= list was a stale literal; the
         # bug only surfaced after pipx install on a user system.
+        #
+        # 0.28.2 — the venv's own pip is the distribution's (openSUSE Leap 16:
+        # 26.1.2, still trusting eMudhra / emSign): pip 26.2.2 is installed into
+        # it by hash first, then setuptools pinned by hash
+        # (requirements-build.txt), and BOB is built against that setuptools
+        # (--no-build-isolation) — a hashed PIP_CONSTRAINT cannot be used here,
+        # pip then refuses the local project, which has no file to hash
+        # (measured). Measured on all nine images of the matrix in podman.
         run: |
           python3 -m venv /opt/bobenv
-          /opt/bobenv/bin/pip install .
+          /opt/bobenv/bin/python -m pip install --disable-pip-version-check "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"
+          /opt/bobenv/bin/pip install --require-hashes -r requirements-build.txt
+          /opt/bobenv/bin/pip install --no-build-isolation .
           echo "/opt/bobenv/bin" >> "$GITHUB_PATH"
 
       - name: Smoke — packaging includes all subpackages
@@ -196,8 +235,11 @@ jobs:
           echo "--- end ---"
 
       - name: Assert exit code ≤ 3 (4 = critical config/runtime error)
+        # 0.28.2 — the value comes through the environment, not expanded into
+        # the script (zizmor: template-injection).
+        env:
+          rc: ${{ steps.audit.outputs.exit_code }}
         run: |
-          rc="${{ steps.audit.outputs.exit_code }}"
           if [ "$rc" -gt 3 ]; then
             echo "FAIL: BOB exit code $rc (expected 0–3 for legitimate findings)"
             echo "--- full audit.txt ---"
@@ -234,6 +276,7 @@ jobs:
   arm64:
     name: debian:bookworm-slim (arm64, emulated)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     # Separate from the `smoke` matrix above because GitHub's `container:`
     # key runs on the runner's own architecture and takes no platform. ARM
@@ -255,11 +298,20 @@ jobs:
 
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Register QEMU binfmt handlers
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3.7.0
         with:
           platforms: arm64
+          # 0.28.2 — the action's default is tonistiigi/binfmt:latest, run
+          # privileged on the runner; pinned by digest (latest = qemu-v10.2.3
+          # on 30 October 2026).
+          image: docker.io/tonistiigi/binfmt:qemu-v10.2.3@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          # 0.28.2 — the action caches that image in the Actions cache by
+          # default: no cache on the path that runs privileged.
+          cache-image: false
 
       - name: Smoke + offline audit + Raspberry Pi section on arm64
         run: |

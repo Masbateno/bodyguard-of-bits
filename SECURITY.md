@@ -49,6 +49,37 @@ tools were sound.
   uv, certifi) as the Python thread describes, and keep your system's
   `ca-certificates` up to date.
 
+The whole chain — workflows, rights, pins, repository settings and what is
+not covered — is described in [DOCUMENTS/CI.md](DOCUMENTS/CI.md).
+
+### What changed in 0.28.2
+
+The CI/CD was audited end to end (details and limits in
+[DOCUMENTS/CI.md](DOCUMENTS/CI.md)):
+
+- a publication waits for `Tests` and `Integration` to have passed on the
+  tagged commit, pushed to `main` — "tag only a green commit" was a rule, it
+  is now a lock;
+- the container the PyPI upload action starts, which holds the OIDC token, was
+  pulled by tag; it is now pulled by digest before the action runs, and
+  checked again after it;
+- the files attached to the GitHub Release are compared, by SHA-256, with the
+  files PyPI lists for the version;
+- `scripts/check_repo_settings.py` reads the 13 repository settings the chain
+  relies on, which no file holds;
+- the release is created by GitHub's own CLI instead of a third-party action
+  that held `contents: write`;
+- the test builds install pip 26.2.2 and setuptools by hash too, in every
+  container and on arm64 — the 0.28.1 limit is closed;
+- each workflow says its token is read-only; no checkout leaves the token in
+  `.git/config`; every job has a timeout; no expression is expanded into a
+  script; the QEMU image, run privileged, is pinned by digest and not cached;
+- the repository requires actions pinned by commit, and secret scanning, push
+  protection and Dependabot alerts are on;
+- CI runs only supported releases — Ubuntu 25.04 and Fedora 41 replaced,
+  Alpine 3.24 and openSUSE Leap 16 added — and a test fails when one reaches
+  its end of support.
+
 ### What changed in 0.28.1
 
 The build backend is pinned by hash. `python -m build` creates an isolated

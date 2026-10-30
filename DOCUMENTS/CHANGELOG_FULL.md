@@ -6,6 +6,184 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.28.2] — 2026-10-31
+
+**A patch release about how BOB is built and published, not about what it
+audits: the CI/CD chain was audited end to end, measured, and hardened
+wherever the audit demonstrated a gap.**
+Nothing BOB prints changes: no finding key, point, JSON-output-schema,
+CSV-column, section, `--explain` key or CIS reference changes. What changes is
+in `.github/`, `ci/arm64_smoke.sh`, the tests that hold them, and the
+documentation; and four repository settings.
+
+How it was audited, on 30 October 2026: the repository settings read through
+the GitHub API; the three workflows read line by line; the code of each action
+read at the commit it is pinned to; the logs of the 0.28.1 publication read;
+[zizmor](https://docs.zizmor.sh/) 1.31.1, a static analyser of GitHub
+workflows, run offline as a cross-check (31 findings before, 9 after — see the
+limits). Each change was measured before it was made: in podman on every image
+of the matrix, under arm64 emulation, in a throwaway environment for the
+build, as a draft release for the release step. The whole chain is now
+described in [`DOCUMENTS/CI.md`](CI.md) (French: `CI_FR.md`).
+
+### 1. A publication only from a green commit
+
+"Tag only a commit whose CI is green" was the maintainer's rule: `publish.yml`
+reran pytest on the tagged commit, but not the distributions, arm64, the
+mutations or the setuptools pin proof. A `ci-green` job now asks the GitHub API
+for the `Tests` and `Integration` runs of the tagged commit pushed to `main`,
+and the build waits for it: a red run stops the publication, a run still going
+is waited for (up to an hour), a commit never pushed to `main` is refused.
+What counts as passed: for each of the two workflows, identified by its file,
+the most recent run of the exact tagged SHA pushed to `main`, in the state of
+its latest attempt, must be `completed` and `success`. The job holds
+`actions: read` only — no access to the code. Measured against the API:
+0.28.1's commit passed; `29657ca`, whose tests failed, was refused; a commit
+that exists only on a Dependabot branch was refused; and a run that failed and
+then passed on its second attempt is listed with the second attempt's
+success.
+
+### 2. The PyPI upload container, pinned by digest
+
+`pypa/gh-action-pypi-publish` was pinned by commit (0.27.0), but what runs is
+the container it starts: `ghcr.io/pypa/gh-action-pypi-publish:<commit>`,
+pulled **by tag** — read in the action's code at that commit
+(`create-docker-action.py`), and in the 0.28.1 publication log ("Unable to find
+image … locally", then the pull, digest `sha256:411241df…`). That container
+holds the OIDC token PyPI accepts. A step of the publish job now pulls it by
+that digest — the one ghcr.io served for the tag on 30 October 2026 — and gives
+it the name the action asks for, so the action finds the image and pulls
+nothing. A test keeps that name equal to the commit the action is pinned to.
+The step fails if the local image is not that digest, and a step after the
+upload checks it again: had the action pulled the tag anew, the name would
+point elsewhere. The 0.28.2 publication log is the run that shows it: the
+action must no longer report "Unable to find image … locally".
+
+### 3. The release, by GitHub's own CLI
+
+The GitHub Release was made by `softprops/action-gh-release`, a third-party
+action holding `contents: write`. It is now made by `gh release create …
+--verify-tag`, on the runner. Measured before the change: the same command made
+a draft release with the 0.28.1 title, the 0.28.1 notes byte for byte and both
+files attached, created no tag, and was deleted. Before the release is made,
+a step compares the SHA-256 of each file to attach with the digests PyPI lists
+for the version (waiting up to ten minutes for PyPI): the release carries the
+files PyPI has, or is not made. Measured on 0.28.1: the real files passed, a
+byte appended to the sdist was refused, a version PyPI does not list was
+refused. The title-and-notes step,
+replayed from the workflow on tag 0.28.1, gave the published title and the same
+notes byte for byte. The publish trigger on legacy `v*` tags, and the
+pre-release path (a/b/rc notes from git log), are removed: the build refuses
+any tag but a bare `X.Y.Z` equal to the version, so neither could run.
+
+### 4. Every build pinned, and the pin proved
+
+- **The setuptools pin of 0.28.1 is proved in CI.** Its publication log showed
+  setuptools 84.2.1 — also the newest release, so it could not show that the
+  constraint was applied. A `tests.yml` job now builds as the publication does,
+  then again with the hashes replaced, and requires the second build to fail on
+  the hash check ("THESE PACKAGES DO NOT MATCH THE HASHES"), not on anything
+  else — and checks that the tampered copy differs from the real one by its
+  hashes only. Measured locally, with a negative control: when the tampered
+  copy is not handed to the build, that build succeeds and the job fails with
+  "the constraint did not reach the isolated build".
+- **The test builds** (`pip install -e .` in the test jobs, `pip install .` in
+  the containers and on arm64) resolved setuptools unpinned — and in the
+  containers with the distribution's own pip: openSUSE Leap 16's is 26.1.2,
+  older than the 26.2.2 that stopped trusting the eMudhra / emSign
+  authorities. Measured: a hashed `PIP_CONSTRAINT` makes pip
+  refuse the local project ("no single file to hash"). Each build now installs
+  pip 26.2.2 and setuptools from `requirements-build.txt` by hash, then builds
+  BOB against them (`--no-build-isolation`). Measured on the nine images and on
+  arm64: pip 26.2.2, setuptools 84.2.1, every step passed.
+
+### 5. The workflows hardened
+
+- each workflow says `contents: read`; only the PyPI upload (`id-token`) and
+  the release (`contents`) write;
+- no checkout leaves the token in `.git/config` (`persist-credentials: false`);
+- every job has a timeout, 10 to 45 minutes (the longest run measured: 10
+  minutes) — six hours before;
+- a newer push cancels the older `tests` and `integration` runs of the same
+  ref; publications never overlap and are never cancelled;
+- no `${{ … }}` expression is expanded into a script (one was, an audit exit
+  code);
+- the QEMU image, run `--privileged` to register the emulator, was
+  `tonistiigi/binfmt:latest`, cached by the action: pinned by digest, cache off;
+- Dependabot proposes an action update once the release is a week old.
+
+The six pinned actions were each checked against the tag of their version in
+their own repository: all six matched.
+
+### 6. CI on supported releases only
+
+The integration matrix ran Ubuntu 25.04 (end of support 17 January 2026) and
+Fedora 41 (15 December 2025), which the README called "validated in CI", and no
+Tier 1 family outside Debian. It now runs Debian 12 and 13, Ubuntu 22.04, 24.04
+and 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 and Kali Rolling, each run
+through every step in podman first. The rule: only releases still supported —
+the LTS or stable line where the distribution has one, the Tier 1 release where
+it has none. Each image's end of support (measured on endoflife.date) is in a
+test; past that date the suite fails until the image is replaced. Kali, rolling,
+has no end date: it carries the date it was last run through every step
+(30 October 2026), and the suite fails six months later until that is done
+again.
+
+### 7. Repository settings
+
+Changed through the API on 30 October 2026, read back: actions pinned by
+commit **required** (`sha_pinning_required`; every action already was); secret
+scanning and push protection **on**; Dependabot vulnerability alerts **on**
+(none open). Already in place and read: read-only default token, approval for
+first-time contributors' runs, `main` and release tags protected by rulesets,
+the `release` environment's approval with no administrator bypass, no stored
+secret. These settings live on GitHub, not in the repository, and the workflow
+token cannot read most of them: `scripts/check_repo_settings.py` reads all 13
+with the maintainer's `gh` login and says which one changed (run before a push
+that leads to a release; checked offline by a test, with a measured answer and
+seven changed ones).
+
+### Not in this release, and known limits
+
+- The images CI tests on are taken by tag, not by digest — a choice: a tag
+  follows each distribution's security updates, a digest would freeze them.
+  These are the 9 findings zizmor still reports (static-analysis findings, not
+  vulnerabilities).
+- The `release` environment's tag filter is a glob (`[0-9]*.[0-9]*.[0-9]*`,
+  which also admits `1x.2.3y`); the strict check is the build job's.
+- `main` has no required status check: a commit reaches `main` before its CI
+  runs (one branch). A publication, though, is held by `ci-green`.
+- The repository settings are checked by a script the maintainer runs, not by
+  CI: the workflow token cannot read them.
+- The runner image (`ubuntu-latest`), its Python and its system are GitHub's.
+- Pinning an action by commit fixes its code, not what it fetches at run time,
+  except where this repository pins it (the QEMU image, the upload container).
+- Dependabot does not propose updates of the pinned Python tools; they are
+  regenerated with `scripts/gen_ci_requirements.py`, and a vulnerability raises
+  an alert.
+- The digest pre-pull, the release by `gh`, the identity check, the `ci-green`
+  job and the Alpine and openSUSE containers are proved on GitHub's runners only
+  by the push and the publication of this release.
+- Three Dependabot pull requests opened on 25 October 2026 (actions/checkout 7,
+  actions/setup-python 7, docker/setup-qemu-action 4 — major versions) failed
+  on a base older than the 0.27.0 fix for the missing `yaml` module; they are
+  not part of this release.
+
+### Counters
+
+Tests collected 16836 → **16997**, test files 426 → **427**, test functions
+~7930 → **~7950**, mutations 1158 → **1189**; locale keys (3095), `--explain`
+keys and CIS references (235) and sections unchanged.
+
+### Guards
+
+`test_v0282_ci_hardening.py` (the workflows, the Dependabot file, the arm64
+script and the documented matrix, read as text; the repository settings
+checker, with the measured answers and seven changed ones), with its
+mutations; the 0.27.0
+`test_v0270_release_chain_pins.py` corrected — it read the word "build" inside
+`--no-build-isolation` as an unpinned tool.
+
 ## [0.28.1] — 2026-10-30
 
 **A patch release, no score change: `--manage-logs` says each log directory's
