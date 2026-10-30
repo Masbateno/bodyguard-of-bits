@@ -49,14 +49,23 @@ tools were sound.
   uv, certifi) as the Python thread describes, and keep your system's
   `ca-certificates` up to date.
 
-### Not covered yet (written at 0.28.0)
+### What changed in 0.28.1
 
-The pinning above covers what the workflows install with pip. It does not cover
-the build backend: `python -m build` creates an isolated environment and
-installs `setuptools` there from `pyproject.toml`'s `requires =
-["setuptools>=77"]`, with no version or hash pinned — a publication can be built
-with whichever setuptools release is current that day. A separate change to the
-publish workflow will pin it.
+The build backend is pinned by hash. `python -m build` creates an isolated
+environment and installs `setuptools` there from `pyproject.toml`'s `requires =
+["setuptools>=77"]`; until 0.28.0 that was whichever release was current that
+day (84.2.1 for 0.28.0, from its build log), with no hash. The publish workflow
+now hands `requirements-build.txt` — `setuptools==84.2.1` and its two SHA-256 —
+to that environment through `PIP_CONSTRAINT`. Measured with pip 26.2.2 and build
+1.6.1: the pinned file builds, an altered hash fails the build, and the wheel
+built this way holds the same 155 files, byte for byte, as the 0.28.0 wheel on
+PyPI. What this pins is the backend: a setuptools file with another hash is
+refused. It does not make the whole build environment reproducible — the
+runner image, its Python and its system are GitHub's.
+
+Not covered: the test jobs (`pip install -e .`, and `pip install .` in the
+integration containers) still build BOB with an unpinned setuptools. They
+publish nothing.
 
 ### What changed in 0.27.0
 

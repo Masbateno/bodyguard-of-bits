@@ -6,6 +6,85 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.28.1] — 2026-10-30
+
+**A patch release, no score change: `--manage-logs` says each log directory's
+size and creation date, and the publication's isolated build backend is
+pinned by hash.**
+No finding key, point, JSON-output-schema, CSV-column or section changes; no
+`--explain` key or CIS reference is added. The outputs that change are those of
+`--manage-logs` (§1); nothing an audit prints changes.
+
+### 1. --manage-logs: the size and creation date of each log directory
+
+Asked by a user: the directory picker listed each log directory with the number
+of reports it held. It now says, for each directory, the number of BOB reports
+(`bob_*.log`), their total size, and when the directory was created — "3
+report(s), 1.5 MB, created 2026-10-30", in French "3 rapport(s), 1,5 Mo, créé
+le 30 octobre 2026". The text mode (`--manage-logs` with no terminal) says the
+same on the header of the current directory and of each previous one.
+
+- **The size** is the total of the BOB reports, as decided with the user — not
+  the whole directory, which may hold other files. If one report's size cannot
+  be read, the total is "size unknown": a partial sum is not shown as the total.
+- **The creation date** is the one the filesystem recorded. Python's `os.stat`
+  has no birth time on Linux, so BOB asks statx(2) through the C library.
+  Measured: on ext4 and tmpfs it matched `stat -c %W`; it was read on a
+  container's overlay root (over ext4), with glibc (Debian 13, Python 3.10) and
+  with musl (Alpine 3.24, Python 3.14.7); /proc and /sys record none (0). BusyBox's `stat -c %W` prints the letter "W" and exits
+  0, so the command is not used. Where no date is recorded, or the C library
+  has no statx, the picker says "creation date unknown" — never the
+  modification date in its place, which would be a creation date BOB did not
+  measure.
+- **A directory BOB may not read** said "empty": the list came from `glob`,
+  which answers an empty list on a directory it may not open (measured, mode
+  000). It is now read with `iterdir` and says "unreadable".
+- **The "current" tag** followed the label; measured in a real terminal, the
+  longer label pushed it past the right edge on a long path. It now follows the
+  path.
+
+### 2. The isolated build backend, pinned by hash
+
+0.27.0 pinned pip and the CI tools by hash (`requirements-ci.txt`), but
+`python -m build` builds in an isolated environment and installs
+`pyproject.toml`'s `requires = ["setuptools>=77"]` there itself, with no
+version or hash: the 0.28.0 publication's build log shows it resolved
+setuptools 84.2.1 that day. The publish workflow now hands that environment
+`requirements-build.txt` — `setuptools==84.2.1` and its two SHA-256, generated
+by `scripts/gen_ci_requirements.py` — through `PIP_CONSTRAINT`. Measured with
+pip 26.2.2 and build 1.6.1 on the source of tag 0.28.0: the pinned file built
+the wheel and the sdist; the same file with its hashes altered failed the build
+("THESE PACKAGES DO NOT MATCH THE HASHES"); the wheel built this way held the
+same 155 files, byte for byte, as the 0.28.0 wheel on PyPI. This pins the
+backend; it does not make the whole build environment reproducible (the runner
+image, its Python and its system). `SECURITY.md` says so in place of the gap it
+wrote down at 0.28.0.
+
+### Not in this release, and known limits
+
+- The test jobs (`pip install -e .`, and `pip install .` in the integration
+  containers) still build BOB with an unpinned setuptools; they publish
+  nothing.
+- The creation date depends on the filesystem: NFS, CIFS, btrfs, XFS and
+  others were not measured; where statx returns no birth time, the date is
+  unknown.
+- The backlog of 0.28.0 (a sudo scope BOB cannot resolve set aside without
+  saying so; the firewall posture and the IPv6 section reading the input hook
+  only) is for 0.29.0.
+
+### Counters
+
+Tests collected 16731 → **16836**, test files 424 → **426**, test functions
+~7910 → **~7930**, mutations 1138 → **1158**, locale keys 3090 → **3095** per
+language; `--explain` keys and CIS references (235) and sections unchanged.
+
+### Guards
+
+`test_v0281_manage_logs_dir_info.py` (the picker rendered through a recording
+screen, and the text mode), `test_v0281_build_backend_pinned.py` (the workflows
+read as text), each with its mutations: every guard has a mutation that brings
+its defect back.
+
 ## [0.28.0] — 2026-10-29
 
 **A minor release, BREAKING for scores: the 0.28.0 backlog emptied — the

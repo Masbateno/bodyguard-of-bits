@@ -52,14 +52,24 @@ pas que ce workflow ou ses outils étaient sains.
   en 26.2.2 ou plus (ainsi que uv et certifi) comme l'indique le fil Python, et
   gardez à jour le paquet `ca-certificates` de votre système.
 
-### Pas encore couvert (écrit en 0.28.0)
+### Ce qui a changé en 0.28.1
 
-L'épinglage ci-dessus couvre ce que les workflows installent avec pip. Il ne
-couvre pas le backend de build : `python -m build` crée un environnement isolé et
-y installe `setuptools` d'après le `requires = ["setuptools>=77"]` de
-`pyproject.toml`, sans version ni empreinte épinglée — une publication peut être
-construite avec la version de setuptools du jour. Une modification distincte du
-workflow de publication l'épinglera.
+Le backend de build est épinglé par empreinte. `python -m build` crée un
+environnement isolé et y installe `setuptools` d'après le `requires =
+["setuptools>=77"]` de `pyproject.toml` ; jusqu'à la 0.28.0, c'était la version
+du jour (84.2.1 pour la 0.28.0, d'après son journal de build), sans empreinte. Le
+workflow de publication passe désormais `requirements-build.txt` —
+`setuptools==84.2.1` et ses deux SHA-256 — à cet environnement par
+`PIP_CONSTRAINT`. Mesuré avec pip 26.2.2 et build 1.6.1 : le fichier épinglé
+construit, une empreinte altérée fait échouer le build, et la roue construite
+ainsi contient les mêmes 155 fichiers, octet pour octet, que la roue 0.28.0 de
+PyPI. Ce qui est épinglé, c'est le backend : un fichier setuptools d'une autre
+empreinte est refusé. Cela ne rend pas reproductible tout l'environnement de
+build — l'image du runner, son Python et son système sont ceux de GitHub.
+
+Non couvert : les jobs de test (`pip install -e .`, et `pip install .` dans les
+conteneurs d'intégration) construisent encore BOB avec un setuptools non
+épinglé. Ils ne publient rien.
 
 ### Ce qui a changé en 0.27.0
 

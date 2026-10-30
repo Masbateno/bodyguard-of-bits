@@ -6,6 +6,38 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.28.1] — 30-10-2026
+
+**Une version corrective, sans changement de score : `--manage-logs` donne la taille et la date de création de chaque dossier de logs, et le backend de build isolé de la publication est épinglé par empreinte.**
+Aucune clé de constat, aucun point, aucun changement du schéma de sortie JSON, des colonnes CSV ni des sections ; aucune clé `--explain` ni référence CIS ajoutée. Les sorties qui changent sont celles de `--manage-logs` (§1) ; rien de ce qu'affiche un audit ne change.
+
+### 1. --manage-logs : la taille et la date de création de chaque dossier de logs
+
+Demandé par un utilisateur : le sélecteur de dossiers listait chaque dossier de logs avec le nombre de rapports qu'il contenait. Il donne désormais, pour chaque dossier, le nombre de rapports BOB (`bob_*.log`), leur taille totale, et la date de création du dossier — « 3 rapport(s), 1,5 Mo, créé le 30 octobre 2026 », en anglais « 3 report(s), 1.5 MB, created 2026-10-30 ». Le mode texte (`--manage-logs` sans terminal) dit la même chose sur l'en-tête du dossier courant et de chaque dossier précédent.
+
+- **La taille** est le total des rapports BOB, comme décidé avec l'utilisateur — pas le dossier entier, qui peut contenir d'autres fichiers. Si la taille d'un rapport ne peut pas être lue, le total est « taille inconnue » : une somme partielle n'est pas présentée comme le total.
+- **La date de création** est celle que le système de fichiers a enregistrée. `os.stat` de Python n'a pas de date de création sous Linux, aussi BOB interroge statx(2) par la bibliothèque C. Mesuré : sur ext4 et tmpfs, elle correspondait à `stat -c %W` ; elle a été lue sur la racine overlay d'un conteneur (au-dessus d'ext4), avec glibc (Debian 13, Python 3.10) et avec musl (Alpine 3.24, Python 3.14.7) ; /proc et /sys n'en enregistrent pas (0). Le `stat -c %W` de BusyBox affiche la lettre « W » et sort avec le code 0 : la commande n'est donc pas utilisée. Là où aucune date n'est enregistrée, ou si la bibliothèque C n'a pas statx, le sélecteur dit « date de création inconnue » — jamais la date de modification à sa place, qui serait une date de création que BOB n'a pas mesurée.
+- **Un dossier que BOB ne peut pas lire** disait « vide » : la liste venait de `glob`, qui répond une liste vide sur un dossier qu'il ne peut pas ouvrir (mesuré, mode 000). Il est désormais lu par `iterdir` et dit « illisible ».
+- **La marque « actuel »** suivait le libellé ; mesuré dans un vrai terminal, le libellé plus long la poussait au-delà du bord droit sur un chemin long. Elle suit désormais le chemin.
+
+### 2. Le backend de build isolé, épinglé par empreinte
+
+La 0.27.0 épinglait pip et les outils de la CI par empreinte (`requirements-ci.txt`), mais `python -m build` construit dans un environnement isolé et y installe lui-même le `requires = ["setuptools>=77"]` de `pyproject.toml`, sans version ni empreinte : le journal de build de la publication 0.28.0 montre qu'il a résolu setuptools 84.2.1 ce jour-là. Le workflow de publication passe désormais à cet environnement `requirements-build.txt` — `setuptools==84.2.1` et ses deux SHA-256, générés par `scripts/gen_ci_requirements.py` — par `PIP_CONSTRAINT`. Mesuré avec pip 26.2.2 et build 1.6.1 sur la source du tag 0.28.0 : le fichier épinglé a construit la roue et le sdist ; le même fichier aux empreintes altérées a fait échouer le build (« THESE PACKAGES DO NOT MATCH THE HASHES ») ; la roue construite ainsi contenait les mêmes 155 fichiers, octet pour octet, que la roue 0.28.0 de PyPI. Cela épingle le backend ; cela ne rend pas reproductible tout l'environnement de build (l'image du runner, son Python et son système). `SECURITY.md` le dit, à la place du manque qu'il avait écrit en 0.28.0.
+
+### Hors de cette version, et limites connues
+
+- Les jobs de test (`pip install -e .`, et `pip install .` dans les conteneurs d'intégration) construisent encore BOB avec un setuptools non épinglé ; ils ne publient rien.
+- La date de création dépend du système de fichiers : NFS, CIFS, btrfs, XFS et d'autres n'ont pas été mesurés ; là où statx ne renvoie pas de date de création, la date est inconnue.
+- Le backlog de la 0.28.0 (une portée sudo que BOB ne sait pas résoudre, mise de côté sans le dire ; la posture du pare-feu et la section IPv6 qui ne lisent que le hook d'entrée) est pour la 0.29.0.
+
+### Compteurs
+
+Tests collectés 16731 → **16836**, fichiers de test 424 → **426**, fonctions de test ~7910 → **~7930**, mutations 1138 → **1158**, clés de locale 3090 → **3095** par langue ; clés `--explain` et références CIS (235) et sections inchangées.
+
+### Gardes
+
+`test_v0281_manage_logs_dir_info.py` (le sélecteur rendu sur un écran d'enregistrement, et le mode texte), `test_v0281_build_backend_pinned.py` (les workflows lus comme du texte), chacun avec ses mutations : chaque garde a une mutation qui ramène son défaut.
+
 ## [0.28.0] — 29-10-2026
 
 **Une version mineure, BREAKING (scores) : le backlog 0.28.0 vidé — le cluster Kubernetes au-delà du nœud, chaque port en écoute pesé face aux règles qui nomment son numéro, les limites que la 0.27.0 avait écrites (marques posées depuis une chaîne atteinte par saut, le hook forward, l'IPv6 avec UFW installé mais arrêté, les portées de `Defaults noexec` et de `runas_default`, DOCKER-USER en IPv6), `/etc/login.defs` et `smb.conf` lus comme leurs propres outils les lisent, et les comparaisons entre exécutions qui n'ont pas lu les mêmes sections. Mesuré sur un Ubuntu Server 26.04 réel faisant tourner MicroK8s, des conteneurs Debian 13, Docker-in-Docker et des espaces de noms réseau.**

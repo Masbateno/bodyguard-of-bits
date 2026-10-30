@@ -542,8 +542,8 @@ print(f'Same order: {en == fr}')
 
 Expected output — the two files hold the same keys **in the same order**:
 ```
-EN keys: 3090
-FR keys: 3090
+EN keys: 3095
+FR keys: 3095
 Missing in FR: none
 Same order: True
 ```
@@ -560,7 +560,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Translate all values
 
-The file contains exactly 3090 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
+The file contains exactly 3095 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
 
 Example:
 ```json

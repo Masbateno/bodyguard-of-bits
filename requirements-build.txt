@@ -1,0 +1,9 @@
+# The build backend, pinned by version and SHA-256 (0.28.1).
+# python -m build installs it in an isolated environment; publish.yml hands
+# this file to that environment with PIP_CONSTRAINT, so a file with another
+# hash fails the build instead of being used.
+# Regenerate: python3 scripts/gen_ci_requirements.py
+
+setuptools==84.2.1 \
+    --hash=sha256:ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2 \
+    --hash=sha256:3ff8b3b5492a0aa66960f4419365a86b84e013070d4313e4d4a6894f5d64d6bc

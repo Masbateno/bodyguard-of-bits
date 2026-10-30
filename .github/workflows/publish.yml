@@ -92,6 +92,12 @@ jobs:
         run: python -m pip install --require-hashes -r requirements-ci.txt && python -m pip --version && python -m build --version
 
       - name: Build sdist and wheel
+        # 0.28.1 — the backend the isolated build environment installs
+        # (setuptools) is pinned by hash too: pip reads PIP_CONSTRAINT there,
+        # and a file with another hash fails the build (measured, pip 26.2.2,
+        # build 1.6.1).
+        env:
+          PIP_CONSTRAINT: ${{ github.workspace }}/requirements-build.txt
         run: python -m build
 
       - name: Upload build artifacts

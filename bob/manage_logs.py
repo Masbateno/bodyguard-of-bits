@@ -408,7 +408,7 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
         # ── Display ──────────────────────────────────────────────────────
         size_label = t("manage_logs.size_label")
         current_label = t("manage_logs.current_label")
-        print(f"  {t('manage_logs.stored_in', path=str(log_dir))}  [{current_label}]")
+        print(f"  {t('manage_logs.stored_in', path=str(log_dir))}  ({_dir_report_label(log_dir, t)})  [{current_label}]")
         print()
 
         idx = 1
@@ -426,7 +426,7 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
 
         for extra_path, ex_logs in extra_sections:
             print()
-            print(f"  ─── {t('manage_logs.previous_label')}: {extra_path} ───")
+            print(f"  ─── {t('manage_logs.previous_label')}: {extra_path}  ({_dir_report_label(extra_path, t)}) ───")
             print()
             for f in ex_logs:
                 try:
@@ -814,17 +814,93 @@ _MARKED_KEYS = _keys.NAVIGATION + (
 ) + _keys.NESTED_EXIT
 
 
+#: statx(2): the mask bit for the birth time, and AT_FDCWD.
+_STATX_BTIME = 0x800
+_AT_FDCWD = -100
+
+
+def _dir_birth_time(path: Path) -> "float | None":
+    """When *path* was created, as the filesystem recorded it, or None.
+
+    0.28.1 — Python's ``os.stat`` has no birth time on Linux, so BOB asks
+    statx(2) through the C library. Measured (30 October 2026): ext4 and tmpfs
+    record it (it matched ``stat -c %W``); /proc and /sys do not (0); BusyBox's
+    ``stat`` does not know ``%W`` and prints "W" with exit 0, so the command is
+    not used. A filesystem that does not return the birth-time bit, a C library
+    without statx, or any error gives None: never the modification or change
+    time in its place, which would be a creation date BOB did not measure."""
+    try:
+        import ctypes
+        import struct
+        statx = ctypes.CDLL(None, use_errno=True).statx
+        buf = ctypes.create_string_buffer(256)
+        if statx(_AT_FDCWD, os.fsencode(str(path)), 0, _STATX_BTIME, buf) != 0:
+            return None
+        if not struct.unpack_from("I", buf, 0)[0] & _STATX_BTIME:
+            return None
+        sec = struct.unpack_from("q", buf, 80)[0]
+        return float(sec) if sec > 0 else None
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+
+
+def _reports_size(path: Path) -> "tuple[int, int | None] | None":
+    """(number of BOB reports, their total size in bytes) in *path*.
+
+    None when the directory cannot be listed — ``glob`` would have answered an
+    empty list for a directory BOB may not read, and that would read "empty".
+    The size is None when one report's size could not be read: a partial sum
+    is not shown as the total."""
+    try:
+        names = [e for e in path.iterdir() if e.name.startswith("bob_") and e.name.endswith(".log")]
+    except OSError:
+        return None
+    total: "int | None" = 0
+    for f in names:
+        try:
+            total += f.stat().st_size
+        except (OSError, TypeError):
+            total = None
+            break
+    return len(names), total
+
+
+def _format_size(size: int, t) -> str:
+    """A report-size total in KB, or MB from 1024 KB (one decimal)."""
+    kb = max(1, size // 1024) if size else 0
+    if kb < 1024:
+        return f"{kb} {t('manage_logs.size_label')}"
+    mb = f"{size / (1024 * 1024):.1f}"
+    from bob import i18n
+    if i18n.current_lang() == "fr":
+        mb = mb.replace(".", ",")
+    return f"{mb} {t('manage_logs.size_label_mb')}"
+
+
 def _dir_report_label(path: Path, t) -> str:
-    """A short description of what a tracked directory holds right now."""
+    """A short description of what a tracked directory holds right now: its
+    reports, their total size and when the directory was created (0.28.1)."""
     if not path.exists():
         return t("manage_logs.dir_missing")
-    try:
-        logs = sorted(path.glob("bob_*.log"))
-    except OSError:
-        return t("manage_logs.dir_missing")
-    if not logs:
-        return t("manage_logs.dir_empty")
-    return t("manage_logs.dir_reports", count=len(logs))
+    parts = []
+    found = _reports_size(path)
+    if found is None:
+        parts.append(t("manage_logs.dir_unreadable"))
+    elif found[0] == 0:
+        parts.append(t("manage_logs.dir_empty"))
+    else:
+        count, size = found
+        parts.append(t("manage_logs.dir_reports", count=count))
+        parts.append(_format_size(size, t) if size is not None else t("manage_logs.dir_size_unknown"))
+    born = _dir_birth_time(path)
+    if born is None:
+        parts.append(t("manage_logs.dir_created_unknown"))
+    else:
+        from bob import i18n
+        from bob._python_support import display_date
+        day = _dt.fromtimestamp(born).strftime("%Y-%m-%d")
+        parts.append(t("manage_logs.dir_created", date=display_date(day, i18n.current_lang())))
+    return ", ".join(parts)
 
 
 def _dir_picker(stdscr, user_config, config, t) -> "tuple[str, Path | None]":
@@ -876,7 +952,9 @@ def _dir_picker(stdscr, user_config, config, t) -> "tuple[str, Path | None]":
                 break
             path = dirs[idx]
             tag = f"  [{cur_lbl}]" if path == current else ""
-            line = f"  {_DIR_FOLDER} {path}  ({_dir_report_label(path, t)}){tag}"
+            # 0.28.1 — the current tag right after the path: the label grew
+            # (size, creation date) and a long path pushed the tag off screen.
+            line = f"  {_DIR_FOLDER} {path}{tag}  ({_dir_report_label(path, t)})"
             if idx == cursor:
                 attr = (curses.color_pair(1) | curses.A_BOLD) if has_color else curses.A_REVERSE
                 try:

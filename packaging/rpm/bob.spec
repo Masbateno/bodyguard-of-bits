@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.28.0
+Version:        0.28.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,11 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Oct 30 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.28.1-1
+- Patch, no score change: --manage-logs says each log directory's report
+  count, their total size and the directory's creation date (statx; unknown
+  where the filesystem records none), and "unreadable" instead of "empty";
+  the publication's isolated build backend (setuptools) pinned by hash.
 * Thu Oct 29 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.28.0-1
 - Minor, BREAKING for scores: MicroK8s API server authorisation,
   anonymous reads, broad cluster-admin bindings, an open runtime socket;

@@ -393,8 +393,9 @@ class TestExtraDirectoriesDisplay:
         missing = tmp_path / "gone"  # never created
 
         assert _dir_report_label(missing, _t) == _t("manage_logs.dir_missing")
-        assert _dir_report_label(empty, _t) == _t("manage_logs.dir_empty")
-        assert _dir_report_label(withlogs, _t) == _t("manage_logs.dir_reports", count=1)
+        # 0.28.1 — the size and the creation date follow (test_v0281_manage_logs_dir_info.py).
+        assert _dir_report_label(empty, _t).startswith(_t("manage_logs.dir_empty") + ", ")
+        assert _dir_report_label(withlogs, _t).startswith(_t("manage_logs.dir_reports", count=1) + ", ")
 
     def test_flat_index_spans_all_dirs(self, tmp_path):
         """Index numbers must be contiguous across current + extra dirs."""
