@@ -127,7 +127,11 @@ it has none. Each image's end of support (measured on endoflife.date) is in a
 test; past that date the suite fails until the image is replaced. Kali, rolling,
 has no end date: it carries the date it was last run through every step
 (30 October 2026), and the suite fails six months later until that is done
-again.
+again. Found on the first push: `opensuse/leap:16.0` declares no `PATH`, the
+runner builds a container step's `PATH` from the image's, and the venv added to
+`GITHUB_PATH` became the whole `PATH` — the next step could not find `sh`
+(exit 127); the podman replay, one shell for all steps, could not show it. The
+steps now call the venv by its absolute path.
 
 ### 7. Repository settings
 
@@ -171,8 +175,8 @@ seven changed ones).
 
 ### Counters
 
-Tests collected 16836 → **16997**, test files 426 → **427**, test functions
-~7930 → **~7950**, mutations 1158 → **1189**; locale keys (3095), `--explain`
+Tests collected 16836 → **17002**, test files 426 → **427**, test functions
+~7930 → **~7950**, mutations 1158 → **1190**; locale keys (3095), `--explain`
 keys and CIS references (235) and sections unchanged.
 
 ### Guards

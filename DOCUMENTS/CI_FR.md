@@ -151,7 +151,11 @@ peut être plus ancien — celui d'openSUSE Leap 16 était en 26.1.2), setuptool
 est installé par empreinte, et BOB est construit avec lui en roue ; puis un
 audit hors ligne et un plugin dans le bac à sable. Le job échoue sur un code de
 sortie supérieur à 3, une clé de traduction affichée brute ou une trace d'erreur
-Python.
+Python. Les étapes appellent le venv par son chemin absolu, jamais par
+`GITHUB_PATH` : le runner construit le `PATH` d'une étape de conteneur à partir
+de celui que déclare l'image, et `opensuse/leap:16.0` n'en déclare aucun — avec
+le venv ajouté, l'étape suivante ne trouvait plus `sh` (trouvé au premier push
+de la 0.28.2).
 
 La règle : seulement des versions encore supportées — la ligne LTS ou stable là
 où la distribution en a une (Ubuntu, Debian, openSUSE Leap), la version du

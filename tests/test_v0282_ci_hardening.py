@@ -352,3 +352,19 @@ def test_the_measured_settings_hold():
 def test_a_changed_setting_is_reported(path, change):
     answers = dict(MEASURED, **{path: change})
     assert not all(r[3] for r in _settings().evaluate(answers))
+
+
+def test_the_container_steps_do_not_depend_on_the_images_path():
+    """Found on the first 0.28.2 push: opensuse/leap:16.0 declares no PATH, the
+    runner builds a container step's PATH from the image's, and the venv added
+    to GITHUB_PATH became the whole PATH — the next step could not find `sh`
+    (exit 127). The steps call the venv by its absolute path instead."""
+    text = _text("integration.yml")
+    smoke = _jobs(text)["smoke"]
+    script = "\n".join(_run_blocks(smoke))
+    assert "GITHUB_PATH" not in script
+    after_install = script[script.index("--no-build-isolation ."):]
+    for line in after_install.splitlines():
+        cmd = line.strip()
+        assert not re.match(r"(bob|python3|pip)\b", cmd), f"called through PATH: {cmd}"
+    assert "/opt/bobenv/bin/bob --offline -v > audit.txt" in script

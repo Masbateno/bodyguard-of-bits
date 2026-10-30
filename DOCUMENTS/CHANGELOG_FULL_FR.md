@@ -44,7 +44,7 @@ Les six actions épinglées ont chacune été comparées au tag de leur version 
 
 ### 6. La CI sur des versions supportées seulement
 
-La matrice d'intégration faisait tourner Ubuntu 25.04 (fin de support le 17 janvier 2026) et Fedora 41 (le 15 décembre 2025), que le README disait « validées en CI », et aucune famille du Tier 1 hors Debian. Elle fait désormais tourner Debian 12 et 13, Ubuntu 22.04, 24.04 et 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 et Kali Rolling, chacune passée d'abord par toutes les étapes dans podman. La règle : seulement des versions encore supportées — la ligne LTS ou stable là où la distribution en a une, la version du Tier 1 là où elle n'en a pas. La fin de support de chaque image (mesurée sur endoflife.date) est dans un test ; passé cette date, la suite échoue jusqu'à ce que l'image soit remplacée. Kali, en rolling, n'a pas de date de fin : elle porte la date de sa dernière revue complète (le 30 octobre 2026), et la suite échoue six mois plus tard tant qu'elle n'est pas refaite.
+La matrice d'intégration faisait tourner Ubuntu 25.04 (fin de support le 17 janvier 2026) et Fedora 41 (le 15 décembre 2025), que le README disait « validées en CI », et aucune famille du Tier 1 hors Debian. Elle fait désormais tourner Debian 12 et 13, Ubuntu 22.04, 24.04 et 26.04, Fedora 44, openSUSE Leap 16, Alpine 3.24 et Kali Rolling, chacune passée d'abord par toutes les étapes dans podman. La règle : seulement des versions encore supportées — la ligne LTS ou stable là où la distribution en a une, la version du Tier 1 là où elle n'en a pas. La fin de support de chaque image (mesurée sur endoflife.date) est dans un test ; passé cette date, la suite échoue jusqu'à ce que l'image soit remplacée. Kali, en rolling, n'a pas de date de fin : elle porte la date de sa dernière revue complète (le 30 octobre 2026), et la suite échoue six mois plus tard tant qu'elle n'est pas refaite. Trouvé au premier push : `opensuse/leap:16.0` ne déclare pas de `PATH`, le runner construit le `PATH` d'une étape de conteneur à partir de celui de l'image, et le venv ajouté à `GITHUB_PATH` est devenu tout le `PATH` — l'étape suivante ne trouvait plus `sh` (code 127) ; le rejeu dans podman, un seul shell pour toutes les étapes, ne pouvait pas le montrer. Les étapes appellent désormais le venv par son chemin absolu.
 
 ### 7. Les réglages du dépôt
 
@@ -64,7 +64,7 @@ Modifiés par l'API le 30 octobre 2026, puis relus : épinglage des actions par 
 
 ### Compteurs
 
-Tests collectés 16836 → **16997**, fichiers de test 426 → **427**, fonctions de test ~7930 → **~7950**, mutations 1158 → **1189** ; clés de locale (3095), clés `--explain` et références CIS (235) et sections inchangées.
+Tests collectés 16836 → **17002**, fichiers de test 426 → **427**, fonctions de test ~7930 → **~7950**, mutations 1158 → **1190** ; clés de locale (3095), clés `--explain` et références CIS (235) et sections inchangées.
 
 ### Gardes
 

@@ -146,7 +146,10 @@ Alpine 3.24, Kali Rolling, and Debian 12 on arm64 under QEMU. In each, pip
 older — openSUSE Leap 16's was 26.1.2), setuptools is installed by hash, and BOB
 is built against it into a wheel; then an offline audit and a plugin through the
 sandbox. The job fails on an exit code above 3, a locale key printed raw, or a
-Python traceback.
+Python traceback. The steps call the venv by its absolute path, never through
+`GITHUB_PATH`: the runner builds a container step's `PATH` from the one the
+image declares, and `opensuse/leap:16.0` declares none — with the venv added,
+the next step could not find `sh` (found on the first 0.28.2 push).
 
 The rule: only releases still supported — the LTS or stable line where the
 distribution has one (Ubuntu, Debian, openSUSE Leap), the Tier 1 release where

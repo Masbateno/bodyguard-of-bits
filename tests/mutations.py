@@ -9812,6 +9812,14 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason='an exempt rolling release would never be looked at again',
     ),
     Mutation(
+        id='ci-hardening/venv-through-path',
+        file='.github/workflows/integration.yml',
+        old='        run: /opt/bobenv/bin/bob --version\n',
+        new='        run: bob --version\n',
+        kills=('tests/test_v0282_ci_hardening.py::test_the_container_steps_do_not_depend_on_the_images_path', ),
+        reason='a step that finds BOB through PATH breaks on an image that declares no PATH, as openSUSE did',
+    ),
+    Mutation(
         id='build-backend/constraint-dropped',
         file='.github/workflows/publish.yml',
         old='        env:\n          PIP_CONSTRAINT: ${{ github.workspace }}/requirements-build.txt\n        run: python -m build',

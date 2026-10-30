@@ -138,7 +138,11 @@ jobs:
           /opt/bobenv/bin/python -m pip install --disable-pip-version-check "pip @ https://files.pythonhosted.org/packages/3f/06/3e4420302363fbb71be3c7f35ce042f54bfca330e3e66b3a2e3c4cca579f/pip-26.2.2-py3-none-any.whl#sha256=fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70"
           /opt/bobenv/bin/pip install --require-hashes -r requirements-build.txt
           /opt/bobenv/bin/pip install --no-build-isolation .
-          echo "/opt/bobenv/bin" >> "$GITHUB_PATH"
+        # 0.28.2 — the steps below call the venv by its absolute path instead of
+        # adding it to GITHUB_PATH: the runner builds a container step's PATH from
+        # the PATH the image declares, and opensuse/leap:16.0 declares none
+        # (measured: `docker inspect`), so the venv became the whole PATH and the
+        # next step could not find `sh` (exit 127, the first 0.28.2 push).
 
       - name: Smoke — packaging includes all subpackages
         # Catches the v0.6.0 class of bug: a refactor adds a new subpackage
@@ -147,19 +151,19 @@ jobs:
         # any missing module surfaces as a clean failure here, not at
         # runtime on a user system.
         run: |
-          python3 -c "import bob.checks.ssh; from bob.checks.ssh import check_ssh, SSHSnapshot"
-          python3 -c "import bob.cron; from bob.cron import CronEntry, run_install_cron, _atomic_write"
-          python3 -c "from bob._atomic import atomic_write"
-          python3 -c "from bob._tty import safe_input, prompt_wizard, read_line"
+          /opt/bobenv/bin/python3 -c "import bob.checks.ssh; from bob.checks.ssh import check_ssh, SSHSnapshot"
+          /opt/bobenv/bin/python3 -c "import bob.cron; from bob.cron import CronEntry, run_install_cron, _atomic_write"
+          /opt/bobenv/bin/python3 -c "from bob._atomic import atomic_write"
+          /opt/bobenv/bin/python3 -c "from bob._tty import safe_input, prompt_wizard, read_line"
 
       - name: Smoke — bob --version
-        run: bob --version
+        run: /opt/bobenv/bin/bob --version
 
       - name: Smoke — bob --help
-        run: bob --help > /dev/null
+        run: /opt/bobenv/bin/bob --help > /dev/null
 
       - name: Smoke — bob --explain known key
-        run: bob --explain firewall.inactive > /dev/null
+        run: /opt/bobenv/bin/bob --explain firewall.inactive > /dev/null
 
       - name: Smoke — plugin sandbox runner via real bob binary
         # Catches the v0.7.0b3 class of bug: a sandbox refactor that's
@@ -191,7 +195,7 @@ jobs:
 
           # Plugin must appear in the audit and not crash with SystemError.
           set +e
-          bob --offline -v > plugin_audit.txt 2>&1
+          /opt/bobenv/bin/bob --offline -v > plugin_audit.txt 2>&1
           rc=$?
           set -e
           echo "BOB exit code: $rc"
@@ -225,7 +229,7 @@ jobs:
         id: audit
         run: |
           set +e
-          bob --offline -v > audit.txt 2>&1
+          /opt/bobenv/bin/bob --offline -v > audit.txt 2>&1
           rc=$?
           set -e
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
