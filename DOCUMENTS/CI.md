@@ -205,13 +205,29 @@ Two branches, since 0.29.0:
 - **`unstable`** holds the work in progress between two releases. `tests.yml`
   and `integration.yml` run on its pushes; `publish.yml` never does.
 
-A release is assembled on `unstable`, then brought to `main` without a merge
-commit (`unstable` replayed on top of `main` first if `main` moved, then
-`main` fast-forwarded), pushed, and tagged on `main`. A tag on a commit that
-`main` never ran green is refused by `ci-green`, so a release cannot leave
-from `unstable` — the slip that made the project drop its version branches
-in September 2026 (a release published while `main` stayed behind) is caught
-before PyPI.
+A release leaves in five steps:
+
+1. **Work on `unstable`** — commit, and push when useful; the tests and the
+   integration workflows run there:
+   `git checkout unstable` … `git commit` … `git push origin unstable`
+2. **Assemble the release on `unstable`** — version bumped everywhere,
+   changelogs, counters — and commit it there.
+3. **Bring `main` to it without a merge commit.** If `main` moved since
+   `unstable` left it (a fix, a date), replay `unstable` on top first:
+   `git checkout unstable && git rebase main && git push --force-with-lease origin unstable`
+   then fast-forward `main`:
+   `git checkout main && git merge --ff-only unstable`
+   — both branches now point at the same commit.
+4. **Push `main` and wait for its CI to finish green** — the `Tests` and
+   `Integration` runs on `main`, not the ones on `unstable`:
+   `git push origin main` then `gh run list --branch main`
+5. **Tag on `main`**, then approve the `release` deployment:
+   `git tag -a X.Y.Z -m "BOB X.Y.Z — <summary>" && git push origin X.Y.Z`
+
+A tag on a commit that `main` never ran green is refused by `ci-green`, so a
+release cannot leave from `unstable` — the slip that made the project drop
+its version branches in September 2026 (a release published while `main`
+stayed behind) is caught before PyPI.
 
 ## Keeping it so
 

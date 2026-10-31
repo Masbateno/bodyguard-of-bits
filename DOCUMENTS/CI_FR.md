@@ -214,10 +214,27 @@ Deux branches, depuis la 0.29.0 :
 - **`unstable`** porte le travail en cours entre deux versions. `tests.yml` et
   `integration.yml` tournent sur ses push ; `publish.yml` jamais.
 
-Une version s'assemble sur `unstable`, puis arrive sur `main` sans commit de
-fusion (`unstable` rejouée par-dessus `main` d'abord si `main` a bougé, puis
-`main` avancée en avance rapide), est poussée, et taguée sur `main`. Un tag sur
-un commit que `main` n'a jamais fait tourner au vert est refusé par
+Une version part en cinq étapes :
+
+1. **Travailler sur `unstable`** — commiter, et pousser quand c'est utile ; les
+   workflows de tests et d'intégration y tournent :
+   `git checkout unstable` … `git commit` … `git push origin unstable`
+2. **Assembler la version sur `unstable`** — version changée partout,
+   changelogs, compteurs — et la commiter là.
+3. **Amener `main` jusqu'à elle sans commit de fusion.** Si `main` a bougé
+   depuis qu'`unstable` en est partie (un correctif, une date), rejouer
+   d'abord `unstable` par-dessus :
+   `git checkout unstable && git rebase main && git push --force-with-lease origin unstable`
+   puis avancer `main` en avance rapide :
+   `git checkout main && git merge --ff-only unstable`
+   — les deux branches pointent alors sur le même commit.
+4. **Pousser `main` et attendre que sa CI finisse au vert** — les runs `Tests`
+   et `Integration` sur `main`, pas ceux d'`unstable` :
+   `git push origin main` puis `gh run list --branch main`
+5. **Taguer sur `main`**, puis approuver le déploiement `release` :
+   `git tag -a X.Y.Z -m "BOB X.Y.Z — <résumé>" && git push origin X.Y.Z`
+
+Un tag sur un commit que `main` n'a jamais fait tourner au vert est refusé par
 `ci-green` : une version ne peut donc pas partir d'`unstable` — l'oubli qui
 avait fait abandonner les branches de version en septembre 2026 (une version
 publiée alors que `main` restait en retard) est arrêté avant PyPI.

@@ -926,7 +926,7 @@ plus an emulated arm64 job (`debian:bookworm-slim` under QEMU, `ci/arm64_smoke.s
   - **Test journal** : `DOCUMENTS/TESTING.md` and `DOCUMENTS/TESTING_FR.md` (new release row + section)
   - **Man pages `.TH` lines (3 files)** : `man/bob.1` · `man/bob.conf.5` · `man/bob-profile.5`
   - **Distro packaging** : `debian/changelog` · `packaging/rpm/bob.spec` (`Version:` field)
-  - Then push the bare tag `X.Y.Z` (no `v` since 0.21.0: `git tag -a X.Y.Z` + `git push origin X.Y.Z`) — `publish.yml` publishes to PyPI via OIDC.
+  - Then bring the release to `main` and tag it there (two branches since 0.29.0: `main` for releases, `unstable` for the work in progress — the five steps are in `DOCUMENTS/CI.md`, *Branches*): assemble and commit on `unstable`, fast-forward `main` (`git checkout main && git merge --ff-only unstable`), `git push origin main`, wait for the `Tests` and `Integration` runs on `main` to finish green, then push the bare tag `X.Y.Z` (no `v` since 0.21.0: `git tag -a X.Y.Z` + `git push origin X.Y.Z`) — `publish.yml` publishes to PyPI via OIDC, and its `ci-green` job refuses a commit that never ran green on `main`.
 
 ---
 
