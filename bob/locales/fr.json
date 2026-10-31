@@ -3694,6 +3694,8 @@
     "title": "Historique des scores",
     "no_entries": "Aucun historique de score — lancez un audit d'abord",
     "partial": "(exécution partielle : --check / --skip, hors tendance)",
+    "upper_bound_legend": "≤ une borne supérieure : BOB n'a pas pu lire une partie de l'hôte, le vrai score ne peut être que plus bas — pas de flèche de tendance à côté",
+    "span_legend": "~ un domaine entier n'a pas été lu : le score a bougé dans un sens inconnu — pas de flèche de tendance à côté",
     "unreadable": "L'historique des scores existe mais ne peut pas être lu ({path} : {error}) — propriétaire {owner}, mode {mode}. Pour le lire : sudo bob --history",
     "unreadable_hand_back": "C'est un fichier ordinaire appartenant à un autre compte : le prochain audit lancé avec sudo bob vous le rendra, par le même descripteur vérifié que chaque écriture — aucun chown à taper, dont le shell résoudrait de nouveau le chemin"
   },

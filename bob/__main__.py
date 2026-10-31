@@ -860,6 +860,10 @@ def _run(argv=None) -> int:
                 # v0.28.0 — a --check / --skip run read part of the host: its
                 # score is not a point of the trend.
                 partial=bool(config.check_only or config.skip_checks),
+                # v0.30.0 — the score's uncertainty, kept with it.
+                upper_bound=engine.score_is_upper_bound,
+                span=(engine.score_span if getattr(engine, "score_is_uncertain", False)
+                      and not engine.score_is_upper_bound else None),
             )
             # v0.26.1 — a write refused under a redirected home is said, not
             # dropped: the baseline, history or report the user expects is missing.

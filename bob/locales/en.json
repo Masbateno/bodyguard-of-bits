@@ -3694,6 +3694,8 @@
     "title": "Score History",
     "no_entries": "No score history found — run an audit first",
     "partial": "(partial run: --check / --skip, not in the trend)",
+    "upper_bound_legend": "≤ a ceiling: BOB could not read part of the host, so the true score can only be lower — no trend arrow beside it",
+    "span_legend": "~ a whole domain was not read: the score moved in an unknown direction — no trend arrow beside it",
     "unreadable": "Score history exists but cannot be read ({path}: {error}) — owned by {owner}, mode {mode}. To read it: sudo bob --history",
     "unreadable_hand_back": "It is a regular file owned by another account: the next audit run with sudo bob gives it back to yours, through the same checked descriptor as every write — no chown to type, whose path the shell would resolve again"
   },

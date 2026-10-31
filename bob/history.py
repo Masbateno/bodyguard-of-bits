@@ -76,6 +76,8 @@ def save_score(
     level: str,
     level_score_only: str | None = None,
     partial: bool = False,
+    upper_bound: bool = False,
+    span: "tuple[int, int] | None" = None,
 ) -> None:
     """Append current audit score to history.jsonl.
 
@@ -99,6 +101,15 @@ def save_score(
             entry_dict["level_score_only"] = level_score_only
         if partial:
             entry_dict["partial"] = True
+        # v0.30.0 — the score's uncertainty, as the terminal shows it: a
+        # ceiling ("≤", a check could not read its input) or, when a whole
+        # domain fell out of the average, the span of what is known ("~").
+        # Until 0.29.0 the history kept the number alone, and --history showed
+        # a ceiling as a firm score with a trend arrow beside it.
+        if upper_bound:
+            entry_dict["upper_bound"] = True
+        elif span is not None:
+            entry_dict["span"] = [int(span[0]), int(span[1])]
         entry = json.dumps(entry_dict)
         # I-5 (v0.6.1): explicit mode=0o600 on creation. Python's default
         # `Path.open("a")` uses the process umask (typically 0o644 → world-
@@ -192,6 +203,22 @@ def load_history(max_entries: int = 50, *, strict: bool = False) -> list[dict]:
     return entries[-max_entries:]
 
 
+def _mark(e: dict) -> str:
+    """v0.30.0 — "≤ " for a ceiling, "~ " for a span, "" for a firm score
+    (and for a line written before 0.30.0, which kept no mark)."""
+    if e.get("upper_bound") is True:
+        return "≤ "
+    span = e.get("span")
+    if (isinstance(span, list) and len(span) == 2
+            and all(isinstance(v, int) and not isinstance(v, bool) for v in span)):
+        return "~ "
+    return ""
+
+
+def _uncertain(e: dict) -> bool:
+    return bool(_mark(e))
+
+
 def _trend(entries: list[dict], idx: int) -> str:
     """Return ↑, ↓ or → comparing entry at idx to the previous one.
 
@@ -201,7 +228,9 @@ def _trend(entries: list[dict], idx: int) -> str:
     if idx <= 0 or idx >= len(entries) or entries[idx].get("partial") is True:
         return " "
     prev = next((entries[j] for j in range(idx - 1, -1, -1) if entries[j].get("partial") is not True), None)
-    if prev is None:
+    # v0.30.0 — no arrow beside a score that is a ceiling or a span, nor one
+    # measured against such a score: the terminal withholds its delta too.
+    if prev is None or _uncertain(entries[idx]) or _uncertain(prev):
         return " "
     delta = entries[idx]["score"] - prev["score"]
     if delta > 0:
@@ -251,8 +280,14 @@ def render_history(entries: list[dict], t: TranslationFunc | None = None) -> lis
         level = e.get("level") or ""
         trend = _trend(entries, orig_idx)
         tag = f"  {_t('history.partial')}" if e.get("partial") is True else ""
-        lines.append(f"  {ts_str}   {score}/10  {trend}  {level}{tag}")
+        mark = _mark(e) or "  "
+        lines.append(f"  {ts_str}  {mark}{score}/10  {trend}  {level}{tag}")
 
+    # v0.30.0 — what the marks mean, said once, only when one is shown.
+    if any(_mark(e) == "≤ " for e in recent):
+        lines.append(f"  {_t('history.upper_bound_legend')}")
+    if any(_mark(e) == "~ " for e in recent):
+        lines.append(f"  {_t('history.span_legend')}")
     return lines
 
 
