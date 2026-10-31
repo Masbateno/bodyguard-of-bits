@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NamedTuple, Tuple
 
-from bob.checks._run import TranslationFunc, _identity_t, _run, join_continuations, path_exists
+from bob.checks._run import TranslationFunc, _identity_t, _run, join_continuations, path_exists, run_result
 from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
 from bob._fs import strict_is_dir, strict_is_file
@@ -185,7 +185,7 @@ class FilePermsSnapshot:
                 texts.append(read_text_capped(f, encoding="utf-8", errors="replace"))
             except OSError:
                 pass
-        aliases = {**_cmnd_aliases(texts), **_named_aliases(texts)}
+        aliases = {**_cmnd_aliases(texts), **_named_aliases(texts), **_sudo_fqdn(texts)}
         systemd = _systemd_version()
         noexec_lib = _sudo_noexec_library() if snap.sudoers_nopasswd_specific else None
         runas_overrides = _runas_default_overrides(texts)
@@ -733,6 +733,49 @@ def _account_groups(user: str) -> "tuple[int, set[int], set[str]] | None":
     return pw.pw_uid, gids, names
 
 
+def _sudo_fqdn(texts: "list[str]") -> "dict[str, list[str]]":
+    """v0.30.0 — ``{"Defaults fqdn": ["on"]}`` when a global ``Defaults fqdn``
+    is set: sudo then resolves the host's name through DNS, which BOB does
+    not, so a host given as a domain name stays not resolved."""
+    for text in texts:
+        for line in join_continuations(text.splitlines()):
+            m = re.match(r"\s*Defaults\s+(.*)$", line)
+            if m and re.search(r"(?:^|,)\s*fqdn\s*(?:,|$)", m.group(1)):
+                return {"Defaults fqdn": ["on"]}
+    return {}
+
+
+def _netgroup_sources() -> "list[str] | None":
+    """The ``netgroup:`` sources of /etc/nsswitch.conf; None when not read."""
+    try:
+        text = read_text_capped(Path("/etc/nsswitch.conf"), encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        m = re.match(r"\s*netgroup\s*:\s*(.*)$", line)
+        if m:
+            return [w for w in m.group(1).split() if not w.startswith("[")]
+    return []
+
+
+def _netgroup_users(name: str) -> "set[str] | None":
+    """v0.30.0 — the user fields of netgroup *name*, nested netgroups
+    expanded (``getent netgroup``); "" stands for any user. An empty set when
+    the netgroup is not defined and nsswitch reads netgroups from files only;
+    None when BOB cannot tell (getent missing or failing, a network source
+    that did not answer). Measured on Debian 13 (sudo 1.9.16p2,
+    ``netgroup: files``): sudo applied ``Defaults:+admins`` to bobesc for
+    ``(,bobesc,)``, ``(otherhost,bobesc,)``, ``(,bobesc,example.org)``,
+    ``(,,)`` and a nested netgroup; not for ``(,alice,)`` nor an undefined
+    netgroup."""
+    res = run_result("getent", "netgroup", name)
+    if res.ok:
+        return {m.group(1).strip() for m in re.finditer(r"\(\s*[^,()]*,\s*([^,()]*),\s*[^,()]*\)", res.stdout or "")}
+    if res.code == 2 and _netgroup_sources() == ["files"]:
+        return set()
+    return None
+
+
 def _match_account(name: str, user: str, aliases: "dict[str, list[str]] | None" = None) -> "bool | None":
     """Whether a Defaults user (or runas) item names *user*: True, False, or
     None when BOB cannot resolve it (an alias, a netgroup, a non-Unix group, or
@@ -743,7 +786,10 @@ def _match_account(name: str, user: str, aliases: "dict[str, list[str]] | None" 
         return True if name == user else None
     if _ALIAS_NAME.fullmatch(name):
         return _resolve_alias("User_Alias", name, aliases, lambda n: _match_account(n, user, aliases))
-    if name.startswith(("+", "%:")):
+    if name.startswith("+"):
+        users = _netgroup_users(name[1:])
+        return None if users is None else ("" in users or user in users)
+    if name.startswith("%:"):
         return None
     if name.startswith("%") or name.startswith("#"):
         acct = _account_groups(user)
@@ -764,12 +810,45 @@ def _match_host(name: str, aliases: "dict[str, list[str]] | None" = None) -> "bo
         return True
     if _ALIAS_NAME.fullmatch(name):
         return _resolve_alias("Host_Alias", name, aliases, lambda n: _match_host(n, aliases))
-    short = socket.gethostname()
-    if name in (short, short.split(".")[0]):
-        return True
-    if name.startswith("+") or re.fullmatch(r"[A-Z][A-Z0-9_]*", name) or "." in name or "/" in name or ":" in name:
-        return None          # an alias, a netgroup, a domain name, an address: not resolved
-    return False
+    lhost = socket.gethostname()
+    shost = lhost.split(".")[0]
+    if name.startswith("+") or re.fullmatch(r"[A-Z][A-Z0-9_]*", name) or "/" in name or ":" in name \
+            or any(ch in name for ch in "*?[\\") or re.fullmatch(r"[\d.]+", name):
+        return None          # an alias, a netgroup, an address, a pattern: not resolved
+    if "." in name:
+        # v0.30.0 — sudo compares a name with a dot to the full host name,
+        # without DNS unless `fqdn` is set (measured on Debian 13, sudo
+        # 1.9.16p2: `Defaults@bobbench.example.org` applied on a host named
+        # bobbench.example.org, not on one named bobbench).
+        if aliases and "Defaults fqdn" in aliases:
+            return None
+        return name.lower() == lhost.lower()
+    return name.lower() == shost.lower()
+
+
+def _path_pattern(pattern: str) -> "re.Pattern | None":
+    """A sudo path pattern as a regex: `*`, `?` and `[...]` never match `/`;
+    None when a class is not closed."""
+    out, i = [], 0
+    while i < len(pattern):
+        ch = pattern[i]
+        if ch == "*":
+            out.append("[^/]*")
+        elif ch == "?":
+            out.append("[^/]")
+        elif ch == "[":
+            j = pattern.find("]", i + 2 if pattern[i + 1:i + 2] in ("!", "^") else i + 1)
+            if j < 0:
+                return None
+            body = pattern[i + 1:j]
+            neg = body[:1] in ("!", "^")
+            body = body[1:] if neg else body
+            out.append("[" + ("^" if neg else "") + body.replace("\\", "\\\\") + "]")
+            i = j
+        else:
+            out.append(re.escape(ch))
+        i += 1
+    return re.compile("".join(out))
 
 
 def _match_command(name: str, command: str, aliases: "dict[str, list[str]]") -> "bool | None":
@@ -781,8 +860,20 @@ def _match_command(name: str, command: str, aliases: "dict[str, list[str]]") -> 
         found = [_match_command(c, command, aliases) for c in aliases[name] if c != name]
         return True if True in found else None if None in found else False
     want, have = name.split(), command.split()
-    if not want or not have or any(ch in want[0] for ch in "*?[\\"):
+    if not want or not have or "\\" in want[0]:
         return None
+    if any(ch in want[0] for ch in "*?["):
+        # v0.30.0 — sudo matches a path pattern with fnmatch(FNM_PATHNAME):
+        # `*`, `?` and a class never cross a `/` (measured on Debian 13, sudo
+        # 1.9.16p2, `Defaults!… noexec` on /usr/bin/env: /usr/bin/e*,
+        # /usr/*/env, /usr/bin/[ef]nv, /usr/bin/en?, /usr/bin/* applied;
+        # /usr/bin/z* and /usr/* did not).
+        rx = _path_pattern(want[0])
+        if rx is None:
+            return None
+        if not rx.fullmatch(have[0]):
+            return False
+        return True if len(want) == 1 or want[1:] == have[1:] else None
     if want[0].endswith("/"):
         return os.path.dirname(have[0]) + "/" == want[0]
     if want[0] != have[0]:

@@ -43,6 +43,9 @@ def host(monkeypatch, tmp_path):
     monkeypatch.setattr(fp, "_sudo_noexec_library", lambda: "/usr/libexec/sudo/sudo_noexec.so")
     monkeypatch.setattr(fp, "_dynamically_linked", lambda path: True)
     monkeypatch.setattr(fp, "_run", lambda *a, **k: "")
+    # v0.30.0 — a netgroup nsswitch does not answer for (as NIS down): kept
+    # not resolved, whatever this machine's own netgroups are.
+    monkeypatch.setattr(fp, "_netgroup_users", lambda name: None)
 
     def snapshot(text):
         sudoers = tmp_path / "sudoers"
@@ -56,9 +59,10 @@ class TestTheMeasuredCases:
 
     @pytest.mark.parametrize("defaults", [
         "Defaults:+admins runas_default=daemon",
-        "Defaults@bobbench.example.org runas_default=daemon",
+        "Defaults@192.0.2.0/24 runas_default=daemon",
         "Defaults:UNDEFINED runas_default=daemon",
-    ], ids=["netgroup", "domain-name", "undefined-alias"])
+        "Defaults fqdn\nDefaults@bobbench.example.org runas_default=daemon",
+    ], ids=["netgroup", "address", "undefined-alias", "domain-name-under-fqdn"])
     def test_runas_default_bob_cannot_resolve_is_said(self, host, defaults):
         snap = host(defaults + "\n" + PY)
         assert snap.sudo_scope_unresolved == [(PY, "/usr/bin/python3", "runas")]
@@ -66,9 +70,9 @@ class TestTheMeasuredCases:
 
     @pytest.mark.parametrize("defaults", [
         "Defaults:+admins noexec",
-        "Defaults!/usr/bin/e* noexec",
-        "Defaults!/usr/bin/z* noexec",
-    ], ids=["netgroup", "glob-this", "glob-other"])
+        "Defaults@bob* noexec",
+        "Defaults!/usr/bin/e\\nv noexec",
+    ], ids=["netgroup", "host-pattern", "escaped-pattern"])
     def test_noexec_bob_cannot_resolve_is_said(self, host, defaults):
         snap = host(defaults + "\n" + ENV)
         assert snap.sudo_scope_unresolved == [(ENV, "/usr/bin/env", "noexec")]
@@ -284,5 +288,5 @@ class TestAliasesResolved:
     def test_the_snapshot_hands_them(self):
         import inspect
         src = inspect.getsource(fp.FilePermsSnapshot.from_system)
-        assert "aliases = {**_cmnd_aliases(texts), **_named_aliases(texts)}" in src
+        assert "aliases = {**_cmnd_aliases(texts), **_named_aliases(texts), **_sudo_fqdn(texts)}" in src
         assert "_runas_default_state(line.split()[0], runas_overrides, aliases)" in src

@@ -42,6 +42,9 @@ def host(monkeypatch, tmp_path):
     monkeypatch.setattr(fp, "_sudo_noexec_library", lambda: "/usr/libexec/sudo/sudo_noexec.so")
     monkeypatch.setattr(fp, "_dynamically_linked", lambda path: True)
     monkeypatch.setattr(fp, "_run", lambda *a, **k: "")
+    # v0.30.0 — a netgroup nsswitch does not answer for (as NIS down): kept
+    # not resolved, whatever this machine's own netgroups are.
+    monkeypatch.setattr(fp, "_netgroup_users", lambda name: None)
 
     def flagged(text):
         sudoers = tmp_path / "sudoers"
@@ -114,7 +117,7 @@ class TestTheResolver:
         ("", True), (":ALL", True), (":bobesc", True), (":alice", False), (":%grpin", True),
         (":%grpout", False), (":%#1001", True), (":#1000", True), (":ALL,!bobesc", False),
         (":!bobesc,ALL", True), (":ADMINS", None), (":+netgrp", None), (":%:dom", None),
-        ("@bobbench", True), ("@elsewhere", False), ("@web.example.org", None),
+        ("@bobbench", True), ("@elsewhere", False), ("@web.example.org", False), ("@bob*", None),
         (">root", True), (">daemon", False), (">%root", True), (">OPS", None),
     ])
     def test_scopes(self, host, scope, applies):
@@ -122,7 +125,7 @@ class TestTheResolver:
 
     @pytest.mark.parametrize("scope, applies", [
         ("!/usr/bin/env", True), ("!/usr/bin/", True), ("!/usr/sbin/", False), ("!/usr/bin/id", False),
-        ("!/usr/bin/e*", None), ("!ENVS", True), ("!NOPE", None), ("!ALL", True),
+        ("!/usr/bin/e*", True), ("!/usr/bin/z*", False), ("!ENVS", True), ("!NOPE", None), ("!ALL", True),
     ])
     def test_command_scopes(self, host, scope, applies):
         assert fp._defaults_scope_applies(scope, "bobesc", "/usr/bin/env", {"ENVS": ["/usr/bin/env"]}) is applies
