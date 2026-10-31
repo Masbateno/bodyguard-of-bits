@@ -122,7 +122,8 @@ class TestWhatIsRootAnyway:
         ("# Defaults !env_reset\n", False),
     ])
     def test_what_lets_the_variable_through(self, defaults, passes):
-        assert fp._sudo_env_passes_pager_secure([defaults]) is passes
+        defaults = fp._sudo_defaults([defaults])
+        assert fp._defaults_env_passes(defaults, "bobesc", "/usr/bin/journalctl", {}) is passes
 
     def test_journalctl_under_doas_is_never_secure(self):
         """Measured on Debian 13 (systemd 257, opendoas): the secure pager
@@ -216,7 +217,7 @@ class TestTheVersionRead:
         import inspect
         src = inspect.getsource(fp.FilePermsSnapshot.from_system)
         assert "_root_equivalent(command, noexec=noexec, systemd=systemd," in src
-        assert "pager_env=setenv or env_passes)" in src
+        assert "pager_env=env is True)" in src
 
 
 class TestTheFinding:

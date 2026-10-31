@@ -82,8 +82,11 @@ class TestApiServer:
         assert "kubernetes.apiserver_anonymous_unprobed" in f
 
     def test_an_unread_args_file_says_nothing(self):
+        """v0.29.0 — nothing weighed, and the one thing said is that it was not
+        read (kubernetes.apiserver_unread, test_v0290_k8s_apiserver_unread)."""
         f, d = _check(_snap(authorization_modes=None))
-        assert not any(k.startswith("kubernetes.apiserver") or k.startswith("kubernetes.cluster") for k in f)
+        assert [k for k in f if k.startswith("kubernetes.apiserver") or k.startswith("kubernetes.cluster")] \
+            == ["kubernetes.apiserver_unread"]
 
     def test_a_mode_bob_does_not_weigh_is_said(self):
         f, _ = _check(_snap(authorization_modes=("Webhook", "Node"), apiserver_port=16443,

@@ -626,6 +626,13 @@ def check_kubernetes(snapshot: KubernetesSnapshot, t: "TranslationFunc | None" =
 def _check_apiserver(snapshot: "KubernetesSnapshot", result: CheckResult, _t) -> None:
     """v0.28.0 — the cluster beyond the node, as far as this node reads it."""
     if snapshot.authorization_modes is None:
+        # v0.29.0 — not read is said, not left silent: BOB reads the API
+        # server where MicroK8s keeps its arguments; on k3s (measured: its
+        # process is `k3s server`, a kubelet name BOB knows) and kubeadm
+        # nothing was said, and the score read as if the cluster were clean.
+        result.info(message=_t("kubernetes.apiserver_unread"),
+                    detail=_t("kubernetes.apiserver_unread_detail"),
+                    key="kubernetes.apiserver_unread")
         return
     anon = snapshot.apiserver_anonymous_status
     if anon is not None and 200 <= anon < 300:

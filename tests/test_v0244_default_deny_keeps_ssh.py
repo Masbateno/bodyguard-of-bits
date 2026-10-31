@@ -361,4 +361,4 @@ class TestAnIptablesChainAcceptingEverything:
 
     def test_the_snapshot_reads_it(self):
         import inspect
-        assert "input_policy=_ipt_effective_input_policy(raw)," in inspect.getsource(IptablesNftSnapshot.from_system)
+        assert "input_policy=_with_pre_input(_ipt_effective_input_policy(raw), refused)," in inspect.getsource(IptablesNftSnapshot.from_system)

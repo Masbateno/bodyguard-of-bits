@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.28.3
+Version:        0.29.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,13 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sat Oct 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.29.0-1
+- Minor, BREAKING for scores: the firewall posture reads the refusals
+  outside filter's INPUT and names a chain at policy drop; sudo env_keep
+  and env_reset read in their scope, aliases resolved, an unresolved
+  scope said; a Kubernetes API server not read and an smb.conf samba
+  refuses to load are said, the score a ceiling.
+
 * Sat Oct 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.28.3-1
 - Patch, no change to BOB itself: the release identity check waits for
   every expected file on PyPI and refuses a file the build did not make;

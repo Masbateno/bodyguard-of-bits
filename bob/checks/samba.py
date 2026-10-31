@@ -118,6 +118,9 @@ class SambaSnapshot:
 
     # share-level findings
     guest_shares:         list[GuestShare] = field(default_factory=list)
+    #: v0.29.0 — lines samba refuses: a yes/no or fixed-choice parameter BOB
+    #: weighs, whose value carries "#" or ";" (see _CHOICE_PARAMS).
+    conf_refused:         list[str] = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "SambaSnapshot":
@@ -134,7 +137,7 @@ class SambaSnapshot:
             return snap
 
         try:
-            conf = _read_smb_conf(_SMB_CONF_PATH)
+            conf = _read_smb_conf(_SMB_CONF_PATH, refused=snap.conf_refused)
         except OSError:
             return snap
 
@@ -262,6 +265,18 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
         )
         return result
 
+    # --- v0.29.0: a file samba refuses to load ---
+    # What follows weighs the file as written; samba does not run it, and
+    # what a running smbd uses instead is not established (a ceiling).
+    if snapshot.conf_refused:
+        lines = "; ".join(snapshot.conf_refused[:3]) + (" …" if len(snapshot.conf_refused) > 3 else "")
+        result.info(
+            message=_t("samba.conf_refused", lines=lines),
+            detail=_t("samba.conf_refused_detail"),
+            key="samba.conf_refused",
+            template_vars={"lines": lines},
+        )
+
     # --- SMB1 (critical — EternalBlue/WannaCry vector) ---
     if snapshot.smb1_enabled:
         result.alert_with_deduction(
@@ -381,7 +396,18 @@ class _Params(dict):
         return super().get(self._norm(key), default)
 
 
-def _read_smb_conf(path: Path) -> dict[str, dict[str, str]]:
+#: v0.29.0 — the yes/no and fixed-choice parameters BOB weighs, normalised.
+#: Measured on Debian 13 (samba 4.22.11): with "# …" or "; …" after the value
+#: (even `mandatory#x`), each made testparm answer "Error loading services"
+#: (exit 1) and smbd stop with "Failed to load config file!"; `path`,
+#: `server string` and `restrict anonymous` with the same tail loaded.
+_CHOICE_PARAMS = frozenset(re.sub(r"\s+", "", k) for k in (
+    "server min protocol", "min protocol", "server max protocol", "max protocol", "server signing",
+    "map to guest", "null passwords", "bind interfaces only", "guest ok", "public", "writable",
+    "writeable", "write ok", "read only"))
+
+
+def _read_smb_conf(path: Path, refused: "list[str] | None" = None) -> dict[str, dict[str, str]]:
     """
     Parse a smb.conf file and return {section: {parameter: value}}, as samba's
     own parser reads it (v0.28.0).
@@ -442,6 +468,8 @@ def _read_smb_conf(path: Path) -> dict[str, dict[str, str]]:
                 feed(included, seen | {value})
                 continue
             current[key.strip()] = value
+            if refused is not None and _Params._norm(key) in _CHOICE_PARAMS and ("#" in value or ";" in value):
+                refused.append(f"{key.strip()} = {value}")
 
     feed(text, frozenset({str(path)}))
     return result

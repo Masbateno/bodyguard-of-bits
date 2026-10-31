@@ -88,6 +88,11 @@ class FilePermsSnapshot:
     #: v0.27.0 — (rule, command, why, what) for each NOPASSWD / permit-nopass
     #: command that is root anyway: "escape", "editor", "arguments" or "writable".
     nopasswd_root_equivalent:  list[Tuple[str, str, str, str]] = field(default_factory=list)
+    #: v0.29.0 — (rule, command, "runas" | "noexec" | "env") for each NOPASSWD command
+    #: that is root-equivalent if the scope BOB cannot resolve goes the
+    #: dangerous way (it runs as root, noexec does not hold, the variable
+    #: gets through), where that scope decides whether it does.
+    sudo_scope_unresolved:     list[Tuple[str, str, str]] = field(default_factory=list)
     # Names of groups (%group) that a NOPASSWD:ALL rule grants to but which
     # currently have no members — the grant is real but latent (add a user and
     # it becomes live root). Kali ships %kali-trusted this way by default.
@@ -180,31 +185,53 @@ class FilePermsSnapshot:
                 texts.append(read_text_capped(f, encoding="utf-8", errors="replace"))
             except OSError:
                 pass
-        aliases = _cmnd_aliases(texts)
+        aliases = {**_cmnd_aliases(texts), **_named_aliases(texts)}
         systemd = _systemd_version()
         noexec_lib = _sudo_noexec_library() if snap.sudoers_nopasswd_specific else None
-        env_passes = _sudo_env_passes_pager_secure(texts)
         runas_overrides = _runas_default_overrides(texts)
         defaults = _sudo_defaults(texts)
         for line in snap.sudoers_nopasswd_specific:
             # With no Runas_Spec the rule runs as runas_default, root unless a
             # Defaults says otherwise (measured: daemon, euid 1).
-            if not _has_runas_spec(line) and _runas_default_may_apply(line.split()[0], runas_overrides):
+            runas = "root" if _has_runas_spec(line) else _runas_default_state(line.split()[0], runas_overrides, aliases)
+            if runas not in ("root", "#0", "may"):
                 continue
             for command, noexec, setenv in _nopasswd_grants(line, aliases) or []:
+                noexec_unknown = False
                 if noexec is None:
                     # v0.28.0 — no tag: `Defaults noexec` in a scope that
                     # applies (measured: global, :user, :%group, !command,
                     # Cmnd_Alias, >root all blocked exec). One BOB cannot
                     # resolve counts, so that no −2 rests on an exec it did not
                     # establish.
-                    noexec = _defaults_noexec(defaults, line.split()[0], command, aliases) is not False
+                    by_defaults = _defaults_noexec(defaults, line.split()[0], command, aliases)
+                    noexec_unknown = by_defaults is None
+                    noexec = by_defaults is not False
                 # NOEXEC holds only where it is established: sudo's library
                 # present, and a dynamically linked binary it can load into.
                 noexec = noexec and noexec_lib is not None and _dynamically_linked(command.split()[0])
+                # v0.29.0 — whether SYSTEMD_PAGERSECURE gets through, read in
+                # the Defaults scope that governs this account and command.
+                env = True if setenv else _defaults_env_passes(defaults, line.split()[0], command, aliases)
                 found = _root_equivalent(command, noexec=noexec, systemd=systemd,
-                                         pager_env=setenv or env_passes)
-                if found:
+                                         pager_env=env is True)
+                # v0.29.0 — a scope BOB cannot resolve decided, and the
+                # rule was set aside in silence (measured on Debian 13: an
+                # alias without the account, a netgroup, a domain name, a glob
+                # naming another command — euid 0, the shell ran; BOB said
+                # nothing). Said now, with no −2, and the score a ceiling.
+                unknown = None
+                if not found and noexec_unknown and noexec and _root_equivalent(
+                        command, noexec=False, systemd=systemd, pager_env=env is not False):
+                    unknown = "noexec"
+                elif not found and env is None and _root_equivalent(
+                        command, noexec=noexec, systemd=systemd, pager_env=True):
+                    unknown = "env"
+                if runas == "may" and (found or unknown):
+                    unknown = "runas"
+                if unknown:
+                    snap.sudo_scope_unresolved.append((line, command, unknown))
+                elif found:
                     snap.nopasswd_root_equivalent.append((line, command, found[0], found[1]))
         for line in snap.doas_nopass_specific:
             command = _doas_command(line)
@@ -456,6 +483,53 @@ def _cmnd_aliases(texts: "list[str]") -> "dict[str, list[str]]":
     return aliases
 
 
+#: v0.29.0 — an alias name in sudoers.
+_ALIAS_NAME = re.compile(r"[A-Z][A-Z0-9_]*")
+
+
+def _named_aliases(texts: "list[str]") -> "dict[str, list[str]]":
+    """``User_Alias``, ``Runas_Alias`` and ``Host_Alias`` definitions, keyed
+    "User_Alias NAME" (a key no Cmnd_Alias name can take), so that they ride
+    in the same table as :func:`_cmnd_aliases` (v0.29.0)."""
+    out: "dict[str, list[str]]" = {}
+    for text in texts:
+        for line in _join_continuations(text.splitlines()):
+            line = _strip_sudoers_comment(line).strip()
+            kind = next((k for k in ("User_Alias", "Runas_Alias", "Host_Alias") if line.startswith(k)), None)
+            if not kind:
+                continue
+            for part in line[len(kind):].split(":"):
+                name, eq, body = part.partition("=")
+                if eq:
+                    out[f"{kind} {name.strip()}"] = [c.strip() for c in re.split(r"(?<!\\),", body) if c.strip()]
+    return out
+
+
+def _resolve_alias(kind: str, name: str, aliases: "dict[str, list[str]] | None", match,
+                   seen: "frozenset" = frozenset()) -> "bool | None":
+    """Whether the alias *name* of *kind* holds what *match* looks for, items
+    read as sudo reads a list — left to right, the last match deciding, ``!``
+    negating; an alias it names is resolved in turn. None when it is not
+    defined, loops, or holds an item BOB cannot resolve and no later one
+    decides (v0.29.0, measured on Debian 13: a User_Alias naming the account
+    applied, one naming another account did not; a Host_Alias naming this
+    host and a Runas_Alias naming root applied)."""
+    items = (aliases or {}).get(f"{kind} {name}")
+    if items is None or name in seen:
+        return None
+    result: "bool | None" = False
+    for item in items:
+        neg = item.startswith("!")
+        n = item.lstrip("!").strip()
+        m = (_resolve_alias(kind, n, aliases, match, seen | {name})
+             if _ALIAS_NAME.fullmatch(n) and n != "ALL" else match(n))
+        if m is None:
+            result = None
+        elif m:
+            result = not neg
+    return result
+
+
 def _nopasswd_commands(line: str, aliases: "dict[str, list[str]]") -> "list[str] | None":
     """The commands a sudoers rule grants without a password, aliases
     resolved — or None when the rule runs as someone other than root, or BOB
@@ -604,14 +678,22 @@ def _runas_default_may_apply(user: str, overrides: "list[tuple[str, str]]") -> b
     euid 1. A scope BOB cannot resolve (an alias, a netgroup, a runas or
     command scope) still counts as applying, so that no −2 rests on an account
     BOB did not establish."""
+    return _runas_default_state(user, overrides) not in ("root", "#0")
+
+
+def _runas_default_state(user: str, overrides: "list[tuple[str, str]]",
+                         aliases: "dict[str, list[str]] | None" = None) -> str:
+    """The account *user*'s rules with no Runas_Spec run as: "root" (or
+    "#0"), another account, or "may" when a scope BOB cannot resolve decides
+    (v0.29.0: said, no longer skipped in silence)."""
     state = "root"
     for scope, account in overrides:
-        applies = _defaults_scope_applies(scope, user) if scope[:1] in ("", ":", "@") else None
+        applies = _defaults_scope_applies(scope, user, None, aliases) if scope[:1] in ("", ":", "@") else None
         if applies is True:
             state = account
         elif applies is None:
             state = account if state == account else "may"
-    return state not in ("root", "#0")
+    return state
 
 
 #: v0.28.0 — the order sudo applies Defaults in: generic, host, user, runas,
@@ -651,7 +733,7 @@ def _account_groups(user: str) -> "tuple[int, set[int], set[str]] | None":
     return pw.pw_uid, gids, names
 
 
-def _match_account(name: str, user: str) -> "bool | None":
+def _match_account(name: str, user: str, aliases: "dict[str, list[str]] | None" = None) -> "bool | None":
     """Whether a Defaults user (or runas) item names *user*: True, False, or
     None when BOB cannot resolve it (an alias, a netgroup, a non-Unix group, or
     a rule written for a group or an alias)."""
@@ -659,7 +741,9 @@ def _match_account(name: str, user: str) -> "bool | None":
         return True
     if user.startswith("%") or user.startswith("+") or re.fullmatch(r"[A-Z][A-Z0-9_]*", user):
         return True if name == user else None
-    if name.startswith(("+", "%:")) or re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
+    if _ALIAS_NAME.fullmatch(name):
+        return _resolve_alias("User_Alias", name, aliases, lambda n: _match_account(n, user, aliases))
+    if name.startswith(("+", "%:")):
         return None
     if name.startswith("%") or name.startswith("#"):
         acct = _account_groups(user)
@@ -674,10 +758,12 @@ def _match_account(name: str, user: str) -> "bool | None":
     return name == user
 
 
-def _match_host(name: str) -> "bool | None":
+def _match_host(name: str, aliases: "dict[str, list[str]] | None" = None) -> "bool | None":
     import socket
     if name == "ALL":
         return True
+    if _ALIAS_NAME.fullmatch(name):
+        return _resolve_alias("Host_Alias", name, aliases, lambda n: _match_host(n, aliases))
     short = socket.gethostname()
     if name in (short, short.split(".")[0]):
         return True
@@ -704,6 +790,17 @@ def _match_command(name: str, command: str, aliases: "dict[str, list[str]]") -> 
     return True if len(want) == 1 or want[1:] == have[1:] else None
 
 
+def _match_runas_root(name: str, aliases: "dict[str, list[str]] | None" = None) -> "bool | None":
+    """Whether a runas item names root (v0.29.0: a Runas_Alias resolved)."""
+    if name in ("root", "#0", "ALL"):
+        return True
+    if name.startswith("%"):
+        return _match_account(name, "root")
+    if _ALIAS_NAME.fullmatch(name):
+        return _resolve_alias("Runas_Alias", name, aliases, lambda n: _match_runas_root(n, aliases))
+    return None if name.startswith("+") else False
+
+
 def _defaults_scope_applies(scope: str, user: str, command: "str | None" = None,
                             aliases: "dict[str, list[str]] | None" = None) -> "bool | None":
     """Whether a Defaults *scope* governs *user* running *command* as root:
@@ -719,12 +816,11 @@ def _defaults_scope_applies(scope: str, user: str, command: "str | None" = None,
         neg = item.startswith("!")
         name = item.lstrip("!").strip()
         if kind == ":":
-            m = _match_account(name, user)
+            m = _match_account(name, user, aliases)
         elif kind == ">":
-            m = True if name in ("root", "#0") else _match_account(name, "root") if name.startswith("%") \
-                else None if name.startswith("+") or re.fullmatch(r"[A-Z][A-Z0-9_]*", name) else name == "ALL"
+            m = _match_runas_root(name, aliases)
         elif kind == "@":
-            m = _match_host(name)
+            m = _match_host(name, aliases)
         elif kind == "!" and command is not None:
             m = _match_command(name, command, aliases or {})
         else:
@@ -769,23 +865,65 @@ def _has_runas_spec(line: str) -> bool:
     return bool(re.match(r"^\S+\s+\S+\s*=\s*\(", line))
 
 
-def _sudo_env_passes_pager_secure(texts: "list[str]") -> bool:
-    """Whether sudo lets the caller hand SYSTEMD_PAGERSECURE through: a
-    Defaults line with ``!env_reset``, or an env_keep naming the variable.
-    Measured on Debian 13 (systemd 257) after the review: with SETENV, or with
+#: v0.29.0 — one option of a Defaults line: commas inside quotes stay.
+_DEFAULTS_OPTION = re.compile(r",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)")
+
+
+def _env_changes(body: str) -> "list[tuple[str, bool]]":
+    """What one Defaults line does to the two settings that let the caller
+    hand SYSTEMD_PAGERSECURE through: ("reset", on/off), ("keep", listed)."""
+    changes = []
+    for opt in (o.strip() for o in _DEFAULTS_OPTION.split(body)):
+        if re.fullmatch(r"!\s*env_reset", opt):
+            changes.append(("reset", False))
+        elif opt == "env_reset":
+            changes.append(("reset", True))
+        elif re.fullmatch(r"!\s*env_keep", opt):
+            changes.append(("keep", False))
+        else:
+            m = re.fullmatch(r"env_keep\s*(\+=|-=|=)\s*(.*)", opt, re.S)
+            if not m:
+                continue
+            names = [n for n in re.split(r"[\s\"]+", m.group(2)) if n]
+            listed = any(n == "SYSTEMD_PAGERSECURE" or (n.endswith("*") and
+                         "SYSTEMD_PAGERSECURE".startswith(n[:-1])) for n in names)
+            if m.group(1) == "=":
+                changes.append(("keep", listed))
+            elif listed:
+                changes.append(("keep", m.group(1) == "+="))
+    return changes
+
+
+def _defaults_env_passes(defaults: "list[tuple[str, str]]", user: str, command: str,
+                         aliases: "dict[str, list[str]]") -> "bool | None":
+    """Whether sudo lets *user* hand SYSTEMD_PAGERSECURE to *command*:
+    ``!env_reset``, or an env_keep listing it, in a Defaults scope that
+    applies — None when a scope BOB cannot resolve may decide.
+
+    Measured on Debian 13 (systemd 257) in 0.27.0: with SETENV, or with
     env_keep += "SYSTEMD_PAGERSECURE", `SYSTEMD_PAGERSECURE=0` turned the
     secure pager off and journalctl's `:e /etc/shadow` showed root's hash.
-    Read for every account (a per-user Defaults counts for all)."""
-    for text in texts:
-        for line in _join_continuations(text.splitlines()):
-            line = _strip_sudoers_comment(line).strip()
-            if not line.startswith("Defaults"):
-                continue
-            if re.search(r"!\s*env_reset\b", line):
-                return True
-            if re.search(r"\benv_keep\b", line) and "SYSTEMD_PAGERSECURE" in line:
-                return True
-    return False
+    v0.29.0 — read in its scope, as noexec is (measured on Debian 13, sudo
+    1.9.16p2, `sudo -n printenv`): the variable reached the command under the
+    global, :user, :%group, !command, >root, User_Alias-with-the-account and
+    `env_keep =` forms and `!env_reset`; not under :alice, :alice
+    !env_reset, >daemon, @elsewhere, an alias without the account, a later
+    `env_keep -=` or `env_reset` for the account. 0.27.0 read every one as
+    reaching every account: a −2 on journalctl that did not hold."""
+    state: "dict[str, bool | None]" = {"reset": True, "keep": False}
+    for scope, body in defaults:
+        changes = _env_changes(body)
+        if not changes:
+            continue
+        applies = _defaults_scope_applies(scope, user, command, aliases)
+        for what, value in changes:
+            if applies is True:
+                state[what] = value
+            elif applies is None and state[what] is not value:
+                state[what] = None
+    if state["reset"] is False or state["keep"] is True:
+        return True
+    return None if None in state.values() else False
 
 
 def _systemd_version() -> "int | None":
@@ -1064,9 +1202,22 @@ def check_file_perms(snapshot: FilePermsSnapshot, *, t: TranslationFunc | None =
                 key="file_perms.nopass_root_equivalent",
             )
 
+    # ---- v0.29.0: a rule a Defaults scope BOB cannot resolve decides ---------
+    # Root-equivalent if it runs as root without noexec; whether it does is not
+    # established. No −2, and the key makes the score a ceiling.
+    for line, command, why in snapshot.sudo_scope_unresolved:
+        display = line[:120] + ("…" if len(line) > 120 else "")
+        result.info(
+            message=_t(f"file_perms.sudo_scope_unresolved_{why}", command=command, line=display),
+            detail=_t("file_perms.sudo_scope_unresolved_detail"),
+            key="file_perms.sudo_scope_unresolved",
+        )
+
     # ---- Sudoers NOPASSWD (specific commands only) --------------------------
-    # The rules found root-equivalent above are not "often intentional" here.
+    # The rules found root-equivalent above are not "often intentional" here,
+    # nor those whose weight is not established (v0.29.0).
     _root_lines = {line for line, *_ in snapshot.nopasswd_root_equivalent}
+    _root_lines |= {line for line, *_ in snapshot.sudo_scope_unresolved}
     _scoped = [l for l in snapshot.sudoers_nopasswd_specific if l not in _root_lines]
     if _scoped:
         result.info(

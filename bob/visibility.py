@@ -84,6 +84,8 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "file_perms.ssh_host_keys_unreadable",
     "file_perms.sudoers_unreadable",
     "file_perms.doas_unreadable",
+    # v0.29.0 — a sudo rule a Defaults scope BOB cannot resolve decides.
+    "file_perms.sudo_scope_unresolved",
     "firewall.firewalld_unreadable",
     "firewall.firewalld_zones_unread",
     "firewall.logging_unknown",
@@ -142,6 +144,10 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "kubernetes.kubelet_unprobed",
     "kubernetes.kubelet_run_indeterminate",
     "kubernetes.kubelet_anonymous_inconclusive",
+    # v0.29.0 — the API server is read on MicroK8s only.
+    "kubernetes.apiserver_unread",
+    # v0.29.0 — samba refuses the smb.conf BOB read.
+    "samba.conf_refused",
     "systemd_timers.unreadable",
     "umask.sources_unreadable",
     # v0.16.1 — neither name matches the ``*_unreadable`` / ``*_unknown``

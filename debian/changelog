@@ -1,3 +1,17 @@
+bodyguard-of-bits (0.29.0-1) unstable; urgency=medium
+
+  * Minor, BREAKING for scores: a 0.28.x and a 0.29.0 score of the same host
+    are not comparable; the outputs keep their format.
+  * The inbound firewall posture and the IPv6 section read the refusals
+    outside filter's INPUT (prerouting, ingress, raw and mangle PREROUTING,
+    mangle and security INPUT); a chain there at policy drop is named.
+  * sudo: env_keep and env_reset read in their scope; User_Alias,
+    Runas_Alias and Host_Alias resolved; a scope BOB cannot resolve is said.
+  * Said where BOB was silent, the score a ceiling: a Kubernetes API server
+    not read, an smb.conf samba refuses to load.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 31 Oct 2026 18:00:00 +0000
+
 bodyguard-of-bits (0.28.3-1) unstable; urgency=medium
 
   * Patch, no change to BOB itself. The check comparing the GitHub Release

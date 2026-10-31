@@ -6,6 +6,309 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.29.0] — 2026-10-31
+
+**A minor release, BREAKING for scores: the limits 0.28.0 wrote down,
+measured and closed or made explicit. The inbound default (the IPv4 posture
+and the IPv6 section) reads the chains a packet meets besides filter's INPUT (with
+nftables, besides its input chains) — before the input hook, or on it in the mangle and security tables — as the
+per-port verdict has since 0.28.0; sudo's Defaults are read in the scope that governs
+them, with the aliases the sudoers files define; and three things BOB does not
+read — a sudo scope it cannot resolve, a Kubernetes API server outside
+MicroK8s, an `smb.conf` samba refuses — are now said, with the score a
+ceiling: no points taken, the score shown as an upper bound (≤), globally and
+for the domain, because what BOB did not establish could only lower it. Measured with the real tools: sudo 1.9.16p2 and samba 4.22.11 in
+Debian 13 containers, Docker 29 in Docker-in-Docker, network namespaces.**
+BREAKING for scores means: the same host can score differently under 0.28.x
+and 0.29.0 — the global score, the per-domain scores and the `--history` trend
+across the upgrade — because the findings that feed the formula changed. The
+global scoring formula is unchanged; no JSON-output-schema or CSV-column
+change; no section added or removed; no finding key renamed or removed; no
+`--explain` key or CIS reference added (235).
+
+Scores that move:
+
+| Where | Before | 0.29.0 | § |
+|---|---|---|---|
+| no active front-end (UFW installed but off — measured; UFW absent — read in the code; no firewalld), input at policy accept, a chain outside filter's INPUT that may refuse (before the input hook: an nft `prerouting` or `ingress` chain, raw or mangle `PREROUTING`, a prerouting chain at policy drop; on it: mangle or security `INPUT`), nothing in filter's INPUT refusing | `firewall_iptables.input_accept` ALERT −3, and `firewall.inactive` ALERT (UFW installed but off — measured) or `prerequisites.firewall_missing` ALERT (no UFW — read in the code), each with the cap at 3/10 | `firewall_iptables.input_accept_unweighed` INFO (two cases: rules that may refuse, or a chain at policy drop, then named) and `firewall.netfilter_unweighed` INFO, no points, no cap, a ceiling (**rises**) | 1 |
+| the same host, with a listener bound to all IPv4 interfaces | INFO (`ports.uncovered_ufw_inactive` with UFW installed but off) | weighed port by port as since 0.28.0: the input policy is ACCEPT and no rule or chain BOB reads on the way in can refuse the port → `ports.uncovered_netfilter_open` WARN −1 (−2 public), a known service `services.exposed.<id>`; refused or not established → INFO | 1 |
+| the same over IPv6: an ip6/inet prerouting chain, a netdev or inet ingress chain, `ip6tables` raw or mangle `PREROUTING`, mangle or security `INPUT` that may refuse | `ipv6.netfilter_v6_open` WARN −2 | `ipv6.netfilter_v6_unweighed` INFO, a ceiling — the IPv6 section's PARTIAL reading of 0.27.0 (**rises by 2**) | 1 |
+| a raw ruleset whose prerouting refuses only packets to an address that is not the host's (Docker's `-d 172.17.0.2/32 ! -i docker0 -j DROP`, nft `ip daddr 172.17.0.2 iifname != "docker0" drop`), at policy accept with a refusal on input | every listener on all IPv4 interfaces not established (INFO), SSH included | weighed as without that rule: the input policy is ACCEPT and no rule or chain BOB reads on the way in can refuse the port → `ports.uncovered_netfilter_open` WARN −1 (or the service key) | 1 |
+| a passwordless rule for `journalctl` (systemd ≥ 247), an `env_keep += "SYSTEMD_PAGERSECURE"` or `!env_reset` that does not reach the account (`Defaults:alice`, `>daemon`, `@otherhost`, `!/other/command`, removed by a later `env_keep -=`, an `env_reset` for the account after a global `!env_reset`, a `User_Alias` without the account) | `file_perms.nopass_root_equivalent` WARN −2 | nothing (**rises by 2**, unless another command is root anyway) | 2 |
+| a rule whose `runas_default` or `noexec` scope is a `User_Alias`, `Runas_Alias` or `Host_Alias` defined in the sudoers files | the rule set aside, nothing said | resolved as sudo resolves it: root-equivalent → `file_perms.nopass_root_equivalent` WARN −2; otherwise nothing | 3 |
+
+Three finding keys now mark the score as a ceiling and move no points where
+BOB was silent before: `file_perms.sudo_scope_unresolved` (§3),
+`kubernetes.apiserver_unread` (§4), `samba.conf_refused` (§5).
+
+New finding keys (INFO, all three a ceiling): `file_perms.sudo_scope_unresolved`,
+`kubernetes.apiserver_unread`, `samba.conf_refused`. Existing keys now also
+cover: `firewall_iptables.input_accept_unweighed`, `firewall.netfilter_unweighed`
+and `ipv6.netfilter_v6_unweighed` a refusal outside filter's INPUT (§1).
+`firewall_iptables.input_accept_unweighed` has a second message,
+`firewall_iptables.input_accept_default_drop`, where a chain on the way in is
+at policy drop (§1).
+
+Outputs that change besides: where the ruleset's input policy is accept with
+refusals BOB does not weigh, the texts no longer say the ruleset "accepts
+inbound traffic by default and refuses some of it" — false where a chain before
+input is at policy drop — but that the input policy is accept and rules or
+chains on the way in refuse traffic: `firewall.netfilter_unweighed`,
+`ports.uncovered_netfilter_unweighed`,
+`ports.uncovered_bound_address_netfilter_unweighed`,
+`services.exposure.no_rule_netfilter_unweighed`,
+`exposure.firewall_policy_partial`, `ipv6.netfilter_v6_unweighed`. Also the texts of `firewall_iptables.input_accept`
+and `ipv6.netfilter_v6_open` ("no rule refuses it beyond given sources,
+invalid packets or addresses that are not this host's") and of
+`firewall_iptables.input_accept_unweighed` (and its detail) and
+`ipv6.netfilter_v6_unweighed` ("on the input hook, filter's INPUT or the mangle
+or security table's, or before it"; the detail adds that the default named is the
+input hook's, and that a chain at policy drop is named but not weighed), and the detail of
+`ports.netfilter_port` (mangle and security INPUT are on the input hook, not
+before it); the
+explanation of `docker.exposed_bypass_ufw` and the line
+`docker.iptables_bypass_detail3_nftables` (§6).
+
+### 1. The inbound default reads the chains outside filter's INPUT
+
+0.28.0 weighed each listener against the other chains a packet meets on its
+way in — before the input hook (an nft prerouting or ingress chain, raw and
+mangle PREROUTING) or on it in another table (mangle INPUT before filter's,
+security INPUT after it). A refusal there left the port "not established".
+(With nftables, each base chain on the input hook — ip or inet for IPv4, ip6
+or inet for IPv6 — is read as the input hook itself: its policy since 0.24.4,
+its rules since 0.27.0. BOB selects by family and hook, not by table or
+priority — tests hold a second table at priority 10; measured again on 31 October
+2026: an inet chain at priority 50 dropping 8099 behind one at priority 0
+accepting it closed 8099, and BOB read 8099 refused; code inspection also
+confirms that the chain type is not used as a selection criterion, though this
+is not test-covered. What 0.29.0 adds for
+nftables is the prerouting and ingress chains.) But 0.28.0 wrote the limit:
+the firewall posture and the IPv6 section still read the input hook only. Measured
+in a network namespace (31 October 2026), input at policy accept, listeners
+8098 and 8099 over IPv4 and IPv6: a drop for 8099 in an nft `ip` prerouting
+chain (raw priority), in a netdev ingress chain, an `inet` prerouting chain at
+policy drop accepting 8098 only, raw PREROUTING, mangle INPUT, security INPUT,
+and with no nft input chain at all, closed 8099 over IPv4; ingress, the inet chain, an
+`ip6` prerouting drop and `ip6tables -t raw` closed it over IPv6. BOB read
+"INPUT ACCEPT — no rule refuses it" (−3) and IPv6 "accepted by default" (−2).
+A mark, an `ip6` chain for IPv4 and an `ip` chain for IPv6 left both listeners open, and
+BOB's reading was right there. With filter's INPUT accepting 8099 by a rule,
+at policy accept or drop, a drop for 8099 in security or mangle INPUT still
+closed it (measured the same day): the per-port verdict read it not
+established, as since 0.28.0 — now guarded.
+
+The default is now read with those chains, in two cases. A chain at policy
+accept whose rules may refuse: BOB says the input policy is accept and that
+rules on the way in refuse some traffic, not weighed port by port (PARTIAL, as
+0.27.0 decided for refusals on input), a ceiling. A chain at policy drop: BOB
+names it and says it refuses by default what it does not accept, but does not
+read which ports it accepts, so it concludes neither that the host accepts nor
+that it denies by default — same PARTIAL, a ceiling (below). The raw, mangle
+and security tables that could not be read leave it undetermined (`firewall_iptables.input_unknown`,
+INFO, a ceiling, where it read ACCEPT −3 — covered by tests, not met on a host);
+the front-end finding is unchanged there: with UFW installed but off,
+`firewall.inactive` and its cap at 3/10 stay (read in the code — limits). The
+two coexist: the cap holds the score at 3/10 at most, and the INFO marks the
+score a ceiling; the INFO does not replace the cap. When `nft list ruleset` answers with no input chain, BOB reads the input
+hook through `iptables -S`, and still reads nft's own prerouting and ingress
+chains from `nft list ruleset`.
+
+A chain on the way in at policy drop refuses by default what it does not
+accept: measured the same day, an `inet` prerouting chain and the raw table's
+PREROUTING at policy drop, each accepting 8098 only, closed 8099 while the
+input hook accepted by default. "Accepts inbound traffic by default" was false
+there. BOB now names the input policy and the chain:
+`firewall_iptables.input_accept_unweighed` reads "Default INPUT policy: ACCEPT
+— but a chain the packet meets on its way in is at policy drop (inet r pre): it
+refuses by default what it does not accept; which listening ports stay
+reachable is not established" (no points, a ceiling, as before); a drop rule
+without that policy keeps the refusals message (measured). The other texts say
+"input policy accept, rules or chains on the way in refuse traffic". BOB does
+not read the host as denying by default: which ports such a chain accepts is not
+weighed (limits).
+
+A full audit, old tree against new, UFW installed but off, listeners 8098 and
+8099 (rerun on the final tree): with a drop rule for 8099 in a prerouting
+chain, 0.28.3 said "firewall inactive" (capped at 3/10) and "INPUT ACCEPT"
+(−3); 0.29.0 reports an INPUT policy of ACCEPT and refusals on the way in,
+weighs 8098 (open: −1) and leaves 8099 (closed) not established — score 6 → 8.
+With a prerouting chain at policy drop accepting 8098 only, 0.28.3 said the
+same; 0.29.0 names the chain at policy drop and leaves both ports not
+established, no points — score 6 → 8; its JSON lists no firewall, ports or
+IPv6 deduction and no cap (Firewall & Network 10/10, 0 deductions; the two
+INFO findings only in `unverified`, which makes the score a ceiling), the
+eight deductions being services the bench host enables but does not run. A
+ceiling every time: the namespace hides other inputs. Guarded in the tests
+along the same path: a chain at policy drop reads PARTIAL
+(`TestAChainAtPolicyDropIsNamed`), a PARTIAL posture without a front-end is
+an INFO with no cap (`test_v0270_accept_with_refusals.py::…::test_no_front_end_and_a_partial_ruleset_is_not_no_firewall`),
+and the iptables/nftables section takes no point there.
+
+A refusal aimed only at addresses that are not this host's no longer counts
+(`ip -o addr show` gives the host's addresses; not read, it counts). Measured
+with Docker 29 in Docker-in-Docker, both firewall backends: Docker writes
+`-d 172.17.0.2/32 ! -i docker0 -j DROP` in the raw table (nft: `ip daddr
+172.17.0.2 iifname != "docker0" drop`), which guards the container; since
+0.28.0 it made every port of the host not established, SSH's included. Now
+those ports are weighed — on the measured hosts they were open, and read
+accepted. A drop aimed at the host's own address still counts.
+
+The 0.28.0 per-port bench (R0–R10) gives the same verdicts as before.
+
+### 2. sudo: `env_keep` and `env_reset` read in their scope
+
+0.27.0 made a passwordless `journalctl` rule root-equivalent when the caller
+can hand `SYSTEMD_PAGERSECURE=0` to it (systemd's secure pager then opens a
+shell) — and read any `env_keep` naming the variable, or any `!env_reset`, as
+reaching every account. Measured on Debian 13 (sudo 1.9.16p2, systemd 257),
+`SYSTEMD_PAGERSECURE=0 sudo -n printenv SYSTEMD_PAGERSECURE` as the account a
+rule names, 16 cases: the variable reached the command under the global,
+`:account`, `:%group`, `!command`, `>root`, `env_keep =` and `!env_reset`
+forms; not under `:alice`, `:alice !env_reset`,
+`>daemon`, `@elsewhere`, a later `env_keep -=` for the account, or an
+`env_reset` for the account after a global `!env_reset` — where BOB deducted
+−2 in 7 of the 16 (a `SYSTEMD_*` entry, measured after — sudo's trailing-`*` match — reached it too). It is now read as `noexec` is since 0.28.0: in the scope
+that governs the account and the command, in the order sudo applies the
+Defaults, each `+=`, `-=` and `=` as sudo applies it. The SETENV tag still
+lets the variable through regardless of the Defaults (measured in 0.27.0).
+
+### 3. sudo: aliases resolved, and the rest said
+
+0.28.0 wrote: a scope BOB cannot resolve "counts as possibly applying, so no −2
+rests on it — and BOB does not say that the rule was set aside". Measured on
+Debian 13 (sudo 1.9.16p2), 13 cases, the account `bobesc` calling `sudo -n`
+under `bobesc ALL = NOPASSWD: /usr/bin/python3` and `bobesc ALL=(root)
+NOPASSWD: /usr/bin/env`: `python3` (no Runas_Spec) ran as root (euid 0) under
+`Defaults:ADMINS runas_default=daemon` with `User_Alias ADMINS = alice` — a
+scope without bobesc, so sudo did not apply it to bobesc — `Defaults:+admins …` (a netgroup) and `Defaults@bobbench.example.org
+…`; `env sh -c id` ran as root under `Defaults:ADMINS noexec` with ADMINS =
+alice (noexec not applied to bobesc), `Defaults:+admins noexec` and `Defaults!/usr/bin/z* noexec`. BOB said
+nothing in all six. The same forms went the other way when the scope reached
+bobesc (euid 1, daemon, with ADMINS = bobesc; exec blocked with
+`Defaults!/usr/bin/e*`).
+
+`User_Alias`, `Runas_Alias` and `Host_Alias` are written in the sudoers files
+BOB reads: they are now resolved as sudo resolves a list — left to right, the
+last match deciding, `!` negating, an alias naming another resolved in turn.
+The eight alias cases of the benches now match sudo: six `User_Alias` (with
+and without the account, for runas_default, noexec and env_keep), one
+`Host_Alias` naming this host (runas_default), one `Runas_Alias` naming root
+(noexec). The order, `!` and an alias naming another follow sudoers(5) and
+are covered by tests, not measured against sudo. What BOB still cannot resolve — a netgroup, a host given as a
+domain name, a command pattern, an alias the files do not define — is said:
+`file_perms.sudo_scope_unresolved`, one INFO per command that would be
+root-equivalent if the unresolved scope went the dangerous way (the command
+runs as root, noexec does not hold, the variable gets through) — each
+unresolved scope tried that way, alone and together; a command root-equivalent
+whatever the scope keeps its −2, and one that is not root-equivalent even then
+says nothing — naming the rule; no −2, the score a ceiling, and the rule left out of
+"passwordless rules for specific commands, often intentional".
+
+### 4. Kubernetes: an API server BOB does not read is said
+
+0.28.0 reads the API server's arguments where MicroK8s keeps them, and wrote
+that kubeadm and k3s are not read. At run time nothing said it: on a k3s node
+— its process name is `k3s` (command line `k3s server`), which BOB recognises
+as a kubelet name, so the section runs
+(measured 31 October 2026) — the section ended with no word on the API
+server. Now `kubernetes.apiserver_unread` (INFO, a ceiling) says the API
+server was not read, and that whether the node runs one, how it authorises
+requests and whether it answers anonymous ones is not established. Measured
+end to end in a container with a process named `k3s` running: `bob
+--check=kubernetes -J` carries it. A full k3s could not be run on the bench
+(rootless, without cpuset delegation).
+
+### 5. samba: an `smb.conf` samba refuses to load is said
+
+0.28.0 reads a value followed by `# …` or `; …` as samba does — part of the
+value — and wrote: samba refuses to load such a file for a boolean or a
+protocol, and BOB does not say so. Measured on Debian 13 (samba 4.22.11), 19
+cases: each of the 14 yes/no or fixed-choice parameters BOB weighs (`server
+min/max protocol`, `min/max protocol`, `server signing`, `map to guest`, `null
+passwords`, `bind interfaces only`, `guest ok`, `public`, `writable`,
+`writeable`, `write ok`, `read only`) with such a tail — even `mandatory#x` —
+made testparm exit 1 ("Error loading services") and prevented smbd
+from starting ("Failed to load config file!"); `path`, `server string` and `restrict anonymous` with the
+same tail loaded. `samba.conf_refused` (INFO, a ceiling) now names those
+lines: smbd does not start with this file, and what a running smbd uses is
+not established. BOB's list matched testparm's verdict in all 19 cases. The
+other samba findings still weigh the file as written.
+
+### 6. Docker's nftables backend over IPv6, in `--explain`
+
+0.28.0 measured DOCKER-USER over IPv6 with the iptables backend and the
+userland proxy on. Measured with Docker 29's nftables backend (no DOCKER-USER
+chain) in Docker-in-Docker, a client on a veth: on a network without IPv6 the
+published port answers over IPv6 through docker-proxy — the host's IPv6 input
+filter stopped it, a forward chain did not; with the userland proxy off it did
+not answer over IPv6 at all; on a network created with `--ipv6` the host's
+input filter did not stop it, and `table inet mine` with a forward chain at
+priority −10 and `iifname <external> ct state new tcp dport <port> drop`
+stopped it over IPv4 and IPv6, the container keeping its outbound access. The
+explanation of `docker.exposed_bypass_ufw` and the nftables line of
+`docker.iptables_bypass` now say so. No verdict changes. (The proxy-off case
+ran with `DOCKER_IGNORE_BR_NETFILTER_ERROR=1`: br_netfilter could not be
+loaded on the bench; it governs traffic between containers on one bridge, not
+the external client measured.)
+
+### Not in this release, and known limits
+
+- A Kubernetes API server is read on MicroK8s only; kubeadm and k3s are said
+  not read. A full k3s was not run (§4).
+- sudo: a netgroup, a host given as a domain name, a command pattern and an
+  undefined alias are not resolved (said, §3); the host is matched by its own
+  name.
+- The per-port verdict is IPv4; a named set (`tcp dport @name`), a verdict map
+  (`vmap`), a rule limited to
+  an interface and a rule written with a destination before its port (`ip
+  daddr X tcp dport N`, `-d X … --dport N`) leave a port not established; so
+  does a refusal outside filter's INPUT that names no port. A refusal that depends on a
+  mark set by a map, `jhash` or `numgen` leaves the port not established (measured against the parser:
+  an anonymous port set, `{ 8099, 9000 }`, is weighed). A forward refusal limited to one
+  interface counts as a refusal.
+- A chain on the way in at policy drop is named, not weighed: which ports it
+  accepts is not read, so the host never reads "denied by default" for it.
+  Over IPv6 it is among the refusals the text lists, not named.
+- A host address is read once, by `ip -o addr show` (every interface, secondary
+  addresses included); a destination given as a set, a range or an ipset
+  counts as possibly the host's.
+- The raw, mangle and security tables unreadable while `iptables -S` answers:
+  INPUT reads undetermined, but `firewall.inactive` and its cap at 3/10 stay,
+  as in 0.28.x (read in the code, not met on a host).
+- `--history` records each score, not its ≤ (since 0.16.0); the JSON and the
+  CSV carry `score_is_upper_bound`.
+- samba: `--fix` writes `smb.conf`, not a file it includes; a `%`-substituted
+  include is not followed.
+- CIS references: no CIS Ubuntu 26.04 control file in ComplianceAsCode yet (an
+  open pull request); `cis_fedora` is a draft — neither is cited.
+
+### Counters
+
+Tests collected 17016 → **17422**, test files 427 → **432**, mutations 1192 →
+**1249**; locale keys 3095 → **3104**; `--explain` keys and CIS references
+(235) and sections unchanged.
+
+### Guards
+
+`test_v0290_pre_input_posture.py` (the posture, IPv6 default, the host's
+addresses, Docker's rule; mutations `pre-input-posture/*`),
+`test_v0280_port_verdict.py::…::test_an_accept_by_rule_still_meets_the_other_tables`
+(`pre-input/accept-by-rule-skips-tables`), `…::TestAChainAtPolicyDropIsNamed`
+(`pre-input-default-drop/*`),
+`test_v0290_sudo_scope_unresolved.py` (unresolved scopes, env_keep in scope,
+aliases; `sudo-unresolved/*`, `sudo-env/*`, `sudo-alias/*`),
+`test_v0290_k8s_apiserver_unread.py` (`k8s-apiserver/*`),
+`test_v0290_samba_refused_file.py` (`samba-refused/*`),
+`test_v0290_docker_nftables_ipv6.py` (`docker-nft-ipv6/unsaid`). Re-anchored
+without changing their meaning: `pre-input/*` (9), `sudo-defaults/*` (5),
+`nopasswd/*` (3), `default-deny/ipt-policy-read-raw`,
+`accept-partial/v6-dropped`, `ipv6-raw/silent-ip6tables-guessed`,
+`docs/locale-key-total-stale`. Rewritten because it held the silence this
+release ends: `test_v0280_k8s_cluster.py::…::test_an_unread_args_file_says_nothing`.
+
+---
+
 ## [0.28.3] — 2026-10-31
 
 **A patch release about the publication, not about what BOB audits: the

@@ -181,7 +181,11 @@ class TestWhatIsSaid:
                          t=lambda k, **kw: k)
         assert "ipv6.netfilter_v6" in _keys(res) and not res.deductions
 
-    @pytest.mark.parametrize("lang, words", [("en", "refuses some of it"), ("fr", "en refuse une partie")])
+    # v0.29.0, review of the changelog — "accepts by default, refuses some"
+    # was false where a chain before input is at policy drop: the input
+    # policy is named, and the refusals on the way in.
+    @pytest.mark.parametrize("lang, words", [("en", "rules or chains on the way in refuse traffic"),
+                                             ("fr", "des règles ou des chaînes sur le chemin d'entrée refusent du trafic")])
     def test_the_ipv6_text_says_it(self, lang, words):
         i18n.init(lang)
         try:

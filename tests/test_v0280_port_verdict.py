@@ -280,6 +280,19 @@ class TestRefusedBeforeInput:
         rules = _ipt("ACCEPT", "-A INPUT -p tcp -m tcp --dport 22 -j DROP")
         assert nf.ipt_port_verdict(rules, 8099, "tcp", tables) == v8099
 
+    @pytest.mark.parametrize("policy, table", [("ACCEPT", "security"), ("DROP", "security"), ("ACCEPT", "mangle")],
+                             ids=["F1-security", "F2-security-policy-drop", "F3-mangle"])
+    def test_an_accept_by_rule_still_meets_the_other_tables(self, policy, table):
+        """v0.29.0, review of the changelog — mangle and security INPUT run on
+        the input hook, security after filter's INPUT. Measured in a network
+        namespace (31 October 2026): filter's INPUT accepting 8099 by a rule,
+        at policy accept or drop, a drop for 8099 in security or mangle INPUT
+        closed it. An accept by rule is not established either."""
+        rules = _ipt(policy, "-A INPUT -p tcp -m tcp --dport 8099 -j ACCEPT")
+        other = {table: "-P INPUT ACCEPT\n-A INPUT -p tcp -m tcp --dport 8099 -j DROP\n"}
+        assert nf.ipt_port_verdict(rules, 8099, "tcp", other) == U
+        assert nf.ipt_port_verdict(rules, 8099, "tcp", {})[0] == "ACCEPT"
+
     def test_a_drop_does_not_become_unknown(self):
         ruleset = _nft("accept", "tcp dport 8099 drop") + _pre("ip", "r", "pre", "prerouting", "tcp dport 8099 drop")
         assert nf.nft_port_verdict(ruleset, 8099, "tcp") == D
