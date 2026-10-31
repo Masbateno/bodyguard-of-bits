@@ -352,6 +352,12 @@ pas `v0.21.0`) ; le workflow de publication se déclenche dessus. La forme legac
 `tests/test_v0210_semver_no_v_prefix.py` épingle les surfaces d'affichage et
 `tests/test_doc_version_consistency.py` les badges.
 
+**Branches.** `main` ne porte que des versions publiées ; le travail en cours
+entre deux versions vit sur `unstable`. Une version s'assemble sur `unstable`,
+arrive sur `main` sans commit de fusion, et se tague sur `main` — le workflow de
+publication refuse un tag dont le commit n'a jamais tourné au vert sur `main`.
+Détails dans [CI_FR.md](CI_FR.md#branches).
+
 **Le texte de `--version` est-il un contrat stable ?** Non. La *chaîne* de version
 est une surface d'affichage, pas une partie du contrat de compatibilité de BOB.
 Elle a changé exactement une fois — le `v` a été retiré en 0.21.0 — et est

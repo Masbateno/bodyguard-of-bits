@@ -17,7 +17,7 @@ release step.
 | Workflow | Runs on | Jobs | Token |
 |---|---|---|---|
 | `tests.yml` | every push and pull request | `lint` (ruff over `bob/`), `build-backend-pin` (the setuptools pin must bite), `mutation` (every guard must still fail when its defect returns), `pytest` on Python 3.10 – 3.14 | read |
-| `integration.yml` | a push to `main`, a pull request to `main`, by hand | `smoke` in a container of each distribution below, `arm64` under QEMU | read |
+| `integration.yml` | a push to `main` or `unstable`, a pull request to `main`, by hand | `smoke` in a container of each distribution below, `arm64` under QEMU | read |
 | `publish.yml` | a tag `X.Y.Z` | `test` (3.10 – 3.14) and `ci-green` → `build` → `publish` (PyPI) → `github-release` | read; `ci-green` reads Actions, `publish` asks `id-token: write`, `github-release` asks `contents: write` |
 
 - **Rights**: each workflow says `contents: read`; only the two jobs above ask
@@ -189,12 +189,29 @@ first, arm64 included.
   tools: those are regenerated with `scripts/gen_ci_requirements.py`, and a
   vulnerability in one of them raises an alert.
 - **`main` has no required status check**: a commit reaches `main` before its
-  CI runs (the project is kept on one branch). A *publication*, though, is
-  held: `ci-green` refuses a tag whose commit is not green.
+  CI runs. A *publication*, though, is held: `ci-green` refuses a tag whose
+  commit is not green on `main` (see *Branches* below).
 - **The repository settings** are not readable by the workflow token (they
   need administrator rights): they are checked by
   `scripts/check_repo_settings.py`, run with the maintainer's `gh` login
   before a push that leads to a release, not by CI.
+
+## Branches
+
+Two branches, since 0.29.0:
+
+- **`main`** holds releases only — each release commit and the fixes that
+  ship with it. Every tag is on `main`.
+- **`unstable`** holds the work in progress between two releases. `tests.yml`
+  and `integration.yml` run on its pushes; `publish.yml` never does.
+
+A release is assembled on `unstable`, then brought to `main` without a merge
+commit (`unstable` replayed on top of `main` first if `main` moved, then
+`main` fast-forwarded), pushed, and tagged on `main`. A tag on a commit that
+`main` never ran green is refused by `ci-green`, so a release cannot leave
+from `unstable` — the slip that made the project drop its version branches
+in September 2026 (a release published while `main` stayed behind) is caught
+before PyPI.
 
 ## Keeping it so
 

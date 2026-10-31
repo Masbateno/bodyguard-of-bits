@@ -334,6 +334,12 @@ the trigger only so the last v-tagged release (`v0.20.5`) still publishes — ev
 tag from v0.21.0 on carries no `v`. `tests/test_v0210_semver_no_v_prefix.py` pins
 the display surfaces and `tests/test_doc_version_consistency.py` the badges.
 
+**Branches.** `main` holds releases only; the work in progress between two
+releases lives on `unstable`. A release is assembled on `unstable`, brought to
+`main` without a merge commit, and tagged on `main` — the publish workflow
+refuses a tag whose commit never ran green on `main`. Details in
+[CI.md](CI.md#branches).
+
 **Is the `--version` text a stable contract?** No. The version *string* is a
 display surface, not part of BOB's compatibility contract. It changed exactly
 once — the `v` was dropped in 0.21.0 — and is now fixed as the bare SemVer core.

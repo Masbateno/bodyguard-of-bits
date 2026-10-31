@@ -17,7 +17,7 @@ build, en Release brouillon pour l'étape de Release.
 | Workflow | Déclenché par | Jobs | Jeton |
 |---|---|---|---|
 | `tests.yml` | chaque push et pull request | `lint` (ruff sur `bob/`), `build-backend-pin` (l'épinglage de setuptools doit mordre), `mutation` (chaque garde doit encore échouer quand son défaut revient), `pytest` sur Python 3.10 – 3.14 | lecture |
-| `integration.yml` | un push sur `main`, une pull request vers `main`, à la main | `smoke` dans un conteneur de chaque distribution ci-dessous, `arm64` sous QEMU | lecture |
+| `integration.yml` | un push sur `main` ou `unstable`, une pull request vers `main`, à la main | `smoke` dans un conteneur de chaque distribution ci-dessous, `arm64` sous QEMU | lecture |
 | `publish.yml` | un tag `X.Y.Z` | `test` (3.10 – 3.14) et `ci-green` → `build` → `publish` (PyPI) → `github-release` | lecture ; `ci-green` lit les Actions, `publish` demande `id-token: write`, `github-release` demande `contents: write` |
 
 - **Droits** : chaque workflow déclare `contents: read` ; seuls les deux jobs
@@ -197,13 +197,30 @@ image a d'abord passé toutes les étapes dans podman, arm64 compris.
   Python épinglés : ceux-ci se régénèrent avec `scripts/gen_ci_requirements.py`,
   et une vulnérabilité dans l'un d'eux déclenche une alerte.
 - **`main` n'a pas de vérification de statut obligatoire** : un commit arrive
-  sur `main` avant que sa CI tourne (le projet vit sur une seule branche). Une
-  *publication*, elle, est verrouillée : `ci-green` refuse un tag dont le commit
-  n'est pas vert.
+  sur `main` avant que sa CI tourne. Une *publication*, elle, est verrouillée :
+  `ci-green` refuse un tag dont le commit n'est pas vert sur `main` (voir
+  *Branches* ci-dessous).
 - **Les réglages du dépôt** ne sont pas lisibles par le jeton des workflows
   (ils demandent des droits d'administration) : ils sont vérifiés par
   `scripts/check_repo_settings.py`, lancé avec la session `gh` du mainteneur
   avant un push qui mène à une version, pas par la CI.
+
+## Branches
+
+Deux branches, depuis la 0.29.0 :
+
+- **`main`** ne porte que des versions publiées — chaque commit de release et
+  les correctifs qui partent avec. Chaque tag est sur `main`.
+- **`unstable`** porte le travail en cours entre deux versions. `tests.yml` et
+  `integration.yml` tournent sur ses push ; `publish.yml` jamais.
+
+Une version s'assemble sur `unstable`, puis arrive sur `main` sans commit de
+fusion (`unstable` rejouée par-dessus `main` d'abord si `main` a bougé, puis
+`main` avancée en avance rapide), est poussée, et taguée sur `main`. Un tag sur
+un commit que `main` n'a jamais fait tourner au vert est refusé par
+`ci-green` : une version ne peut donc pas partir d'`unstable` — l'oubli qui
+avait fait abandonner les branches de version en septembre 2026 (une version
+publiée alors que `main` restait en retard) est arrêté avant PyPI.
 
 ## Pour que ça le reste
 
