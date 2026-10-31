@@ -42,7 +42,8 @@ from bob.checks.firewall import (
     resolve_firewall_posture,
 )
 from bob.checks._firewalld import FirewalldStatus
-from bob.checks.iptables_nftables import IptablesNftSnapshot, check_iptables_nftables, read_input_policy_v6
+from bob.checks.iptables_nftables import (IptablesNftSnapshot, check_iptables_nftables, read_default_drop_v6,
+                                          read_input_policy_v6)
 from bob.checks.umask import UmaskSnapshot, check_umask
 from bob.checks.firewall_stack import FirewallStackSnapshot, check_firewall_stack
 from bob.checks.network_context import NetworkContextSnapshot, check_network_context
@@ -853,16 +854,20 @@ def run_checks(
         ipv6_snapshot = IPv6Snapshot.from_system()
     # v0.27.0 — a raw ruleset's IPv6 default, read as its IPv4 one is.
     _v6_policy = "unknown"
+    _v6_drop: tuple = ()
     # v0.28.0 — also with UFW installed but not active (it filters nothing).
     if fw_posture.backend == "netfilter" and not (ipv6_snapshot.ufw_present and fw_status.active):
         with _core("ipv6"):
             _v6_policy = read_input_policy_v6()
+            # v0.30.0 — the IPv6 chains at policy drop, named.
+            _v6_drop = tuple(read_default_drop_v6()) if _v6_policy == "PARTIAL" else ()
     _sec("ipv6", ipv6_snapshot, check_ipv6, ufw_active=fw_status.active,
          firewalld_active=fwd_status.active,
          netfilter_active=fw_posture.backend == "netfilter",
          firewalld_policy=fwd_status.family_policy("ipv6") if fwd_status.active else "",
          firewalld_family_rules=tuple(fwd_status.family_scoped_accepts()) if fwd_status.active else (),
-         netfilter_v6_policy=_v6_policy)
+         netfilter_v6_policy=_v6_policy,
+         netfilter_v6_drop_chains=_v6_drop)
 
     # =========================================================================
     # GROUP 2 — EXPOSITION & SERVICES

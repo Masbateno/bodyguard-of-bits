@@ -238,7 +238,7 @@ def ipv6_closed_by_chains(snapshot: "IPv6Snapshot") -> bool:
 _MAX_PORT_DEDUCTIONS = 3   # cap per-port deductions to avoid score collapse
 
 
-def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None, firewalld_active: bool = False, netfilter_active: bool = False, firewalld_policy: str = "", netfilter_v6_policy: str = "unknown", firewalld_family_rules: tuple = ()) -> CheckResult:
+def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None, firewalld_active: bool = False, netfilter_active: bool = False, firewalld_policy: str = "", netfilter_v6_policy: str = "unknown", firewalld_family_rules: tuple = (), netfilter_v6_drop_chains: tuple = ()) -> CheckResult:
     """
     Check IPv6 firewall consistency.
 
@@ -322,7 +322,12 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
                 # Accepted by default, with rules that refuse some of it: which
                 # listeners they close is not established (measured: a drop for
                 # 8099, or a jump to a chain dropping it, closed 8099).
-                result.info(message=_t("ipv6.netfilter_v6_unweighed", count=count, ports=ports),
+                # v0.30.0 — a chain on the way in at policy drop, named as
+                # the IPv4 section names it (0.29.0).
+                result.info(message=(_t("ipv6.netfilter_v6_default_drop", count=count, ports=ports,
+                                        chains=", ".join(netfilter_v6_drop_chains))
+                                     if netfilter_v6_drop_chains
+                                     else _t("ipv6.netfilter_v6_unweighed", count=count, ports=ports)),
                             key="ipv6.netfilter_v6")
             elif netfilter_active:
                 # The raw ruleset's IPv6 default could not be read: a visibility gap.

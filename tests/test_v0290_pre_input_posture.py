@@ -117,7 +117,9 @@ class TestTheIPv4Default:
         _system(monkeypatch, nft=_pre("ip", "tcp dport 8099 drop"), ipt=_ipt(), tables={})
         s = nf.IptablesNftSnapshot.from_system()
         assert (s.backend, s.input_policy) == ("iptables", "PARTIAL")
-        assert s.port_verdict(8099, "tcp") == ("UNKNOWN", "")
+        # v0.30.0 — the prerouting chain weighed port by port (P7 measured
+        # 8099 closed, 8098 open).
+        assert s.port_verdict(8099, "tcp") == ("DROP", "rule")
         assert s.port_verdict(8098, "tcp") == ("ACCEPT", "default")
 
 

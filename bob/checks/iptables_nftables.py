@@ -84,10 +84,14 @@ class IptablesNftSnapshot:
             return nft_port_verdict(self.raw_output, port, proto, self.host_addresses)
         if self.backend == "iptables":
             got = ipt_port_verdict(self.raw_output, port, proto, self.other_tables, self.host_addresses)
-            if got[0] == "ACCEPT" and self.nft_pre_input and _nft_refused_before_input(
-                    self.nft_pre_input, _nft_all_chains(self.nft_pre_input), port, proto,
-                    hosts=self.host_addresses):
-                return "UNKNOWN", ""
+            if got[0] == "ACCEPT" and self.nft_pre_input:
+                # v0.30.0 — nft's own chains before input, weighed port by port.
+                pre = _nft_pre_input_port(self.nft_pre_input, _nft_all_chains(self.nft_pre_input), port,
+                                          proto, self.host_addresses, _nft_sets(self.nft_pre_input))
+                if pre[0] != "PASS":
+                    return pre
+                if pre[1] == "rule":
+                    return "ACCEPT", "rule"
             return got
         return "UNKNOWN", ""
 
@@ -628,6 +632,49 @@ def _nft_default_drop_before_input(ruleset: str, families: tuple = _IPV4_FAMILIE
     return found
 
 
+def _nft_pre_input_port(ruleset: str, every: dict, port: int, proto: str, hosts: "frozenset | None" = None,
+                        sets: "dict | None" = None, families: tuple = _IPV4_FAMILIES) -> "tuple[str, str]":
+    """v0.30.0 — what the chains before input do to a new connection to
+    *port*: ("PASS", ""), ("DROP", "rule"|"default") or ("UNKNOWN", "").
+    A prerouting chain (*families*) sees every interface: its rules are
+    walked as input's are, a rule that can neither refuse nor accept set
+    aside (a mark, a notrack), one aimed at another address set aside, and
+    its policy decides when no rule does. Measured in network namespaces
+    (0.28.0, 0.29.0): a drop for 8099 in a prerouting chain closed 8099; a
+    prerouting chain at policy drop accepting 8098 only closed 8099 and left
+    8098 open. An ingress chain sees one device: a refusal there leaves the
+    port not established, as since 0.28.0. ("PASS", "rule") when a rule there
+    accepted the port: opened on purpose, as a rule on input."""
+    unknown = by_rule = False
+    for c in _nft_base_chains(ruleset, "prerouting"):
+        if c["family"] not in families:
+            continue
+        verdict = None
+        for rule in c["rules"]:
+            text = re.sub(r"\s+", " ", _NFT_COMMENT.sub("", _RULE_NOISE.sub("", rule))).strip()
+            if not text or _aimed_elsewhere(text, hosts) or _names_another_port(text, port, proto):
+                continue
+            if not re.search(r"\baccept$", text) and not _nft_rule_may_refuse(rule, every, c["family"], c["table"]):
+                continue
+            got = _nft_port_walk([rule], every, c["family"], c["table"], port, proto, frozenset(), hosts, sets)
+            if got is None:
+                continue
+            if got[0] == "DROP":
+                return "DROP", "rule"
+            verdict = "PASS" if got[0] == "ACCEPT" else "UNKNOWN"
+            by_rule = by_rule or verdict == "PASS"
+            break
+        if verdict is None:
+            if c["policy"] != "ACCEPT":
+                return "DROP", "default"
+            verdict = "PASS"
+        unknown = unknown or verdict == "UNKNOWN"
+    # The ingress chains alone: no prerouting family is passed.
+    if _nft_refused_before_input(ruleset, every, port, proto, families=(), hosts=hosts):
+        unknown = True
+    return ("UNKNOWN", "") if unknown else ("PASS", "rule" if by_rule else "")
+
+
 def nft_port_verdict(ruleset: str, port: int, proto: str,
                      hosts: "frozenset | None" = None) -> "tuple[str, str]":
     """The IPv4 verdict a new connection to *port*/*proto* meets on the input
@@ -652,9 +699,11 @@ def nft_port_verdict(ruleset: str, port: int, proto: str,
             return v
     if any(v[0] == "UNKNOWN" for v in verdicts):
         return "UNKNOWN", ""
-    if _nft_refused_before_input(ruleset, every, port, proto, hosts=hosts):
-        return "UNKNOWN", ""
-    return ("ACCEPT", "rule") if any(v[1] == "rule" for v in verdicts) else ("ACCEPT", "default")
+    # v0.30.0 — the chains before input weighed port by port.
+    pre = _nft_pre_input_port(ruleset, every, port, proto, hosts, sets)
+    if pre[0] != "PASS":
+        return pre
+    return ("ACCEPT", "rule") if pre[1] == "rule" or any(v[1] == "rule" for v in verdicts) else ("ACCEPT", "default")
 
 
 #: v0.28.0, round 2 — the chains of the other tables a packet to this host
@@ -695,7 +744,9 @@ def _ipt_refused_before_input(tables: "dict[str, str]", port: "int | None", prot
     for 8099 closed it while BOB, reading `iptables -S`, said accepted by
     default; a mangle PREROUTING drop for 9000 left it open). v0.29.0 —
     *port* None: may they refuse anything; a refusal aimed at destinations
-    that are not this host's does not count (:func:`_aimed_elsewhere`)."""
+    that are not this host's does not count (:func:`_aimed_elsewhere`).
+    v0.30.0 — read for the inbound default only (*port* None); a port is
+    weighed by :func:`_ipt_pre_input_port`."""
     for table, text in tables.items():
         for chain in _IPT_PRE_INPUT.get(table, ()):
             if _ipt_policy(text, chain) not in ("ACCEPT", "unknown"):
@@ -705,13 +756,112 @@ def _ipt_refused_before_input(tables: "dict[str, str]", port: "int | None", prot
                 line = line.strip()
                 if not line.startswith(prefix):
                     continue
-                if port is not None and _names_another_port(line[len(prefix):], port, proto, nft=False):
-                    continue
                 if _aimed_elsewhere(line, hosts, nft=False):
                     continue
                 if _ipt_rule_may_refuse(line, text):
                     return True
     return False
+
+
+def _ipt_chains(rules: str) -> "dict[str, list[str]]":
+    """Each chain's rule bodies, from ``iptables -S`` text."""
+    chains: "dict[str, list[str]]" = {}
+    for line in rules.splitlines():
+        m = re.match(r"^-A (\S+) (.*)$", line.strip())
+        if m:
+            chains.setdefault(m.group(1), []).append(m.group(2).strip())
+    return chains
+
+
+def _ipt_walk(chains: dict, name: str, port: int, proto: str, hosts, seen: frozenset,
+              bodies: "list[str] | None" = None):
+    """The verdict *port* meets walking chain *name* (or *bodies*), user
+    chains it jumps to followed: ("ACCEPT"|"DROP"|"UNKNOWN", "rule"), ("END",
+    "") after a goto ran out, None when the chain falls through."""
+    for body in (chains.get(name, []) if bodies is None else bodies):
+        if _IPT_PORT_NEUTRAL.match(body):
+            continue
+        m = re.fullmatch(r"-j (ACCEPT|DROP|REJECT)(?: --reject-with \S+)?", body)
+        if m:
+            return ("ACCEPT" if m.group(1) == "ACCEPT" else "DROP"), "rule"
+        if body == "-j RETURN":
+            return None
+        # v0.30.0 — a destination: the rule touches this host's listeners
+        # only for the addresses it names (measured with `-d`, as nft).
+        d = _IPT_DADDR_FIRST.match(body)
+        if d and _IPT_PORT_RULE.match(d.group(2)):
+            if _names_another_port(d.group(2), port, proto, nft=False):
+                continue
+            cover = _daddr_cover(d.group(1), hosts)
+            if cover == "none":
+                continue
+            if cover != "all":
+                return "UNKNOWN", ""
+            body = d.group(2)
+        m = _IPT_PORT_RULE.match(body)
+        if m:
+            p, spec, target, sep = ((m.group(1), m.group(2), m.group(3), ":") if m.group(1)
+                                    else (m.group(4), m.group(5), m.group(6), ":"))
+            if p != proto:
+                continue
+            inside = _port_in(spec, port, sep)
+            if inside is None:
+                return "UNKNOWN", ""
+            if inside:
+                return ("ACCEPT" if target == "ACCEPT" else "DROP"), "rule"
+            continue
+        if re.search(r"-j (?:DROP|REJECT)\b", body) and _IPT_SOME_SOURCES.search(body):
+            continue                # refuses given sources only (0.27.0)
+        j = re.fullmatch(r"-([jg]) (\S+)", body)
+        if j and j.group(2) in chains and j.group(2) not in seen:
+            sub = _ipt_walk(chains, j.group(2), port, proto, hosts, seen | {j.group(2)})
+            if sub is not None:
+                return sub
+            if j.group(1) == "g":
+                return "END", ""
+            continue
+        return "UNKNOWN", ""
+    return None
+
+
+def _ipt_pre_input_port(tables: "dict[str, str]", port: int, proto: str,
+                        hosts: "frozenset | None" = None) -> "tuple[str, str]":
+    """v0.30.0 — what the chains of :data:`_IPT_PRE_INPUT` do to a new
+    connection to *port*: ("PASS", ""), ("DROP", "rule"|"default") or
+    ("UNKNOWN", ""). Each chain's rules are walked as INPUT's are, a rule
+    that can neither refuse nor accept set aside (a mark, a notrack), one
+    aimed at another address set aside; the chain's policy decides when no
+    rule does. Until 0.29.0 a refusal there left the port not established;
+    measured in network namespaces (0.28.0, 0.29.0): a drop for 8099 in raw
+    PREROUTING, mangle INPUT or security INPUT, or raw PREROUTING at policy
+    drop accepting 8098 only, closed 8099. ("PASS", "rule") when a rule there
+    accepted the port: opened on purpose, as a rule on INPUT."""
+    unknown = by_rule = False
+    for table, text in tables.items():
+        chains = _ipt_chains(text)
+        for chain in _IPT_PRE_INPUT.get(table, ()):
+            verdict = None
+            for body in chains.get(chain, []):
+                line = f"-A {chain} {body}"
+                if _aimed_elsewhere(line, hosts, nft=False) or _names_another_port(body, port, proto, nft=False):
+                    continue
+                if not re.search(r"-j ACCEPT\b", body) and not _ipt_rule_may_refuse(line, text):
+                    continue
+                got = _ipt_walk(chains, chain, port, proto, hosts, frozenset({chain}), bodies=[body])
+                if got is None:
+                    continue
+                if got[0] == "DROP":
+                    return "DROP", "rule"
+                verdict = "PASS" if got[0] == "ACCEPT" else "UNKNOWN"
+                by_rule = by_rule or verdict == "PASS"
+                break
+            if verdict is None:
+                policy = _ipt_policy(text, chain)
+                if policy in ("DROP", "REJECT"):
+                    return "DROP", "default"
+                verdict = "PASS"
+            unknown = unknown or verdict == "UNKNOWN"
+    return ("UNKNOWN", "") if unknown else ("PASS", "rule" if by_rule else "")
 
 
 def ipt_port_verdict(rules: str, port: int, proto: str,
@@ -721,65 +871,21 @@ def ipt_port_verdict(rules: str, port: int, proto: str,
     to unconditionally followed). *other_tables* holds ``iptables -t T -S``
     for raw, mangle and security; None when they could not be read, and an
     accept is then not established."""
-    chains: "dict[str, list[str]]" = {}
-    for line in rules.splitlines():
-        m = re.match(r"^-A (\S+) (.*)$", line.strip())
-        if m:
-            chains.setdefault(m.group(1), []).append(m.group(2).strip())
-
-    def walk(name, seen):
-        for body in chains.get(name, []):
-            if _IPT_PORT_NEUTRAL.match(body):
-                continue
-            m = re.fullmatch(r"-j (ACCEPT|DROP|REJECT)(?: --reject-with \S+)?", body)
-            if m:
-                return ("ACCEPT" if m.group(1) == "ACCEPT" else "DROP"), "rule"
-            if body == "-j RETURN":
-                return None
-            # v0.30.0 — a destination: the rule touches this host's listeners
-            # only for the addresses it names (measured with `-d`, as nft).
-            d = _IPT_DADDR_FIRST.match(body)
-            if d and _IPT_PORT_RULE.match(d.group(2)):
-                if _names_another_port(d.group(2), port, proto, nft=False):
-                    continue
-                cover = _daddr_cover(d.group(1), hosts)
-                if cover == "none":
-                    continue
-                if cover != "all":
-                    return "UNKNOWN", ""
-                body = d.group(2)
-            m = _IPT_PORT_RULE.match(body)
-            if m:
-                p, spec, target, sep = ((m.group(1), m.group(2), m.group(3), ":") if m.group(1)
-                                        else (m.group(4), m.group(5), m.group(6), ":"))
-                if p != proto:
-                    continue
-                inside = _port_in(spec, port, sep)
-                if inside is None:
-                    return "UNKNOWN", ""
-                if inside:
-                    return ("ACCEPT" if target == "ACCEPT" else "DROP"), "rule"
-                continue
-            if re.search(r"-j (?:DROP|REJECT)\b", body) and _IPT_SOME_SOURCES.search(body):
-                continue                # refuses given sources only (0.27.0)
-            j = re.fullmatch(r"-([jg]) (\S+)", body)
-            if j and j.group(2) in chains and j.group(2) not in seen:
-                sub = walk(j.group(2), seen | {j.group(2)})
-                if sub is not None:
-                    return sub
-                if j.group(1) == "g":
-                    return "END", ""
-                continue
-            return "UNKNOWN", ""
-        return None
-
-    got = walk("INPUT", frozenset({"INPUT"}))
+    chains = _ipt_chains(rules)
+    got = _ipt_walk(chains, "INPUT", port, proto, hosts, frozenset({"INPUT"}))
     if got is None or got[0] == "END":
         policy = _ipt_policy(rules, "INPUT")
         got = ("ACCEPT" if policy == "ACCEPT" else "DROP" if policy in ("DROP", "REJECT") else "UNKNOWN",
                "default")
-    if got[0] == "ACCEPT" and (other_tables is None or _ipt_refused_before_input(other_tables, port, proto, hosts)):
-        return "UNKNOWN", ""
+    if got[0] == "ACCEPT":
+        if other_tables is None:
+            return "UNKNOWN", ""
+        # v0.30.0 — the other tables' chains weighed port by port.
+        pre = _ipt_pre_input_port(other_tables, port, proto, hosts)
+        if pre[0] != "PASS":
+            return pre
+        if pre[1] == "rule":
+            return "ACCEPT", "rule"
     return got
 
 
@@ -900,6 +1006,23 @@ def read_input_policy_v6() -> str:
                 other, None, None, hosts if hosts is not None else _host_addresses()))
         return "unknown"
     return "ACCEPT" if nft_answered else "unknown"
+
+
+def read_default_drop_v6() -> "list[str]":
+    """v0.30.0 — the chains an IPv6 packet meets on its way in, besides the
+    input chains read, whose policy is drop: nft's ip6/inet prerouting and
+    netdev/inet ingress chains, ip6tables' raw and mangle PREROUTING and
+    mangle and security INPUT. Named by the IPv6 section as the IPv4 one
+    names its own (0.29.0)."""
+    found: "list[str]" = []
+    if _command_exists("nft"):
+        res = run_result("nft", "list", "ruleset")
+        if res.ok:
+            found += _nft_default_drop_before_input(res.stdout, _IPV6_FAMILIES)
+    if _command_exists("ip6tables"):
+        other = _ipt_other_tables("ip6tables")
+        found += [c for c in _ipt_default_drop_before_input(other) if c not in found]
+    return found
 
 
 def _accepts_everything(rule: str) -> bool:

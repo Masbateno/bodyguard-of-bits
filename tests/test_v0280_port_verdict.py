@@ -251,17 +251,22 @@ class TestRefusedBeforeInput:
     priority, `iptables -t raw`), at a netdev ingress hook, in mangle INPUT or
     security INPUT closed 8099, and BOB read "accepted by default" — scored on
     a closed port. Now not established. A drop for another port and a mark
-    left 8099 open and keep "accepted by default"."""
+    left 8099 open and keep "accepted by default".
+
+    v0.30.0 — a prerouting chain, and the raw, mangle and security tables, are
+    weighed port by port: those closed ports now read refused (measured again
+    on 31 October 2026, `prebench-0300.txt`, every verdict matching the probe).
+    An ingress chain sees one device and keeps "not established"."""
 
     @pytest.mark.parametrize("extra, v8099", [
         ("", AD),
-        (_pre("ip", "r", "pre", "prerouting", "tcp dport 8099 drop"), U),
+        (_pre("ip", "r", "pre", "prerouting", "tcp dport 8099 drop"), D),
         (_pre("netdev", "n", "ing", "ingress", "tcp dport 8099 drop", device="s0"), U),
         (_pre("ip", "r", "pre", "prerouting", "tcp dport 9000 drop"), AD),
         (_pre("ip", "r", "pre", "prerouting", "tcp dport 8099 meta mark set 0x00000001"), AD),
         (_pre("ip", "raw", "PREROUTING", "prerouting",
-              "meta l4proto tcp tcp dport 8099 counter packets 0 bytes 0 drop"), U),
-        (_pre("ip", "r", "pre", "prerouting", "tcp dport 9000 accept", policy="drop"), U),
+              "meta l4proto tcp tcp dport 8099 counter packets 0 bytes 0 drop"), D),
+        (_pre("ip", "r", "pre", "prerouting", "tcp dport 9000 accept", policy="drop"), DD),
         (_pre("ip6", "r", "pre", "prerouting", "tcp dport 8099 drop"), AD),
     ], ids=["R0-nothing", "R1-prerouting", "R2-ingress", "R3-another-port", "R4-mark",
             "R5-iptables-nft-raw", "prerouting-policy-drop", "ip6-is-not-ipv4"])
@@ -270,12 +275,12 @@ class TestRefusedBeforeInput:
 
     @pytest.mark.parametrize("tables, v8099", [
         ({}, AD),
-        ({"raw": "-P PREROUTING ACCEPT\n-P OUTPUT ACCEPT\n-A PREROUTING -p tcp -m tcp --dport 8099 -j DROP\n"}, U),
-        ({"mangle": "-P PREROUTING ACCEPT\n-P INPUT ACCEPT\n-A INPUT -p tcp -m tcp --dport 8099 -j DROP\n"}, U),
+        ({"raw": "-P PREROUTING ACCEPT\n-P OUTPUT ACCEPT\n-A PREROUTING -p tcp -m tcp --dport 8099 -j DROP\n"}, D),
+        ({"mangle": "-P PREROUTING ACCEPT\n-P INPUT ACCEPT\n-A INPUT -p tcp -m tcp --dport 8099 -j DROP\n"}, D),
         ({"mangle": "-P PREROUTING ACCEPT\n-P INPUT ACCEPT\n-A PREROUTING -p tcp -m tcp --dport 9000 -j DROP\n"}, AD),
-        ({"security": "-P INPUT ACCEPT\n-A INPUT -p tcp -m tcp --dport 8099 -j DROP\n"}, U),
+        ({"security": "-P INPUT ACCEPT\n-A INPUT -p tcp -m tcp --dport 8099 -j DROP\n"}, D),
         ({"mangle": "-P PREROUTING ACCEPT\n-P INPUT ACCEPT\n-A OUTPUT -p tcp -m tcp --dport 8099 -j DROP\n"}, AD),
-        ({"mangle": "-P PREROUTING DROP\n-P INPUT ACCEPT\n"}, U),
+        ({"mangle": "-P PREROUTING DROP\n-P INPUT ACCEPT\n"}, DD),
         (None, U),
     ], ids=["R10L-nothing", "R6L-raw", "R7L-mangle-input", "R8L-another-port", "R9L-security",
             "output-is-not-inbound", "policy-drop", "unread"])
@@ -290,10 +295,12 @@ class TestRefusedBeforeInput:
         the input hook, security after filter's INPUT. Measured in a network
         namespace (31 October 2026): filter's INPUT accepting 8099 by a rule,
         at policy accept or drop, a drop for 8099 in security or mangle INPUT
-        closed it. An accept by rule is not established either."""
+        closed it. An accept by rule is not established either.
+
+        v0.30.0 — weighed: refused (`secbench` F1–F3 again, 31 October 2026)."""
         rules = _ipt(policy, "-A INPUT -p tcp -m tcp --dport 8099 -j ACCEPT")
         other = {table: "-P INPUT ACCEPT\n-A INPUT -p tcp -m tcp --dport 8099 -j DROP\n"}
-        assert nf.ipt_port_verdict(rules, 8099, "tcp", other) == U
+        assert nf.ipt_port_verdict(rules, 8099, "tcp", other) == D
         assert nf.ipt_port_verdict(rules, 8099, "tcp", {})[0] == "ACCEPT"
 
     def test_a_drop_does_not_become_unknown(self):
@@ -305,7 +312,7 @@ class TestRefusedBeforeInput:
                                    has_loopback_rule=False, has_conntrack_rule=False,
                                    raw_output=_ipt("ACCEPT", "-A INPUT -p tcp -m tcp --dport 22 -j DROP"),
                                    other_tables={"raw": "-A PREROUTING -p tcp -m tcp --dport 8099 -j DROP\n"})
-        assert s.port_verdict(8099, "tcp") == U
+        assert s.port_verdict(8099, "tcp") == D
         s.other_tables = {}
         assert s.port_verdict(8099, "tcp") == AD
 
@@ -348,5 +355,5 @@ def test_from_system_reads_the_other_tables(monkeypatch):
                         lambda: {"raw": "-A PREROUTING -p tcp -m tcp --dport 8099 -j DROP\n"})
     s = nf.IptablesNftSnapshot.from_system()
     assert s.backend == "iptables"
-    assert s.port_verdict(8099, "tcp") == U
+    assert s.port_verdict(8099, "tcp") == D
     assert s.port_verdict(8098, "tcp") == AD
