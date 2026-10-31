@@ -54,7 +54,10 @@ NFT_CASES = {
     "iptables-nft": (_nft("drop", 'iifname "lo" counter packets 3 bytes 180 accept',
                           "meta l4proto tcp tcp dport 8099 counter packets 0 bytes 0 accept"), DD, A),
     "comment": (_nft("drop", 'tcp dport 8099 accept comment "web"'), DD, A),
-    "vmap": (_nft("accept", "tcp dport vmap { 8099 : drop }"), U, U),
+    # v0.30.0 — a verdict map keyed by port is read (measured in a network
+    # namespace, 31 October 2026: 8098 open, 8099 closed); until 0.29.0 both
+    # ports were not established.
+    "vmap": (_nft("accept", "tcp dport vmap { 8099 : drop }"), AD, D),
     "goto-out": (_nft("drop", "goto x", extra="\n\tchain x {\n\t\ttcp dport 8098 accept\n\t}\n"), A, DD),
     "return": (_nft("drop", "jump x", "tcp dport 8099 accept",
                     extra="\n\tchain x {\n\t\treturn\n\t\ttcp dport 8099 drop\n\t}\n"), DD, A),

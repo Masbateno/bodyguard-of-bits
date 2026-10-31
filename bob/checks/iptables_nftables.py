@@ -385,7 +385,8 @@ _IPT_PORT_NEUTRAL = re.compile(
 def _port_in(spec: str, port: int, sep: str = "-") -> "bool | None":
     """Whether *port* is in a port list (``{ 80, 443 }``, ``8090-8098``,
     ``80,443``, ``8090:8098``); None when the list is not plain numbers."""
-    for item in (x.strip() for x in spec.strip("{} ").split(",")):
+    # v0.30.0 — an empty list (a named set with no element) matches nothing.
+    for item in (x.strip() for x in spec.strip("{} ").split(",") if x.strip()):
         m = re.fullmatch(rf"(\d+)(?:{re.escape(sep)}(\d+))?", item)
         if not m:
             return None
@@ -394,12 +395,143 @@ def _port_in(spec: str, port: int, sep: str = "-") -> "bool | None":
     return False
 
 
-def _nft_port_walk(rules, chains, family, table, port, proto, seen):
+#: v0.30.0 — a destination written before or after the port in an input rule.
+_NFT_DADDR_FIRST = re.compile(r"^ip daddr (\{[^}]*\}|[0-9./]+) (.+)$")
+_NFT_DADDR_LAST = re.compile(r"^(.+?) ip daddr (\{[^}]*\}|[0-9./]+) (accept|drop|reject(?: with [\w\s-]+)?)$")
+_IPT_DADDR_FIRST = re.compile(r"^-d ([0-9./]+) (.+)$")
+#: v0.30.0 — a verdict map keyed by port: ``tcp dport vmap { 22 : accept, 8099 : drop }``.
+_NFT_PORT_VMAP = re.compile(r"^(?:meta\s+l4proto\s+(tcp|udp)\s+)?(tcp|udp)\s+dport\s+vmap\s+\{([^}]*)\}$")
+_NFT_NAMED = re.compile(r"(?<=\s)@([\w.-]+)")
+
+
+def _nft_sets(ruleset: str) -> "dict[tuple, dict]":
+    """v0.30.0 — every named set and map, keyed by (family, table, name):
+    its ``type`` line, its ``flags`` and its elements as written (one string,
+    braces stripped). A set that names no element has an empty string."""
+    sets: dict = {}
+    table = current = None
+    depth = 0
+    for line in ruleset.splitlines():
+        text = line.strip()
+        if current is None:
+            m = re.match(r"table\s+(\w+)\s+(\S+)\s*\{", text)
+            if m:
+                table = (m.group(1), m.group(2))
+                continue
+            m = re.match(r"(set|map)\s+([\w.-]+)\s*\{", text)
+            if m and table:
+                current = {"kind": m.group(1), "type": "", "flags": "", "elements": ""}
+                sets[(table[0], table[1], m.group(2))] = current
+                depth = 1
+            continue
+        depth += text.count("{") - text.count("}")
+        if depth <= 0:
+            current = None
+            continue
+        if text.startswith("type "):
+            current["type"] = text[5:].strip()
+        elif text.startswith("flags "):
+            current["flags"] = text[6:].strip()
+        elif text.startswith("elements = ") or current.get("_open"):
+            body = text.split("=", 1)[1] if text.startswith("elements = ") else text
+            current["elements"] += " " + body.replace("{", " ").replace("}", " ")
+            current["_open"] = text.count("{") > text.count("}") if text.startswith("elements = ") else depth > 1
+    for s in sets.values():
+        s.pop("_open", None)
+        s["elements"] = " ".join(s["elements"].split())
+    return sets
+
+
+def _nft_resolve_named(text: str, sets: dict, family: str, table: str) -> "str | None":
+    """*text* with each ``@name`` of a port set or a port verdict map
+    replaced by its elements, written inline; None when one cannot stand for
+    what the kernel matches — not found, not keyed by port, or updated at run
+    time (``flags dynamic`` or ``timeout``: what BOB read is a moment).
+    Measured in a network namespace (31 October 2026): ``tcp dport @blk drop``
+    with blk holding 8099 closed 8099, with blk empty left it open."""
+    for name in set(_NFT_NAMED.findall(text)):
+        s = sets.get((family, table, name))
+        if s is None or not s["type"].startswith("inet_service"):
+            return None
+        if "dynamic" in s["flags"] or "timeout" in s["flags"]:
+            return None
+        text = re.sub(rf"(?<=\s)@{re.escape(name)}\b", "{ " + s["elements"] + " }", text)
+    return text
+
+
+def _host_v4(hosts: "frozenset | None") -> "frozenset | None":
+    """The host's IPv4 addresses a packet from the network can reach."""
+    if not hosts:
+        return None
+    found = frozenset(h for h in hosts if h.version == 4 and not h.is_loopback)
+    return found or None
+
+
+def _daddr_cover(spec: str, hosts: "frozenset | None") -> "str | None":
+    """v0.30.0 — how much of this host a destination covers: "all" its
+    IPv4 addresses, "none", "some", or None when the destination or the
+    host's addresses were not read. Measured in a network namespace (31
+    October 2026): a drop for 8099 limited to the host's only address closed
+    8099; to another address, left it open; to one of two addresses, closed
+    8099 there and left it open on the other."""
+    import ipaddress
+    own = _host_v4(hosts)
+    if own is None:
+        return None
+    try:
+        nets = [ipaddress.ip_network(a.strip(), strict=False)
+                for a in spec.strip("{} ").split(",") if a.strip()]
+    except ValueError:
+        return None
+    if not nets or any(n.version != 4 for n in nets):
+        return None
+    covered = {h for h in own if any(h in n for n in nets)}
+    return "all" if covered == own else "none" if not covered else "some"
+
+
+def _nft_port_walk(rules, chains, family, table, port, proto, seen, hosts=None, sets=None):
     """("ACCEPT"|"DROP"|"UNKNOWN", "rule") when a rule decides, ("END", "")
     after a goto ran out, None when the chain falls through."""
     for rule in rules:
         text = re.sub(r"\s+", " ", _NFT_COMMENT.sub("", _RULE_NOISE.sub("", rule))).strip()
         if not text or _NFT_PORT_NEUTRAL.match(text):
+            continue
+        # v0.30.0 — a named port set or verdict map, written out.
+        if "@" in text:
+            resolved = _nft_resolve_named(text, sets or {}, family, table)
+            if resolved is None:
+                return "UNKNOWN", ""
+            text = resolved
+        # v0.30.0 — a destination: the rule touches this host's listeners
+        # only for the addresses it names.
+        d = _NFT_DADDR_FIRST.match(text)
+        dl = None if d else _NFT_DADDR_LAST.match(text)
+        if d or dl:
+            spec, rest = (d.group(1), d.group(2)) if d else (dl.group(2), f"{dl.group(1)} {dl.group(3)}")
+            if _NFT_PORT_RULE.match(rest) or _NFT_PORT_VMAP.match(rest):
+                if _names_another_port(rest, port, proto):
+                    continue
+                cover = _daddr_cover(spec, hosts)
+                if cover == "none":
+                    continue
+                if cover != "all":
+                    return "UNKNOWN", ""
+                text = rest
+        v = _NFT_PORT_VMAP.match(text)
+        if v:
+            if (v.group(1) or v.group(2)) != proto:
+                continue
+            for pair in (x.strip() for x in v.group(3).split(",") if x.strip()):
+                key, _, verdict = (y.strip() for y in pair.partition(":"))
+                inside = _port_in(key, port)
+                if inside is None:
+                    return "UNKNOWN", ""
+                if inside:
+                    if verdict == "accept":
+                        return "ACCEPT", "rule"
+                    if verdict == "drop" or verdict.startswith("reject"):
+                        return "DROP", "rule"
+                    return "UNKNOWN", ""
             continue
         if text == "accept":
             return "ACCEPT", "rule"
@@ -422,7 +554,7 @@ def _nft_port_walk(rules, chains, family, table, port, proto, seen):
         j = re.fullmatch(r"(jump|goto) ([\w.-]+)", text)
         if j and (family, table, j.group(2)) in chains and (family, table, j.group(2)) not in seen:
             key = (family, table, j.group(2))
-            sub = _nft_port_walk(chains[key], chains, family, table, port, proto, seen | {key})
+            sub = _nft_port_walk(chains[key], chains, family, table, port, proto, seen | {key}, hosts, sets)
             if sub is not None:
                 return sub
             if j.group(1) == "goto":
@@ -506,9 +638,11 @@ def nft_port_verdict(ruleset: str, port: int, proto: str,
     if not chains:
         return "UNKNOWN", ""
     every = _nft_all_chains(ruleset)
+    sets = _nft_sets(ruleset)
     verdicts = []
     for c in chains:
-        got = _nft_port_walk(c["rules"], every, c["family"], c["table"], port, proto, frozenset())
+        got = _nft_port_walk(c["rules"], every, c["family"], c["table"], port, proto, frozenset(),
+                             hosts, sets)
         if got is None or got[0] == "END":
             got = ("ACCEPT" if c["policy"] == "ACCEPT" else "DROP"
                    if c["policy"] in ("DROP", "REJECT") else "UNKNOWN", "default")
@@ -602,6 +736,18 @@ def ipt_port_verdict(rules: str, port: int, proto: str,
                 return ("ACCEPT" if m.group(1) == "ACCEPT" else "DROP"), "rule"
             if body == "-j RETURN":
                 return None
+            # v0.30.0 — a destination: the rule touches this host's listeners
+            # only for the addresses it names (measured with `-d`, as nft).
+            d = _IPT_DADDR_FIRST.match(body)
+            if d and _IPT_PORT_RULE.match(d.group(2)):
+                if _names_another_port(d.group(2), port, proto, nft=False):
+                    continue
+                cover = _daddr_cover(d.group(1), hosts)
+                if cover == "none":
+                    continue
+                if cover != "all":
+                    return "UNKNOWN", ""
+                body = d.group(2)
             m = _IPT_PORT_RULE.match(body)
             if m:
                 p, spec, target, sep = ((m.group(1), m.group(2), m.group(3), ":") if m.group(1)
