@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -34,7 +35,7 @@ from bob.scoring import CheckResult
 _SMB_CONF_PATH = Path("/etc/samba/smb.conf")
 
 
-def _global_directive_cmd(directive: str, *clear_params: str) -> str:
+def _global_directive_cmd(directive: str, *clear_params: str, files: "list[str] | None" = None) -> str:
     """A command that makes *directive* the effective value in ``[global]``.
 
     It **deletes** every existing assignment of the parameter (all *clear_params*
@@ -64,8 +65,13 @@ def _global_directive_cmd(directive: str, *clear_params: str) -> str:
     # parameter names only — no regex metacharacters. Case-insensitive as samba
     # is, through sed_ci: BusyBox sed refuses GNU's ``/regex/I`` (v0.24.1).
     alts = "|".join(sed_ci(p) for p in params)
+    # v0.30.0 — and in every file smb.conf includes that BOB read: measured
+    # with testparm (Debian 13, samba 4.22), a value in an included file is
+    # read after [global]'s own lines and wins — deleting it from smb.conf
+    # alone left NT1, signing disabled and map to guest = Bad User in force.
+    targets = " ".join(shlex.quote(str(f)) for f in [_SMB_CONF_PATH, *(files or [])])
     delete = (f"sudo sed -i -E '/^[[:space:]]*({alts})[[:space:]]*=/d' "
-              f"{_SMB_CONF_PATH}")
+              f"{targets}")
     insert = f"sudo sed -i '/^\\[global\\]/a {directive}' {_SMB_CONF_PATH}"
     return f"{delete} && {insert}"
 
@@ -121,6 +127,10 @@ class SambaSnapshot:
     #: v0.29.0 — lines samba refuses: a yes/no or fixed-choice parameter BOB
     #: weighs, whose value carries "#" or ";" (see _CHOICE_PARAMS).
     conf_refused:         list[str] = field(default_factory=list)
+    #: v0.30.0 — the files smb.conf includes that BOB read (a fix edits them
+    #: too), and the include lines whose file depends on the client.
+    conf_included:        list[str] = field(default_factory=list)
+    conf_per_client:      list[str] = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "SambaSnapshot":
@@ -137,7 +147,8 @@ class SambaSnapshot:
             return snap
 
         try:
-            conf = _read_smb_conf(_SMB_CONF_PATH, refused=snap.conf_refused)
+            conf = _read_smb_conf(_SMB_CONF_PATH, refused=snap.conf_refused,
+                                  included=snap.conf_included, per_client=snap.conf_per_client)
         except OSError:
             return snap
 
@@ -277,6 +288,16 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
             template_vars={"lines": lines},
         )
 
+    # --- v0.30.0: an include whose file depends on the client ---
+    if snapshot.conf_per_client:
+        lines = "; ".join(snapshot.conf_per_client[:3]) + (" …" if len(snapshot.conf_per_client) > 3 else "")
+        result.info(
+            message=_t("samba.include_per_client", lines=lines),
+            detail=_t("samba.include_per_client_detail"),
+            key="samba.include_per_client",
+            template_vars={"lines": lines},
+        )
+
     # --- SMB1 (critical — EternalBlue/WannaCry vector) ---
     if snapshot.smb1_enabled:
         result.alert_with_deduction(
@@ -285,7 +306,8 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
             points=2,
             nature="improvement",
             detail=_t("samba.smb1_enabled_detail"),
-            cmd=_global_directive_cmd("min protocol = SMB2", "min protocol", "server min protocol"),
+            cmd=_global_directive_cmd("min protocol = SMB2", "min protocol", "server min protocol",
+                                      files=snapshot.conf_included),
         )
     else:
         result.ok(message=_t("samba.smb1_disabled"), key="samba.smb1_disabled")
@@ -309,7 +331,7 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
             message=_t("samba.server_signing_disabled"),
             points=1,
             detail=_t("samba.server_signing_disabled_detail"),
-            cmd=_global_directive_cmd("server signing = mandatory", "server signing"),
+            cmd=_global_directive_cmd("server signing = mandatory", "server signing", files=snapshot.conf_included),
             nature="action",
         )
     elif snapshot.server_signing == "mandatory":
@@ -331,7 +353,7 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
             message=_t("samba.map_to_guest"),
             points=1,
             detail=_t("samba.map_to_guest_detail"),
-            cmd=_global_directive_cmd("map to guest = never", "map to guest"),
+            cmd=_global_directive_cmd("map to guest = never", "map to guest", files=snapshot.conf_included),
             nature="action",
         )
 
@@ -407,7 +429,8 @@ _CHOICE_PARAMS = frozenset(re.sub(r"\s+", "", k) for k in (
     "writeable", "write ok", "read only"))
 
 
-def _read_smb_conf(path: Path, refused: "list[str] | None" = None) -> dict[str, dict[str, str]]:
+def _read_smb_conf(path: Path, refused: "list[str] | None" = None, included: "list[str] | None" = None,
+                   per_client: "list[str] | None" = None) -> dict[str, dict[str, str]]:
     """
     Parse a smb.conf file and return {section: {parameter: value}}, as samba's
     own parser reads it (v0.28.0).
@@ -457,15 +480,29 @@ def _read_smb_conf(path: Path, refused: "list[str] | None" = None) -> dict[str, 
                 # v0.28.0 — measured with testparm: the included file is read
                 # in place (its unsectioned parameters join the current
                 # section, its sections are created, the file goes on after
-                # it); a missing one is skipped. A %-substituted path names a
-                # file per client: no single file to follow.
-                if "%" in value or not value or value in seen or len(seen) > 16:
+                # it); a missing one is skipped.
+                # v0.30.0 — `%h` is the host's name, which testparm expanded
+                # (measured: include = inc-%h.conf read inc-<hostname>.conf,
+                # whose NT1 BOB missed); any other substitution names a file
+                # per client (`%m` is the client's name, empty for testparm):
+                # said, not followed.
+                if "%" in value:
+                    import socket
+                    expanded = value.replace("%h", socket.gethostname())
+                    if "%" in expanded:
+                        if per_client is not None:
+                            per_client.append(f"{key.strip()} = {value}")
+                        continue
+                    value = expanded
+                if not value or value in seen or len(seen) > 16:
                     continue
                 try:
-                    included = read_text_capped(Path(value), encoding="utf-8")
+                    text_in = read_text_capped(Path(value), encoding="utf-8")
                 except FileNotFoundError:
                     continue
-                feed(included, seen | {value})
+                if included is not None and value not in included:
+                    included.append(value)
+                feed(text_in, seen | {value})
                 continue
             current[key.strip()] = value
             if refused is not None and _Params._norm(key) in _CHOICE_PARAMS and ("#" in value or ";" in value):

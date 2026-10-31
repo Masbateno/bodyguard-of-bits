@@ -149,6 +149,7 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "kubernetes.apiserver_unread",
     # v0.29.0 — samba refuses the smb.conf BOB read.
     "samba.conf_refused",
+    "samba.include_per_client",
     "systemd_timers.unreadable",
     "umask.sources_unreadable",
     # v0.16.1 — neither name matches the ``*_unreadable`` / ``*_unknown``
