@@ -6,6 +6,40 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.28.3] — 31-10-2026
+
+**Une version corrective qui porte sur la publication, pas sur ce qu'audite BOB : le contrôle d'identité de la Release ne refuse plus un fichier que PyPI n'a pas encore listé, et trois actions de la CI passent à leur nouvelle version majeure.**
+Rien de ce qu'affiche BOB ne change : aucune clé de constat, aucun point, aucun changement du schéma de sortie JSON, des colonnes CSV, des sections, des clés `--explain` ni des références CIS. Ce qui change se trouve dans `.github/workflows/`, les tests qui les tiennent et `DOCUMENTS/CI_FR.md`.
+
+### 1. Le contrôle d'identité de la Release, qui attend chaque fichier
+
+La 0.28.2 a ajouté une étape qui compare le SHA-256 de chaque fichier joint à la Release GitHub aux empreintes que PyPI publie pour la version. Lors de la publication 0.28.2, elle a refusé la Release : PyPI listait la version avec la seule roue — le sdist est apparu quelques secondes plus tard — et le contrôle a lu le sdist pas encore listé comme un fichier différent (« PyPI absent »). Les empreintes étaient identiques (`c3de9cfa…` pour la roue, `d3397261…` pour le sdist) ; le job en échec a été relancé, comme le dit `DOCUMENTS/CI_FR.md`, sur le même artefact `dist`, et la Release a été créée.
+
+Le contrôle attend désormais que PyPI liste chaque fichier qu'il s'apprête à joindre (toutes les 30 secondes, jusqu'à dix minutes). Une réponse qu'il ne sait pas lire — PyPI ne listant pas encore la version, un contenu qui n'est pas le JSON attendu — est réessayée comme un fichier pas encore listé. Il refuse un fichier dont l'empreinte diffère, et un fichier que PyPI liste pour la version sans que ce build l'ait produit — l'attente ne doit pas faire perdre cette moitié de l'identité, que tenait la comparaison des deux listes entières de la 0.28.2. Si un fichier attendu manque encore à l'expiration du délai, il échoue en disant la dernière chose qu'il a vue. Les empreintes attendues sont celles des fichiers produits par le job de build, jamais prises sur PyPI. Six tests exécutent le script lui-même, tiré du workflow, contre des réponses PyPI simulées : la roue seule puis les deux fichiers — la Release continue ; une empreinte différente — refusé ; un fichier en trop sur PyPI — refusé ; une réponse illisible puis une bonne — la Release continue ; un fichier jamais listé — refusé, après exactement le nombre d'essais permis, en nommant le fichier.
+
+### 2. Trois actions, à leur nouvelle version majeure
+
+Les trois pull requests Dependabot ouvertes le 25 octobre 2026 sont appliquées ici au lieu d'être fusionnées — elles partaient d'un `main` antérieur au correctif de la 0.27.0 pour le module `yaml` manquant :
+
+- `actions/checkout` 6.1.0 → 7.0.1 : mêmes entrées et même moteur (Node 24) dans son `action.yml` ; dans son code (21 commits, son changelog) : le module passe en ESM et ses dépendances sont mises à jour ; la pull request d'un fork n'est plus récupérée sous `pull_request_target` ni `workflow_run` — la raison de la version majeure, et aucun des deux n'est utilisé ici ; un nom de branche n'est plus élagué que de ses espaces ASCII ; les valeurs passées à `git config --unset` sont échappées ;
+- `actions/setup-python` 6.3.0 → 7.1.0 : retire l'entrée `pip-install` (non utilisée ici) et ajoute `mirror`, dont la valeur par défaut est la source officielle ; déjà en Node 24 ;
+- `docker/setup-qemu-action` 3.7.0 → 4.4.0 : de Node 20 à Node 24, ajoute une entrée `reset` (désactivée par défaut) ; `image` et `cache-image`, sur lesquelles repose la 0.28.2, sont gardées, et son code ne lance toujours que l'image donnée en `--privileged` et respecte toujours `cache-image: false`.
+
+Chaque action est épinglée par le SHA du commit résolu depuis le tag de sa version dans le dépôt de l'action elle-même — vérifié le 31 octobre 2026 pour les trois montées et les trois autres : les six correspondaient.
+
+### Hors de cette version, et limites connues
+
+- Les trois montées ne sont prouvées sur les runners de GitHub que par le push de cette version : Node 24 pour l'action QEMU, checkout 7 dans les conteneurs des distributions.
+- Les limites écrites en 0.28.2 tiennent toujours (`DOCUMENTS/CI_FR.md`, « Ce qui n'est pas couvert »).
+
+### Compteurs
+
+Tests collectés 17002 → **17016**, fichiers de test (427) inchangés, fonctions de test ~7950 → **~7960**, mutations 1190 → **1192** ; clés de locale (3095), clés `--explain` et références CIS (235) et sections inchangées.
+
+### Gardes
+
+`test_v0282_ci_hardening.py` : le script du contrôle d'identité exécuté contre des réponses PyPI simulées, avec les mutations `ci-hardening/identity-no-wait` et `ci-hardening/identity-ignores-extra` ; les épinglages de chaque action sont tenus par `test_v0270_release_chain_pins.py`.
+
 ## [0.28.2] — 31-10-2026
 
 **Une version corrective qui porte sur la façon dont BOB est construit et publié, pas sur ce qu'il audite : la chaîne CI/CD a été auditée de bout en bout, mesurée, et durcie partout où l'audit a montré un manque.**

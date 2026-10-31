@@ -98,9 +98,15 @@ A release is published by pushing a tag. Nothing else can publish.
    the same command made a draft release with the 0.28.1 title, the 0.28.1
    notes byte for byte and both files (then deleted). Before it, a step
    compares the SHA-256 of each file to attach with the digests PyPI lists for
-   the version (waiting up to ten minutes for PyPI to list it): the release
-   carries the files PyPI has, or is not made — measured on 0.28.1, a byte
-   appended to the sdist was refused. It runs after PyPI. If
+   the version, waiting until PyPI lists **every** expected file (up to ten
+   minutes; an answer it cannot read is retried): the release carries the
+   files PyPI has, or is not made — a different digest, or a file PyPI lists
+   that the build did not make, is refused; measured on 0.28.1, a byte
+   appended to the sdist was refused. The wait for every file
+   came from the 0.28.2 publication: PyPI listed the wheel a few seconds
+   before the sdist, the check took the sdist not yet listed for a different
+   one and refused the release; re-run, it passed with identical digests.
+   It runs after PyPI. If
    it fails, **never rebuild**: re-run the failed job — it downloads the same
    `dist` artifact the upload used (kept 90 days; its digest is checked on
    download, as the 0.28.1 log shows) — or attach the files downloaded from
@@ -109,7 +115,9 @@ A release is published by pushing a tag. Nothing else can publish.
 Each action is pinned by commit, its version written beside it. On
 30 October 2026 each pinned commit was checked against the tag of that version
 in the action's own repository: all six matched — none is a commit from
-elsewhere wearing a version's name. Dependabot proposes the updates, once a
+elsewhere wearing a version's name. Checked again on 31 October 2026 after
+moving `actions/checkout` to 7.0.1, `actions/setup-python` to 7.1.0 and
+`docker/setup-qemu-action` to 4.4.0: all six matched. Dependabot proposes the updates, once a
 release is a week old.
 
 ## Repository settings (read on 30 October 2026)

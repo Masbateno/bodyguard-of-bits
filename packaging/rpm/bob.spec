@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.28.2
+Version:        0.28.3
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,11 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sat Oct 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.28.3-1
+- Patch, no change to BOB itself: the release identity check waits for
+  every expected file on PyPI and refuses a file the build did not make;
+  actions/checkout 7.0.1, actions/setup-python 7.1.0 and
+  docker/setup-qemu-action 4.4.0, pinned by commit.
 * Sat Oct 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.28.2-1
 - Patch, no change to BOB itself: the CI/CD audited end to end. A
   publication waits for green CI on the tagged commit; the PyPI upload

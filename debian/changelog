@@ -1,3 +1,13 @@
+bodyguard-of-bits (0.28.3-1) unstable; urgency=medium
+
+  * Patch, no change to BOB itself. The check comparing the GitHub Release
+    files with PyPI's waits until PyPI lists every expected file, and
+    refuses a different digest or a file the build did not make.
+    actions/checkout 7.0.1, actions/setup-python 7.1.0 and
+    docker/setup-qemu-action 4.4.0, each pinned by the commit of its tag.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 31 Oct 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.28.2-1) unstable; urgency=medium
 
   * Patch, no change to BOB itself: the CI/CD audited end to end. A

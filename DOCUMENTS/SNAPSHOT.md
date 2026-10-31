@@ -123,8 +123,8 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  bob 0.28.2     ~56.6 kLoC Python · 0 runtime deps outside stdlib        │
-│                 17002 unit tests · 28 doc files · 7+ distros field-tested │
+│  bob 0.28.3     ~56.6 kLoC Python · 0 runtime deps outside stdlib        │
+│                 17016 unit tests · 28 doc files · 7+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -300,7 +300,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 427 test files, ~7950 functions, 17002 collected (0.28.2)
+├── tests/                     ← 427 test files, ~7960 functions, 17016 collected (0.28.3)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -935,7 +935,7 @@ plus an emulated arm64 job (`debian:bookworm-slim` under QEMU, `ci/arm64_smoke.s
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 53,849 LoC across 137 files (0.26.0 work tree) | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 427 test files, ~7950 functions, **17002 collected** (0.28.2) | `pytest --collect-only -q` |
+| Tests | 427 test files, ~7960 functions, **17016 collected** (0.28.3) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distro containers + 1 emulated arm64 job | `.github/workflows/integration.yml` |
@@ -953,7 +953,7 @@ plus an emulated arm64 job (`debian:bookworm-slim` under QEMU, `ci/arm64_smoke.s
 | Doc files | 26 public markdown (20 in `DOCUMENTS/` + 6 at the repo root) + 3 man pages | `DOCUMENTS/` + `man/` |
 | JSON schema_version | `"3"` only (v1 retired v0.9.0 F-3, v2 retired v0.12.0 F9) | `bob.json_output.DEFAULT_SCHEMA_VERSION` |
 | Release-engineering CI guards | 5 — 3 workflow-level (integration-first / smoke-after-commit / smoke-plugin) + 2 pytest guards (`tests/test_version_consistency.py`, `tests/test_doc_version_consistency.py`) **plus the ruff correctness gate** (v0.13.3, `bob/` only, nothing ignored since v0.14.0) | `.github/workflows/*.yml` |
-| Version | 0.28.2, released 2026-10-31 (bare SemVer, no `v` prefix since 0.21.0) | `pyproject.toml::version` |
+| Version | 0.28.3, released 2026-10-31 (bare SemVer, no `v` prefix since 0.21.0) | `pyproject.toml::version` |
 | Supported branch | 0.26.x (everything ≤ 0.25.x is EOL — latest-minor-only policy) | `SECURITY.md` |
 | First release | v0.1.0 (2026-04-26) | `CHANGELOG.md` |
 

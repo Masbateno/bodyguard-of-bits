@@ -295,7 +295,7 @@ def test_the_release_attaches_the_files_pypi_has():
     assert check < create
     script = "\n".join(_run_blocks(block))
     assert 'f["digests"]["sha256"]' in script and "hashlib.sha256(p.read_bytes())" in script
-    assert "if local != pypi:" in script
+    assert "if any(pypi[name] != digest for name, digest in local.items()):" in script
 
 
 # --- the repository settings, which no file holds -----------------------------
@@ -368,3 +368,113 @@ def test_the_container_steps_do_not_depend_on_the_images_path():
         cmd = line.strip()
         assert not re.match(r"(bob|python3|pip)\b", cmd), f"called through PATH: {cmd}"
     assert "/opt/bobenv/bin/bob --offline -v > audit.txt" in script
+
+
+def _identity_script() -> str:
+    """The Python the release job runs to compare its files with PyPI's."""
+    block = _jobs(_text("publish.yml"))["github-release"]
+    start = block.index("- name: The files to attach are the files PyPI has")
+    body = block[block.index("python3 - <<'PY'\n", start) + len("python3 - <<'PY'\n"):]
+    body = body[:body.index("\n          PY\n")]
+    import textwrap
+    return textwrap.dedent(body)
+
+
+def _run_identity(tmp_path, monkeypatch, listings, tries=3):
+    """Run the release job's identity check against a sequence of PyPI answers."""
+    import hashlib, io, json as _json, urllib.request
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "pkg-1.0-py3-none-any.whl").write_bytes(b"wheel")
+    (dist / "pkg-1.0.tar.gz").write_bytes(b"sdist")
+    real = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in dist.iterdir()}
+    answers = iter(listings(real))
+
+    def urlopen(url, timeout=None):
+        files = next(answers)
+        return io.BytesIO(_json.dumps({"urls": [{"filename": n, "digests": {"sha256": d}} for n, d in files.items()]}).encode())
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GITHUB_REF_NAME", "1.0")
+    monkeypatch.setenv("TRIES", str(tries))
+    exec(compile(_identity_script(), "identity", "exec"), {"__name__": "__main__"})
+
+
+def test_the_identity_check_waits_for_a_file_pypi_has_not_listed_yet(tmp_path, monkeypatch, capsys):
+    """The 0.28.2 publication: PyPI listed the wheel a few seconds before the
+    sdist, and the check refused the release. A file not listed yet is waited for."""
+    def listings(real):
+        wheel = {k: v for k, v in real.items() if k.endswith(".whl")}
+        return [wheel, wheel, real]
+    _run_identity(tmp_path, monkeypatch, listings)
+    assert "byte for byte the files PyPI has" in capsys.readouterr().out
+
+
+def test_the_identity_check_refuses_a_different_file(tmp_path, monkeypatch):
+    def listings(real):
+        return [{k: ("0" * 64 if k.endswith(".tar.gz") else v) for k, v in real.items()}]
+    with pytest.raises(SystemExit, match="not the files PyPI has"):
+        _run_identity(tmp_path, monkeypatch, listings)
+
+
+def test_the_identity_check_gives_up_when_a_file_never_appears(tmp_path, monkeypatch):
+    def listings(real):
+        wheel = {k: v for k, v in real.items() if k.endswith(".whl")}
+        return [wheel] * 3
+    with pytest.raises(SystemExit, match="did not list every file"):
+        _run_identity(tmp_path, monkeypatch, listings)
+
+
+def test_the_identity_check_refuses_a_file_pypi_has_that_the_build_did_not_make(tmp_path, monkeypatch):
+    """0.28.3 review: waiting for the local files must not drop the other half
+    of the identity — a file PyPI lists for the version that this build did not
+    make is refused."""
+    def listings(real):
+        return [dict(real, **{"pkg-1.0-cp312-cp312-linux_x86_64.whl": "1" * 64})]
+    with pytest.raises(SystemExit, match="which this build did not make"):
+        _run_identity(tmp_path, monkeypatch, listings)
+
+
+def test_an_unreadable_answer_is_retried_then_said(tmp_path, monkeypatch, capsys):
+    """A response PyPI cannot give yet (404, a body that is not the JSON
+    expected) is retried; the last error is said if time runs out."""
+    calls = []
+    _run_identity_with_errors(tmp_path, monkeypatch, capsys, calls)
+    assert calls == ["error", "ok"]
+    assert "byte for byte the files PyPI has" in capsys.readouterr().out
+
+
+def _run_identity_with_errors(tmp_path, monkeypatch, capsys, calls):
+    import hashlib, io, json as _json, urllib.request
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "pkg-1.0.tar.gz").write_bytes(b"sdist")
+    real = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in dist.iterdir()}
+
+    def urlopen(url, timeout=None):
+        if not calls:
+            calls.append("error")
+            return io.BytesIO(b"<html>not json</html>")
+        calls.append("ok")
+        return io.BytesIO(_json.dumps({"urls": [{"filename": n, "digests": {"sha256": d}} for n, d in real.items()]}).encode())
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GITHUB_REF_NAME", "1.0")
+    monkeypatch.setenv("TRIES", "3")
+    exec(compile(_identity_script(), "identity", "exec"), {"__name__": "__main__"})
+
+
+def test_the_last_attempt_is_made_before_giving_up(tmp_path, monkeypatch):
+    """Every one of the TRIES attempts asks PyPI — none is lost at the edge."""
+    asked = []
+
+    def listings(real):
+        wheel = {k: v for k, v in real.items() if k.endswith(".whl")}
+        for _ in range(5):
+            asked.append(1)
+            yield wheel
+    with pytest.raises(SystemExit, match=r"did not list every file of 1\.0 \(pkg-1\.0\.tar\.gz not listed\)"):
+        _run_identity(tmp_path, monkeypatch, listings, tries=4)
+    assert len(asked) == 4

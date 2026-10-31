@@ -6,6 +6,85 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.28.3] — 2026-10-31
+
+**A patch release about the publication, not about what BOB audits: the
+release identity check no longer refuses a file PyPI has not listed yet, and
+three CI actions move to their new major versions.**
+Nothing BOB prints changes: no finding key, point, JSON-output-schema,
+CSV-column, section, `--explain` key or CIS reference changes. What changes is
+in `.github/workflows/`, the tests that hold them, and `DOCUMENTS/CI.md`.
+
+### 1. The release identity check, waiting for every file
+
+0.28.2 added a step that compares the SHA-256 of each file attached to the
+GitHub Release with the digests PyPI lists for the version. On the 0.28.2
+publication it refused the release: PyPI listed the version with the wheel
+only — the sdist appeared a few seconds later — and the check read the sdist
+not yet listed as a different file ("PyPI absent"). The digests were identical
+(`c3de9cfa…` for the wheel, `d3397261…` for the sdist); the failed job was
+re-run, as `DOCUMENTS/CI.md` says to, on the same `dist` artifact, and the
+release was made.
+
+The check now waits until PyPI lists every file it is about to attach (every
+30 seconds, up to ten minutes). An answer it cannot read — PyPI not listing
+the version yet, a body that is not the expected JSON — is retried like a file
+not listed yet. It refuses a file whose digest differs, and a file PyPI lists
+for the version that this build did not make — the waiting must not drop that
+half of the identity, which the 0.28.2 comparison of the two whole lists held.
+If an expected file is still absent when the time runs out, it fails and says
+the last thing it saw. The expected digests are those of the files the build
+job made, never taken from PyPI. Six tests run the script itself, taken from
+the workflow, against simulated PyPI answers: the wheel alone and then both
+files — the release goes on; a different digest — refused; an extra file on
+PyPI — refused; an unreadable answer and then a good one — the release goes
+on; a file never listed — refused, after exactly as many attempts as allowed,
+naming the file.
+
+### 2. Three actions, to their new major versions
+
+The three Dependabot pull requests opened on 25 October 2026 are applied here
+rather than merged — they were based on a `main` older than the 0.27.0 fix for
+the missing `yaml` module:
+
+- `actions/checkout` 6.1.0 → 7.0.1: same inputs and runtime (Node 24) in its
+  `action.yml`; in its code (21 commits, its changelog): the module moved to
+  ESM and its dependencies were updated; a fork's pull request is no longer
+  checked out under `pull_request_target` or `workflow_run` — the reason for
+  the major version, and neither is used here; a branch name is trimmed of
+  ASCII whitespace only; values passed to `git config --unset` are escaped;
+- `actions/setup-python` 6.3.0 → 7.1.0: drops the `pip-install` input (not
+  used here) and adds `mirror`, whose default is the official source; already
+  Node 24;
+- `docker/setup-qemu-action` 3.7.0 → 4.4.0: from Node 20 to Node 24, adds a
+  `reset` input (off by default); `image` and `cache-image`, which 0.28.2
+  relies on, are kept, and its code still runs only the given image with
+  `--privileged` and still honours `cache-image: false`.
+
+Each action is pinned to the commit SHA resolved from its version tag in the
+action's own repository — checked on 31 October 2026 for the three moved and
+the three others: all six matched.
+
+### Not in this release, and known limits
+
+- The three moves are proved on GitHub's runners only by the push of this
+  release: Node 24 for the QEMU action, checkout 7 inside the distribution
+  containers.
+- The limits written in 0.28.2 stand (`DOCUMENTS/CI.md`, "What is not
+  covered").
+
+### Counters
+
+Tests collected 17002 → **17016**, test files (427) unchanged, test functions
+~7950 → **~7960**, mutations 1190 → **1192**; locale keys (3095), `--explain`
+keys and CIS references (235) and sections unchanged.
+
+### Guards
+
+`test_v0282_ci_hardening.py`: the identity check's script run against simulated
+PyPI answers, with the mutations `ci-hardening/identity-no-wait` and `ci-hardening/identity-ignores-extra`; the pins of
+every action are held by `test_v0270_release_chain_pins.py`.
+
 ## [0.28.2] — 2026-10-31
 
 **A patch release about how BOB is built and published, not about what it

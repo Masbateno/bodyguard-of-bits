@@ -107,7 +107,7 @@ jobs:
         if: matrix.family == 'suse'
         run: zypper -n --gpg-auto-import-keys install python3 python3-pip git-core ca-certificates
 
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
 
@@ -301,12 +301,12 @@ jobs:
     # architecture-sensitive part of it is what this job asserts directly.
 
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
 
       - name: Register QEMU binfmt handlers
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3.7.0
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
         with:
           platforms: arm64
           # 0.28.2 — the action's default is tonistiigi/binfmt:latest, run

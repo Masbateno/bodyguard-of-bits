@@ -101,10 +101,16 @@ Une version se publie en poussant un tag. Rien d'autre ne peut publier.
    changement, la même commande a créé une Release brouillon avec le titre de
    la 0.28.1, ses notes octet pour octet et les deux fichiers (supprimée
    ensuite). Avant elle, une étape compare le SHA-256 de chaque fichier à
-   joindre aux empreintes que PyPI publie pour la version (en attendant jusqu'à
-   dix minutes que PyPI la liste) : la Release porte les fichiers de PyPI, ou
-   n'est pas créée — mesuré sur la 0.28.1, un octet ajouté au sdist a été
-   refusé. Elle vient après PyPI. Si elle échoue, **ne jamais
+   joindre aux empreintes que PyPI publie pour la version, en attendant que PyPI
+   liste **chaque** fichier attendu (jusqu'à dix minutes ; une réponse illisible
+   est réessayée) : la Release porte les fichiers de PyPI, ou n'est pas créée —
+   une empreinte différente, ou un fichier que PyPI liste sans que le build l'ait
+   produit, est refusé ; mesuré sur la 0.28.1, un octet ajouté au sdist a été
+   refusé. L'attente de chaque fichier vient de la publication
+   0.28.2 : PyPI a listé la roue quelques secondes avant le sdist, le contrôle a
+   pris le sdist pas encore listé pour un fichier différent et refusé la
+   Release ; relancé, il est passé avec des empreintes identiques. Elle vient
+   après PyPI. Si elle échoue, **ne jamais
    reconstruire** : relancer le job en échec — il télécharge le même artefact
    `dist` que l'envoi a utilisé (gardé 90 jours ; son digest est vérifié au
    téléchargement, comme le montre le journal de la 0.28.1) — ou joindre les
@@ -113,7 +119,10 @@ Une version se publie en poussant un tag. Rien d'autre ne peut publier.
 Chaque action est épinglée par commit, sa version écrite à côté. Le
 30 octobre 2026, chaque commit épinglé a été comparé au tag de cette version
 dans le dépôt de l'action elle-même : les six correspondaient — aucun n'est un
-commit venu d'ailleurs sous le nom d'une version. Dependabot en propose les
+commit venu d'ailleurs sous le nom d'une version. Vérifié à nouveau le
+31 octobre 2026 après la montée d'`actions/checkout` en 7.0.1,
+d'`actions/setup-python` en 7.1.0 et de `docker/setup-qemu-action` en 4.4.0 :
+les six correspondaient. Dependabot en propose les
 mises à jour, une fois une version âgée d'une semaine.
 
 ## Réglages du dépôt (lus le 30 octobre 2026)

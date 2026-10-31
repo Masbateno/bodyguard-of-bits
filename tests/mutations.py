@@ -9582,8 +9582,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id='ci-hardening/checkout-keeps-token',
         file='.github/workflows/publish.yml',
-        old='    needs: publish\n    permissions:\n      contents: write   # required to create the release\n    steps:\n      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0\n        with:\n          persist-credentials: false\n',
-        new='    needs: publish\n    permissions:\n      contents: write   # required to create the release\n    steps:\n      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0\n',
+        old='    needs: publish\n    permissions:\n      contents: write   # required to create the release\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1\n        with:\n          persist-credentials: false\n',
+        new='    needs: publish\n    permissions:\n      contents: write   # required to create the release\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1\n',
         kills=('tests/test_v0282_ci_hardening.py::test_no_checkout_leaves_the_token_behind', ),
         reason="the release job's write token would sit in .git/config for every later step",
     ),
@@ -9782,7 +9782,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id='ci-hardening/release-files-unchecked',
         file='.github/workflows/publish.yml',
-        old='          if local != pypi:\n',
+        old='          if any(pypi[name] != digest for name, digest in local.items()):\n',
         new='          if False:\n',
         kills=('tests/test_v0282_ci_hardening.py::test_the_release_attaches_the_files_pypi_has', ),
         reason='the release could attach files other than those PyPI published',
@@ -9818,6 +9818,22 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         new='        run: bob --version\n',
         kills=('tests/test_v0282_ci_hardening.py::test_the_container_steps_do_not_depend_on_the_images_path', ),
         reason='a step that finds BOB through PATH breaks on an image that declares no PATH, as openSUSE did',
+    ),
+    Mutation(
+        id='ci-hardening/identity-no-wait',
+        file='.github/workflows/publish.yml',
+        old='                  if not missing:\n                      break\n',
+        new='                  if True:\n                      break\n',
+        kills=('tests/test_v0282_ci_hardening.py::test_the_identity_check_waits_for_a_file_pypi_has_not_listed_yet', ),
+        reason='measured on the 0.28.2 publication: PyPI listed the wheel before the sdist, and an absent file was taken for a different one',
+    ),
+    Mutation(
+        id='ci-hardening/identity-ignores-extra',
+        file='.github/workflows/publish.yml',
+        old='          if extra:\n',
+        new='          if False:\n',
+        kills=('tests/test_v0282_ci_hardening.py::test_the_identity_check_refuses_a_file_pypi_has_that_the_build_did_not_make', ),
+        reason='a file PyPI publishes for the version that this build did not make would go unnoticed',
     ),
     Mutation(
         id='build-backend/constraint-dropped',
@@ -10486,8 +10502,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id='release-chain/qemu-floating',
         file='.github/workflows/integration.yml',
-        old='docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3.7.0',
-        new='docker/setup-qemu-action@v3',
+        old='docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0',
+        new='docker/setup-qemu-action@v4',
         kills=('tests/test_v0270_release_chain_pins.py::test_every_action_is_pinned_by_commit', ),
         reason="a moving tag runs whatever it points at that day, as release/v1 did for 0.26.0's upload",
     ),
