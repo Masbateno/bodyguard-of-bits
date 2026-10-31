@@ -97,6 +97,7 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "firewall_iptables.input_accept_unweighed",
     "firewall_iptables.forward_accept_unweighed",
     "firewall.netfilter_unweighed",
+    "firewall.netfilter_unknown",
     "logs.window_partly_read",
     "firewall_iptables.ruleset_unreadable",
     "firmware.microcode_unknown",
@@ -169,7 +170,13 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
 
 # Keys that match the naming convention but do not reduce visibility. Kept
 # explicit so the guard can tell "not a visibility limit" from "forgotten".
-NOT_A_VISIBILITY_LIMIT: frozenset[str] = frozenset()
+NOT_A_VISIBILITY_LIMIT: frozenset[str] = frozenset({
+    # v0.30.0 — one line per listening port under a ruleset read in part: the
+    # gap is marked once, by ``firewall.netfilter_unknown`` (above), as the
+    # ports of a PARTIAL ruleset are by ``firewall.netfilter_unweighed``.
+    "ports.uncovered_netfilter_unknown",
+    "ports.uncovered_bound_address_netfilter_unknown",
+})
 
 
 #: Suffix of the key ``_sec``'s fault isolation emits when a check raises

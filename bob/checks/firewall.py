@@ -180,6 +180,13 @@ def resolve_firewall_posture(
     if netfilter_policy == "PARTIAL":
         # v0.27.0 — a ruleset that refuses some traffic BOB does not weigh.
         return FirewallPosture("netfilter", "partial")
+    if netfilter_policy == "unknown":
+        # v0.30.0 — a ruleset whose INPUT was read but whose raw, mangle or
+        # security table was not: its default is not established, and "no
+        # firewall" is not either (measured in a network namespace: BOB said
+        # "unprotected", capped the domain at 3/10, raised the risk level and
+        # told each port "no active firewall to filter it").
+        return FirewallPosture("netfilter", "unknown")
     return FirewallPosture()
 
 
@@ -430,6 +437,7 @@ def check_firewall(
     netfilter_partial: bool = False,
     t: TranslationFunc | None = None,
     ssh_ports: "list[int] | None" = None,
+    netfilter_unknown: bool = False,
     ssh_on_ipv6: "bool | None" = None,
     awall=None,
 ) -> CheckResult:
@@ -597,6 +605,14 @@ def check_firewall(
         if netfilter_partial:
             result.info(message=_t("firewall.netfilter_unweighed"),
                         key="firewall.netfilter_unweighed")
+            return result
+        # v0.30.0 — a ruleset BOB read only in part (its raw, mangle or
+        # security table refused): not established, so no alert and no cap,
+        # a ceiling — as firewalld that would not answer (0.26.0).
+        if netfilter_unknown:
+            result.info(message=_t("firewall.netfilter_unknown"),
+                        detail=_t("firewall.netfilter_unknown_detail"),
+                        key="firewall.netfilter_unknown")
             return result
         # v0.26.0 — firewall-cmd present but silent (it failed and printed
         # nothing: a refusal, a timeout under load). Unknown is not absent: no

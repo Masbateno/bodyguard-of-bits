@@ -333,6 +333,7 @@ def check_services(
     netfilter_partial: bool = False,
     netfilter_port_verdict=None,
     netfilter_all_interfaces=None,
+    netfilter_unknown: bool = False,
 ) -> CheckResult:
     """
     Evaluate service snapshots and return findings and deductions.
@@ -354,6 +355,7 @@ def check_services(
                               firewalld_active=firewalld_active,
                               netfilter_active=netfilter_active,
                               netfilter_partial=netfilter_partial,
+                              netfilter_unknown=netfilter_unknown,
                               netfilter_port_verdict=netfilter_port_verdict,
                               netfilter_all_interfaces=netfilter_all_interfaces)
 
@@ -370,6 +372,7 @@ def _check_single_service(
     netfilter_partial: bool = False,
     netfilter_port_verdict=None,
     netfilter_all_interfaces=None,
+    netfilter_unknown: bool = False,
 ) -> None:
     """Evaluate a single service snapshot and add findings to result."""
 
@@ -484,6 +487,7 @@ def _check_single_service(
                              firewalld_active=firewalld_active,
                              netfilter_active=netfilter_active,
                              netfilter_partial=netfilter_partial,
+                             netfilter_unknown=netfilter_unknown,
                              netfilter_port_verdict=netfilter_port_verdict,
                              netfilter_all_interfaces=netfilter_all_interfaces)
 
@@ -522,6 +526,7 @@ def _check_port_exposure(
     netfilter_partial: bool = False,
     netfilter_port_verdict=None,
     netfilter_all_interfaces=None,
+    netfilter_unknown: bool = False,
 ) -> None:
     """Add findings for a single port exposure."""
 
@@ -540,6 +545,10 @@ def _check_port_exposure(
     # "no active firewall protection", which a closed port contradicted.
     elif netfilter_partial and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):
         exp_key = f"services.exposure.{exposure.value}_netfilter_unweighed"
+    # v0.30.0 — a ruleset BOB read only in part: what filters this port is
+    # not established, and "no active firewall protection" is not either.
+    elif netfilter_unknown and exposure == Exposure.NO_RULE:
+        exp_key = "services.exposure.no_rule_netfilter_unknown"
     elif not ufw_active and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):
         exp_key = f"services.exposure.{exposure.value}_ufw_inactive"
     else:

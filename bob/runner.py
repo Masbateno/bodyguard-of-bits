@@ -696,6 +696,7 @@ def run_checks(
     _netfilter_protective: bool | None = None
     _netfilter_policy: str | None = None
     _netfilter_partial = False     # v0.27.0 — accept by default, refusals not weighed
+    _netfilter_unknown = False     # v0.30.0 — INPUT read, a table refused
     _nf_snap = None                # v0.28.0 — read again for the per-port verdicts
     # v0.26.0 — awall (Alpine) is read only where no managed front-end runs,
     # the only case check_firewall consults it. A failure there degrades the
@@ -707,7 +708,9 @@ def run_checks(
             _nf_snap.backend != "none" and _nf_snap.input_policy in ("DROP", "REJECT")
         )
         _netfilter_partial = _nf_snap.backend != "none" and _nf_snap.input_policy == "PARTIAL"
-        if _netfilter_protective or _netfilter_partial:
+        # v0.30.0 — INPUT read, the default not established (a table refused).
+        _netfilter_unknown = _nf_snap.backend != "none" and _nf_snap.input_policy == "unknown"
+        if _netfilter_protective or _netfilter_partial or _netfilter_unknown:
             _netfilter_policy = _nf_snap.input_policy
         from bob.checks._awall import AwallStatus
         with _core("firewall"):
@@ -745,6 +748,7 @@ def run_checks(
         fw_status, firewalld=fwd_status,
         netfilter_protective=_netfilter_protective, t=t,
         netfilter_partial=_netfilter_partial,
+        netfilter_unknown=_netfilter_unknown,
         ssh_ports=ports_snapshot.ssh_ports,
         ssh_on_ipv6=ports_snapshot.ssh_on_ipv6,
         awall=_awall,
@@ -933,6 +937,7 @@ def run_checks(
             firewalld_active=fwd_status.active,
             netfilter_active=_netfilter_denies,
             netfilter_partial=_netfilter_partial,
+            netfilter_unknown=_netfilter_unknown,
             netfilter_port_verdict=_v4_port_verdict,
             netfilter_all_interfaces=_v4_on_all_interfaces,
         )
@@ -983,6 +988,7 @@ def run_checks(
         firewalld_active=fwd_status.active,
         netfilter_active=_netfilter_denies,
         netfilter_partial=_netfilter_partial,
+        netfilter_unknown=_netfilter_unknown,
         # v0.28.0 — each listener weighed against the rules for its port.
         netfilter_port_verdict=(_nf_snap.port_verdict
                                 if _nf_snap is not None and (_netfilter_denies or _netfilter_partial) else None),

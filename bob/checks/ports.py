@@ -277,6 +277,8 @@ def check_ports(
     #: v0.27.0 — a raw ruleset that accepts by default and refuses some
     #: traffic BOB does not weigh: not "no active firewall".
     netfilter_partial: bool = False,
+    #: v0.30.0 — a raw ruleset whose INPUT was read and a table was not.
+    netfilter_unknown: bool = False,
     docker_rules_off: bool = False,
     #: v0.26.0 — firewalld's StrictForwardPorts=yes: Docker's published ports
     #: are rejected unless the zone forwards them (measured on Debian 13).
@@ -451,6 +453,12 @@ def check_ports(
                         key="ports.uncovered_netfilter_unweighed",
                     )
                     continue
+                # v0.30.0 — the ruleset was read in part: "no active firewall
+                # to filter it" was not established.
+                if netfilter_unknown:
+                    result.info(message=_t("ports.uncovered_netfilter_unknown", port=pp_info),
+                                key="ports.uncovered_netfilter_unknown")
+                    continue
                 result.info(
                     message=_t("ports.uncovered_ufw_inactive", port=pp_info),
                     key="ports.uncovered_ufw_inactive",
@@ -516,6 +524,8 @@ def check_ports(
                     key = "ports.uncovered_bound_address_netfilter"
                 elif netfilter_partial:
                     key = "ports.uncovered_bound_address_netfilter_unweighed"
+                elif netfilter_unknown:
+                    key = "ports.uncovered_bound_address_netfilter_unknown"
                 else:
                     key = "ports.uncovered_bound_address"
                 weighed = (_weighed(netfilter_port_verdict, bound)
