@@ -163,9 +163,9 @@ def test_build_and_both_callers_record_it():
 
 class TestHistory:
 
-    ENTRIES = [{"ts": "2026-10-24T07:00:00+00:00", "score": 9, "level": "low"},
-               {"ts": "2026-10-24T09:48:30+00:00", "score": 10, "level": "low", "partial": True},
-               {"ts": "2026-10-25T08:46:48+00:00", "score": 8, "level": "low"}]
+    ENTRIES = [{"ts": "2026-10-24T07:00:00+00:00", "score": 9, "level": "low", "bound_known": True},
+               {"ts": "2026-10-24T09:48:30+00:00", "score": 10, "level": "low", "partial": True, "bound_known": True},
+               {"ts": "2026-10-25T08:46:48+00:00", "score": 8, "level": "low", "bound_known": True}]
 
     def test_a_partial_run_has_no_arrow_and_the_next_full_run_compares_with_the_last_full(self):
         from bob.history import _trend

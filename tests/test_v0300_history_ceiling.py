@@ -49,6 +49,12 @@ class TestWhatIsWritten:
         save_score(8, "low")
         assert not {"upper_bound", "span"} & set(_lines(history)[0])
 
+    @pytest.mark.parametrize("kw", [{}, {"upper_bound": True}, {"span": (5, 8)}], ids=["firm", "ceiling", "span"])
+    def test_every_line_says_it_kept_the_mark(self, history, kw):
+        """So that a line without it is known to predate 0.30.0."""
+        save_score(8, "low", **kw)
+        assert _lines(history)[0]["bound_known"] is True
+
     def test_the_audit_hands_them(self):
         from bob import __main__ as main
         src = inspect.getsource(main)
@@ -57,7 +63,7 @@ class TestWhatIsWritten:
 
 
 def _e(score, ts, **kw):
-    return {"ts": f"2026-10-31T{ts}:00+00:00", "score": score, "level": "low", **kw}
+    return {"ts": f"2026-10-31T{ts}:00+00:00", "score": score, "level": "low", "bound_known": True, **kw}
 
 
 class TestWhatIsShown:
@@ -90,7 +96,36 @@ class TestWhatIsShown:
         assert not any("≤ 7" in line or "~ 7" in line for line in lines)
 
 
+class TestALineWrittenBefore030:
+    """Decided with the maintainer (1 November 2026): a line 0.29.0 wrote
+    kept the number alone. Shown as firm, with an arrow, it said what was not
+    measured — whether that score was a ceiling. It is shown "?", without an
+    arrow, and the legend says why."""
+
+    @staticmethod
+    def _old(score, ts):
+        return {"ts": f"2026-10-30T{ts}:00+00:00", "score": score, "level": "low"}
+
+    def test_shown_unknown_without_an_arrow(self):
+        lines = render_history([self._old(8, "10:00"), self._old(7, "11:00")], t=lambda k, **kw: k)
+        rows = [line for line in lines if "2026-10-30" in line]
+        assert all("? " in r for r in rows) and not any(a in r for r in rows for a in "↑↓→")
+        assert "  history.bound_unknown_legend" in lines
+
+    def test_a_new_firm_score_is_not_measured_against_one(self):
+        lines = render_history([self._old(8, "10:00"), _e(7, "11:00")], t=lambda k, **kw: k)
+        newest = next(line for line in lines if "2026-10-31" in line)
+        assert "? " not in newest and not any(a in newest for a in "↑↓→")
+
+    @pytest.mark.parametrize("bad", ["yes", 1, None])
+    def test_only_the_value_bob_writes_counts(self, bad):
+        lines = render_history([{**self._old(8, "10:00"), "bound_known": bad}], t=lambda k, **kw: k)
+        assert "? 8/10" in next(line for line in lines if "2026-10-30" in line)
+
+
 @pytest.mark.parametrize("lang, key, words", [
+    ("en", "history.bound_unknown_legend", "written before 0.30.0, which kept the number alone: whether this score was a ceiling is not known"),
+    ("fr", "history.bound_unknown_legend", "écrit avant 0.30.0, qui ne gardait que le nombre : que ce score ait été une borne supérieure n'est pas connu"),
     ("en", "history.upper_bound_legend", "the true score can only be lower"),
     ("fr", "history.upper_bound_legend", "le vrai score ne peut être que plus bas"),
     ("en", "history.span_legend", "moved in an unknown direction"),

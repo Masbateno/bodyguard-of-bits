@@ -157,7 +157,9 @@ class TestSaveLoadHistory:
 
 class TestTrend:
     def _entries(self, scores: list[int]) -> list[dict]:
-        return [{"score": s, "ts": "", "level": "low"} for s in scores]
+        # v0.30.0 — lines written since 0.30.0 say whether the score was a
+        # ceiling; a firm one compares with the previous firm one.
+        return [{"score": s, "ts": "", "level": "low", "bound_known": True} for s in scores]
 
     def test_first_entry_is_neutral(self):
         assert _trend(self._entries([8]), 0) == " "
@@ -200,8 +202,8 @@ class TestRenderHistory:
 
     def test_trend_arrow_in_output(self):
         entries = [
-            {"ts": "2026-01-01T00:00:00+00:00", "score": 7, "level": "low"},
-            {"ts": "2026-01-02T00:00:00+00:00", "score": 9, "level": "low"},
+            {"ts": "2026-01-01T00:00:00+00:00", "score": 7, "level": "low", "bound_known": True},
+            {"ts": "2026-01-02T00:00:00+00:00", "score": 9, "level": "low", "bound_known": True},
         ]
         lines = render_history(entries)
         combined = " ".join(lines)
@@ -209,8 +211,8 @@ class TestRenderHistory:
 
     def test_trend_stable_in_output(self):
         entries = [
-            {"ts": "2026-01-01T00:00:00+00:00", "score": 8, "level": "low"},
-            {"ts": "2026-01-02T00:00:00+00:00", "score": 8, "level": "low"},
+            {"ts": "2026-01-01T00:00:00+00:00", "score": 8, "level": "low", "bound_known": True},
+            {"ts": "2026-01-02T00:00:00+00:00", "score": 8, "level": "low", "bound_known": True},
         ]
         lines = render_history(entries)
         combined = " ".join(lines)

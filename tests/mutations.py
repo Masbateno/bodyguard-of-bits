@@ -896,8 +896,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/locale-key-total-stale",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="locale auto-detect (POSIX), 3123 keys EN/FR",
-        new="locale auto-detect (POSIX), 3122 keys EN/FR",
+        old="locale auto-detect (POSIX), 3124 keys EN/FR",
+        new="locale auto-detect (POSIX), 3123 keys EN/FR",
         kills=(f"{_LIVECOUNT}::test_no_document_misstates_the_locale_key_total",),
         reason="the locale total sat at '2014 keys' against files holding 2595 "
                "because '2014' reads as a year and the sweep's noun set had no "
@@ -11330,6 +11330,38 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         new='    got = _ipt_walk(chains, "INPUT", port, proto, hosts, frozenset({"INPUT"}))\n    if got == ("ACCEPT", "rule"):\n        return got\n',
         kills=('tests/test_v0300_pre_input_weighed.py::TestAnAcceptEndsItsOwnChainOnly::test_iptables[filter-accept-then-security-drop]',),
         reason='an accept by filter INPUT would hide a drop in security INPUT after it',
+    ),
+    Mutation(
+        id='history-unknown/not-written',
+        file='bob/history.py',
+        old='        entry_dict["bound_known"] = True\n',
+        new='',
+        kills=('tests/test_v0300_history_ceiling.py::TestWhatIsWritten::test_every_line_says_it_kept_the_mark',),
+        reason='a new line would no longer say it kept the mark, and read as old',
+    ),
+    Mutation(
+        id='history-unknown/old-line-read-firm',
+        file='bob/history.py',
+        old='    if e.get("bound_known") is not True:\n        return "? "\n',
+        new='    if False:\n        return "? "\n',
+        kills=('tests/test_v0300_history_ceiling.py::TestALineWrittenBefore030::test_shown_unknown_without_an_arrow',),
+        reason='a line from before 0.30.0 would again be shown firm with its arrow',
+    ),
+    Mutation(
+        id='history-unknown/any-truthy-value',
+        file='bob/history.py',
+        old='    if e.get("bound_known") is not True:\n        return "? "\n',
+        new='    if not e.get("bound_known"):\n        return "? "\n',
+        kills=('tests/test_v0300_history_ceiling.py::TestALineWrittenBefore030::test_only_the_value_bob_writes_counts',),
+        reason='a value BOB never writes would be read as the mark it writes',
+    ),
+    Mutation(
+        id='history-unknown/legend-unsaid',
+        file='bob/history.py',
+        old='    if any(_mark(e) == "? " for e in recent):\n',
+        new='    if False:\n',
+        kills=('tests/test_v0300_history_ceiling.py::TestALineWrittenBefore030::test_shown_unknown_without_an_arrow',),
+        reason='the question mark would be shown without the line saying what it means',
     ),
     Mutation(
         id='history-ceiling/ceiling-unwritten',

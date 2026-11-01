@@ -106,6 +106,11 @@ def save_score(
         # domain fell out of the average, the span of what is known ("~").
         # Until 0.29.0 the history kept the number alone, and --history showed
         # a ceiling as a firm score with a trend arrow beside it.
+        # Every new line also says it recorded this, so that a line without
+        # the field is known to predate 0.30.0: whether its score was a
+        # ceiling is not known, and --history says so instead of showing it
+        # as firm.
+        entry_dict["bound_known"] = True
         if upper_bound:
             entry_dict["upper_bound"] = True
         elif span is not None:
@@ -204,14 +209,17 @@ def load_history(max_entries: int = 50, *, strict: bool = False) -> list[dict]:
 
 
 def _mark(e: dict) -> str:
-    """v0.30.0 — "≤ " for a ceiling, "~ " for a span, "" for a firm score
-    (and for a line written before 0.30.0, which kept no mark)."""
+    """v0.30.0 — "≤ " for a ceiling, "~ " for a span, "" for a firm score,
+    "? " for a line that does not say (written before 0.30.0, which kept the
+    number alone: whether it was a ceiling is not known)."""
     if e.get("upper_bound") is True:
         return "≤ "
     span = e.get("span")
     if (isinstance(span, list) and len(span) == 2
             and all(isinstance(v, int) and not isinstance(v, bool) for v in span)):
         return "~ "
+    if e.get("bound_known") is not True:
+        return "? "
     return ""
 
 
@@ -288,6 +296,8 @@ def render_history(entries: list[dict], t: TranslationFunc | None = None) -> lis
         lines.append(f"  {_t('history.upper_bound_legend')}")
     if any(_mark(e) == "~ " for e in recent):
         lines.append(f"  {_t('history.span_legend')}")
+    if any(_mark(e) == "? " for e in recent):
+        lines.append(f"  {_t('history.bound_unknown_legend')}")
     return lines
 
 

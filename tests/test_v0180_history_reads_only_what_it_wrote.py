@@ -28,7 +28,8 @@ def _write(tmp_path, monkeypatch, *lines: str):
 
 
 def _entry(ts: str, score, level: str = "low") -> str:
-    return json.dumps({"ts": ts, "score": score, "level": level})
+    # v0.30.0 — as save_score writes it: the line says whether the score was a ceiling.
+    return json.dumps({"ts": ts, "score": score, "level": level, "bound_known": True})
 
 
 # ---------------------------------------------------------------------------
