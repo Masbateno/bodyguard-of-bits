@@ -11446,8 +11446,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id='nat-before/nft-unread-nat-priority-early',
         file='bob/checks/iptables_nftables.py',
-        old='            prio = float("inf") if c["priority"] is None else c["priority"]\n',
-        new='            prio = -1000 if c["priority"] is None else c["priority"]\n',
+        old='            prio = float("inf") if c["priority"] is None else max(c["priority"], _DSTNAT)\n',
+        new='            prio = -1000 if c["priority"] is None else max(c["priority"], _DSTNAT)\n',
         kills=('tests/test_v0300_nat_before_refusal.py::TestNftables::test_a_nat_chain_of_a_priority_bob_cannot_read_comes_after_all', ),
         reason='a nat priority BOB cannot read may come after every chain',
     ),
@@ -11558,7 +11558,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id='nat-legacy/nft-snapshot-not-handed',
         file='bob/checks/iptables_nftables.py',
-        old='self.host_addresses,\n                                    nat_floor=_NAT_LEGACY if self.nat_prerouting else None)\n',
+        old='self.host_addresses,\n                                    nat_floor=_DSTNAT if self.nat_prerouting else None)\n',
         new='self.host_addresses,\n                                    nat_floor=None)\n',
         kills=('tests/test_v0300_nat_before_refusal.py::TestALegacyNatTableBesideNft::test_L0_with_one', ),
         reason='the nftables snapshot must hand the legacy nat state down',
@@ -11566,8 +11566,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id='nat-legacy/nft-v6-reads-v4',
         file='bob/checks/iptables_nftables.py',
-        old='nat_floor=_NAT_LEGACY if self.nat_prerouting6 else None)\n        if self.backend == "iptables"',
-        new='nat_floor=_NAT_LEGACY if self.nat_prerouting else None)\n        if self.backend == "iptables"',
+        old='nat_floor=_DSTNAT if self.nat_prerouting6 else None)\n        if self.backend == "iptables"',
+        new='nat_floor=_DSTNAT if self.nat_prerouting else None)\n        if self.backend == "iptables"',
         kills=('tests/test_v0300_nat_before_refusal.py::TestALegacyNatTableBesideNft::test_ipv6_reads_its_own', ),
         reason='the IPv6 legacy nat table is listed and read on its own',
     ),
@@ -11610,6 +11610,14 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         new='        if c["family"] in families and c["type"] == "nat" and any("8099" in r for r in c["rules"]):\n',
         kills=('tests/test_v0300_nat_before_refusal.py::TestNftables::test_measured[N13-another-port]', ),
         reason='BOB does not read which port a NAT rule rewrites',
+    ),
+    Mutation(
+        id='nat-before/declared-priority-trusted',
+        file='bob/checks/iptables_nftables.py',
+        old='            prio = float("inf") if c["priority"] is None else max(c["priority"], _DSTNAT)\n',
+        new='            prio = float("inf") if c["priority"] is None else c["priority"]\n',
+        kills=('tests/test_v0300_nat_before_refusal.py::TestNftables::test_the_nat_point[nat-190-drop-150]', ),
+        reason='measured: a nat chain declared at -190 still rewrote at dstnat',
     ),
     Mutation(
         id='history-ceiling/ceiling-unwritten',
@@ -12062,8 +12070,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id='pre-input-weighed/snapshot-opened-scored',
         file='bob/checks/iptables_nftables.py',
-        old='_nft_sets(self.nft_pre_input),\n                                          nat_floor=_NAT_LEGACY if self.nat_prerouting else None)\n                if pre[0] != "PASS":\n                    return pre\n                if pre[1] == "rule":\n                    return "ACCEPT", "rule"\n',
-        new='_nft_sets(self.nft_pre_input),\n                                          nat_floor=_NAT_LEGACY if self.nat_prerouting else None)\n                if pre[0] != "PASS":\n                    return pre\n',
+        old='_nft_sets(self.nft_pre_input),\n                                          nat_floor=_DSTNAT if self.nat_prerouting else None)\n                if pre[0] != "PASS":\n                    return pre\n                if pre[1] == "rule":\n                    return "ACCEPT", "rule"\n',
+        new='_nft_sets(self.nft_pre_input),\n                                          nat_floor=_DSTNAT if self.nat_prerouting else None)\n                if pre[0] != "PASS":\n                    return pre\n',
         kills=('tests/test_v0300_pre_input_weighed.py::test_the_snapshot_weighs_nfts_own_chains_through_iptables', ),
         reason='a port nft prerouting accepts, read through iptables -S, was opened on purpose',
     ),

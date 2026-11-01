@@ -72,6 +72,19 @@ class TestNftables:
     def test_measured(self, ruleset, v8099):
         assert nf.nft_port_verdict(ruleset, 8099, "tcp", HOSTS) == v8099
 
+    @pytest.mark.parametrize("nat, drop, v8099", [
+        ("-190", "-150", U), ("-190", "-101", U), ("-190", "-99", D), ("0", "-90", U), ("0", "10", D),
+    ], ids=["nat-190-drop-150", "nat-190-drop-101", "nat-190-drop-99", "nat0-drop-90", "nat0-drop10"])
+    def test_the_nat_point(self, nat, drop, v8099):
+        """The kernel rewrites at dstnat (−100) whatever priority the nat chain
+        declares (`natprio_bench.txt`): a nat chain at −190 left the listener
+        open through 8080 past a drop at −150 and −101, not past one at −99; a
+        nat chain at 0 did not past one at −90 — read not established, the
+        later of the two points taken, safe either way."""
+        rs = (INPUT + REDIRECT.replace("priority dstnat", f"priority {nat}")
+              + _chain("ip", "r", "prerouting", drop, "accept", *DROP_8099))
+        assert nf.nft_port_verdict(rs, 8099, "tcp", HOSTS) == v8099
+
     def test_without_the_redirect_the_policy_drop_still_refuses(self):
         rs = INPUT + _chain("ip", "r", "prerouting", "raw", "drop", "tcp dport { 8080, 8098 } accept")
         assert nf.nft_port_verdict(rs, 8099, "tcp", HOSTS) == DD

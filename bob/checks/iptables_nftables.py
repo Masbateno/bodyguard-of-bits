@@ -95,7 +95,7 @@ class IptablesNftSnapshot:
         ruleset (:func:`nft_port_verdict`, :func:`ipt_port_verdict`)."""
         if self.backend == "nftables":
             return nft_port_verdict(self.raw_output, port, proto, self.host_addresses,
-                                    nat_floor=_NAT_LEGACY if self.nat_prerouting else None)
+                                    nat_floor=_DSTNAT if self.nat_prerouting else None)
         if self.backend == "iptables":
             got = ipt_port_verdict(self.raw_output, port, proto, self.other_tables, self.host_addresses,
                                    self._nat(_IPV4_FAMILIES, self.nat_prerouting))
@@ -103,7 +103,7 @@ class IptablesNftSnapshot:
                 # v0.30.0 — nft's own chains before input, weighed port by port.
                 pre = _nft_pre_input_port(self.nft_pre_input, _nft_all_chains(self.nft_pre_input), port,
                                           proto, self.host_addresses, _nft_sets(self.nft_pre_input),
-                                          nat_floor=_NAT_LEGACY if self.nat_prerouting else None)
+                                          nat_floor=_DSTNAT if self.nat_prerouting else None)
                 if pre[0] != "PASS":
                     return pre
                 if pre[1] == "rule":
@@ -116,7 +116,7 @@ class IptablesNftSnapshot:
         IPv4 one; shown with each IPv6 listener, not scored."""
         if self.backend == "nftables":
             return nft_port_verdict_v6(self.raw_output, port, proto, self.host_addresses,
-                                       nat_floor=_NAT_LEGACY if self.nat_prerouting6 else None)
+                                       nat_floor=_DSTNAT if self.nat_prerouting6 else None)
         if self.backend == "iptables" and re.search(r"^-P INPUT ", self.raw_output6 or "", re.MULTILINE):
             hosts6 = _hosts_v6(self.host_addresses)
             got = ipt_port_verdict(self.raw_output6, port, proto, self.other_tables6, hosts6,
@@ -124,7 +124,7 @@ class IptablesNftSnapshot:
             if got[0] == "ACCEPT" and self.nft_pre_input:
                 view = _v6_view(self.nft_pre_input)
                 pre = _nft_pre_input_port(view, _nft_all_chains(view), port, proto, hosts6, _nft_sets(view),
-                                          _IPV6_FAMILIES, nat_floor=_NAT_LEGACY if self.nat_prerouting6 else None)
+                                          _IPV6_FAMILIES, nat_floor=_DSTNAT if self.nat_prerouting6 else None)
                 if pre[0] != "PASS":
                     return pre
                 if pre[1] == "rule":
@@ -272,8 +272,10 @@ _RULE_NOISE = re.compile(r"\bcounter(?:\s+packets\s+\d+\s+bytes\s+\d+)?|#.*$")
 #: families (nft(8), "Standard priority names").
 _NFT_PRIORITY_NAMES = {"raw": -300, "mangle": -150, "dstnat": -100, "filter": 0, "security": 50,
                        "srcnat": 100}
-#: iptables' nat PREROUTING runs at dstnat priority.
-_NAT_LEGACY = _NFT_PRIORITY_NAMES["dstnat"]
+#: Where the kernel rewrites a destination: iptables' nat PREROUTING runs
+#: there, and so does an nft nat chain whatever priority it declares
+#: (measured, below).
+_DSTNAT = _NFT_PRIORITY_NAMES["dstnat"]
 
 
 def _nft_priority(text: str) -> "int | None":
@@ -301,11 +303,18 @@ def _nft_nat_priority(ruleset: str, families: tuple = _IPV4_FAMILIES) -> "float 
     `~/.cache/bob-fieldtest/netnsbench/natbench.sh`, nat prerouting
     `tcp dport 8080 redirect to :8099`): a drop for 8099 at raw or mangle
     priority closed 8099 and left the listener open through 8080; at
-    priority 0, or on input, it closed both."""
+    priority 0, or on input, it closed both.
+
+    The rewrite happens at dstnat (−100) whatever priority the nat chain
+    declares (measured, `natprio_bench.txt`, kernel 7.0): a nat chain at
+    −190 and a drop for 8099 at −150, −120 or −101 left the listener open
+    through 8080, at −99 closed it; a nat chain at 0 or 50 and a drop at −90
+    closed it. The later of the two is taken: right for what was measured,
+    and still safe were a kernel to rewrite at the declared priority."""
     found = None
     for c in _nft_base_chains(ruleset, "prerouting"):
         if c["family"] in families and c["type"] == "nat" and c["rules"]:
-            prio = float("inf") if c["priority"] is None else c["priority"]
+            prio = float("inf") if c["priority"] is None else max(c["priority"], _DSTNAT)
             found = prio if found is None else max(found, prio)
     return found
 
