@@ -315,9 +315,13 @@ def _nft_nat_priority(ruleset: str, families: tuple = _IPV4_FAMILIES) -> "float 
     already sent to 8099 by a nat chain declared at 0 (`natprio_counter.txt`). The kernel's source says why
     (`nf_nat_register_fn`, 7.0): a nat chain is not hooked at its own
     priority, it is called from the one NAT hook at dstnat; its priority
-    orders it among the nat chains only. The later of the two is taken:
-    right for what was measured, and still safe were a kernel to rewrite at
-    the declared priority."""
+    orders it among the nat chains only. That holds since 4.18: up to 4.17
+    the source (`nf_tables_api.c`) hooks a nat chain at the priority it
+    declares, as any other (not measured here; source excerpts beside the
+    benches, `kernel7.0_nat_source.txt`). The later of the two is taken: it
+    claims no refusal that either order would contradict — the measured
+    verdict for a nat chain at dstnat or below, "not established" between
+    −100 and a later declared priority."""
     found = None
     for c in _nft_base_chains(ruleset, "prerouting"):
         if c["family"] in families and c["type"] == "nat" and c["rules"]:
