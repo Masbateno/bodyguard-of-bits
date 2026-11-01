@@ -238,7 +238,7 @@ def ipv6_closed_by_chains(snapshot: "IPv6Snapshot") -> bool:
 _MAX_PORT_DEDUCTIONS = 3   # cap per-port deductions to avoid score collapse
 
 
-def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None, firewalld_active: bool = False, netfilter_active: bool = False, firewalld_policy: str = "", netfilter_v6_policy: str = "unknown", firewalld_family_rules: tuple = (), netfilter_v6_drop_chains: tuple = ()) -> CheckResult:
+def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None, firewalld_active: bool = False, netfilter_active: bool = False, firewalld_policy: str = "", netfilter_v6_policy: str = "unknown", firewalld_family_rules: tuple = (), netfilter_v6_drop_chains: tuple = (), firewalld_unread: bool = False) -> CheckResult:
     """
     Check IPv6 firewall consistency.
 
@@ -333,6 +333,12 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
                 # The raw ruleset's IPv6 default could not be read: a visibility gap.
                 result.info(message=_t("ipv6.netfilter_v6", count=count, ports=ports),
                             key="ipv6.netfilter_v6")
+            elif firewalld_unread:
+                # v0.30.0 — firewalld present and silent: whether it filters
+                # these listeners is not established (measured: "no other
+                # firewall filters inbound traffic" was said).
+                result.info(message=_t("ipv6.firewalld_unread", count=count, ports=ports),
+                            key="ipv6.firewalld_unread")
             else:
                 # v0.28.0 — said as it is: UFW installed but not running.
                 result.info(message=_t("ipv6.no_firewall_v6_ufw_inactive" if snapshot.ufw_present

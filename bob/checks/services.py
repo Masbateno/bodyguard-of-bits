@@ -334,6 +334,7 @@ def check_services(
     netfilter_port_verdict=None,
     netfilter_all_interfaces=None,
     netfilter_unknown: bool = False,
+    firewalld_unread: bool = False,
 ) -> CheckResult:
     """
     Evaluate service snapshots and return findings and deductions.
@@ -356,6 +357,7 @@ def check_services(
                               netfilter_active=netfilter_active,
                               netfilter_partial=netfilter_partial,
                               netfilter_unknown=netfilter_unknown,
+                              firewalld_unread=firewalld_unread,
                               netfilter_port_verdict=netfilter_port_verdict,
                               netfilter_all_interfaces=netfilter_all_interfaces)
 
@@ -373,6 +375,7 @@ def _check_single_service(
     netfilter_port_verdict=None,
     netfilter_all_interfaces=None,
     netfilter_unknown: bool = False,
+    firewalld_unread: bool = False,
 ) -> None:
     """Evaluate a single service snapshot and add findings to result."""
 
@@ -488,6 +491,7 @@ def _check_single_service(
                              netfilter_active=netfilter_active,
                              netfilter_partial=netfilter_partial,
                              netfilter_unknown=netfilter_unknown,
+                             firewalld_unread=firewalld_unread,
                              netfilter_port_verdict=netfilter_port_verdict,
                              netfilter_all_interfaces=netfilter_all_interfaces)
 
@@ -527,6 +531,7 @@ def _check_port_exposure(
     netfilter_port_verdict=None,
     netfilter_all_interfaces=None,
     netfilter_unknown: bool = False,
+    firewalld_unread: bool = False,
 ) -> None:
     """Add findings for a single port exposure."""
 
@@ -549,6 +554,9 @@ def _check_port_exposure(
     # not established, and "no active firewall protection" is not either.
     elif netfilter_unknown and exposure == Exposure.NO_RULE:
         exp_key = "services.exposure.no_rule_netfilter_unknown"
+    # v0.30.0 — firewalld present and silent: not "no active firewall".
+    elif firewalld_unread and exposure == Exposure.NO_RULE:
+        exp_key = "services.exposure.no_rule_firewalld_unread"
     elif not ufw_active and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):
         exp_key = f"services.exposure.{exposure.value}_ufw_inactive"
     else:

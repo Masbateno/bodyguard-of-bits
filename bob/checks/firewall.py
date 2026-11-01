@@ -187,6 +187,13 @@ def resolve_firewall_posture(
         # "unprotected", capped the domain at 3/10, raised the risk level and
         # told each port "no active firewall to filter it").
         return FirewallPosture("netfilter", "unknown")
+    if firewalld is not None and getattr(firewalld, "installed", False) and not getattr(firewalld, "readable", True):
+        # v0.30.0 — firewall-cmd present and silent: firewalld may filter, its
+        # policy is not read. 0.26.0 kept the firewall section and the risk
+        # level from saying "no firewall"; the summary, the ports, the
+        # services and the IPv6 section still said it (measured with a
+        # firewall-cmd that refuses every query in silence).
+        return FirewallPosture("firewalld", "unknown")
     return FirewallPosture()
 
 

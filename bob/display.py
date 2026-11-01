@@ -218,6 +218,7 @@ def check_single_service_display(snap, network_context, t, report, verbose,
                                   netfilter_active: bool = False,
                                   netfilter_partial: bool = False,
                                   netfilter_unknown: bool = False,
+                                  firewalld_unread: bool = False,
                                   netfilter_port_verdict=None,
                                   netfilter_all_interfaces=None):
     """Run check for a single service and return its CheckResult."""
@@ -228,6 +229,7 @@ def check_single_service_display(snap, network_context, t, report, verbose,
                             netfilter_active=netfilter_active,
                             netfilter_partial=netfilter_partial,
                             netfilter_unknown=netfilter_unknown,
+                            firewalld_unread=firewalld_unread,
                             netfilter_port_verdict=netfilter_port_verdict,
                             netfilter_all_interfaces=netfilter_all_interfaces)
     display_result(result, report, verbose, quiet=quiet)

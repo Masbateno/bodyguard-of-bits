@@ -720,6 +720,8 @@ def run_checks(
     # v0.27.0 — the services and ports texts for a raw ruleset say it denies by
     # default; a PARTIAL one (accept, refusals not weighed) does not.
     _netfilter_denies = fw_posture.backend == "netfilter" and fw_posture.policy in ("deny", "reject")
+    # v0.30.0 — firewalld present but silent: not "no firewall" downstream.
+    _firewalld_unread = fw_posture.backend == "firewalld" and fw_posture.policy == "unknown" and not fwd_status.active
 
     def _v4_port_verdict(port: int, proto: str) -> "tuple[str, str]":
         """v0.28.0 — the raw ruleset's IPv4 verdict for a service's port, given
@@ -867,7 +869,8 @@ def run_checks(
          firewalld_policy=fwd_status.family_policy("ipv6") if fwd_status.active else "",
          firewalld_family_rules=tuple(fwd_status.family_scoped_accepts()) if fwd_status.active else (),
          netfilter_v6_policy=_v6_policy,
-         netfilter_v6_drop_chains=_v6_drop)
+         netfilter_v6_drop_chains=_v6_drop,
+         firewalld_unread=_firewalld_unread)
 
     # =========================================================================
     # GROUP 2 — EXPOSITION & SERVICES
@@ -943,6 +946,7 @@ def run_checks(
             netfilter_active=_netfilter_denies,
             netfilter_partial=_netfilter_partial,
             netfilter_unknown=_netfilter_unknown,
+            firewalld_unread=_firewalld_unread,
             netfilter_port_verdict=_v4_port_verdict,
             netfilter_all_interfaces=_v4_on_all_interfaces,
         )
@@ -994,6 +998,7 @@ def run_checks(
         netfilter_active=_netfilter_denies,
         netfilter_partial=_netfilter_partial,
         netfilter_unknown=_netfilter_unknown,
+        firewalld_unread=_firewalld_unread,
         # v0.28.0 — each listener weighed against the rules for its port.
         netfilter_port_verdict=(_nf_snap.port_verdict
                                 if _nf_snap is not None and (_netfilter_denies or _netfilter_partial) else None),

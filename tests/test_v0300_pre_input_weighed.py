@@ -152,7 +152,7 @@ class TestTheIPv6SectionNamesTheChain:
         from bob import runner
         src = inspect.getsource(runner)
         assert '_v6_drop = tuple(read_default_drop_v6()) if _v6_policy == "PARTIAL" else ()' in src
-        assert "netfilter_v6_drop_chains=_v6_drop)" in src
+        assert "netfilter_v6_drop_chains=_v6_drop," in src
 
     @pytest.mark.parametrize("lang, words", [
         ("en", "is at policy drop (inet r pre): it refuses by default what it does not accept"),
