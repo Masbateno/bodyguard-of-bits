@@ -95,7 +95,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
-* Sat Oct 31 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.29.0-1
+* Sun Nov 01 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.29.0-1
 - Minor, BREAKING for scores: the firewall posture reads the refusals
   outside filter's INPUT and names a chain at policy drop; sudo env_keep
   and env_reset read in their scope, aliases resolved, an unresolved

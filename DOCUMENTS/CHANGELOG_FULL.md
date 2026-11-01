@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [0.29.0] — 2026-10-31
+## [0.29.0] — 2026-11-01
 
 **A minor release, BREAKING for scores: the limits 0.28.0 wrote down,
 measured and closed or made explicit. The inbound default (the IPv4 posture
@@ -30,7 +30,7 @@ Scores that move:
 
 | Where | Before | 0.29.0 | § |
 |---|---|---|---|
-| no active front-end (UFW installed but off — measured; UFW absent — read in the code; no firewalld), input at policy accept, a chain outside filter's INPUT that may refuse (before the input hook: an nft `prerouting` or `ingress` chain, raw or mangle `PREROUTING`, a prerouting chain at policy drop; on it: mangle or security `INPUT`), nothing in filter's INPUT refusing | `firewall_iptables.input_accept` ALERT −3, and `firewall.inactive` ALERT (UFW installed but off — measured) or `prerequisites.firewall_missing` ALERT (no UFW — read in the code), each with the cap at 3/10 | `firewall_iptables.input_accept_unweighed` INFO (two cases: rules that may refuse, or a chain at policy drop, then named) and `firewall.netfilter_unweighed` INFO, no points, no cap, a ceiling (**rises**) | 1 |
+| no active front-end (UFW installed but off — measured; UFW absent — read in the code; no firewalld), input at policy accept, a chain outside filter's INPUT that may refuse (before the input hook: an nft `prerouting` or `ingress` chain, raw or mangle `PREROUTING`, a prerouting chain at policy drop; on it: mangle or security `INPUT`), nothing in filter's INPUT refusing | `firewall_iptables.input_accept` ALERT −3, and `firewall.inactive` ALERT (UFW installed but off — measured) or `prerequisites.firewall_missing` ALERT (no UFW — read in the code), each capping the Firewall & Network domain at 3/10 | `firewall_iptables.input_accept_unweighed` INFO (two cases: rules that may refuse, or a chain at policy drop, then named) and `firewall.netfilter_unweighed` INFO, no points, no cap, a ceiling (**rises**) | 1 |
 | the same host, with a listener bound to all IPv4 interfaces | INFO (`ports.uncovered_ufw_inactive` with UFW installed but off) | weighed port by port as since 0.28.0: the input policy is ACCEPT and no rule or chain BOB reads on the way in can refuse the port → `ports.uncovered_netfilter_open` WARN −1 (−2 public), a known service `services.exposed.<id>`; refused or not established → INFO | 1 |
 | the same over IPv6: an ip6/inet prerouting chain, a netdev or inet ingress chain, `ip6tables` raw or mangle `PREROUTING`, mangle or security `INPUT` that may refuse | `ipv6.netfilter_v6_open` WARN −2 | `ipv6.netfilter_v6_unweighed` INFO, a ceiling — the IPv6 section's PARTIAL reading of 0.27.0 (**rises by 2**) | 1 |
 | a raw ruleset whose prerouting refuses only packets to an address that is not the host's (Docker's `-d 172.17.0.2/32 ! -i docker0 -j DROP`, nft `ip daddr 172.17.0.2 iifname != "docker0" drop`), at policy accept with a refusal on input | every listener on all IPv4 interfaces not established (INFO), SSH included | weighed as without that rule: the input policy is ACCEPT and no rule or chain BOB reads on the way in can refuse the port → `ports.uncovered_netfilter_open` WARN −1 (or the service key) | 1 |
@@ -108,9 +108,10 @@ that it denies by default — same PARTIAL, a ceiling (below). The raw, mangle
 and security tables that could not be read leave it undetermined (`firewall_iptables.input_unknown`,
 INFO, a ceiling, where it read ACCEPT −3 — covered by tests, not met on a host);
 the front-end finding is unchanged there: with UFW installed but off,
-`firewall.inactive` and its cap at 3/10 stay (read in the code — limits). The
-two coexist: the cap holds the score at 3/10 at most, and the INFO marks the
-score a ceiling; the INFO does not replace the cap. When `nft list ruleset` answers with no input chain, BOB reads the input
+`firewall.inactive` and its cap stay (read in the code — limits). The two
+coexist: the cap holds the Firewall & Network domain at 3/10 at most — the
+global score is the mean of the domains, so it is not capped itself — and the
+INFO marks the score a ceiling; the INFO does not replace the cap. When `nft list ruleset` answers with no input chain, BOB reads the input
 hook through `iptables -S`, and still reads nft's own prerouting and ingress
 chains from `nft list ruleset`.
 
@@ -130,7 +131,7 @@ weighed (limits).
 
 A full audit, old tree against new, UFW installed but off, listeners 8098 and
 8099 (rerun on the final tree): with a drop rule for 8099 in a prerouting
-chain, 0.28.3 said "firewall inactive" (capped at 3/10) and "INPUT ACCEPT"
+chain, 0.28.3 said "firewall inactive" (the Firewall & Network domain capped at 3/10) and "INPUT ACCEPT"
 (−3); 0.29.0 reports an INPUT policy of ACCEPT and refusals on the way in,
 weighs 8098 (open: −1) and leaves 8099 (closed) not established — score 6 → 8.
 With a prerouting chain at policy drop accepting 8098 only, 0.28.3 said the
@@ -274,7 +275,8 @@ the external client measured.)
   addresses included); a destination given as a set, a range or an ipset
   counts as possibly the host's.
 - The raw, mangle and security tables unreadable while `iptables -S` answers:
-  INPUT reads undetermined, but `firewall.inactive` and its cap at 3/10 stay,
+  INPUT reads undetermined, but `firewall.inactive` and its cap of the Firewall &
+  Network domain at 3/10 stay,
   as in 0.28.x (read in the code, not met on a host).
 - `--history` records each score, not its ≤ (since 0.16.0); the JSON and the
   CSV carry `score_is_upper_bound`.
