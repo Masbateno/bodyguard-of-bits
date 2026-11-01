@@ -294,19 +294,56 @@ _NFT_DADDR = re.compile(r"\bip6?\s+daddr\s+(?!!=)(\{[^}]*\}|\S+)")
 _IPT_DADDR = re.compile(r"(?<!! )(?:-d|--destination)\s+(\S+)")
 
 
+class _HostView(frozenset):
+    """This host's addresses, with ``ifaces``: the interfaces that hold an
+    IPv4 address other than loopback (v0.30.0) — None when not read."""
+    ifaces: "frozenset | None" = None
+
+
 def _host_addresses() -> "frozenset | None":
-    """This host's addresses (``ip -o addr show``), or None when not read."""
+    """This host's addresses (``ip -o addr show``), or None when not read.
+    v0.30.0 — and the interfaces holding them (:class:`_HostView`)."""
     import ipaddress
     res = run_result("ip", "-o", "addr", "show")
     if not res.ok:
         return None
     found = set()
+    ifaces = set()
     for m in re.finditer(r"\binet6?\s+([0-9a-fA-F.:]+)(?:/\d+)?", res.stdout or ""):
         try:
             found.add(ipaddress.ip_address(m.group(1)))
         except ValueError:
             return None
-    return frozenset(found) or None
+    for m in re.finditer(r"^\d+:\s+([^\s@]+)\S*\s+inet\s+([0-9.]+)", res.stdout or "", re.MULTILINE):
+        if not m.group(2).startswith("127."):
+            ifaces.add(m.group(1))
+    if not found:
+        return None
+    view = _HostView(found)
+    view.ifaces = frozenset(ifaces)
+    return view
+
+
+def _iface_cover(spec: str, negated: bool, hosts: "frozenset | None") -> "str | None":
+    """v0.30.0 — how much of this host an interface match covers: "all" its
+    interfaces that hold an IPv4 address, "none", "some", or None when they
+    were not read. nft's trailing ``*`` and iptables' trailing ``+`` are
+    prefixes. Measured in a network namespace (1 November 2026): a drop for
+    8099 on the host's only interface closed it; on an absent interface, or
+    `iifname != <the only one>`, left it open; on one of two interfaces,
+    closed it there and left it open on the other; on both, or `s*`, closed
+    it."""
+    import fnmatch
+    own = getattr(hosts, "ifaces", None)
+    if not own:
+        return None
+    names = [n.strip().strip('"') for n in spec.strip("{} ").split(",") if n.strip()]
+    if not names:
+        return None
+    pats = [n[:-1] + "*" if n.endswith("+") else n for n in names]
+    hit = {i for i in own if any(fnmatch.fnmatchcase(i, p) for p in pats)}
+    covered = (own - hit) if negated else hit
+    return "all" if covered == own else "none" if not covered else "some"
 
 
 def _aimed_elsewhere(text: str, hosts: "frozenset | None", nft: bool = True) -> bool:
@@ -399,6 +436,10 @@ def _port_in(spec: str, port: int, sep: str = "-") -> "bool | None":
     return False
 
 
+#: v0.30.0 — an input interface written before or after the port.
+_NFT_IIF_FIRST = re.compile(r'^(?:iif|iifname) (!= )?("[^"]*"|\{[^}]*\}|\S+) (.+)$')
+_NFT_IIF_LAST = re.compile(r'^(.+?) (?:iif|iifname) (!= )?("[^"]*"|\{[^}]*\}|\S+) (accept|drop|reject(?: with [\w\s-]+)?)$')
+_IPT_IIF_FIRST = re.compile(r"^(! )?-i (\S+) (.+)$")
 #: v0.30.0 — a destination written before or after the port in an input rule.
 _NFT_DADDR_FIRST = re.compile(r"^ip daddr (\{[^}]*\}|[0-9./]+) (.+)$")
 _NFT_DADDR_LAST = re.compile(r"^(.+?) ip daddr (\{[^}]*\}|[0-9./]+) (accept|drop|reject(?: with [\w\s-]+)?)$")
@@ -506,6 +547,22 @@ def _nft_port_walk(rules, chains, family, table, port, proto, seen, hosts=None, 
             if resolved is None:
                 return "UNKNOWN", ""
             text = resolved
+        # v0.30.0 — an input interface: the rule touches this host's
+        # listeners only on the interfaces it names.
+        i = _NFT_IIF_FIRST.match(text)
+        il = None if i else _NFT_IIF_LAST.match(text)
+        if i or il:
+            neg, spec, rest = (i.group(1), i.group(2), i.group(3)) if i else \
+                (il.group(2), il.group(3), f"{il.group(1)} {il.group(4)}")
+            if _NFT_PORT_RULE.match(rest) or _NFT_PORT_VMAP.match(rest) or _NFT_DADDR_FIRST.match(rest):
+                if _NFT_PORT_RULE.match(rest) and _names_another_port(rest, port, proto):
+                    continue
+                cover = _iface_cover(spec, bool(neg), hosts)
+                if cover == "none":
+                    continue
+                if cover != "all":
+                    return "UNKNOWN", ""
+                text = rest
         # v0.30.0 — a destination: the rule touches this host's listeners
         # only for the addresses it names.
         d = _NFT_DADDR_FIRST.match(text)
@@ -786,6 +843,17 @@ def _ipt_walk(chains: dict, name: str, port: int, proto: str, hosts, seen: froze
             return ("ACCEPT" if m.group(1) == "ACCEPT" else "DROP"), "rule"
         if body == "-j RETURN":
             return None
+        # v0.30.0 — an input interface, as nft's (measured with `-i`).
+        i = _IPT_IIF_FIRST.match(body)
+        if i and (_IPT_PORT_RULE.match(i.group(3)) or _IPT_DADDR_FIRST.match(i.group(3))):
+            if _IPT_PORT_RULE.match(i.group(3)) and _names_another_port(i.group(3), port, proto, nft=False):
+                continue
+            cover = _iface_cover(i.group(2), bool(i.group(1)), hosts)
+            if cover == "none":
+                continue
+            if cover != "all":
+                return "UNKNOWN", ""
+            body = i.group(3)
         # v0.30.0 — a destination: the rule touches this host's listeners
         # only for the addresses it names (measured with `-d`, as nft).
         d = _IPT_DADDR_FIRST.match(body)
