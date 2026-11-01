@@ -4252,6 +4252,8 @@
     "firewall_allow_all": "politique par défaut ALLOW — aucun filtrage",
     "firewall_policy": "actif — politique par défaut {policy} en entrée",
     "firewall_policy_backend": "actif ({backend}) — politique par défaut {policy} en entrée",
+    "firewall_firewalld_unread": "firewalld est installé mais firewall-cmd n'a rien répondu — qu'un pare-feu filtre le trafic entrant n'est pas établi",
+    "firewall_netfilter_unknown": "le jeu de règles nftables/iptables n'a été lu qu'en partie (une table refusée) — qu'un pare-feu filtre le trafic entrant n'est pas établi",
     "firewall_policy_unread": "actif ({backend}) — politique d'entrée par défaut non lue",
     "firewall_policy_partial": "actif ({backend}) — politique input accept, refus sur le chemin d'entrée (non pesés port par port)",
     "open_ports": "Ports en écoute",

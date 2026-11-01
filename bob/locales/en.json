@@ -4252,6 +4252,8 @@
     "firewall_allow_all": "default policy is ALLOW — no filtering",
     "firewall_policy": "active — default {policy} incoming",
     "firewall_policy_backend": "active ({backend}) — default {policy} incoming",
+    "firewall_firewalld_unread": "firewalld is installed but firewall-cmd gave no answer — whether a firewall filters inbound traffic is not established",
+    "firewall_netfilter_unknown": "the nftables/iptables ruleset was read in part (a table refused) — whether a firewall filters inbound traffic is not established",
     "firewall_policy_unread": "active ({backend}) — default inbound policy not read",
     "firewall_policy_partial": "active ({backend}) — input policy accept, refusals on the way in (not weighed port by port)",
     "open_ports": "Listening ports",

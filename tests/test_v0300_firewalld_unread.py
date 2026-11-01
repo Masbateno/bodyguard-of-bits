@@ -51,7 +51,8 @@ class TestThePosture:
     def test_otherwise_no_firewall_as_before(self, fwd):
         assert not resolve_firewall_posture(_status(), fwd, None).active
 
-    def test_the_summary_says_it_unread(self):
+    @staticmethod
+    def _summary(unread):
         from bob.checks.ports import PortsSnapshot
         from bob.exposure import compute_exposure
         from bob.scoring import ScoreEngine
@@ -60,8 +61,24 @@ class TestThePosture:
             def __getattr__(self, _a):
                 return None
         items = compute_exposure(ScoreEngine(), PortsSnapshot(ports=[], ufw_rules="", ss_output=""), _NC(),
-                                 True, "unknown", lambda k, **kw: k, fw_backend="firewalld")
-        assert next(i for i in items if i.label == "exposure.firewall").detail == "exposure.firewall_policy_unread"
+                                 True, "unknown", lambda k, **kw: k, fw_backend="firewalld", fw_unread=unread)
+        return next(i for i in items if i.label == "exposure.firewall")
+
+    def test_the_summary_does_not_say_active(self):
+        """Measured: 0.29.0 "No active firewall — all ports unfiltered"; the first
+        0.30.0 fix "active (firewalld)" — firewall-cmd said neither."""
+        line = self._summary(True)
+        assert (line.detail, line.icon) == ("exposure.firewall_firewalld_unread", "⚠")
+
+    def test_a_running_firewalld_whose_policy_is_unread_keeps_its_line(self):
+        assert self._summary(False).detail == "exposure.firewall_policy_unread"
+
+    def test_the_summary_is_handed_it(self):
+        from bob import __main__ as main
+        from bob import runner
+        assert "fw_unread=_firewalld_unread," in inspect.getsource(runner)
+        src = inspect.getsource(main)
+        assert "fw_unread          = result.fw_unread" in src and "fw_unread=fw_unread)" in src
 
 
 class TestDownstream:
@@ -114,6 +131,10 @@ class TestDownstream:
     ("fr", "ports.uncovered_firewalld_unread", "firewall-cmd n'a rien répondu : que ce port soit joignable n'est pas établi"),
     ("en", "ipv6.firewalld_unread", "whether these listeners are reachable is not established"),
     ("fr", "ipv6.firewalld_unread", "que ces services soient joignables n'est pas établi"),
+    ("en", "exposure.firewall_firewalld_unread", "firewall-cmd gave no answer — whether a firewall filters"),
+    ("fr", "exposure.firewall_firewalld_unread", "firewall-cmd n'a rien répondu — qu'un pare-feu filtre"),
+    ("en", "exposure.firewall_netfilter_unknown", "read in part (a table refused) — whether a firewall filters"),
+    ("fr", "exposure.firewall_netfilter_unknown", "lu qu'en partie (une table refusée) — qu'un pare-feu filtre"),
 ])
 def test_what_is_said(lang, key, words):
     i18n.init(lang)

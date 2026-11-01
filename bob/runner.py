@@ -409,6 +409,7 @@ class ChecksResult(NamedTuple):
     fw_active:          bool = False
     fw_policy:          str  = "unknown"
     fw_backend:         str  = ""
+    fw_unread:          bool = False   # v0.30.0 — firewall-cmd silent
     network_context:    str  = "local"
     # v0.14.1: sections whose check raised and were degraded rather than
     # aborting the whole audit (see ``_sec``). Machine-readable mirror of the
@@ -1340,6 +1341,7 @@ def run_checks(
         fw_active=fw_posture.active,
         fw_policy=fw_posture.policy,
         fw_backend=fw_posture.backend,
+        fw_unread=_firewalld_unread,
         network_context=network_context,
         degraded_sections=tuple(_degraded),
     )

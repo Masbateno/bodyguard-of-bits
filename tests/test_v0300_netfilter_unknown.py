@@ -70,7 +70,10 @@ class TestThePosture:
                 return None
         items = compute_exposure(ScoreEngine(), PortsSnapshot(ports=[], ufw_rules="", ss_output=""), _NC(),
                                  True, "unknown", lambda k, **kw: k, fw_backend="netfilter")
-        assert next(i for i in items if i.label == "exposure.firewall").detail == "exposure.firewall_policy_unread"
+        line = next(i for i in items if i.label == "exposure.firewall")
+        # Not "active (nftables/iptables)": INPUT may accept everything (measured
+        # in a network namespace, INPUT at policy accept with no rule).
+        assert (line.detail, line.icon) == ("exposure.firewall_netfilter_unknown", "⚠")
 
     def test_no_risk_floor(self):
         from bob.scoring import ScoreEngine, set_posture_from_engine

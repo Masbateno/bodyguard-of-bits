@@ -30,6 +30,7 @@ def compute_exposure(
     fw_policy: str,
     t,
     fw_backend: str = "ufw",
+    fw_unread: bool = False,
 ) -> list[ExposureItem]:
     """
     Return a list of ExposureItems describing the machine's real attack surface.
@@ -43,6 +44,8 @@ def compute_exposure(
         fw_policy:       That firewall's inbound default ("deny", "allow",
                          "reject", "unknown").
         t:               Translation function.
+        fw_unread:       v0.30.0 — firewall-cmd present and silent: whether
+                         firewalld runs is not established.
         fw_backend:      "ufw", "firewalld" or "netfilter" (see
                          ``bob.checks.firewall.FirewallPosture``).
     """
@@ -83,6 +86,18 @@ def compute_exposure(
             label=t("exposure.firewall"),
             icon="✖", color="alert",
             detail=t("exposure.firewall_inactive"),
+        ))
+    elif fw_policy == "unknown" and (fw_unread or fw_backend == "netfilter"):
+        # v0.30.0 — "active" was not established either: firewall-cmd gave no
+        # answer, or a raw ruleset was read in part (its INPUT may accept
+        # everything). Measured in a network namespace: the line read "active
+        # (firewalld)" with firewall-cmd silent; 0.29.0 read "No active
+        # firewall — all ports unfiltered" for both.
+        items.append(ExposureItem(
+            label=t("exposure.firewall"),
+            icon="⚠", color="warn",
+            detail=t("exposure.firewall_firewalld_unread" if fw_unread
+                     else "exposure.firewall_netfilter_unknown"),
         ))
     elif fw_policy == "unknown":
         # v0.24.1: an unread default was printed as "default policy is ALLOW —

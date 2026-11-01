@@ -710,6 +710,7 @@ def _run(argv=None) -> int:
             fw_active          = result.fw_active
             fw_policy          = result.fw_policy
             fw_backend         = result.fw_backend
+            fw_unread          = result.fw_unread
             degraded_sections  = result.degraded_sections
 
             engine.finalize()
@@ -816,7 +817,8 @@ def _run(argv=None) -> int:
                 print()
                 _exposure = compute_exposure(engine, ports_snapshot, network_context,
                                              fw_active, fw_policy, t,
-                                             fw_backend=fw_backend)
+                                             fw_backend=fw_backend,
+                                             fw_unread=fw_unread)
                 print_exposure(_exposure, t, output)
                 if correlations:
                     print_correlations(correlations, t, output)
