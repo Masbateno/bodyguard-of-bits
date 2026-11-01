@@ -285,7 +285,11 @@ def _nat_hook_fixed() -> bool:
     """v0.30.0 — whether the running kernel invokes an nft nat chain from its
     one NAT hook at dstnat (4.18 and later, `_nft_nat_priority`). The ruleset
     BOB weighs is the one this kernel runs (`nft list ruleset`, live). A
-    release BOB cannot read is taken as an older kernel."""
+    release BOB cannot read is taken as an older kernel. An older kernel is
+    not read by the declared priority alone, though its upstream source
+    places a nat chain by it: a distribution kernel numbered before 4.18 may
+    carry the later code, under which that would claim a refusal the kernel
+    does not make (7.0: nat at −190, a drop at −150, the listener reached)."""
     m = re.match(r"(\d+)\.(\d+)", os.uname().release)
     if not m:
         return False
