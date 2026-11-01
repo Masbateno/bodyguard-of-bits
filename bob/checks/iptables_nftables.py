@@ -9,6 +9,7 @@ conntrack rules are in place when the INPUT policy is restrictive.
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 from dataclasses import dataclass, field
@@ -273,9 +274,22 @@ _RULE_NOISE = re.compile(r"\bcounter(?:\s+packets\s+\d+\s+bytes\s+\d+)?|#.*$")
 _NFT_PRIORITY_NAMES = {"raw": -300, "mangle": -150, "dstnat": -100, "filter": 0, "security": 50,
                        "srcnat": 100}
 #: Where the kernel rewrites a destination: iptables' nat PREROUTING runs
-#: there, and so does an nft nat chain whatever priority it declares
-#: (measured, and why: `_nft_nat_priority`).
+#: there, and since Linux 4.18 so does an nft nat chain whatever priority it
+#: declares (measured, and why: `_nft_nat_priority`).
 _DSTNAT = _NFT_PRIORITY_NAMES["dstnat"]
+#: The first kernel that invokes an nft nat chain from the one NAT hook.
+_NAT_HOOK_SINCE = (4, 18)
+
+
+def _nat_hook_fixed() -> bool:
+    """v0.30.0 — whether the running kernel invokes an nft nat chain from its
+    one NAT hook at dstnat (4.18 and later, `_nft_nat_priority`). The ruleset
+    BOB weighs is the one this kernel runs (`nft list ruleset`, live). A
+    release BOB cannot read is taken as an older kernel."""
+    m = re.match(r"(\d+)\.(\d+)", os.uname().release)
+    if not m:
+        return False
+    return (int(m.group(1)), int(m.group(2))) >= _NAT_HOOK_SINCE
 
 
 def _nft_priority(text: str) -> "int | None":
@@ -295,7 +309,8 @@ def _nft_priority(text: str) -> "int | None":
 def _nft_nat_priority(ruleset: str, families: tuple = _IPV4_FAMILIES) -> "float | None":
     """v0.30.0 — the latest priority at which a prerouting NAT chain
     (*families*) holding a rule may rewrite where a packet goes, None when
-    none holds one; unbounded when a priority cannot be read.
+    none holds one; on a kernel before 4.18, unbounded when a priority
+    cannot be read.
 
     A redirect or a DNAT there sends a packet aimed at another port to the
     listener, after the chains of lower priority saw it under the port it was
@@ -312,20 +327,27 @@ def _nft_nat_priority(ruleset: str, families: tuple = _IPV4_FAMILIES) -> "float 
     −50, or one at 50 and a drop at 10, closed it. The same again in a fresh
     namespace for each case, the priorities read back from `nft list ruleset`
     (`natprio_fresh.txt`); there a counter chain at −90 saw the packet
-    already sent to 8099 by a nat chain declared at 0 (`natprio_counter.txt`). The kernel's source says why
+    already sent to 8099 by a nat chain declared at 0 (`natprio_counter.txt`).
+    The kernel's source says why
     (`nf_nat_register_fn`, 7.0): a nat chain is not hooked at its own
     priority, it is called from the one NAT hook at dstnat; its priority
-    orders it among the nat chains only. That holds since 4.18: up to 4.17
-    the source (`nf_tables_api.c`) hooks a nat chain at the priority it
-    declares, as any other (not measured here; source excerpts beside the
-    benches, `kernel7.0_nat_source.txt`). The later of the two is taken: it
-    claims no refusal that either order would contradict — the measured
-    verdict for a nat chain at dstnat or below, "not established" between
-    −100 and a later declared priority."""
+    orders it among the nat chains only. The same in the source of 4.18,
+    4.19, 5.4, 5.15, 6.1, 6.6 and 6.12, for ip, ip6 and inet: there, dstnat
+    is taken, whatever the declared priority (or one BOB cannot read) — the
+    level of proof of every other priority this walk orders, measured on 7.0.
+    Up to 4.17 the source (`nf_tables_api.c`) hooks a nat chain at the
+    priority it declares, as any other (not measured here; source excerpts
+    beside the benches, `kernel7.0_nat_source.txt`): there, and where the
+    release cannot be read, the later of the two is taken, which claims no
+    refusal that either order would contradict."""
+    fixed = _nat_hook_fixed()
     found = None
     for c in _nft_base_chains(ruleset, "prerouting"):
         if c["family"] in families and c["type"] == "nat" and c["rules"]:
-            prio = float("inf") if c["priority"] is None else max(c["priority"], _DSTNAT)
+            if fixed:
+                prio = _DSTNAT
+            else:
+                prio = float("inf") if c["priority"] is None else max(c["priority"], _DSTNAT)
             found = prio if found is None else max(found, prio)
     return found
 

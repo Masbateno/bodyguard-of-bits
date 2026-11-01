@@ -73,17 +73,48 @@ class TestNftables:
         assert nf.nft_port_verdict(ruleset, 8099, "tcp", HOSTS) == v8099
 
     @pytest.mark.parametrize("nat, drop, v8099", [
-        ("-190", "-150", U), ("-190", "-101", U), ("-190", "-99", D), ("0", "-90", U), ("0", "10", D),
-    ], ids=["nat-190-drop-150", "nat-190-drop-101", "nat-190-drop-99", "nat0-drop-90", "nat0-drop10"])
-    def test_the_nat_point(self, nat, drop, v8099):
-        """The kernel rewrites at dstnat (−100) whatever priority the nat chain
-        declares (`natprio_bench.txt`): a nat chain at −190 left the listener
-        open through 8080 past a drop at −150 and −101, not past one at −99; a
-        nat chain at 0 did not past one at −90 — read not established, the
-        later of the two points taken, safe either way."""
+        ("-190", "-150", U), ("-190", "-120", U), ("-190", "-101", U), ("-190", "-99", D),
+        ("0", "-90", D), ("0", "-50", D), ("0", "10", D), ("50", "10", D),
+    ], ids=["nat-190-drop-150", "nat-190-drop-120", "nat-190-drop-101", "nat-190-drop-99",
+            "nat0-drop-90", "nat0-drop-50", "nat0-drop10", "nat50-drop10"])
+    def test_the_nat_point(self, monkeypatch, nat, drop, v8099):
+        """Since Linux 4.18 the kernel invokes an nft nat chain from its one
+        NAT hook at dstnat (−100), whatever priority the chain declares. The
+        eight cases measured on 7.0, each in a fresh namespace
+        (`natprio_fresh.txt`), each verdict the probe's: a nat chain at −190
+        left the listener open through 8080 past a drop at −150, −120 and
+        −101, not past one at −99; a nat chain at 0 or 50 rewrote before a
+        drop at −90, −50 or 10, closed both ways."""
+        monkeypatch.setattr(nf, "_nat_hook_fixed", lambda: True)
         rs = (INPUT + REDIRECT.replace("priority dstnat", f"priority {nat}")
               + _chain("ip", "r", "prerouting", drop, "accept", *DROP_8099))
         assert nf.nft_port_verdict(rs, 8099, "tcp", HOSTS) == v8099
+
+    @pytest.mark.parametrize("nat, drop, v8099", [
+        ("-190", "-150", U), ("-190", "-101", U), ("-190", "-99", D),
+        ("0", "-90", U), ("0", "-50", U), ("0", "10", D), ("50", "10", U),
+    ], ids=["nat-190-drop-150", "nat-190-drop-101", "nat-190-drop-99",
+            "nat0-drop-90", "nat0-drop-50", "nat0-drop10", "nat50-drop10"])
+    def test_the_nat_point_before_4_18(self, monkeypatch, nat, drop, v8099):
+        """Up to 4.17 the source hooks an nft nat chain at the priority it
+        declares (not measured). The later of the two is taken: no refusal
+        either order would contradict — at −150 under a nat chain at −190,
+        where 7.0 lets the listener be reached, nor at −90 under one at 0,
+        where 4.17's order would."""
+        monkeypatch.setattr(nf, "_nat_hook_fixed", lambda: False)
+        rs = (INPUT + REDIRECT.replace("priority dstnat", f"priority {nat}")
+              + _chain("ip", "r", "prerouting", drop, "accept", *DROP_8099))
+        assert nf.nft_port_verdict(rs, 8099, "tcp", HOSTS) == v8099
+
+    @pytest.mark.parametrize("release, fixed", [
+        ("7.0.0-42-generic", True), ("6.12.48+deb13-amd64", True), ("5.15.0-1", True),
+        ("4.18.0-553.el8_10.x86_64", True), ("10.0.0", True),
+        ("4.17.19", False), ("4.15.0-213-generic", False), ("3.10.0-1160.el7.x86_64", False),
+        ("weird", False), ("", False),
+    ])
+    def test_the_kernel_release(self, monkeypatch, release, fixed):
+        monkeypatch.setattr(nf.os, "uname", lambda: type("U", (), {"release": release})())
+        assert nf._nat_hook_fixed() is fixed
 
     def test_without_the_redirect_the_policy_drop_still_refuses(self):
         rs = INPUT + _chain("ip", "r", "prerouting", "raw", "drop", "tcp dport { 8080, 8098 } accept")
@@ -99,10 +130,26 @@ class TestNftables:
         rs = INPUT + REDIRECT + _chain("ip", "r", "prerouting", "dstnat", "accept", *DROP_8099)
         assert nf.nft_port_verdict(rs, 8099, "tcp", HOSTS) == U
 
-    def test_a_nat_chain_of_a_priority_bob_cannot_read_comes_after_all(self):
+    def test_a_nat_chain_of_a_priority_bob_cannot_read_comes_after_all(self, monkeypatch):
+        """Before 4.18: the declared priority places the chain, and BOB did
+        not read it."""
+        monkeypatch.setattr(nf, "_nat_hook_fixed", lambda: False)
         rs = (INPUT + REDIRECT.replace("priority dstnat", "priority weird")
               + _chain("ip", "r", "prerouting", "filter", "accept", *DROP_8099))
         assert nf.nft_port_verdict(rs, 8099, "tcp", HOSTS) == U
+
+    def test_since_4_18_it_comes_at_dstnat_all_the_same(self, monkeypatch):
+        monkeypatch.setattr(nf, "_nat_hook_fixed", lambda: True)
+        rs = (INPUT + REDIRECT.replace("priority dstnat", "priority weird")
+              + _chain("ip", "r", "prerouting", "filter", "accept", *DROP_8099))
+        assert nf.nft_port_verdict(rs, 8099, "tcp", HOSTS) == D
+
+    @pytest.mark.parametrize("fixed", [True, False])
+    def test_over_ipv6_the_same(self, monkeypatch, fixed):
+        monkeypatch.setattr(nf, "_nat_hook_fixed", lambda: fixed)
+        rs = (INPUT + REDIRECT.replace("table ip n", "table ip6 n").replace("priority dstnat", "priority 0")
+              + _chain("ip6", "r", "prerouting", "-90", "accept", *DROP_8099))
+        assert nf.nft_port_verdict_v6(rs, 8099, "tcp", HOSTS) == (D if fixed else U)
 
     def test_an_ipv4_redirect_does_not_touch_ipv6(self):
         rs = INPUT + REDIRECT + _chain("ip6", "r", "prerouting", "raw", "accept", *DROP_8099)
