@@ -122,6 +122,35 @@ class TestALineWrittenBefore030:
         lines = render_history([{**self._old(8, "10:00"), "bound_known": bad}], t=lambda k, **kw: k)
         assert "? 8/10" in next(line for line in lines if "2026-10-30" in line)
 
+    def test_a_downgrade_in_between(self):
+        """Measured on a bench (0.30.0, then 0.29.0 again, then 0.30.0 twice in
+        one history): the line 0.29.0 wrote between them is "?", the next firm
+        score gets no arrow against it, the one after compares with that."""
+        entries = [_e(8, "10:00"), self._old(5, "11:00"), _e(7, "12:00"), _e(6, "13:00")]
+        lines = render_history(entries, t=lambda k, **kw: k)
+
+        def row(score):
+            return next(line for line in lines if f"{score}/10" in line and "2026-10-3" in line)
+        assert "? 5/10" in row(5) and not any(a in row(5) for a in "↑↓→")
+        assert not any(a in row(7) for a in "↑↓→")
+        assert "↓" in row(6)
+
+
+class TestRotationKeepsEachLineAsWritten:
+    """Measured on a bench: a 1000-line file rotated by 0.30.0 kept each line
+    as written. Rotation keeps the text, it does not rewrite it: a mark 0.30.0
+    wrote stays, and a line 0.29.0 wrote is not given one."""
+
+    def test_the_lines_kept_are_the_lines_written(self, history):
+        old = '{"ts": "2026-10-29T10:00:00+00:00", "score": 5, "level": "low"}'
+        marked = ('{"ts": "2026-10-30T10:00:00+00:00", "score": 7, "level": "low", '
+                  '"bound_known": true, "upper_bound": true}')
+        written = [old] * 998 + [marked, old]
+        history.write_text("\n".join(written) + "\n")
+        save_score(8, "low")
+        kept = history.read_text().splitlines()
+        assert len(kept) == 1000 and kept[:-1] == written[1:]
+
 
 @pytest.mark.parametrize("lang, key, words", [
     ("en", "history.bound_unknown_legend", "written before 0.30.0, which kept the number alone: whether this score was a ceiling is not known"),

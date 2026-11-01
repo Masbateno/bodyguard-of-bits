@@ -11620,6 +11620,14 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason='measured: a nat chain declared at -190 still rewrote at dstnat',
     ),
     Mutation(
+        id='history-ceiling/rotation-rewrites',
+        file='bob/history.py',
+        old='            content = "\\n".join(lines[-_MAX_HISTORY_ENTRIES:]) + "\\n"\n',
+        new='            content = "\\n".join(json.dumps({k: json.loads(l).get(k) for k in ("ts", "score", "level")}) for l in lines[-_MAX_HISTORY_ENTRIES:]) + "\\n"\n',
+        kills=('tests/test_v0300_history_ceiling.py::TestRotationKeepsEachLineAsWritten', ),
+        reason='a rotation that rewrites each line drops the marks 0.30.0 wrote',
+    ),
+    Mutation(
         id='history-ceiling/ceiling-unwritten',
         file='bob/history.py',
         old='        if upper_bound:\n            entry_dict["upper_bound"] = True\n',
@@ -11664,7 +11672,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         file='bob/history.py',
         old='    if prev is None or _uncertain(entries[idx]) or _uncertain(prev):\n',
         new='    if prev is None or _uncertain(entries[idx]):\n',
-        kills=('tests/test_v0300_history_ceiling.py::TestWhatIsShown::test_no_arrow_measured_against_one', ),
+        kills=('tests/test_v0300_history_ceiling.py::TestWhatIsShown::test_no_arrow_measured_against_one',
+               'tests/test_v0300_history_ceiling.py::TestALineWrittenBefore030::test_a_downgrade_in_between'),
         reason='a move measured against a ceiling means nothing',
     ),
     Mutation(

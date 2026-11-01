@@ -274,7 +274,7 @@ _NFT_PRIORITY_NAMES = {"raw": -300, "mangle": -150, "dstnat": -100, "filter": 0,
                        "srcnat": 100}
 #: Where the kernel rewrites a destination: iptables' nat PREROUTING runs
 #: there, and so does an nft nat chain whatever priority it declares
-#: (measured, below).
+#: (measured, and why: `_nft_nat_priority`).
 _DSTNAT = _NFT_PRIORITY_NAMES["dstnat"]
 
 
@@ -308,9 +308,16 @@ def _nft_nat_priority(ruleset: str, families: tuple = _IPV4_FAMILIES) -> "float 
     The rewrite happens at dstnat (−100) whatever priority the nat chain
     declares (measured, `natprio_bench.txt`, kernel 7.0): a nat chain at
     −190 and a drop for 8099 at −150, −120 or −101 left the listener open
-    through 8080, at −99 closed it; a nat chain at 0 or 50 and a drop at −90
-    closed it. The later of the two is taken: right for what was measured,
-    and still safe were a kernel to rewrite at the declared priority."""
+    through 8080, at −99 closed it; a nat chain at 0 and a drop at −90 or
+    −50, or one at 50 and a drop at 10, closed it. The same again in a fresh
+    namespace for each case, the priorities read back from `nft list ruleset`
+    (`natprio_fresh.txt`); there a counter chain at −90 saw the packet
+    already sent to 8099 by a nat chain declared at 0 (`natprio_counter.txt`). The kernel's source says why
+    (`nf_nat_register_fn`, 7.0): a nat chain is not hooked at its own
+    priority, it is called from the one NAT hook at dstnat; its priority
+    orders it among the nat chains only. The later of the two is taken:
+    right for what was measured, and still safe were a kernel to rewrite at
+    the declared priority."""
     found = None
     for c in _nft_base_chains(ruleset, "prerouting"):
         if c["family"] in families and c["type"] == "nat" and c["rules"]:
