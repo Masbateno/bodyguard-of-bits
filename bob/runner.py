@@ -997,6 +997,9 @@ def run_checks(
         # v0.28.0 — each listener weighed against the rules for its port.
         netfilter_port_verdict=(_nf_snap.port_verdict
                                 if _nf_snap is not None and (_netfilter_denies or _netfilter_partial) else None),
+        # v0.30.0 — each IPv6 listener's verdict, shown, not scored.
+        netfilter_port_verdict6=(_nf_snap.port_verdict_v6
+                                 if _nf_snap is not None and (_netfilter_denies or _netfilter_partial) else None),
         t=t,
         # v0.26.0 — with {"iptables": false} Docker writes no IPv4 rule for its
         # ports: the zone filters them (measured on openSUSE, Docker 29.4.0).

@@ -76,6 +76,10 @@ class IptablesNftSnapshot:
     #: the input chains read, whose policy is drop: the input hook accepts by
     #: default, the way in does not.
     default_drop_before_input: "list[str]" = field(default_factory=list, repr=False)
+    #: v0.30.0 — for the iptables backend, ``ip6tables -S`` and its raw,
+    #: mangle and security tables (None when not read): the IPv6 verdict.
+    raw_output6: str = field(default="", repr=False)
+    other_tables6: "dict | None" = field(default=None, repr=False)
 
     def port_verdict(self, port: int, proto: str) -> "tuple[str, str]":
         """v0.28.0 — the IPv4 verdict a new connection to *port* meets in this
@@ -88,6 +92,25 @@ class IptablesNftSnapshot:
                 # v0.30.0 — nft's own chains before input, weighed port by port.
                 pre = _nft_pre_input_port(self.nft_pre_input, _nft_all_chains(self.nft_pre_input), port,
                                           proto, self.host_addresses, _nft_sets(self.nft_pre_input))
+                if pre[0] != "PASS":
+                    return pre
+                if pre[1] == "rule":
+                    return "ACCEPT", "rule"
+            return got
+        return "UNKNOWN", ""
+
+    def port_verdict_v6(self, port: int, proto: str) -> "tuple[str, str]":
+        """v0.30.0 — the IPv6 verdict, read as :meth:`port_verdict` reads the
+        IPv4 one; shown with each IPv6 listener, not scored."""
+        if self.backend == "nftables":
+            return nft_port_verdict_v6(self.raw_output, port, proto, self.host_addresses)
+        if self.backend == "iptables" and re.search(r"^-P INPUT ", self.raw_output6 or "", re.MULTILINE):
+            hosts6 = _hosts_v6(self.host_addresses)
+            got = ipt_port_verdict(self.raw_output6, port, proto, self.other_tables6, hosts6)
+            if got[0] == "ACCEPT" and self.nft_pre_input:
+                view = _v6_view(self.nft_pre_input)
+                pre = _nft_pre_input_port(view, _nft_all_chains(view), port, proto, hosts6, _nft_sets(view),
+                                          _IPV6_FAMILIES)
                 if pre[0] != "PASS":
                     return pre
                 if pre[1] == "rule":
@@ -164,6 +187,8 @@ class IptablesNftSnapshot:
                     forward_accepts_all=bool(re.search(r"^-A FORWARD -j ACCEPT\s*$", raw, re.MULTILINE)),
                     forward_policy_by_rule=_ipt_terminal_forward(raw) in ("DROP", "REJECT"),
                     other_tables=other,
+                    raw_output6=_run("ip6tables", "-S") if _command_exists("ip6tables") else "",
+                    other_tables6=_ipt_other_tables("ip6tables") if _command_exists("ip6tables") else None,
                     default_drop_before_input=(_ipt_default_drop_before_input(other)
                                                + (_nft_default_drop_before_input(nft_raw) if nft_raw else [])),
                 )
@@ -296,8 +321,10 @@ _IPT_DADDR = re.compile(r"(?<!! )(?:-d|--destination)\s+(\S+)")
 
 class _HostView(frozenset):
     """This host's addresses, with ``ifaces``: the interfaces that hold an
-    IPv4 address other than loopback (v0.30.0) — None when not read."""
+    IPv4 address other than loopback, and ``ifaces6`` an IPv6 one other than
+    ::1 (v0.30.0) — None when not read."""
     ifaces: "frozenset | None" = None
+    ifaces6: "frozenset | None" = None
 
 
 def _host_addresses() -> "frozenset | None":
@@ -317,10 +344,13 @@ def _host_addresses() -> "frozenset | None":
     for m in re.finditer(r"^\d+:\s+([^\s@]+)\S*\s+inet\s+([0-9.]+)", res.stdout or "", re.MULTILINE):
         if not m.group(2).startswith("127."):
             ifaces.add(m.group(1))
+    ifaces6 = {m.group(1) for m in re.finditer(r"^\d+:\s+([^\s@]+)\S*\s+inet6\s+([0-9a-fA-F:]+)",
+                                                res.stdout or "", re.MULTILINE) if m.group(2) != "::1"}
     if not found:
         return None
     view = _HostView(found)
     view.ifaces = frozenset(ifaces)
+    view.ifaces6 = frozenset(ifaces6)
     return view
 
 
@@ -733,12 +763,12 @@ def _nft_pre_input_port(ruleset: str, every: dict, port: int, proto: str, hosts:
 
 
 def nft_port_verdict(ruleset: str, port: int, proto: str,
-                     hosts: "frozenset | None" = None) -> "tuple[str, str]":
+                     hosts: "frozenset | None" = None, families: tuple = _IPV4_FAMILIES) -> "tuple[str, str]":
     """The IPv4 verdict a new connection to *port*/*proto* meets on the input
     hook: ("ACCEPT"|"DROP"|"UNKNOWN", "rule"|"default"|""). Every ip/inet base
     chain must accept it; one that refuses it closes it. A hook before input
     that may refuse it leaves an accept not established."""
-    chains = [c for c in _nft_base_chains(ruleset, "input") if c["family"] in _IPV4_FAMILIES]
+    chains = [c for c in _nft_base_chains(ruleset, "input") if c["family"] in families]
     if not chains:
         return "UNKNOWN", ""
     every = _nft_all_chains(ruleset)
@@ -757,7 +787,7 @@ def nft_port_verdict(ruleset: str, port: int, proto: str,
     if any(v[0] == "UNKNOWN" for v in verdicts):
         return "UNKNOWN", ""
     # v0.30.0 — the chains before input weighed port by port.
-    pre = _nft_pre_input_port(ruleset, every, port, proto, hosts, sets)
+    pre = _nft_pre_input_port(ruleset, every, port, proto, hosts, sets, families)
     if pre[0] != "PASS":
         return pre
     return ("ACCEPT", "rule") if pre[1] == "rule" or any(v[1] == "rule" for v in verdicts) else ("ACCEPT", "default")
@@ -1029,6 +1059,36 @@ def _nft_policy_by_rule(ruleset: str, hook: str) -> bool:
 
 #: v0.27.0 — the families whose base chains see IPv6.
 _IPV6_FAMILIES = ("ip6", "inet")
+
+
+#: v0.30.0 — a rule that matches IPv4 only, set aside when IPv6 is weighed.
+_V4_ONLY = re.compile(r"(?:^|\s)(?:ip\s+(?:saddr|daddr|protocol|dscp|ttl|length|id|version|hdrlength)"
+                      r"|meta\s+nfproto\s+ipv4|icmp\s+(?:type|code))\b")
+
+
+def _v6_view(ruleset: str) -> str:
+    """v0.30.0 — the ruleset as an IPv6 packet meets it: IPv4-only rules
+    dropped, ``meta nfproto ipv6`` taken as always true."""
+    return "\n".join(line.replace("meta nfproto ipv6 ", "") for line in ruleset.splitlines()
+                     if not _V4_ONLY.search(line.strip()))
+
+
+def _hosts_v6(hosts: "frozenset | None") -> "frozenset | None":
+    """The host view whose interfaces are those holding an IPv6 address."""
+    if hosts is None:
+        return None
+    view = _HostView(hosts)
+    view.ifaces = getattr(hosts, "ifaces6", None)
+    return view
+
+
+def nft_port_verdict_v6(ruleset: str, port: int, proto: str,
+                        hosts: "frozenset | None" = None) -> "tuple[str, str]":
+    """v0.30.0 — the IPv6 verdict a new connection to *port*/*proto* meets,
+    read as the IPv4 one is (ip6 and inet chains, IPv4-only rules set aside,
+    the chains before input weighed). Shown, not scored: IPv6 exposure is
+    weighed by the IPv6 section."""
+    return nft_port_verdict(_v6_view(ruleset), port, proto, _hosts_v6(hosts), _IPV6_FAMILIES)
 
 
 def nft_input_policy_v6(ruleset: str, hosts: "frozenset | None" = None) -> "str | None":

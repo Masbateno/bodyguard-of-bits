@@ -151,6 +151,9 @@ class TestWhatIsSaid:
         msgs, _ = _messages(_ports((8099, "::")), netfilter_active=True,
                             netfilter_port_verdict=_verdicts({8099: A}))
         assert not any("over IPv4" in m for m in msgs)
+        # v0.30.0 — the IPv6 verdict has its own text ("over IPv6"): the IPv4
+        # verdict must not reach it either, whatever the wording around it.
+        assert not any("for this port accepts it" in m for m in msgs), msgs
 
     def test_a_bound_address(self):
         msgs, _ = _messages(_ports((8099, "192.0.2.10")), netfilter_active=True,

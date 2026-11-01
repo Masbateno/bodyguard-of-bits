@@ -293,6 +293,9 @@ def check_ports(
     #: v0.28.0 — (port, proto) → (verdict, by) for IPv4 in a raw ruleset
     #: (IptablesNftSnapshot.port_verdict), or None.
     netfilter_port_verdict=None,
+    #: v0.30.0 — the same for IPv6 (IptablesNftSnapshot.port_verdict_v6):
+    #: shown with each IPv6 listener, not scored.
+    netfilter_port_verdict6=None,
 ) -> CheckResult:
     """
     Evaluate listening ports and return findings.
@@ -415,12 +418,13 @@ def check_ports(
                     continue
                 # v0.24.1: same for a raw nftables/iptables ruleset whose
                 # inbound default is DROP/REJECT — "no active firewall" was false.
-                weighed = _weighed(netfilter_port_verdict, lport) if (netfilter_active or netfilter_partial) else None
+                weighed = (_weighed(netfilter_port_verdict, lport, netfilter_port_verdict6)
+                           if (netfilter_active or netfilter_partial) else None)
                 if netfilter_active:
                     result.info(
-                        message=(_t("ports.uncovered_netfilter_weighed", port=pp_info, verdict=_t(weighed))
+                        message=(_t(_weighed_key(lport, "ports.uncovered_netfilter_weighed"), port=pp_info, verdict=_t(weighed))
                                  if weighed else _t("ports.uncovered_netfilter", port=pp_info)),
-                        detail=_t("ports.netfilter_port.detail") if weighed else "",
+                        detail=_t(_weighed_detail(lport)) if weighed else "",
                         key="ports.uncovered_netfilter",
                     )
                     continue
@@ -447,9 +451,9 @@ def check_ports(
                         )
                         continue
                     result.info(
-                        message=(_t("ports.uncovered_netfilter_weighed", port=pp_info, verdict=_t(weighed))
+                        message=(_t(_weighed_key(lport, "ports.uncovered_netfilter_weighed"), port=pp_info, verdict=_t(weighed))
                                  if weighed else _t("ports.uncovered_netfilter_unweighed", port=pp_info)),
-                        detail=_t("ports.netfilter_port.detail") if weighed else "",
+                        detail=_t(_weighed_detail(lport)) if weighed else "",
                         key="ports.uncovered_netfilter_unweighed",
                     )
                     continue
@@ -528,12 +532,12 @@ def check_ports(
                     key = "ports.uncovered_bound_address_netfilter_unknown"
                 else:
                     key = "ports.uncovered_bound_address"
-                weighed = (_weighed(netfilter_port_verdict, bound)
+                weighed = (_weighed(netfilter_port_verdict, bound, netfilter_port_verdict6)
                            if key.startswith("ports.uncovered_bound_address_netfilter") else None)
                 if weighed:
-                    result.info(message=_t("ports.uncovered_bound_address_netfilter_weighed", port=pp,
-                                           address=bound.address, verdict=_t(weighed)),
-                                detail=_t("ports.netfilter_port.detail"), key=key)
+                    result.info(message=_t(_weighed_key(bound, "ports.uncovered_bound_address_netfilter_weighed"),
+                                           port=pp, address=bound.address, verdict=_t(weighed)),
+                                detail=_t(_weighed_detail(bound)), key=key)
                 else:
                     result.info(message=_t(key, port=pp, address=bound.address), key=key)
 
@@ -562,11 +566,32 @@ def _reachable_by_default(verdict_of, lport: "ListeningPort") -> bool:
     return verdict_of(lport.port, lport.proto) == ("ACCEPT", "default")
 
 
-def _weighed(verdict_of, lport: "ListeningPort") -> "str | None":
+#: v0.30.0 — the "over IPv6" text of each "over IPv4" one, named in full so
+#: the orphan-key guard sees them used.
+_WEIGHED_V6 = {
+    "ports.uncovered_netfilter_weighed": "ports.uncovered_netfilter_weighed6",
+    "ports.uncovered_bound_address_netfilter_weighed": "ports.uncovered_bound_address_netfilter_weighed6",
+}
+
+
+def _weighed_key(lport: "ListeningPort", key: str) -> str:
+    """v0.30.0 — "over IPv6" for an IPv6 listener, "over IPv4" otherwise."""
+    return _WEIGHED_V6[key] if ":" in lport.address else key
+
+
+def _weighed_detail(lport: "ListeningPort") -> str:
+    return "ports.netfilter_port.detail6" if ":" in lport.address else "ports.netfilter_port.detail"
+
+
+def _weighed(verdict_of, lport: "ListeningPort", verdict_of6=None) -> "str | None":
     """v0.28.0 — the locale key of what the raw ruleset does to a new IPv4
     connection to *lport*, or None when BOB did not establish it (no verdict
-    function, an IPv6-only listener, or a rule BOB does not weigh)."""
-    if verdict_of is None or ":" in lport.address:
+    function, or a rule BOB does not weigh). v0.30.0 — an IPv6 listener reads
+    *verdict_of6*: shown, not scored (:func:`_reachable_by_default` stays
+    IPv4)."""
+    if ":" in lport.address:
+        verdict_of = verdict_of6
+    if verdict_of is None:
         return None
     verdict, by = verdict_of(lport.port, lport.proto)
     if verdict not in ("ACCEPT", "DROP") or by not in ("rule", "default"):
