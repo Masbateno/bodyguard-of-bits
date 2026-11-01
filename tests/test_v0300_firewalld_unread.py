@@ -142,3 +142,34 @@ def test_what_is_said(lang, key, words):
         assert words in i18n.t(key, port="8099/tcp", count=1, ports="8099/tcp", address="192.0.2.10")
     finally:
         i18n.init(lang="en")
+
+
+class TestThePortLinesTakeNoPointsAndNoSecondCeiling:
+    """0.30.0, review of the changelog — the per-port and IPv6 lines under a
+    firewall-cmd that would not answer or a ruleset read in part are INFO: no
+    points, and no ceiling of their own (the gap is marked once, by
+    ``firewall.firewalld_unreadable`` or ``firewall.netfilter_unknown``). A
+    visibility key on the ports or IPv6 section would mark that domain read in
+    part and widen the score's span: a second count of one gap. Measured
+    against 0.29.0 (`fwstopbench.txt`, `unreadbench-after.txt`): no
+    deduction from them, ``unverified`` holding the two section keys only."""
+
+    KEYS = ("ports.uncovered_netfilter_unknown", "ports.uncovered_bound_address_netfilter_unknown",
+            "ports.uncovered_firewalld_unread", "ports.uncovered_bound_address_firewalld_unread",
+            "ipv6.firewalld_unread")
+
+    @pytest.mark.parametrize("key", KEYS)
+    def test_not_a_visibility_key(self, key):
+        from bob.visibility import is_visibility_key
+        assert not is_visibility_key(key)
+
+    def test_the_engine_counts_nothing_for_them(self):
+        from bob.scoring import CheckResult, ScoreEngine
+        res = CheckResult()
+        for key in self.KEYS:
+            res.info(message=key, key=key)
+        engine = ScoreEngine()
+        before = engine.score
+        engine2 = ScoreEngine()
+        engine2.apply(res, section="ports")
+        assert (engine2.score, engine2.unverified, engine2.score_is_upper_bound) == (before, [], False)

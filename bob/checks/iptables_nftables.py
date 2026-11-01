@@ -80,6 +80,14 @@ class IptablesNftSnapshot:
     #: mangle and security tables (None when not read): the IPv6 verdict.
     raw_output6: str = field(default="", repr=False)
     other_tables6: "dict | None" = field(default=None, repr=False)
+    #: v0.30.0, review of the changelog — for the iptables backend, whether
+    #: the nat table's PREROUTING may rewrite a destination (IPv4, IPv6):
+    #: a refusal before it does not close the port (:func:`_ipt_nat_rewrites`).
+    nat_prerouting: bool = field(default=False, repr=False)
+    nat_prerouting6: bool = field(default=False, repr=False)
+
+    def _nat(self, families: tuple, legacy: bool) -> bool:
+        return legacy or bool(self.nft_pre_input and _nft_nat_priority(self.nft_pre_input, families) is not None)
 
     def port_verdict(self, port: int, proto: str) -> "tuple[str, str]":
         """v0.28.0 — the IPv4 verdict a new connection to *port* meets in this
@@ -87,11 +95,13 @@ class IptablesNftSnapshot:
         if self.backend == "nftables":
             return nft_port_verdict(self.raw_output, port, proto, self.host_addresses)
         if self.backend == "iptables":
-            got = ipt_port_verdict(self.raw_output, port, proto, self.other_tables, self.host_addresses)
+            got = ipt_port_verdict(self.raw_output, port, proto, self.other_tables, self.host_addresses,
+                                   self._nat(_IPV4_FAMILIES, self.nat_prerouting))
             if got[0] == "ACCEPT" and self.nft_pre_input:
                 # v0.30.0 — nft's own chains before input, weighed port by port.
                 pre = _nft_pre_input_port(self.nft_pre_input, _nft_all_chains(self.nft_pre_input), port,
-                                          proto, self.host_addresses, _nft_sets(self.nft_pre_input))
+                                          proto, self.host_addresses, _nft_sets(self.nft_pre_input),
+                                          nat_floor=_NAT_LEGACY if self.nat_prerouting else None)
                 if pre[0] != "PASS":
                     return pre
                 if pre[1] == "rule":
@@ -106,11 +116,12 @@ class IptablesNftSnapshot:
             return nft_port_verdict_v6(self.raw_output, port, proto, self.host_addresses)
         if self.backend == "iptables" and re.search(r"^-P INPUT ", self.raw_output6 or "", re.MULTILINE):
             hosts6 = _hosts_v6(self.host_addresses)
-            got = ipt_port_verdict(self.raw_output6, port, proto, self.other_tables6, hosts6)
+            got = ipt_port_verdict(self.raw_output6, port, proto, self.other_tables6, hosts6,
+                                   self._nat(_IPV6_FAMILIES, self.nat_prerouting6))
             if got[0] == "ACCEPT" and self.nft_pre_input:
                 view = _v6_view(self.nft_pre_input)
                 pre = _nft_pre_input_port(view, _nft_all_chains(view), port, proto, hosts6, _nft_sets(view),
-                                          _IPV6_FAMILIES)
+                                          _IPV6_FAMILIES, nat_floor=_NAT_LEGACY if self.nat_prerouting6 else None)
                 if pre[0] != "PASS":
                     return pre
                 if pre[1] == "rule":
@@ -189,6 +200,8 @@ class IptablesNftSnapshot:
                     other_tables=other,
                     raw_output6=_run("ip6tables", "-S") if _command_exists("ip6tables") else "",
                     other_tables6=_ipt_other_tables("ip6tables") if _command_exists("ip6tables") else None,
+                    nat_prerouting=_ipt_nat_rewrites(),
+                    nat_prerouting6=_ipt_nat_rewrites("ip6tables") if _command_exists("ip6tables") else False,
                     default_drop_before_input=(_ipt_default_drop_before_input(other)
                                                + (_nft_default_drop_before_input(nft_raw) if nft_raw else [])),
                 )
@@ -248,6 +261,47 @@ class IptablesNftSnapshot:
 _IPV4_FAMILIES = ("ip", "inet")
 _RULE_NOISE = re.compile(r"\bcounter(?:\s+packets\s+\d+\s+bytes\s+\d+)?|#.*$")
 
+#: v0.30.0 — the named priorities nft prints for the ip, ip6 and inet
+#: families (nft(8), "Standard priority names").
+_NFT_PRIORITY_NAMES = {"raw": -300, "mangle": -150, "dstnat": -100, "filter": 0, "security": 50,
+                       "srcnat": 100}
+#: iptables' nat PREROUTING runs at dstnat priority.
+_NAT_LEGACY = _NFT_PRIORITY_NAMES["dstnat"]
+
+
+def _nft_priority(text: str) -> "int | None":
+    """v0.30.0 — a base chain's priority as a number: ``priority raw``,
+    ``priority mangle - 5``, ``priority -10``; None when it cannot be read."""
+    m = re.search(r"\bpriority\s+(?:(-?\d+)|([a-z]+)(?:\s*([+-])\s*(\d+))?)\s*;", text)
+    if not m:
+        return None
+    if m.group(1) is not None:
+        return int(m.group(1))
+    base = _NFT_PRIORITY_NAMES.get(m.group(2))
+    if base is None:
+        return None
+    return base + (int(m.group(4)) * (-1 if m.group(3) == "-" else 1) if m.group(3) else 0)
+
+
+def _nft_nat_priority(ruleset: str, families: tuple = _IPV4_FAMILIES) -> "float | None":
+    """v0.30.0 — the latest priority at which a prerouting NAT chain
+    (*families*) holding a rule may rewrite where a packet goes, None when
+    none holds one; unbounded when a priority cannot be read.
+
+    A redirect or a DNAT there sends a packet aimed at another port to the
+    listener, after the chains of lower priority saw it under the port it was
+    sent to. Measured in a network namespace (1 November 2026,
+    `~/.cache/bob-fieldtest/netnsbench/natbench.sh`, nat prerouting
+    `tcp dport 8080 redirect to :8099`): a drop for 8099 at raw or mangle
+    priority closed 8099 and left the listener open through 8080; at
+    priority 0, or on input, it closed both."""
+    found = None
+    for c in _nft_base_chains(ruleset, "prerouting"):
+        if c["family"] in families and c["type"] == "nat" and c["rules"]:
+            prio = float("inf") if c["priority"] is None else c["priority"]
+            found = prio if found is None else max(found, prio)
+    return found
+
 
 def _nft_base_chains(ruleset: str, hook: str) -> "list[dict]":
     """The base chains on *hook*, in ruleset order: family, table, chain,
@@ -263,7 +317,7 @@ def _nft_base_chains(ruleset: str, hook: str) -> "list[dict]":
         m = re.match(r"chain\s+(\S+)\s*\{", text)
         if m and table:
             current = {"family": table[0], "table": table[1], "chain": m.group(1),
-                       "hook": None, "policy": None, "rules": []}
+                       "hook": None, "policy": None, "rules": [], "type": None, "priority": None}
             chains.append(current)
             continue
         if current is None:
@@ -276,6 +330,9 @@ def _nft_base_chains(ruleset: str, hook: str) -> "list[dict]":
             current["hook"] = hm.group(1).lower()
             pm = re.search(r"\bpolicy\s+(\w+)", text)
             current["policy"] = pm.group(1).upper() if pm else "ACCEPT"
+            tm = re.search(r"\btype\s+(\w+)", text)
+            current["type"] = tm.group(1).lower() if tm else None
+            current["priority"] = _nft_priority(text)
         elif text:
             current["rules"].append(text)
     return [c for c in chains if c["hook"] == hook]
@@ -720,7 +777,8 @@ def _nft_default_drop_before_input(ruleset: str, families: tuple = _IPV4_FAMILIE
 
 
 def _nft_pre_input_port(ruleset: str, every: dict, port: int, proto: str, hosts: "frozenset | None" = None,
-                        sets: "dict | None" = None, families: tuple = _IPV4_FAMILIES) -> "tuple[str, str]":
+                        sets: "dict | None" = None, families: tuple = _IPV4_FAMILIES,
+                        nat_floor: "float | None" = None) -> "tuple[str, str]":
     """v0.30.0 — what the chains before input do to a new connection to
     *port*: ("PASS", ""), ("DROP", "rule"|"default") or ("UNKNOWN", "").
     A prerouting chain (*families*) sees every interface: its rules are
@@ -731,11 +789,21 @@ def _nft_pre_input_port(ruleset: str, every: dict, port: int, proto: str, hosts:
     prerouting chain at policy drop accepting 8098 only closed 8099 and left
     8098 open. An ingress chain sees one device: a refusal there leaves the
     port not established, as since 0.28.0. ("PASS", "rule") when a rule there
-    accepted the port: opened on purpose, as a rule on input."""
+    accepted the port: opened on purpose, as a rule on input.
+
+    v0.30.0, review of the changelog — a refusal in a chain that runs before
+    a NAT chain able to rewrite the destination (:func:`_nft_nat_priority`;
+    *nat_floor* for one read elsewhere, iptables' nat table) leaves the port
+    not established: a redirect from another port reaches the listener
+    without meeting it (measured)."""
     unknown = by_rule = False
+    nat = _nft_nat_priority(ruleset, families)
+    if nat_floor is not None:
+        nat = nat_floor if nat is None else max(nat, nat_floor)
     for c in _nft_base_chains(ruleset, "prerouting"):
         if c["family"] not in families:
             continue
+        before_nat = nat is not None and (c["priority"] is None or c["priority"] <= nat)
         verdict = None
         for rule in c["rules"]:
             text = re.sub(r"\s+", " ", _NFT_COMMENT.sub("", _RULE_NOISE.sub("", rule))).strip()
@@ -746,15 +814,15 @@ def _nft_pre_input_port(ruleset: str, every: dict, port: int, proto: str, hosts:
             got = _nft_port_walk([rule], every, c["family"], c["table"], port, proto, frozenset(), hosts, sets)
             if got is None:
                 continue
-            if got[0] == "DROP":
+            if got[0] == "DROP" and not before_nat:
                 return "DROP", "rule"
             verdict = "PASS" if got[0] == "ACCEPT" else "UNKNOWN"
             by_rule = by_rule or verdict == "PASS"
             break
         if verdict is None:
-            if c["policy"] != "ACCEPT":
+            if c["policy"] != "ACCEPT" and not before_nat:
                 return "DROP", "default"
-            verdict = "PASS"
+            verdict = "PASS" if c["policy"] == "ACCEPT" else "UNKNOWN"
         unknown = unknown or verdict == "UNKNOWN"
     # The ingress chains alone: no prerouting family is passed.
     if _nft_refused_before_input(ruleset, every, port, proto, families=(), hosts=hosts):
@@ -923,7 +991,7 @@ def _ipt_walk(chains: dict, name: str, port: int, proto: str, hosts, seen: froze
 
 
 def _ipt_pre_input_port(tables: "dict[str, str]", port: int, proto: str,
-                        hosts: "frozenset | None" = None) -> "tuple[str, str]":
+                        hosts: "frozenset | None" = None, nat: bool = False) -> "tuple[str, str]":
     """v0.30.0 — what the chains of :data:`_IPT_PRE_INPUT` do to a new
     connection to *port*: ("PASS", ""), ("DROP", "rule"|"default") or
     ("UNKNOWN", ""). Each chain's rules are walked as INPUT's are, a rule
@@ -933,11 +1001,18 @@ def _ipt_pre_input_port(tables: "dict[str, str]", port: int, proto: str,
     measured in network namespaces (0.28.0, 0.29.0): a drop for 8099 in raw
     PREROUTING, mangle INPUT or security INPUT, or raw PREROUTING at policy
     drop accepting 8098 only, closed 8099. ("PASS", "rule") when a rule there
-    accepted the port: opened on purpose, as a rule on INPUT."""
+    accepted the port: opened on purpose, as a rule on INPUT.
+
+    v0.30.0, review of the changelog — *nat* when the nat table's PREROUTING
+    holds a rule or could not be read: raw and mangle PREROUTING run before
+    it, and a refusal there leaves the port not established (measured: a drop
+    for 8099 in either, with `-t nat … --dport 8080 -j REDIRECT --to-ports
+    8099`, left the listener open through 8080; mangle INPUT closed both)."""
     unknown = by_rule = False
     for table, text in tables.items():
         chains = _ipt_chains(text)
         for chain in _IPT_PRE_INPUT.get(table, ()):
+            before_nat = nat and chain == "PREROUTING"
             verdict = None
             for body in chains.get(chain, []):
                 line = f"-A {chain} {body}"
@@ -948,27 +1023,27 @@ def _ipt_pre_input_port(tables: "dict[str, str]", port: int, proto: str,
                 got = _ipt_walk(chains, chain, port, proto, hosts, frozenset({chain}), bodies=[body])
                 if got is None:
                     continue
-                if got[0] == "DROP":
+                if got[0] == "DROP" and not before_nat:
                     return "DROP", "rule"
                 verdict = "PASS" if got[0] == "ACCEPT" else "UNKNOWN"
                 by_rule = by_rule or verdict == "PASS"
                 break
             if verdict is None:
                 policy = _ipt_policy(text, chain)
-                if policy in ("DROP", "REJECT"):
+                if policy in ("DROP", "REJECT") and not before_nat:
                     return "DROP", "default"
-                verdict = "PASS"
+                verdict = "UNKNOWN" if policy in ("DROP", "REJECT") else "PASS"
             unknown = unknown or verdict == "UNKNOWN"
     return ("UNKNOWN", "") if unknown else ("PASS", "rule" if by_rule else "")
 
 
 def ipt_port_verdict(rules: str, port: int, proto: str,
                      other_tables: "dict[str, str] | None" = None,
-                     hosts: "frozenset | None" = None) -> "tuple[str, str]":
+                     hosts: "frozenset | None" = None, nat: bool = False) -> "tuple[str, str]":
     """The same verdict read from ``iptables -S`` (INPUT, user chains it jumps
     to unconditionally followed). *other_tables* holds ``iptables -t T -S``
     for raw, mangle and security; None when they could not be read, and an
-    accept is then not established."""
+    accept is then not established. *nat*: :func:`_ipt_nat_rewrites`."""
     chains = _ipt_chains(rules)
     got = _ipt_walk(chains, "INPUT", port, proto, hosts, frozenset({"INPUT"}))
     if got is None or got[0] == "END":
@@ -979,12 +1054,22 @@ def ipt_port_verdict(rules: str, port: int, proto: str,
         if other_tables is None:
             return "UNKNOWN", ""
         # v0.30.0 — the other tables' chains weighed port by port.
-        pre = _ipt_pre_input_port(other_tables, port, proto, hosts)
+        pre = _ipt_pre_input_port(other_tables, port, proto, hosts, nat)
         if pre[0] != "PASS":
             return pre
         if pre[1] == "rule":
             return "ACCEPT", "rule"
     return got
+
+
+def _ipt_nat_rewrites(binary: str = "iptables") -> bool:
+    """v0.30.0 — whether the nat table's PREROUTING may rewrite where a
+    packet goes: it holds a rule, or it could not be read. A table the kernel
+    does not have holds none."""
+    res = run_result(binary, "-t", "nat", "-S", "PREROUTING")
+    if res.ok:
+        return bool(re.search(r"^-A PREROUTING ", res.stdout or "", re.MULTILINE))
+    return "Table does not exist" not in (res.stderr or "")
 
 
 def _with_pre_input(policy: str, refused: "bool | None") -> str:
