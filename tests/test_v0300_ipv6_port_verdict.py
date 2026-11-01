@@ -90,8 +90,10 @@ def test_the_ipv6_interfaces_read(monkeypatch):
            "3: s1    inet 10.78.0.2/24 scope global s1\\       valid_lft forever\n")
 
     class R:
-        ok, stdout, stderr, code = True, out, "", 0
-    monkeypatch.setattr(nf, "run_result", lambda *a, **k: R())
+        def __init__(self, text):
+            self.ok, self.stdout, self.stderr, self.code = True, text, "", 0
+    links = "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 state UNKNOWN\n"
+    monkeypatch.setattr(nf, "run_result", lambda *a, **k: R(links if "link" in a else out))
     view = nf._host_addresses()
     assert (view.ifaces6, view.ifaces) == (frozenset({"s0"}), frozenset({"s1"}))
 

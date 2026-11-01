@@ -20,6 +20,21 @@ Measured in a network namespace (1 November 2026,
 | I10 `iifname != "s0"`, s0 only | open | accepted |
 
 0.29.0 read both ports not established in all ten.
+
+Review of the changelog (1 November 2026): in I1, I8 and I10, s1 was up,
+with no IPv4 address. Linux takes an IPv4 packet for one of its addresses on
+whichever interface it arrives (`ifacebench.sh`: `iifname "s0" … drop`, a
+client on s1 reached 8099; BOB read it refused, 0.29.0 not established), so
+every link that is up counts, and those three now read not established. A
+link that is down does not count, nor a bridge port: its packets reach the
+input hook under the bridge's name (`ifacebench2.sh`):
+
+| case | probe | now |
+|---|---|---|
+| `iifname "s0"`, s0 a port of br0 (10.77.0.2), s1 up without IPv4 | open through both | accepted |
+| `iifname "br0"`, s1 up | closed through br0, open through s1 | not established |
+| `iifname "br0"`, s1 down | closed | refused |
+| `iifname { "br0", "s1" }`, s1 up | closed through both | refused |
 """
 
 from __future__ import annotations
@@ -100,8 +115,60 @@ def test_the_interfaces_read(monkeypatch):
            "3: s1    inet6 fe80::1/64 scope link \\       valid_lft forever\n")
 
     class R:
-        ok, stdout, stderr, code = True, out, "", 0
-    monkeypatch.setattr(nf, "run_result", lambda *a, **k: R())
+        def __init__(self, text):
+            self.ok, self.stdout, self.stderr, self.code = True, text, "", 0
+    links = "1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 state UNKNOWN\n"
+    monkeypatch.setattr(nf, "run_result", lambda *a, **k: R(links if "link" in a else out))
     view = nf._host_addresses()
     assert view.ifaces == frozenset({"s0"})
     assert ipaddress.ip_address("10.77.0.2") in view
+
+
+LINKS = ("1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN \\    link/loopback 00:00\n"
+         "2: s0@if3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP \\    link/ether 02:00 veth\n"
+         "4: s1@if5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP \\    link/ether 02:01 veth\n"
+         "6: s2: <BROADCAST,MULTICAST> mtu 1500 state DOWN \\    link/ether 02:02\n"
+         "7: p0@if8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 master br0 state UP \\    link/ether 02:03 "
+         "veth \\    bridge_slave state forwarding priority 32\n"
+         "9: br0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP \\    link/ether 02:04 bridge\n")
+ADDRS = ("1: lo    inet 127.0.0.1/8 scope host lo\\       valid_lft forever\n"
+         "2: s0    inet 10.77.0.2/24 scope global s0\\       valid_lft forever\n"
+         "9: br0    inet 10.79.0.2/24 scope global br0\\       valid_lft forever\n")
+
+
+def _ip(monkeypatch, links_ok=True):
+    class R:
+        def __init__(self, out, ok=True):
+            self.ok, self.stdout, self.stderr, self.code = ok, out, "", 0 if ok else 1
+    monkeypatch.setattr(nf, "run_result",
+                        lambda *a, **k: R(LINKS, links_ok) if "link" in a else R(ADDRS))
+
+
+class TestEveryLinkUpCounts:
+
+    def test_the_links_read(self, monkeypatch):
+        """s1 holds no address and counts; s2 is down, p0 a bridge port, lo loopback."""
+        _ip(monkeypatch)
+        view = nf._host_addresses()
+        assert view.ifaces == frozenset({"s0", "s1", "br0"})
+        assert view.ifaces6 == frozenset({"s0", "s1", "br0"})
+
+    def test_links_unread_leave_interfaces_unread(self, monkeypatch):
+        _ip(monkeypatch, links_ok=False)
+        view = nf._host_addresses()
+        assert (view.ifaces, view.ifaces6) == (None, None)
+        assert ipaddress.ip_address("10.77.0.2") in view
+
+    def test_the_measured_case(self, monkeypatch):
+        """`ifacebench.sh`: s0 the only interface holding an IPv4 address, s1
+        up without one; a drop on s0 left 8099 reachable through s1."""
+        _ip(monkeypatch)
+        assert nf._iface_cover('"s0"', False, nf._host_addresses()) == "some"
+        assert nf._iface_cover('{ "s0", "s1", "br0" }', False, nf._host_addresses()) == "all"
+
+    def test_an_answer_bob_cannot_read_is_not_read(self, monkeypatch):
+        class R:
+            ok, stdout, stderr, code = True, "something else\n", "", 0
+        monkeypatch.setattr(nf, "run_result", lambda *a, **k: R() if "link" in a else type(
+            "A", (), {"ok": True, "stdout": ADDRS, "stderr": "", "code": 0})())
+        assert nf._host_addresses().ifaces is None

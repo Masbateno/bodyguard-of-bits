@@ -430,9 +430,10 @@ _IPT_DADDR = re.compile(r"(?<!! )(?:-d|--destination)\s+(\S+)")
 
 
 class _HostView(frozenset):
-    """This host's addresses, with ``ifaces``: the interfaces that hold an
-    IPv4 address other than loopback, and ``ifaces6`` an IPv6 one other than
-    ::1 (v0.30.0) — None when not read."""
+    """This host's addresses, with ``ifaces``: the interfaces an IPv4 packet
+    may arrive on (those that hold an IPv4 address other than loopback, and
+    every link up but loopback), and ``ifaces6`` the same for IPv6 (v0.30.0)
+    — None when not read."""
     ifaces: "frozenset | None" = None
     ifaces6: "frozenset | None" = None
 
@@ -458,16 +459,45 @@ def _host_addresses() -> "frozenset | None":
                                                 res.stdout or "", re.MULTILINE) if m.group(2) != "::1"}
     if not found:
         return None
+    links = _up_links()
     view = _HostView(found)
-    view.ifaces = frozenset(ifaces)
-    view.ifaces6 = frozenset(ifaces6)
+    view.ifaces = None if links is None else frozenset(ifaces | links)
+    view.ifaces6 = None if links is None else frozenset(ifaces6 | links)
     return view
 
 
+def _up_links() -> "frozenset | None":
+    """v0.30.0 — every link that is up, loopback and bridge ports aside
+    (``ip -o -d link show``), None when not read. Linux takes an IPv4 packet for one of its addresses
+    on whichever interface it arrives: measured in a network namespace
+    (1 November 2026, `ifacebench.sh`), `iifname "s0" tcp dport 8099 drop`
+    with s0 the only interface holding an IPv4 address closed 8099 there,
+    and a client on s1 — up, no IPv4 address, `rp_filter` 2 — reached it;
+    BOB read it refused. A link that is down receives nothing (measured:
+    s1 down, the client on it did not reach 8099). A bridge port does not
+    count: its packets reach the input hook under the bridge's name
+    (measured, `ifacebench2.sh`: `iifname "s0"` with s0 a port of br0 left
+    8099 open through s0; `iifname "br0"` closed it). A bond or VRF port
+    counts: not measured."""
+    res = run_result("ip", "-o", "-d", "link", "show")
+    if not res.ok:
+        return None
+    links = set()
+    seen = False
+    for m in re.finditer(r"^\d+:\s+([^\s@:]+)(?:@\S+)?:\s+<([^>]*)>", res.stdout or "", re.MULTILINE):
+        seen = True
+        flags = m.group(2).split(",")
+        line = res.stdout[m.start():].split("\n", 1)[0]
+        if "UP" in flags and "LOOPBACK" not in flags and " bridge_slave " not in f"{line} ":
+            links.add(m.group(1))
+    # Every host lists lo at least: no line BOB knows is an answer it cannot read.
+    return frozenset(links) if seen else None
+
+
 def _iface_cover(spec: str, negated: bool, hosts: "frozenset | None") -> "str | None":
-    """v0.30.0 — how much of this host an interface match covers: "all" its
-    interfaces that hold an IPv4 address, "none", "some", or None when they
-    were not read. nft's trailing ``*`` and iptables' trailing ``+`` are
+    """v0.30.0 — how much of this host an interface match covers: "all" the
+    interfaces a packet may arrive on (:func:`_up_links`), "none", "some",
+    or None when they were not read. nft's trailing ``*`` and iptables' trailing ``+`` are
     prefixes. Measured in a network namespace (1 November 2026): a drop for
     8099 on the host's only interface closed it; on an absent interface, or
     `iifname != <the only one>`, left it open; on one of two interfaces,
