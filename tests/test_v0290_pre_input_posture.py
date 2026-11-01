@@ -50,6 +50,8 @@ def _system(monkeypatch, *, nft=None, ipt=None, ip6t=None, tables=None, tables6=
     present = {n for n, v in (("nft", nft), ("iptables", ipt), ("ip6tables", ip6t)) if v is not None}
     monkeypatch.setattr(nf, "_command_exists", lambda name: name in present)
     monkeypatch.setattr(nf, "_run", lambda *a, **k: {"iptables": ipt, "ip6tables": ip6t}.get(a[0]) or "")
+    # v0.30.0 — no legacy nat table: the host's own list is root-only.
+    monkeypatch.setattr(nf, "_legacy_nat_rewrites", lambda v6=False: False)
 
     def run_result(*a, **k):
         if a[:2] == ("nft", "list"):

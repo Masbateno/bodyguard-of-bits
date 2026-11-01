@@ -80,9 +80,10 @@ class IptablesNftSnapshot:
     #: mangle and security tables (None when not read): the IPv6 verdict.
     raw_output6: str = field(default="", repr=False)
     other_tables6: "dict | None" = field(default=None, repr=False)
-    #: v0.30.0, review of the changelog — for the iptables backend, whether
-    #: the nat table's PREROUTING may rewrite a destination (IPv4, IPv6):
-    #: a refusal before it does not close the port (:func:`_ipt_nat_rewrites`).
+    #: v0.30.0, review of the changelog — whether a nat table nft's ruleset
+    #: does not show may rewrite a destination (IPv4, IPv6): iptables' own,
+    #: or a legacy one beside nft. A refusal before it does not close the port
+    #: (:func:`_ipt_nat_rewrites`, :func:`_legacy_nat_rewrites`).
     nat_prerouting: bool = field(default=False, repr=False)
     nat_prerouting6: bool = field(default=False, repr=False)
 
@@ -93,7 +94,8 @@ class IptablesNftSnapshot:
         """v0.28.0 — the IPv4 verdict a new connection to *port* meets in this
         ruleset (:func:`nft_port_verdict`, :func:`ipt_port_verdict`)."""
         if self.backend == "nftables":
-            return nft_port_verdict(self.raw_output, port, proto, self.host_addresses)
+            return nft_port_verdict(self.raw_output, port, proto, self.host_addresses,
+                                    nat_floor=_NAT_LEGACY if self.nat_prerouting else None)
         if self.backend == "iptables":
             got = ipt_port_verdict(self.raw_output, port, proto, self.other_tables, self.host_addresses,
                                    self._nat(_IPV4_FAMILIES, self.nat_prerouting))
@@ -113,7 +115,8 @@ class IptablesNftSnapshot:
         """v0.30.0 — the IPv6 verdict, read as :meth:`port_verdict` reads the
         IPv4 one; shown with each IPv6 listener, not scored."""
         if self.backend == "nftables":
-            return nft_port_verdict_v6(self.raw_output, port, proto, self.host_addresses)
+            return nft_port_verdict_v6(self.raw_output, port, proto, self.host_addresses,
+                                       nat_floor=_NAT_LEGACY if self.nat_prerouting6 else None)
         if self.backend == "iptables" and re.search(r"^-P INPUT ", self.raw_output6 or "", re.MULTILINE):
             hosts6 = _hosts_v6(self.host_addresses)
             got = ipt_port_verdict(self.raw_output6, port, proto, self.other_tables6, hosts6,
@@ -158,6 +161,9 @@ class IptablesNftSnapshot:
                         raw, _nft_all_chains(raw), None, None, hosts=hosts)),
                     host_addresses=hosts,
                     default_drop_before_input=_nft_default_drop_before_input(raw),
+                    # v0.30.0 — a legacy nat table nft does not show.
+                    nat_prerouting=_legacy_nat_rewrites(),
+                    nat_prerouting6=_legacy_nat_rewrites(v6=True),
                     forward_policy=_nft_policy(raw, "forward"),
                     has_loopback_rule=_nft_has_loopback(raw),
                     has_conntrack_rule=_nft_has_conntrack(raw),
@@ -200,8 +206,9 @@ class IptablesNftSnapshot:
                     other_tables=other,
                     raw_output6=_run("ip6tables", "-S") if _command_exists("ip6tables") else "",
                     other_tables6=_ipt_other_tables("ip6tables") if _command_exists("ip6tables") else None,
-                    nat_prerouting=_ipt_nat_rewrites(),
-                    nat_prerouting6=_ipt_nat_rewrites("ip6tables") if _command_exists("ip6tables") else False,
+                    nat_prerouting=_ipt_nat_rewrites() or _legacy_nat_rewrites(),
+                    nat_prerouting6=(_ipt_nat_rewrites("ip6tables") if _command_exists("ip6tables") else False)
+                    or _legacy_nat_rewrites(v6=True),
                     default_drop_before_input=(_ipt_default_drop_before_input(other)
                                                + (_nft_default_drop_before_input(nft_raw) if nft_raw else [])),
                 )
@@ -831,7 +838,8 @@ def _nft_pre_input_port(ruleset: str, every: dict, port: int, proto: str, hosts:
 
 
 def nft_port_verdict(ruleset: str, port: int, proto: str,
-                     hosts: "frozenset | None" = None, families: tuple = _IPV4_FAMILIES) -> "tuple[str, str]":
+                     hosts: "frozenset | None" = None, families: tuple = _IPV4_FAMILIES,
+                     nat_floor: "float | None" = None) -> "tuple[str, str]":
     """The IPv4 verdict a new connection to *port*/*proto* meets on the input
     hook: ("ACCEPT"|"DROP"|"UNKNOWN", "rule"|"default"|""). Every ip/inet base
     chain must accept it; one that refuses it closes it. A hook before input
@@ -855,7 +863,7 @@ def nft_port_verdict(ruleset: str, port: int, proto: str,
     if any(v[0] == "UNKNOWN" for v in verdicts):
         return "UNKNOWN", ""
     # v0.30.0 — the chains before input weighed port by port.
-    pre = _nft_pre_input_port(ruleset, every, port, proto, hosts, sets, families)
+    pre = _nft_pre_input_port(ruleset, every, port, proto, hosts, sets, families, nat_floor)
     if pre[0] != "PASS":
         return pre
     return ("ACCEPT", "rule") if pre[1] == "rule" or any(v[1] == "rule" for v in verdicts) else ("ACCEPT", "default")
@@ -1072,6 +1080,29 @@ def _ipt_nat_rewrites(binary: str = "iptables") -> bool:
     return "Table does not exist" not in (res.stderr or "")
 
 
+def _legacy_nat_rewrites(v6: bool = False) -> bool:
+    """v0.30.0 — whether a legacy (x_tables) nat table, which ``nft list
+    ruleset`` does not show, may rewrite where a packet goes. The kernel lists
+    the legacy tables it holds in ``/proc/net/ip_tables_names``; reading it
+    loads no module, where ``iptables-legacy -t nat -S`` would load the table.
+    Measured in a network namespace (1 November 2026, `legacybench.sh`):
+    `iptables-legacy -t nat … --dport 8080 -j REDIRECT --to-ports 8099`
+    beside an nft prerouting drop for 8099 left the listener open through
+    8080. No list: no legacy tables; a list BOB cannot read counts."""
+    try:
+        with open("/proc/net/ip6_tables_names" if v6 else "/proc/net/ip_tables_names",
+                  encoding="utf-8") as fh:
+            tables = fh.read().split()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    if "nat" not in tables:
+        return False
+    binary = "ip6tables-legacy" if v6 else "iptables-legacy"
+    return _ipt_nat_rewrites(binary) if _command_exists(binary) else True
+
+
 def _with_pre_input(policy: str, refused: "bool | None") -> str:
     """The hook's default verdict once the other chains a packet meets on its
     way in are read — before the hook, or on it in another table (security
@@ -1168,12 +1199,12 @@ def _hosts_v6(hosts: "frozenset | None") -> "frozenset | None":
 
 
 def nft_port_verdict_v6(ruleset: str, port: int, proto: str,
-                        hosts: "frozenset | None" = None) -> "tuple[str, str]":
+                        hosts: "frozenset | None" = None, nat_floor: "float | None" = None) -> "tuple[str, str]":
     """v0.30.0 — the IPv6 verdict a new connection to *port*/*proto* meets,
     read as the IPv4 one is (ip6 and inet chains, IPv4-only rules set aside,
     the chains before input weighed). Shown, not scored: IPv6 exposure is
     weighed by the IPv6 section."""
-    return nft_port_verdict(_v6_view(ruleset), port, proto, _hosts_v6(hosts), _IPV6_FAMILIES)
+    return nft_port_verdict(_v6_view(ruleset), port, proto, _hosts_v6(hosts), _IPV6_FAMILIES, nat_floor)
 
 
 def nft_input_policy_v6(ruleset: str, hosts: "frozenset | None" = None) -> "str | None":

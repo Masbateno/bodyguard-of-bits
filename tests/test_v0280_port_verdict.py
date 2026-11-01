@@ -358,6 +358,7 @@ def test_from_system_reads_the_other_tables(monkeypatch):
                         lambda: {"raw": "-A PREROUTING -p tcp -m tcp --dport 8099 -j DROP\n"})
     # v0.30.0 — an empty nat table: the host's own (refused without root) counts as one that may rewrite.
     monkeypatch.setattr(nf, "_ipt_nat_rewrites", lambda binary="iptables": False)
+    monkeypatch.setattr(nf, "_legacy_nat_rewrites", lambda v6=False: False)
     s = nf.IptablesNftSnapshot.from_system()
     assert s.backend == "iptables"
     assert s.port_verdict(8099, "tcp") == D

@@ -63,7 +63,12 @@ class TestNftables:
         (INPUT + REDIRECT + _chain("ip", "r", "prerouting", "raw", "drop", "tcp dport { 8080, 8098 } accept"), U),
         (INPUT + _chain("ip", "n", "postrouting", "srcnat", "accept", "oifname lo masquerade", kind="nat")
                + _chain("ip", "r", "prerouting", "raw", "accept", *DROP_8099), D),
-    ], ids=["N0", "N1", "N2", "N3", "N4", "N9", "N11"])
+        # N13: a redirect for 7000 only; the probe found 8099 closed. BOB does not
+        # read which port a NAT rule rewrites: any rule there may bring a packet
+        # to the listener, so the refusal before it is not credited (on purpose).
+        (INPUT + _chain("ip", "n", "prerouting", "dstnat", "accept", "tcp dport 7000 redirect to :7001", kind="nat")
+               + _chain("ip", "r", "prerouting", "raw", "accept", *DROP_8099), U),
+    ], ids=["N0", "N1", "N2", "N3", "N4", "N9", "N11", "N13-another-port"])
     def test_measured(self, ruleset, v8099):
         assert nf.nft_port_verdict(ruleset, 8099, "tcp", HOSTS) == v8099
 
@@ -168,8 +173,8 @@ class TestIptables:
 
     def test_read_with_the_ruleset(self):
         src = inspect.getsource(nf.IptablesNftSnapshot.from_system)
-        assert "nat_prerouting=_ipt_nat_rewrites()," in src
-        assert 'nat_prerouting6=_ipt_nat_rewrites("ip6tables")' in src
+        assert "nat_prerouting=_ipt_nat_rewrites() or _legacy_nat_rewrites()," in src
+        assert 'nat_prerouting6=(_ipt_nat_rewrites("ip6tables")' in src
 
     def test_ipv6_reads_its_own(self):
         rules6 = _ipt()
@@ -180,3 +185,55 @@ class TestIptables:
         assert snap.port_verdict_v6(8099, "tcp") == D
         snap.nat_prerouting6 = True
         assert snap.port_verdict_v6(8099, "tcp") == U
+
+
+class TestALegacyNatTableBesideNft:
+    """`nft list ruleset` does not show a legacy (x_tables) table. Measured
+    (1 November 2026, `legacybench.sh`): `iptables-legacy -t nat … --dport
+    8080 -j REDIRECT --to-ports 8099` beside an nft raw-priority drop for 8099
+    left the listener open through 8080 (L0) and BOB read 8099 refused;
+    without it, closed both ways (L1)."""
+
+    @staticmethod
+    def _snap(**kw):
+        return nf.IptablesNftSnapshot(backend="nftables", input_policy="PARTIAL", forward_policy="DROP",
+                                      has_loopback_rule=False, has_conntrack_rule=False,
+                                      raw_output=INPUT + _chain("ip", "r", "prerouting", "raw", "accept", *DROP_8099)
+                                      + _chain("ip6", "r6", "prerouting", "raw", "accept", *DROP_8099),
+                                      host_addresses=HOSTS | {ipaddress.ip_address("fd77::2")}, **kw)
+
+    def test_L1_without_one(self):
+        assert self._snap().port_verdict(8099, "tcp") == D
+
+    def test_L0_with_one(self):
+        assert self._snap(nat_prerouting=True).port_verdict(8099, "tcp") == U
+
+    def test_ipv6_reads_its_own(self):
+        assert self._snap(nat_prerouting=True).port_verdict_v6(8099, "tcp") == D
+        assert self._snap(nat_prerouting6=True).port_verdict_v6(8099, "tcp") == U
+
+    @pytest.mark.parametrize("names, binary, read, rewrites", [
+        (FileNotFoundError, True, False, False),
+        (PermissionError, True, False, True),
+        ("filter\nraw\n", True, True, False),
+        ("nat\nfilter\n", False, False, True),
+        ("nat\nfilter\n", True, False, False),
+        ("nat\nfilter\n", True, True, True),
+    ], ids=["no-legacy", "list-unread", "no-nat", "no-binary", "nat-empty", "nat-rule"])
+    def test_the_list(self, monkeypatch, names, binary, read, rewrites):
+        import io
+
+        def fake_open(path, *a, **k):
+            assert path == "/proc/net/ip_tables_names"
+            if isinstance(names, type):
+                raise names(path)
+            return io.StringIO(names)
+        monkeypatch.setattr(nf, "open", fake_open, raising=False)
+        monkeypatch.setattr(nf, "_command_exists", lambda n: binary and n == "iptables-legacy")
+        monkeypatch.setattr(nf, "_ipt_nat_rewrites", lambda b="iptables": read and b == "iptables-legacy")
+        assert nf._legacy_nat_rewrites() is rewrites
+
+    def test_read_with_the_nft_ruleset(self):
+        src = inspect.getsource(nf.IptablesNftSnapshot.from_system)
+        assert "nat_prerouting=_legacy_nat_rewrites()," in src
+        assert "nat_prerouting6=_legacy_nat_rewrites(v6=True)," in src
