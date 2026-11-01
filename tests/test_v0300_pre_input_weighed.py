@@ -81,6 +81,42 @@ def test_iptables(tables, v8098, v8099):
             nf.ipt_port_verdict(_ipt(), 8099, "tcp", tables, HOSTS)) == (v8098, v8099)
 
 
+
+def _chain(family, table, hook, priority, policy, *rules):
+    return (f"table {family} {table} {{\n\tchain c {{\n\t\ttype filter hook {hook} priority {priority}; "
+            f"policy {policy};\n" + "".join(f"\t\t{r}\n" for r in rules) + "\t}\n}\n")
+
+
+class TestAnAcceptEndsItsOwnChainOnly:
+    """0.30.0, review of the changelog — an accept ends the chain it is in; the
+    packet still meets every other base chain of the hook and the input hook
+    after it, and a drop in any of them closes the port, whatever the order."""
+
+    @pytest.mark.parametrize("ruleset", [
+        INPUT + _chain("ip", "r1", "prerouting", "raw", "accept", "tcp dport 8099 accept")
+              + _chain("ip", "r2", "prerouting", "mangle", "accept", "tcp dport 8099 drop"),
+        INPUT + _chain("ip", "r2", "prerouting", "mangle", "accept", "tcp dport 8099 drop")
+              + _chain("ip", "r1", "prerouting", "raw", "accept", "tcp dport 8099 accept"),
+        INPUT + _chain("inet", "r", "prerouting", "raw", "drop", "tcp dport 8099 accept")
+              + _chain("inet", "g", "input", "10", "accept", "tcp dport 8099 drop"),
+        INPUT + _chain("inet", "g", "input", "-10", "accept", "tcp dport 8099 accept")
+              + _chain("inet", "h", "input", "10", "accept", "tcp dport 8099 drop"),
+    ], ids=["pre-accept-then-pre-drop", "pre-drop-written-first", "pre-accept-then-input-drop",
+            "input-accept-then-input-drop"])
+    def test_nftables(self, ruleset):
+        assert nf.nft_port_verdict(ruleset, 8099, "tcp", HOSTS) == D
+
+    @pytest.mark.parametrize("rules, tables", [
+        (_ipt(), {"raw": "-P PREROUTING ACCEPT\n-A PREROUTING -p tcp -m tcp --dport 8099 -j ACCEPT\n",
+                  "mangle": "-P PREROUTING ACCEPT\n-P INPUT ACCEPT\n-A PREROUTING -p tcp -m tcp --dport 8099 -j DROP\n"}),
+        (_ipt() + "-A INPUT -p tcp -m tcp --dport 8099 -j DROP\n",
+         {"raw": "-P PREROUTING ACCEPT\n-A PREROUTING -p tcp -m tcp --dport 8099 -j ACCEPT\n"}),
+        (_ipt() + "-A INPUT -p tcp -m tcp --dport 8099 -j ACCEPT\n",
+         {"security": "-P INPUT ACCEPT\n-A INPUT -p tcp -m tcp --dport 8099 -j DROP\n"}),
+    ], ids=["raw-accept-then-mangle-drop", "raw-accept-then-filter-drop", "filter-accept-then-security-drop"])
+    def test_iptables(self, rules, tables):
+        assert nf.ipt_port_verdict(rules, 8099, "tcp", tables, HOSTS) == D
+
 def test_the_snapshot_weighs_nfts_own_chains_through_iptables():
     s = nf.IptablesNftSnapshot(backend="iptables", input_policy="PARTIAL", forward_policy="DROP",
                                has_loopback_rule=False, has_conntrack_rule=False, raw_output=_ipt(),
