@@ -87,24 +87,37 @@ class IptablesNftSnapshot:
     #: (:func:`_ipt_nat_rewrites`, :func:`_legacy_nat_rewrites`).
     nat_prerouting: bool = field(default=False, repr=False)
     nat_prerouting6: bool = field(default=False, repr=False)
+    #: v0.31.0 — the IPv4 destination-NAT rules BOB followed (:func:`_nat_effect`),
+    #: [] for none; None when one could not be followed: the port verdict then
+    #: reads a NAT chain as 0.30.0 did.
+    nat_rules: "list | None" = field(default=None, repr=False)
 
     def _nat(self, families: tuple, legacy: bool) -> bool:
         return legacy or bool(self.nft_pre_input and _nft_nat_priority(self.nft_pre_input, families) is not None)
 
     def port_verdict(self, port: int, proto: str) -> "tuple[str, str]":
         """v0.28.0 — the IPv4 verdict a new connection to *port* meets in this
-        ruleset (:func:`nft_port_verdict`, :func:`ipt_port_verdict`)."""
+        ruleset (:func:`nft_port_verdict`, :func:`ipt_port_verdict`).
+
+        v0.31.0 — the destination NAT followed where BOB can (:func:`_nat_effect`):
+        a port its first NAT rule sends elsewhere, with no rule bringing another
+        port to it, is not reached on that port — ("DROP", "nat"); a port no NAT
+        rule concerns is weighed as if there were none."""
+        effect = _nat_effect(port, proto, self.nat_rules, self.host_addresses)
+        if effect == "away":
+            return "DROP", "nat"
+        plain = effect == "untouched"
         if self.backend == "nftables":
             return nft_port_verdict(self.raw_output, port, proto, self.host_addresses,
-                                    nat_floor=_DSTNAT if self.nat_prerouting else None)
+                                    nat_floor=_DSTNAT if self.nat_prerouting else None, nat_ignored=plain)
         if self.backend == "iptables":
             got = ipt_port_verdict(self.raw_output, port, proto, self.other_tables, self.host_addresses,
-                                   self._nat(_IPV4_FAMILIES, self.nat_prerouting))
+                                   self._nat(_IPV4_FAMILIES, self.nat_prerouting) and not plain)
             if got[0] == "ACCEPT" and self.nft_pre_input:
                 # v0.30.0 — nft's own chains before input, weighed port by port.
                 pre = _nft_pre_input_port(self.nft_pre_input, _nft_all_chains(self.nft_pre_input), port,
                                           proto, self.host_addresses, _nft_sets(self.nft_pre_input),
-                                          nat_floor=_DSTNAT if self.nat_prerouting else None)
+                                          nat_floor=_DSTNAT if self.nat_prerouting else None, nat_ignored=plain)
                 if pre[0] != "PASS":
                     return pre
                 if pre[1] == "rule":
@@ -165,6 +178,7 @@ class IptablesNftSnapshot:
                     # v0.30.0 — a legacy nat table nft does not show.
                     nat_prerouting=_legacy_nat_rewrites(),
                     nat_prerouting6=_legacy_nat_rewrites(v6=True),
+                    nat_rules=_nat_rules_of(_nft_nat_rules(raw), _ipt_nat_rules(_legacy_nat_text())),
                     forward_policy=_nft_policy(raw, "forward"),
                     has_loopback_rule=_nft_has_loopback(raw),
                     has_conntrack_rule=_nft_has_conntrack(raw),
@@ -208,6 +222,9 @@ class IptablesNftSnapshot:
                     raw_output6=_run("ip6tables", "-S") if _command_exists("ip6tables") else "",
                     other_tables6=_ipt_other_tables("ip6tables") if _command_exists("ip6tables") else None,
                     nat_prerouting=_ipt_nat_rewrites() or _legacy_nat_rewrites(),
+                    nat_rules=_nat_rules_of(_ipt_nat_rules(_ipt_nat_text()),
+                                            _nft_nat_rules(nft_raw) if nft_raw else [],
+                                            _ipt_nat_rules(_legacy_nat_text())),
                     nat_prerouting6=(_ipt_nat_rewrites("ip6tables") if _command_exists("ip6tables") else False)
                     or _legacy_nat_rewrites(v6=True),
                     default_drop_before_input=(_ipt_default_drop_before_input(other)
@@ -901,7 +918,7 @@ def _nft_default_drop_before_input(ruleset: str, families: tuple = _IPV4_FAMILIE
 
 def _nft_pre_input_port(ruleset: str, every: dict, port: int, proto: str, hosts: "frozenset | None" = None,
                         sets: "dict | None" = None, families: tuple = _IPV4_FAMILIES,
-                        nat_floor: "float | None" = None) -> "tuple[str, str]":
+                        nat_floor: "float | None" = None, nat_ignored: bool = False) -> "tuple[str, str]":
     """v0.30.0 — what the chains before input do to a new connection to
     *port*: ("PASS", ""), ("DROP", "rule"|"default") or ("UNKNOWN", "").
     A prerouting chain (*families*) sees every interface: its rules are
@@ -918,10 +935,15 @@ def _nft_pre_input_port(ruleset: str, every: dict, port: int, proto: str, hosts:
     a NAT chain able to rewrite the destination (:func:`_nft_nat_priority`;
     *nat_floor* for one read elsewhere, iptables' nat table) leaves the port
     not established: a redirect from another port reaches the listener
-    without meeting it (measured)."""
+    without meeting it (measured).
+
+    v0.31.0 — *nat_ignored* when BOB followed every NAT rule and none
+    concerns this port (:func:`_nat_effect`): a refusal before the NAT point
+    then closes it (measured: a redirect for 7000 only and a raw drop for 8099
+    closed 8099)."""
     unknown = by_rule = False
-    nat = _nft_nat_priority(ruleset, families)
-    if nat_floor is not None:
+    nat = None if nat_ignored else _nft_nat_priority(ruleset, families)
+    if nat_floor is not None and not nat_ignored:
         nat = nat_floor if nat is None else max(nat, nat_floor)
     for c in _nft_base_chains(ruleset, "prerouting"):
         if c["family"] not in families:
@@ -955,7 +977,7 @@ def _nft_pre_input_port(ruleset: str, every: dict, port: int, proto: str, hosts:
 
 def nft_port_verdict(ruleset: str, port: int, proto: str,
                      hosts: "frozenset | None" = None, families: tuple = _IPV4_FAMILIES,
-                     nat_floor: "float | None" = None) -> "tuple[str, str]":
+                     nat_floor: "float | None" = None, nat_ignored: bool = False) -> "tuple[str, str]":
     """The IPv4 verdict a new connection to *port*/*proto* meets on the input
     hook: ("ACCEPT"|"DROP"|"UNKNOWN", "rule"|"default"|""). Every ip/inet base
     chain must accept it; one that refuses it closes it. A hook before input
@@ -979,7 +1001,7 @@ def nft_port_verdict(ruleset: str, port: int, proto: str,
     if any(v[0] == "UNKNOWN" for v in verdicts):
         return "UNKNOWN", ""
     # v0.30.0 — the chains before input weighed port by port.
-    pre = _nft_pre_input_port(ruleset, every, port, proto, hosts, sets, families, nat_floor)
+    pre = _nft_pre_input_port(ruleset, every, port, proto, hosts, sets, families, nat_floor, nat_ignored)
     if pre[0] != "PASS":
         return pre
     return ("ACCEPT", "rule") if pre[1] == "rule" or any(v[1] == "rule" for v in verdicts) else ("ACCEPT", "default")
@@ -1196,6 +1218,47 @@ def _ipt_nat_rewrites(binary: str = "iptables") -> bool:
     return "Table does not exist" not in (res.stderr or "")
 
 
+def _ipt_nat_text(binary: str = "iptables") -> "str | None":
+    """v0.31.0 — ``iptables -t nat -S PREROUTING``: its text, "" when the
+    kernel has no nat table, None when it could not be read."""
+    res = run_result(binary, "-t", "nat", "-S", "PREROUTING")
+    if res.ok:
+        return res.stdout or ""
+    return "" if "Table does not exist" in (res.stderr or "") else None
+
+
+def _legacy_nat_text(v6: bool = False) -> "str | None":
+    """v0.31.0 — the legacy nat table's PREROUTING beside nft, as
+    :func:`_legacy_nat_rewrites` finds it: "" when there is none, None when it
+    could not be read."""
+    try:
+        with open("/proc/net/ip6_tables_names" if v6 else "/proc/net/ip_tables_names",
+                  encoding="utf-8") as fh:
+            tables = fh.read().split()
+    except FileNotFoundError:
+        return ""
+    except OSError:
+        return None
+    if "nat" not in tables:
+        return ""
+    binary = "ip6tables-legacy" if v6 else "iptables-legacy"
+    return _ipt_nat_text(binary) if _command_exists(binary) else None
+
+
+def _nat_rules_of(*sources: "list | None") -> "list | None":
+    """v0.31.0 — one list of NAT rules from the sources read (nft's chains,
+    iptables' nat table, a legacy one): None when one was not followed or two
+    hold different rules (their order is not weighed); a source shown twice
+    (iptables-nft's table, in nft's ruleset too) counts once."""
+    held = []
+    for rules in sources:
+        if rules is None:
+            return None
+        if rules and rules not in held:
+            held.append(rules)
+    return None if len(held) > 1 else (held[0] if held else [])
+
+
 def _legacy_nat_rewrites(v6: bool = False) -> bool:
     """v0.30.0 — whether a legacy (x_tables) nat table, which ``nft list
     ruleset`` does not show, may rewrite where a packet goes. The kernel lists
@@ -1217,6 +1280,132 @@ def _legacy_nat_rewrites(v6: bool = False) -> bool:
         return False
     binary = "ip6tables-legacy" if v6 else "iptables-legacy"
     return _ipt_nat_rewrites(binary) if _command_exists(binary) else True
+
+
+#: v0.31.0 — a destination-NAT rule BOB can follow, as nft prints it:
+#: ``[meta l4proto tcp | ip protocol tcp] [tcp dport SPEC] (redirect [to :P]
+#: | dnat [ip] to ADDR[:P])`` (iptables-nft's rules show the same way).
+_NFT_NAT_RULE = re.compile(
+    r"^(?:(?:meta l4proto|ip protocol) (tcp|udp) )?(?:(tcp|udp) dport (\{[^}]*\}|\d+(?:-\d+)?) )?"
+    r"(?:redirect(?: to :(\d+))?|dnat (?:ip )?to ([0-9.]+)(?::(\d+))?)$")
+#: The same, as ``iptables -t nat -S PREROUTING`` prints it.
+_IPT_NAT_RULE = re.compile(
+    r"^-A PREROUTING (?:-p (tcp|udp) )?(?:-m (?:tcp|udp) )?"
+    r"(?:--dport (\d+(?::\d+)?) |-m multiport --dports ([\d,]+) )?"
+    r"-j (?:REDIRECT(?: --to-ports (\d+))?|DNAT --to-destination ([0-9.]+)(?::(\d+))?)$")
+
+
+def _nat_ports(spec: "str | None") -> "tuple | None":
+    """``8099``, ``8000-8010``, ``8000:8010``, ``{ 80, 443 }``, ``80,443`` as
+    sorted (low, high) ranges; () for no port named (every port)."""
+    if spec is None:
+        return ()
+    out = []
+    for item in (x.strip() for x in spec.strip("{} ").split(",") if x.strip()):
+        m = re.fullmatch(r"(\d+)(?:[-:](\d+))?", item)
+        if not m:
+            return None
+        out.append((int(m.group(1)), int(m.group(2) or m.group(1))))
+    return tuple(sorted(out))
+
+
+def _nat_rule(proto, spec, to_port, addr, addr_port) -> "dict | None":
+    ports = _nat_ports(spec)
+    if ports is None:
+        return None
+    return {"proto": proto, "ports": ports, "redirect": addr is None, "addr": addr,
+            "to": int(to_port or addr_port) if (to_port or addr_port) else None}
+
+
+def _nft_nat_rules(ruleset: str, families: tuple = _IPV4_FAMILIES) -> "list | None":
+    """v0.31.0 — the rules of the NAT prerouting chains (*families*) as
+    :func:`_nat_effect` reads them, in order; None when one is not of a form
+    BOB follows (a condition on an interface, a source or a destination, a
+    jump, a map, a port range as target…), or when two chains hold rules (their
+    order is not weighed)."""
+    rules, chains = [], 0
+    for c in _nft_base_chains(ruleset, "prerouting"):
+        if c["family"] not in families or c["type"] != "nat":
+            continue
+        texts = [re.sub(r"\s+", " ", _NFT_COMMENT.sub("", _RULE_NOISE.sub("", r))).strip() for r in c["rules"]]
+        texts = [t for t in texts if t]
+        if not texts:
+            continue
+        chains += 1
+        for t in texts:
+            m = _NFT_NAT_RULE.match(t)
+            rule = m and _nat_rule(m.group(2) or m.group(1), m.group(3), m.group(4), m.group(5), m.group(6))
+            if not rule:
+                return None
+            rules.append(rule)
+    return None if chains > 1 else rules
+
+
+def _ipt_nat_rules(text: "str | None") -> "list | None":
+    """v0.31.0 — the same for ``iptables -t nat -S PREROUTING``; None when it
+    could not be read or a rule is not of a form BOB follows."""
+    if text is None:
+        return None
+    rules = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("-A PREROUTING"):
+            continue
+        m = _IPT_NAT_RULE.match(line)
+        rule = m and _nat_rule(m.group(1), m.group(2) or m.group(3), m.group(4), m.group(5), m.group(6))
+        if not rule:
+            return None
+        rules.append(rule)
+    return rules
+
+
+def _nat_matches(rule: dict, port: int, proto: str) -> bool:
+    if rule["proto"] is not None and rule["proto"] != proto:
+        return False
+    # No port named: every port of the protocol.
+    return not rule["ports"] or any(lo <= port <= hi for lo, hi in rule["ports"])
+
+
+def _nat_effect(port: int, proto: str, rules: "list | None", hosts: "frozenset | None") -> "str | None":
+    """v0.31.0 — what destination NAT does to new connections for a listener
+    on *port*: "away" when the first rule for the port sends it elsewhere and
+    no rule brings another port to it; "untouched" when no rule concerns it;
+    "brought" when a rule may bring another port to it; None when BOB cannot
+    tell (*rules* not followed, a host address not read). Measured in a
+    network namespace (2 November 2026, `a1bench.sh`): `tcp dport 8099
+    redirect to :9999`, a dnat of 8099 to another host and a redirect of every
+    tcp port left 8099 closed; `tcp dport 8080 redirect to :8099` reached it
+    through 8080; a dnat of 8099 to the host's own address, same port, left it
+    open."""
+    if rules is None:
+        return None
+    own = _host_v4(hosts)
+    away = brought = False
+    first = True
+    for rule in rules:
+        if rule["redirect"]:
+            local = True
+        elif own is None:
+            return None
+        else:
+            import ipaddress
+            addr = ipaddress.ip_address(rule["addr"])
+            # A dnat to loopback reaches this host's listeners where
+            # route_localnet lets it: not followed.
+            if addr.is_loopback:
+                return None
+            local = addr in own
+        target = rule["to"]
+        if first and _nat_matches(rule, port, proto):
+            first = False
+            if not local or (target is not None and target != port):
+                away = True
+        # A rule that sends another port of this protocol here.
+        if local and target == port and rule["proto"] in (None, proto) and rule["ports"] != ((port, port),):
+            brought = True
+    if brought:
+        return "brought"
+    return "away" if away else "untouched"
 
 
 def _with_pre_input(policy: str, refused: "bool | None") -> str:

@@ -522,6 +522,9 @@ def _port_weighed(verdict_of, port: str) -> "str | None":
     if verdict_of is None or not m:
         return None
     verdict, by = verdict_of(int(m.group(1)), m.group(2))
+    # v0.31.0 — ("DROP", "nat"): a NAT rule sends this port elsewhere.
+    if (verdict, by) == ("DROP", "nat"):
+        return "ports.netfilter_port.drop_nat"
     if verdict not in ("ACCEPT", "DROP") or by not in ("rule", "default"):
         return None
     return f"ports.netfilter_port.{verdict.lower()}_{by}"
