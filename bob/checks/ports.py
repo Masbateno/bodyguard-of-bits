@@ -134,6 +134,15 @@ class ListeningPort:
 
 
 
+def _localnet_state(reachable: "bool | None", localnet_v4: bool = True) -> "str | None":
+    """v0.30.0 — for something bound to localhost: "on" when the network
+    reaches 127.0.0.0/8 (route_localnet), "unread" when that is not known,
+    None otherwise, or when it is not bound to an IPv4 loopback address."""
+    if not localnet_v4 or reachable is False:
+        return None
+    return "on" if reachable else "unread"
+
+
 def is_specific_unicast(lport: "ListeningPort") -> bool:
     """True if bound to one concrete, reachable host address — 192.168.1.10,
     not 0.0.0.0, loopback, multicast, a /24 broadcast or an interface scope.
@@ -191,6 +200,9 @@ class PortsSnapshot:
     ports_readable: bool = True
     # v0.24.4 — the ports ssh.socket / sshd.socket listen on.
     ssh_socket_ports: "frozenset[int]" = frozenset()
+    # v0.30.0 — whether packets for 127.0.0.0/8 are taken from the network
+    # (route_localnet; iptables_nftables._route_localnet), None when not read.
+    loopback_reachable: "bool | None" = False
 
     @classmethod
     def from_system(cls) -> "PortsSnapshot":
@@ -200,6 +212,7 @@ class PortsSnapshot:
         Returns:
             Populated PortsSnapshot. Never raises.
         """
+        from bob.checks.iptables_nftables import _route_localnet
         ss         = run_result("ss", "-tulnp")
         ufw_rules  = _run("ufw", "status", "numbered")
         ports      = _parse_ss_output(ss.stdout)
@@ -207,8 +220,15 @@ class PortsSnapshot:
         return cls(ports=ports, ufw_rules=ufw_rules, ss_output=ss.stdout,
                    ufw_apps=_read_ufw_app_profiles(),
                    ports_readable=ss.ok,
+                   loopback_reachable=_route_localnet(),
                    ssh_socket_ports=_parse_socket_listen(
                        _run("systemctl", "show", "-p", "Listen", *_SSH_SOCKET_UNITS)))
+
+    @property
+    def loopback_v4_ports(self) -> set[str]:
+        """v0.30.0 — 'port/proto' strings bound to an IPv4 loopback address
+        (127.0.0.0/8) among their bindings."""
+        return {lp.port_proto for lp in self.ports if lp.address.startswith("127.")}
 
     @property
     def loopback_only_ports(self) -> set[str]:
@@ -517,10 +537,20 @@ def check_ports(
             bound = next((lp for lp in snapshot.ports
                           if lp.port_proto == pp and not lp.is_loopback), lport)
             if bound.is_loopback:
-                result.info(
-                    message=_t("ports.uncovered_local", port=pp),
-                    key="ports.uncovered_local",
-                )
+                # v0.30.0 — route_localnet on (or not read): the network
+                # reaches 127.0.0.0/8, and "no external exposure" was false
+                # (measured, `localnet_audit.txt`). ::1 is not concerned.
+                state = _localnet_state(snapshot.loopback_reachable,
+                                        localnet_v4=pp in snapshot.loopback_v4_ports)
+                if state == "on":
+                    result.info(message=_t("ports.uncovered_local_localnet", port=pp),
+                                key="ports.uncovered_local_localnet")
+                elif state == "unread":
+                    result.info(message=_t("ports.uncovered_local_localnet_unread", port=pp),
+                                key="ports.uncovered_local_localnet_unread")
+                else:
+                    result.info(message=_t("ports.uncovered_local", port=pp),
+                                key="ports.uncovered_local")
             else:
                 # v0.24.0: bound to one concrete address (a LAN IP), not to
                 # localhost. "localhost only — no external exposure" was printed

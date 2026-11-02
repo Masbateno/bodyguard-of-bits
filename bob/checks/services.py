@@ -335,6 +335,10 @@ def check_services(
     netfilter_all_interfaces=None,
     netfilter_unknown: bool = False,
     firewalld_unread: bool = False,
+    #: v0.30.0 — route_localnet (PortsSnapshot.loopback_reachable) and the
+    #: ports bound to an IPv4 loopback address (PortsSnapshot.loopback_v4_ports).
+    loopback_reachable: "bool | None" = False,
+    loopback_v4_ports: "frozenset | set" = frozenset(),
 ) -> CheckResult:
     """
     Evaluate service snapshots and return findings and deductions.
@@ -359,7 +363,9 @@ def check_services(
                               netfilter_unknown=netfilter_unknown,
                               firewalld_unread=firewalld_unread,
                               netfilter_port_verdict=netfilter_port_verdict,
-                              netfilter_all_interfaces=netfilter_all_interfaces)
+                              netfilter_all_interfaces=netfilter_all_interfaces,
+                              loopback_reachable=loopback_reachable,
+                              loopback_v4_ports=loopback_v4_ports)
 
     return result
 
@@ -376,6 +382,8 @@ def _check_single_service(
     netfilter_all_interfaces=None,
     netfilter_unknown: bool = False,
     firewalld_unread: bool = False,
+    loopback_reachable: "bool | None" = False,
+    loopback_v4_ports: "frozenset | set" = frozenset(),
 ) -> None:
     """Evaluate a single service snapshot and add findings to result."""
 
@@ -493,7 +501,9 @@ def _check_single_service(
                              netfilter_unknown=netfilter_unknown,
                              firewalld_unread=firewalld_unread,
                              netfilter_port_verdict=netfilter_port_verdict,
-                             netfilter_all_interfaces=netfilter_all_interfaces)
+                             netfilter_all_interfaces=netfilter_all_interfaces,
+                             loopback_reachable=loopback_reachable,
+                             loopback_v4_ports=loopback_v4_ports)
 
 def _reachable_by_default(verdict_of, port: str) -> bool:
     """v0.28.0 — True when the raw ruleset reaches *port* over IPv4 only
@@ -532,15 +542,26 @@ def _check_port_exposure(
     netfilter_all_interfaces=None,
     netfilter_unknown: bool = False,
     firewalld_unread: bool = False,
+    loopback_reachable: "bool | None" = False,
+    loopback_v4_ports: "frozenset | set" = frozenset(),
 ) -> None:
     """Add findings for a single port exposure."""
+    from bob.checks.ports import _localnet_state
 
     # firewalld is the front-end here, so "no UFW rule (UFW inactive)" would
     # both mislead and contradict the firewall check crediting firewalld.
     # The exposure classifier is UFW-rule-based and does not yet resolve
     # firewalld zones to ports, so this states the front-end without claiming
     # a per-port allow/block it has not measured.
-    if firewalld_active and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):
+    # v0.30.0 — bound to 127.0.0.1 with route_localnet on (or not read): the
+    # network reaches it, "no external exposure" was false (measured).
+    localnet = (_localnet_state(loopback_reachable, localnet_v4=port in loopback_v4_ports)
+                if exposure in (Exposure.LOOPBACK, Exposure.LOOPBACK_NO_RULE) else None)
+    if localnet == "on":
+        exp_key = "services.exposure.loopback_localnet"
+    elif localnet == "unread":
+        exp_key = "services.exposure.loopback_localnet_unread"
+    elif firewalld_active and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):
         exp_key = f"services.exposure.{exposure.value}_firewalld"
     # v0.24.1: a raw nftables/iptables ruleset with a default-deny inbound
     # policy is the filter here; "no active firewall protection" was false.
@@ -634,6 +655,12 @@ def _check_port_exposure(
 
     elif exposure == Exposure.NO_RULE:
         result.info(message=port_msg, key="services.exposure.no_rule")
+
+    elif localnet == "on":
+        result.info(message=port_msg, key="services.exposure.loopback_localnet")
+
+    elif localnet == "unread":
+        result.info(message=port_msg, key="services.exposure.loopback_localnet_unread")
 
     elif exposure == Exposure.LOOPBACK:
         result.info(message=port_msg, key="services.exposure.loopback")

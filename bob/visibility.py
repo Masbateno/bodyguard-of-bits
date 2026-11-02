@@ -98,6 +98,15 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "firewall_iptables.forward_accept_unweighed",
     "firewall.netfilter_unweighed",
     "firewall.netfilter_unknown",
+    # v0.30.0 — bound to 127.0.0.1 with route_localnet on (or not read): the
+    # network reaches 127.0.0.0/8; whether the listener is exposed is not
+    # established (measured, localnet_audit.txt).
+    "ports.uncovered_local_localnet",
+    "ports.uncovered_local_localnet_unread",
+    "services.exposure.loopback_localnet",
+    "services.exposure.loopback_localnet_unread",
+    "cups.listen_localhost_localnet",
+    "cups.listen_localhost_localnet_unread",
     "logs.window_partly_read",
     "firewall_iptables.ruleset_unreadable",
     "firmware.microcode_unknown",

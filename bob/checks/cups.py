@@ -94,11 +94,16 @@ class CupsSnapshot:
     listen_values:        list[str] = field(default_factory=list)
     listens_non_loopback: bool = False
     browsing_on:          bool = False
+    #: v0.30.0 — route_localnet (iptables_nftables._route_localnet): whether
+    #: the network reaches 127.0.0.0/8; None when not read.
+    loopback_reachable:   "bool | None" = False
 
     @classmethod
     def from_system(cls) -> "CupsSnapshot":
         """Detect CUPS config state from the live system. Never raises."""
+        from bob.checks.iptables_nftables import _route_localnet
         snap = cls()
+        snap.loopback_reachable = _route_localnet()
         if not path_exists(Path(_CUPSD_CONF)):
             return snap
         snap.cfg_present = True
@@ -220,6 +225,17 @@ def check_cups(snapshot: CupsSnapshot, t: TranslationFunc | None = None) -> Chec
             cmd=_listen_fix(snapshot.listen_values),
             nature="action",
         )
+    elif snapshot.loopback_reachable is not False and any(
+            v.lower().startswith(("localhost", "127.")) for v in snapshot.listen_values):
+        # v0.30.0 — route_localnet on (or not read): the network reaches
+        # 127.0.0.0/8, so "not network-exposed" is not established (measured
+        # for a listener bound to 127.0.0.1, `localnet_audit.txt`).
+        if snapshot.loopback_reachable:
+            result.info(message=_t("cups.listen_localhost_localnet"),
+                        key="cups.listen_localhost_localnet")
+        else:
+            result.info(message=_t("cups.listen_localhost_localnet_unread"),
+                        key="cups.listen_localhost_localnet_unread")
     else:
         result.ok(
             message=_t("cups.listen_localhost"),
