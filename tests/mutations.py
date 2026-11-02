@@ -11716,6 +11716,14 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason='an answer listing no link at all is one BOB cannot read',
     ),
     Mutation(
+        id='iface-rules/addressed-down-link-dropped',
+        file='bob/checks/iptables_nftables.py',
+        old='    view.ifaces = None if links is None else frozenset(ifaces | links)\n',
+        new='    view.ifaces = None if links is None else frozenset(links)\n',
+        kills=('tests/test_v0300_iface_rules.py::TestEveryLinkUpCounts::test_the_links_read', ),
+        reason='an interface that keeps its address while down stays counted, the cautious way',
+    ),
+    Mutation(
         id='history-ceiling/rotation-rewrites',
         file='bob/history.py',
         old='            content = "\\n".join(lines[-_MAX_HISTORY_ENTRIES:]) + "\\n"\n',

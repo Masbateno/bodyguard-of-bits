@@ -130,10 +130,12 @@ LINKS = ("1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN \\
          "6: s2: <BROADCAST,MULTICAST> mtu 1500 state DOWN \\    link/ether 02:02\n"
          "7: p0@if8: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 master br0 state UP \\    link/ether 02:03 "
          "veth \\    bridge_slave state forwarding priority 32\n"
-         "9: br0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP \\    link/ether 02:04 bridge\n")
+         "9: br0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP \\    link/ether 02:04 bridge\n"
+         "10: s3: <BROADCAST,MULTICAST> mtu 1500 state DOWN \\    link/ether 02:05\n")
 ADDRS = ("1: lo    inet 127.0.0.1/8 scope host lo\\       valid_lft forever\n"
          "2: s0    inet 10.77.0.2/24 scope global s0\\       valid_lft forever\n"
-         "9: br0    inet 10.79.0.2/24 scope global br0\\       valid_lft forever\n")
+         "9: br0    inet 10.79.0.2/24 scope global br0\\       valid_lft forever\n"
+         "10: s3    inet 10.80.0.2/24 scope global s3\\       valid_lft forever\n")
 
 
 def _ip(monkeypatch, links_ok=True):
@@ -147,10 +149,12 @@ def _ip(monkeypatch, links_ok=True):
 class TestEveryLinkUpCounts:
 
     def test_the_links_read(self, monkeypatch):
-        """s1 holds no address and counts; s2 is down, p0 a bridge port, lo loopback."""
+        """Up with an address (s0, br0) and up without one (s1) count; down
+        without one (s2) does not, down with one (s3) does — over IPv4, where
+        it holds that address; a bridge port (p0) and loopback do not."""
         _ip(monkeypatch)
         view = nf._host_addresses()
-        assert view.ifaces == frozenset({"s0", "s1", "br0"})
+        assert view.ifaces == frozenset({"s0", "s1", "br0", "s3"})
         assert view.ifaces6 == frozenset({"s0", "s1", "br0"})
 
     def test_links_unread_leave_interfaces_unread(self, monkeypatch):
@@ -164,7 +168,8 @@ class TestEveryLinkUpCounts:
         up without one; a drop on s0 left 8099 reachable through s1."""
         _ip(monkeypatch)
         assert nf._iface_cover('"s0"', False, nf._host_addresses()) == "some"
-        assert nf._iface_cover('{ "s0", "s1", "br0" }', False, nf._host_addresses()) == "all"
+        assert nf._iface_cover('{ "s0", "s1", "br0", "s3" }', False, nf._host_addresses()) == "all"
+        assert nf._iface_cover('"s3"', False, nf._host_addresses()) == "some"
 
     def test_an_answer_bob_cannot_read_is_not_read(self, monkeypatch):
         class R:
