@@ -336,7 +336,8 @@ def _nft_nat_priority(ruleset: str, families: tuple = _IPV4_FAMILIES) -> "float 
     (`nf_nat_register_fn`, 7.0): a nat chain is not hooked at its own
     priority, it is called from the one NAT hook at dstnat; its priority
     orders it among the nat chains only. The same in the source of 4.18,
-    4.19, 5.4, 5.15, 6.1, 6.6 and 6.12, for ip, ip6 and inet: there, dstnat
+    4.19, 5.4, 5.15, 6.1, 6.6 and 6.12, for the nat families each supports
+    (ip and ip6; inet from 5.2, `nft_chain_nat.c`): there, dstnat
     is taken, whatever the declared priority (or one BOB cannot read) — the
     level of proof of every other priority this walk orders, measured on 7.0.
     Up to 4.17 the source (`nf_tables_api.c`) hooks a nat chain at the
