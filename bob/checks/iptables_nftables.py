@@ -436,6 +436,9 @@ class _HostView(frozenset):
     — None when not read."""
     ifaces: "frozenset | None" = None
     ifaces6: "frozenset | None" = None
+    #: v0.30.0 — whether packets for 127.0.0.0/8 are taken from the network
+    #: (:func:`_route_localnet`); None when not read.
+    localnet: "bool | None" = False
 
 
 def _host_addresses() -> "frozenset | None":
@@ -461,9 +464,36 @@ def _host_addresses() -> "frozenset | None":
         return None
     links = _up_links()
     view = _HostView(found)
+    view.localnet = _route_localnet()
     view.ifaces = None if links is None else frozenset(ifaces | links)
     view.ifaces6 = None if links is None else frozenset(ifaces6 | links)
     return view
+
+
+def _route_localnet() -> "bool | None":
+    """v0.30.0 — whether this host takes a packet for 127.0.0.0/8 from the
+    network: ``route_localnet`` 1 on ``all`` or on the interface it arrives
+    on (the kernel reads either). None when not read. Measured in a network
+    namespace (2 November 2026, `localnetbench.txt`): at 0, a client sending
+    to 127.0.0.1 over the wire reached nothing; at 1, it reached a listener
+    on 0.0.0.0 and one bound to 127.0.0.1 alone, and past
+    `ip daddr 10.77.0.2 tcp dport 8099 drop` BOB read refused. Kubernetes'
+    kube-proxy sets it to 1 (CVE-2020-8558)."""
+    base = "/proc/sys/net/ipv4/conf"
+    try:
+        names = os.listdir(base)
+    except OSError:
+        return None
+    for name in names:
+        if name in ("default", "lo"):
+            continue
+        try:
+            with open(f"{base}/{name}/route_localnet", encoding="utf-8") as fh:
+                if fh.read().strip() != "0":
+                    return True
+        except OSError:
+            return None
+    return False
 
 
 def _up_links() -> "frozenset | None":
@@ -701,7 +731,16 @@ def _daddr_cover(spec: str, hosts: "frozenset | None") -> "str | None":
     if not nets or any(n.version != 4 for n in nets):
         return None
     covered = {h for h in own if any(h in n for n in nets)}
-    return "all" if covered == own else "none" if not covered else "some"
+    if getattr(hosts, "localnet", False) is False:
+        return "all" if covered == own else "none" if not covered else "some"
+    # v0.30.0 — route_localnet on (or not read): the whole of 127.0.0.0/8 is
+    # reached from the network too, whatever address `ip addr` lists there.
+    lo = ipaddress.ip_network("127.0.0.0/8")
+    if covered == own and any(lo.subnet_of(n) for n in nets):
+        return "all"
+    if not covered and not any(n.overlaps(lo) for n in nets):
+        return "none"
+    return "some"
 
 
 def _nft_port_walk(rules, chains, family, table, port, proto, seen, hosts=None, sets=None):

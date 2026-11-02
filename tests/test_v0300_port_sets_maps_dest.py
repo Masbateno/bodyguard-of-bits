@@ -134,6 +134,64 @@ def test_the_cover(spec, hosts, cover):
     assert nf._daddr_cover(spec, hosts) == cover
 
 
+def _localnet(value):
+    view = nf._HostView(ONE)
+    view.localnet = value
+    return view
+
+
+class TestRouteLocalnet:
+    """Measured in a network namespace (2 November 2026,
+    `~/.cache/bob-fieldtest/netnsbench/localnetbench.txt`): with
+    `route_localnet` 1, a client sending to 127.0.0.1 over the wire reached a
+    listener on 0.0.0.0 — and one bound to 127.0.0.1 alone; past
+    `ip daddr 10.77.0.2 tcp dport 8099 drop` 8099 stayed reachable that way,
+    and BOB read it refused. At 0 the wire reached nothing at 127.0.0.1."""
+
+    @pytest.mark.parametrize("spec, cover", [
+        ("10.77.0.2", "some"), ("{ 10.77.0.2, 127.0.0.1 }", "some"), ("127.0.0.1", "some"),
+        ("{ 10.77.0.2, 127.0.0.0/8 }", "all"), ("0.0.0.0/0", "all"), ("10.77.0.9", "none"),
+    ])
+    @pytest.mark.parametrize("value", [True, None], ids=["on", "not-read"])
+    def test_the_cover(self, spec, cover, value):
+        assert nf._daddr_cover(spec, _localnet(value)) == cover
+
+    def test_off_the_wire_reaches_no_loopback(self):
+        assert nf._daddr_cover("10.77.0.2", _localnet(False)) == "all"
+        assert nf._daddr_cover("127.0.0.1", _localnet(False)) == "none"
+
+    @pytest.mark.parametrize("values, found", [
+        ({"all": "0", "default": "1", "lo": "1", "s0": "0"}, False),
+        ({"all": "1", "s0": "0"}, True),
+        ({"all": "0", "s0": "1"}, True),
+        ({"all": "0", "s0": None}, None),
+    ], ids=["off", "all-on", "one-on", "one-unread"])
+    def test_the_switch_read(self, monkeypatch, values, found):
+        import io
+        monkeypatch.setattr(nf.os, "listdir", lambda path: list(values))
+
+        def fake_open(path, *a, **k):
+            name = path.split("/")[-2]
+            if values.get(name) is None:
+                raise PermissionError(path)
+            return io.StringIO(values[name] + "\n")
+        monkeypatch.setattr(nf, "open", fake_open, raising=False)
+        assert nf._route_localnet() is found
+
+    def test_the_conf_not_listed(self, monkeypatch):
+        def refused(path):
+            raise PermissionError(path)
+        monkeypatch.setattr(nf.os, "listdir", refused)
+        assert nf._route_localnet() is None
+
+    def test_read_with_the_addresses(self, monkeypatch):
+        class R:
+            ok, stdout, stderr, code = True, "2: s0    inet 10.77.0.2/24 scope global s0\n", "", 0
+        monkeypatch.setattr(nf, "run_result", lambda *a, **k: R())
+        monkeypatch.setattr(nf, "_route_localnet", lambda: True)
+        assert nf._host_addresses().localnet is True
+
+
 @pytest.mark.parametrize("lang, words", [
     ("en", "a named port set, a verdict map keyed by port"),
     ("fr", "un set de ports nommé, une verdict map par port"),
