@@ -37,8 +37,8 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 
 | Module | Rôle |
 |---|---|
-| `__main__.py` | Orchestrateur — parsing des arguments, collecte des snapshots, appelle `run_checks()`, affiche le résumé (~1059 lignes) |
-| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (57 sections filtrables + 10 always-on), `_section_enabled()` (~1326 lignes) |
+| `__main__.py` | Orchestrateur — parsing des arguments, collecte des snapshots, appelle `run_checks()`, affiche le résumé (~1065 lignes) |
+| `runner.py` | Moteur d'exécution de l'audit — `run_checks()` avec closure `_sec` (57 sections filtrables + 10 always-on), `_section_enabled()` (~1349 lignes) |
 | `cli.py` | Parsing des arguments — retourne un `AuditConfig` dataclass |
 | `config.py` | Configuration utilisateur — `UserConfig` (`~/.config/bob/config.conf`), `EmailStore` |
 | `display.py` | Helpers d'affichage terminal — `display_result()`, `print_audit_summary()`, etc. |

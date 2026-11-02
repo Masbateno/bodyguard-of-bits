@@ -37,8 +37,8 @@ This separation allows the entire business logic to be tested by instantiating s
 
 | Module | Role |
 |---|---|
-| `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~1059 lines) |
-| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (57 filterable + 10 always-on sections), `_section_enabled()` (~1326 lines) |
+| `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~1065 lines) |
+| `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (57 filterable + 10 always-on sections), `_section_enabled()` (~1349 lines) |
 | `cli.py` | Argument parsing — returns an `AuditConfig` dataclass |
 | `config.py` | User configuration — `UserConfig` (`~/.config/bob/config.conf`), `EmailStore` |
 | `display.py` | Terminal output helpers — `display_result()`, `print_audit_summary()`, etc. |

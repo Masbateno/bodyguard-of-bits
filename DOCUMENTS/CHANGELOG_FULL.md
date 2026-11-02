@@ -6,6 +6,490 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.30.0] — 2026-11-02
+
+**A minor release, BREAKING for scores: the limits documented in 0.29.0,
+measured, then narrowed where BOB can resolve them and stated where it cannot. The per-port verdict reads what left a
+port "not established" in 0.29.0 — a destination, a named port set, a verdict
+map, an input interface, a chain before or on the input hook, and beside
+nftables a legacy (x_tables) NAT table (not the legacy filter, raw and mangle
+tables: a limit) — and gives IPv6
+listeners their own verdict, for information; a ruleset read in part and a
+firewalld that would not answer are no longer "no firewall" anywhere in the
+report; sudo's command patterns, netgroups and host names are resolved as sudo
+resolves them; samba's `--fix` reaches the files `smb.conf` includes, and an
+include naming the host is followed; `--history` keeps, with the score, whether it is an upper bound (≤) or a range (~),
+and shows a line written before 0.30.0, which did not keep it, as not known (?).
+Measured with the real tools: iptables and nft in network namespaces (a TCP
+probe against each case), sudo 1.9.16p2 and samba 4.22.11 (testparm) in Debian 13
+containers.**
+Throughout this changelog, as in earlier ones, "raw ruleset" means the
+nftables/iptables ruleset BOB reads directly and weighs itself, when no UFW or
+firewalld front-end is active. It does not refer to Netfilter's `raw` table.
+BREAKING for scores means: the same host can score differently under 0.29.0
+and 0.30.0 — the global score, the per-domain scores and the `--history` trend
+across the upgrade — because the findings that feed the formula changed. The
+global scoring formula is unchanged; no JSON-output-schema or CSV-column
+change; no section added or removed; no finding key renamed or removed; no
+`--explain` key or CIS reference added (235). What does change in
+format: `--history` shows "≤", "~" and "?" beside scores and withholds some
+trend arrows, and each line it writes gains fields (§7).
+
+Scores that move:
+
+| Where | Before | 0.30.0 | § |
+|---|---|---|---|
+| no active front-end (UFW installed but off — measured), `iptables -S` answers, the raw, mangle or security table refuses | `firewall.inactive` ALERT, the Firewall & Network domain capped at 3/10, the risk level raised for "firewall inactive", each port "no active firewall to filter it" (measured: domain 3, score 5) | `firewall.netfilter_unknown` INFO, a ceiling; no cap, no raised level; each port "read in part: whether this port is reachable is not established" (measured: domain 9, score ≤ 7) (**rises**) | 1 |
+| a raw ruleset at policy accept that refuses some ports, with a rule written with a destination (`ip daddr X tcp dport N`, `-d X … --dport N`), a named port set (`tcp dport @name`), a verdict map (`vmap`) or an input interface (`iifname`, `-i`) | every listener on all IPv4 interfaces not established (INFO), whatever port the rule names | each port weighed on its own: no applicable rule refuses it → `ports.uncovered_netfilter_open` WARN −1 (−2 public), a known service `services.exposed.<id>`; refused on every destination and interface BOB counts → INFO, "refused"; refused on some but not all → INFO, "not established" (**drops** where a port is open) | 2 |
+| a sudo `Defaults` (`noexec`, `runas_default`, `env_keep`, `env_reset`) scoped by a command pattern (`!/usr/bin/z*`), a netgroup (`:+admins`) or a host name (`@host.example.org`) | `file_perms.sudo_scope_unresolved` INFO, a ceiling; the rule set aside | resolved as sudo resolves it: root-equivalent → `file_perms.nopass_root_equivalent` WARN −2 (**drops**); otherwise nothing, the ceiling gone | 5 |
+| a samba `include = …%h…` (the host name, as `gethostname` gives it — the name testparm expanded) | not followed: its directives not read (measured: testparm read `NT1` from it, BOB said nothing) | followed: its directives scored (measured with samba 4.22.11: `server min protocol = NT1` → `samba.smb1_enabled` ALERT −2) (**drops**) | 6 |
+| a samba `include` with a per-client substitution (`%m`, `%U`, `%I`…) | not followed, nothing said | `samba.include_per_client` INFO, a ceiling | 6 |
+| a listener bound to 127.0.0.1 alone, or CUPS on `Listen localhost`, when `route_localnet` is enabled or cannot be read | "bound to localhost only — no external exposure" (INFO), CUPS "not network-exposed" (OK) — measured false with it on: the listener was reached from the network; not read, no access is shown, only that it cannot be ruled out | `ports.uncovered_local_localnet`, `services.exposure.loopback_localnet`, `cups.listen_localhost_localnet` (each with an `_unread` twin) INFO, a ceiling: whether it is reachable is not established (measured: score 5 → ≤ 5) | 2 |
+
+Moves no score: §3 (a port a chain before or on the input hook refuses read
+"not established", INFO, and reads "refused", INFO; one a rule there accepts
+reads "accepted by a rule", no points — measured, two full audits against
+0.29.0: ≤ 8 both); §4 (shown, not scored); firewalld that would not answer
+(§1, measured: ≤ 7 before and after); §7.
+
+New finding keys (INFO): `firewall.netfilter_unknown` (a ceiling),
+`samba.include_per_client` (a ceiling), `ports.uncovered_local_localnet`,
+`services.exposure.loopback_localnet`, `cups.listen_localhost_localnet` and
+their `_unread` twins (six, each a ceiling),
+`ports.uncovered_netfilter_unknown`,
+`ports.uncovered_bound_address_netfilter_unknown`,
+`ports.uncovered_firewalld_unread`,
+`ports.uncovered_bound_address_firewalld_unread`, `ipv6.firewalld_unread`
+(the last five take no points and carry no ceiling of their own: the gap is
+marked once, by `firewall.netfilter_unknown` or by
+`firewall.firewalld_unreadable`, a ceiling since 0.26.0; measured against
+0.29.0: no deduction from them, the score's ceiling set by the section's key
+alone).
+
+Outputs that change besides: the summary's firewall line for a ruleset read in
+part and for a silent `firewall-cmd` (`exposure.firewall_netfilter_unknown`,
+`exposure.firewall_firewalld_unread`, §1); each IPv6 listener's
+line under a raw ruleset BOB weighs says the verdict it meets over IPv6
+(`ports.uncovered_netfilter_weighed6`, detail `ports.netfilter_port.detail6`,
+§4); a port behind a chain before or on the input hook says "refused" or "accepted by a rule"
+where it said "not established" (§3); the IPv6 section names a chain at policy
+drop before or on the input hook (`ipv6.netfilter_v6_default_drop`, §3); `--history` marks
+an upper bound "≤", a span "~" and a line written before 0.30.0 "?", with no
+trend arrow beside any of them (§7); the detail of `ports.netfilter_port`
+(what is weighed since 0.30.0, what is not).
+
+### 1. Unknown is not absent: a ruleset read in part, a firewalld that would not answer
+
+0.29.0 wrote it as a limit: with `iptables -S` answering and the raw, mangle
+or security table refusing, INPUT reads undetermined, but the firewall section
+said "UFW firewall is disabled. Your machine is currently unprotected." —
+read in the code, not met on a host. Measured in a network namespace (an
+`iptables` that refuses `-t raw`, `-t mangle` and `-t security`, UFW installed
+but off, INPUT at policy accept with no rule, two listeners): `firewall.inactive`
+ALERT, the Firewall & Network domain capped at 3/10, the risk level raised for
+"firewall inactive", each port "no active firewall to filter it"; score 5.
+
+Now: `firewall.netfilter_unknown` INFO — the ruleset's INPUT was read, a table
+was not, whether it filters inbound traffic is not established — a ceiling; no
+cap, no raised level; each port "the nftables/iptables ruleset was read in part
+(a table refused): whether this port is reachable is not established", each
+service the same (measured with SSH listening on 22: "no active firewall
+protection" before); measured: domain 9, score ≤ 7.
+
+firewalld that would not answer had the same defect downstream. Since 0.26.0
+the firewall section says "not established", and the risk level is not
+raised for "firewall inactive", when
+`firewall-cmd` is present and silent; measured in a network namespace (a
+`firewall-cmd` that refuses every query in silence, UFW installed but off,
+listeners on IPv4 and IPv6), the other sections still said there was no firewall: the summary
+"No active firewall — all ports unfiltered", the IPv6 section "UFW is installed
+but not active, and no other firewall filters inbound traffic", each port "no
+active firewall to filter it", the SSH service listening on 22 "no active
+firewall protection". Now each of them says `firewall-cmd` gave no
+answer and that the exposure is not established. The score does not move
+(measured against 0.29.0, with a listener on 22 and one on 8099: ≤ 7 before
+and after; no points were taken in either).
+
+The summary line said neither: measured, 0.29.0 read "No active firewall —
+all ports unfiltered" for both; it now reads "the nftables/iptables ruleset
+was read in part (a table refused) — whether a firewall filters inbound
+traffic is not established", or "firewalld is installed but firewall-cmd gave
+no answer — …". A running firewalld whose default BOB did not read keeps
+"active (firewalld) — default inbound policy not read".
+
+### 2. The per-port verdict reads destination addresses, named sets, verdict maps and input interfaces
+
+Since 0.28.0 BOB weighs each listener against the ruleset; up to 0.29.0, a
+rule BOB could not place left every port of the host "not established" — the
+port it named and every other. Measured in a network namespace (a TCP probe from a second namespace,
+listeners 8098 and 8099), each case now gives the probe's verdict:
+
+- a destination before or after the port: `ip daddr` the host's only address
+  (refused), an address that is not the host's (open, the rule skipped), one of
+  two host addresses (not established: closed on one, open on the other), a set
+  of both (refused); `iptables -d` the same. The host's addresses a packet
+  from the network can reach are weighed, loopback aside. If
+  `route_localnet` is on (BOB reads it on `all` and on every interface and
+  counts any at 1 — cautious: the kernel looks at `all` and at the arrival
+  interface, both measured below; one set on another interface only was not
+  measured, and counts; Kubernetes' kube-proxy sets it), BOB includes the
+  whole of 127.0.0.0/8 among the possible destinations — not proof that
+  each of those addresses is reached through each interface. If the setting
+  cannot be read, BOB makes the same cautious assumption, because reaching
+  127.0.0.0/8 from the network cannot then be ruled out. Measured
+  each way: the switch at 1 on `all` alone, or on the arrival interface
+  alone, opened 127.0.0.0/8 to the wire, and BOB read it on; all at 0, the
+  wire reached nothing there, and BOB read it off. Measured (`route_localnet` 1, a client sending to 127.0.0.1
+  and 127.0.0.2 over the wire): both reached a listener on 0.0.0.0 — and
+  one bound to 127.0.0.1 alone — past `ip daddr 10.77.0.2 … drop`. Found in
+  review: the first draft of 0.30.0 read that port "refused"; now not
+  established, as 0.29.0 read it; `ip daddr { 10.77.0.2, 127.0.0.0/8 } …
+  drop` closed every way and reads refused. At 0, the wire reached nothing
+  at 127.0.0.0/8, and the host's address alone decides. The same switch
+  made a statement false: a listener bound to 127.0.0.1 alone was reached
+  from the network with it on, and the ports section said "bound to
+  localhost only — no external exposure", 0.29.0 and the first draft of
+  0.30.0 alike (measured in a full audit; CVE-2020-8558's case); CUPS on
+  `Listen localhost` said "not network-exposed" the same way. With the switch
+  on, or not read, the ports and services sections and CUPS now say whether
+  it is reachable is not established — INFO, no points, a ceiling (measured:
+  score 5 → ≤ 5; at 0 every line as before); ::1 is not concerned;
+- a named port set (`tcp dport @blk`, the set read from the ruleset; an empty
+  set matches nothing), a verdict map written inline or named
+  (`vmap { 8099 : drop }`, `vmap @vm`);
+- an input interface (`iifname`, `iif`, `-i`, a wildcard `s*` or `s+`, a
+  negation, a set): the interfaces BOB counts as ones a packet may arrive on
+  are every interface holding an IPv4 address, up or down, and every other
+  link up, loopback and bridge ports aside (`ip -o addr show`,
+  `ip -o -d link show`); a rule
+  that covers them all refuses, one that covers none is skipped, one that
+  covers some leaves the port not established (measured: closed on one
+  interface, open on the other). That set is cautious, not proof that each
+  interface can deliver every packet. A link up without an IPv4 address is in
+  it, whatever its reverse-path filter: measured with `rp_filter` 2 (loose)
+  only, `iifname "s0" … drop`, s0 the only interface holding an IPv4 address,
+  a client on s1 — up, no address — reached 8099; other modes were not
+  measured. Found in review: the first draft of 0.30.0 counted the addressed
+  interfaces only and read that port "refused"; 0.29.0 read it not
+  established. A link that is down receives nothing, with or without an
+  address (measured): one without is left out; one that keeps its address
+  stays in, which costs a verdict either way (both measured, s1 down and
+  addressed, s0 up; the probe through s1 fails because s1 is down, not
+  because of a rule): `iifname "s0" … drop` reads not established, 8099
+  closed both ways; `iifname "s1" … drop` reads not established, 8099 open
+  through s0 — the −1 an open port takes is not taken there, under the
+  ceiling such a ruleset already sets (policy accept with rules that refuse
+  some traffic, since 0.27.0; measured in a full audit:
+  `firewall.netfilter_unweighed`, the score shown ≤ 8 — not
+  `firewall.netfilter_unknown`, which marks a ruleset read in part). These two
+  cases show what BOB counts, not a rule refusing on a down link; a rule
+  refusing on a link up was measured apart (`iifname { "br0", "s1" } … drop`,
+  s1 up: closed through both).
+  A bridge port is left out: its packets reach the input hook under the
+  bridge's name (measured: `iifname "s0"`, s0 a port of br0, left 8099 open;
+  `iifname "br0"` closed it). Bond and VRF ports are
+  counted by the enumeration; those cases were not measured.
+
+A rule of these kinds that names another port is now skipped. It no longer
+leaves every port unknown, so the other listeners are weighed. Where nothing
+refuses one, it reads `ports.uncovered_netfilter_open` WARN −1 (−2 public): the
+score drops where it was hidden.
+
+### 3. The chains before and on the input hook, weighed port by port
+
+0.29.0 named a chain before the input hook at policy drop and left every port
+behind it not established; a refusal in the mangle or security table's INPUT
+(on the input hook, besides filter's) left the port not established too. Now
+each of these chains is walked as input is: an nft prerouting chain (ip, inet);
+iptables' raw and mangle `PREROUTING` (before the input hook) and mangle and
+security `INPUT` (on it, before and after filter's `INPUT`) — over IPv4 here;
+the same chains of ip6tables and ip6/inet tables give the IPv6 verdict (§4). A port a rule
+drops reads refused. When a packet reaches a base chain at policy drop and
+gets to its end without an accept verdict — and without an accept
+BOB cannot resolve, which leaves the port not established — the chain's
+policy drops it:
+refused by default. An accept ends
+the chain it is in, nothing more: the
+packet goes on to the other base chains of the same hook (the chains attached
+to it, not those they jump to), in priority order,
+and, on the local-input path, from prerouting to the input hook. A drop rule that matches the packet, in
+any chain the packet reaches — a base chain of the hook or a chain one jumps
+to — closes the port; where the rules match the same packets, the order decides which
+chain refuses it first, not whether it is refused (each case below matches on
+the port alone, in every chain). Measured with a TCP probe, seven orders (the first pair counted in both
+creation orders), each port closed and BOB
+reading it refused (0.29.0 read four of them not established): an accept in
+one prerouting chain and a drop in another, either written first; a prerouting
+chain at policy drop accepting the port and input dropping it; two input chains
+of priority −10 accepting and 10 dropping; raw `PREROUTING` accepting and
+mangle `PREROUTING` dropping; raw `PREROUTING` accepting and filter `INPUT`
+dropping; filter `INPUT` accepting and security `INPUT` dropping. Where a rule accepts the port with no condition BOB cannot resolve (a
+source, a mark, a connection state, a rate, a time) and no other
+chain refuses it, the port reads "accepted by a rule" — opened on purpose, no
+points, as an accept by a rule on filter's input. An ingress chain (one
+interface) leaves the port not established. A non-verdict statement (setting a
+mark, `notrack`) does not decide the packet's fate by itself: evaluation goes
+on through the rule and, if no verdict is reached, to the next rule.
+Measured in a network namespace: every case the probe's verdict; a full audit
+of two cases (a prerouting rule refusing one port; a prerouting chain at policy
+drop accepting one port) against 0.29.0: the scores unchanged (≤ 8), each port
+now saying its verdict where it said "not established".
+
+#### A refusal before destination NAT
+
+A refusal before destination NAT is not taken as proof that the listener is
+unreachable. A redirect or a DNAT in a NAT prerouting chain (nft `type nat hook
+prerouting`, iptables' nat `PREROUTING`) runs at dstnat priority (−100), after
+raw (−300) and mangle (−150): it can bring a packet sent to another port to the
+listener, and the chains before it saw that packet under the port it was sent
+to. Measured in a network namespace, with `tcp dport 8080 redirect to :8099`
+and a TCP probe on 8080 and 8099, twice ("open through 8080" below: the
+service listening on 8099 reached through the redirect from 8080, a direct
+connection to 8099 refused):
+
+- the listener open through 8080, 8099 closed — now "not established", as
+  0.29.0 read them (six cases): a drop for 8099 in an nft prerouting chain at
+  raw priority; the same at mangle priority; in iptables' raw `PREROUTING`; in
+  mangle `PREROUTING`; an nft prerouting chain at raw priority and policy drop
+  accepting 8080 and 8098; iptables' raw `PREROUTING` at policy drop accepting
+  the same;
+- closed both ways — "refused" (four cases): a drop for 8099 in an nft
+  prerouting chain at priority 0, after dstnat; on nft's input hook; in mangle
+  `INPUT`; in filter `INPUT`.
+
+BOB does not yet determine whether a rule in a NAT prerouting chain can
+affect the packet being weighed: a non-empty one may rewrite the
+destination of a packet, so a refusal before it is not credited, whatever port the rule
+names (Docker's holds `jump DOCKER`; measured: a redirect for 7000 only, or a
+lone jump to an empty chain — 8099 closed, read "not established"). An empty one, or
+a NAT table with postrouting only (masquerade), counts for nothing (measured:
+"refused"). A NAT table whose prerouting chain BOB cannot read is taken as one that may
+rewrite: a
+refusal before it stays not established. A legacy (x_tables) NAT table beside nft
+is not in `nft list ruleset`: measured, `iptables-legacy -t nat -A PREROUTING
+-p tcp --dport 8080 -j REDIRECT --to-ports 8099` beside an nft prerouting drop left the listener open through 8080. BOB now
+reads which legacy tables the kernel holds from `/proc/net/ip_tables_names`
+(no module loaded) and, where a NAT table is listed, its `PREROUTING`: read
+"not established" with the redirect, "refused" with the table loaded and empty
+— measured over IPv4. IPv6 is read the same way (`/proc/net/ip6_tables_names`,
+`ip6tables-legacy`), not measured.
+Measured on Linux 7.0 (7.0.0-42, nft 1.0.9), the destination is rewritten at
+dstnat (−100) whatever priority an nft NAT chain declares. Each case in a fresh
+network namespace (no connection tracked before the probe), the ruleset read
+back whole from `nft list ruleset`, both chains on the same hook (prerouting)
+and family (`ip`), the NAT rule `tcp dport 8080 redirect to :8099`: a NAT chain
+declared at −190 left the listener open through 8080 past `tcp dport 8099
+drop` at −150, −120 or −101, not past one at −99; a NAT chain declared at 0
+and the drop at −90, −50 or 10, or one at 50 and the drop at 10, closed it —
+eight priority cases. A
+chain counting `ct state new tcp dport 8080` and `… 8099` at −90 saw the
+packet already sent to 8099 by a NAT chain declared at 0; at −150 it saw it
+at 8080 under one declared at −190. Linux 7.0's source says why
+(`nf_nat_register_fn`, `net/netfilter/nf_nat_core.c`): a NAT chain is not
+hooked at its own priority; the kernel invokes it from its one NAT hook at
+dstnat, and the declared priority orders it among the NAT chains only. The
+source of 4.18, 4.19, 5.4, 5.15, 6.1, 6.6 and 6.12 confirms the same
+registration mechanism for the NAT families each version supports. NAT in the
+`inet` family was introduced in Linux 5.2 (the 5.1 and 5.2 sources checked
+around that change). Up to 4.17 the source hooks an nft NAT chain at the
+priority it declares, as any other chain (`nf_tables_api.c`). Neither the
+older kernels nor the other families were measured here.
+
+For a kernel whose reported release is 4.18 or later — read from the running kernel, the one
+that runs the ruleset BOB reads — BOB places each nft NAT PREROUTING
+chain at dstnat (−100) against the ordinary chains of that hook,
+its declared priority ordering it among NAT chains only (the source defines both the
+IPv4 and IPv6 destination-NAT hooks at −100, `NF_IP_PRI_NAT_DST` and
+`NF_IP6_PRI_NAT_DST`; this also applies to iptables' and ip6tables' nat
+`PREROUTING`. The behaviour was measured here over IPv4 only). The ordering of
+the other priorities was measured on this kernel and checked against the
+source of the other versions. The NAT ordering is likewise supported by
+the source across the versions listed, but measured only on Linux 7.0.
+Replayed, those eight priority cases give the probe's verdict: "not established"
+where the listener was open through 8080, "refused" where closed both ways.
+For a kernel whose reported release is before 4.18, or one BOB cannot read, BOB
+takes the later of −100 and the declared priority, which claims no refusal
+that either order would contradict: a drop between the declared priority and
+−100, on either side, reads "not established" there. The declared priority
+alone is not taken for those kernels, though their upstream source places the
+chain by it — a cautious choice, not the upstream behaviour: a distribution kernel numbered before 4.18 may carry the later
+code, and under it the declared priority would claim a refusal the kernel
+does not make (measured on 7.0: a NAT chain declared at −190, a drop at −150,
+the listener open through 8080). A release number decides the cautious way
+on both sides of 4.18; neither older reading was measured.
+
+Over IPv6, a chain at policy drop before or on the input hook (nft ip6/inet
+prerouting, netdev or inet ingress; `ip6tables` raw or mangle `PREROUTING`,
+mangle or security `INPUT`) is now named in the IPv6 section
+(`ipv6.netfilter_v6_default_drop`), as it is over IPv4 since 0.29.0. That
+finding names the chain and its policy; it does not weigh a listener — each
+IPv6 listener's own verdict is §4's.
+
+### 4. Each IPv6 listener says the verdict it meets — for information
+
+0.29.0 wrote "the per-port verdict is IPv4". Now each IPv6 listener under a raw
+ruleset BOB weighs says the verdict it meets over IPv6: the ruleset's IPv6 view
+(rules that only match IPv4 — `ip saddr`, `meta nfproto ipv4`, `icmp` —
+removed; the ip6 and inet tables; `ip6tables`), and the interfaces holding an
+IPv6 address other than `::1` (link-local included). Measured in a network namespace (listeners on `fd77::2`):
+nine cases, every IPv6 verdict the probe's, the IPv4 verdicts unchanged. The
+verdict is shown, not scored: the IPv6 section keeps weighing IPv6 exposure in
+one finding (`ipv6.netfilter_v6_open` −2), so a port is not counted twice.
+
+### 5. sudo: command patterns, netgroups and host names resolved
+
+0.29.0 set aside a `Defaults` whose scope it could not resolve and said so
+(`file_perms.sudo_scope_unresolved`, a ceiling). Now, measured against sudo
+1.9.16p2 in a Debian 13 container (21 cases with `noexec` and `runas_default`,
+on a short and a dotted host name; in each, BOB's resolution of the scope
+matched what sudo did):
+
+- a command pattern (`Defaults!/usr/bin/z* noexec`): matched as sudo does
+  (measured: `/usr/*` does not reach `/usr/bin/env` — sudo ran it without
+  `noexec` — and `/usr/*/env` does; `?` and a class match one character —
+  whether they match `/` was not measured; a backslash leaves it unresolved);
+- a netgroup (`Defaults:+admins`): read with `getent netgroup` (the user field;
+  an empty one is everyone); a netgroup `getent` does not know, with
+  `/etc/nsswitch.conf` naming `files` alone, is absent; any other source left
+  unresolved;
+- a host name (`Defaults@host.example.org`): a dotted name against the full
+  host name, a short one against the short name, case ignored; an address, a
+  network, a pattern, a host netgroup or `Defaults fqdn` leaves it unresolved.
+
+A rule resolved as root-equivalent reads `file_perms.nopass_root_equivalent`
+WARN −2 where it was set aside.
+
+### 6. samba: `--fix` reaches the included files; an include naming the host is followed
+
+Measured with testparm (samba 4.22.11, Debian 13.7; the version read by `testparm -V` when the bench was replayed on 2 November 2026, every BOB line the same; other Samba versions were not measured): where `server min protocol`,
+`server signing` or `map to guest` came from a file `smb.conf` includes,
+0.29.0's `--fix` command changed `smb.conf` alone and testparm still read the
+included value — the later line wins (NT1, No, Bad User after that fix). The
+command now removes
+the directive from each included file BOB read and writes it once in
+`smb.conf`: testparm reads SMB2, required, Never.
+
+`include = /etc/samba/inc-%h.conf`: testparm reads the file named after the
+host; BOB ignored it. Now `%h` is replaced by the host name and the file read
+(measured: its `NT1` now reads `samba.smb1_enabled`). Any other substitution
+(`%m`, `%U`, `%I`…) depends on the client: `samba.include_per_client` INFO, a
+ceiling.
+
+### 7. `--history` keeps whether a score is an upper bound or a range
+
+0.29.0 wrote it as a limit: `--history` recorded each score, not its ≤. Each new
+entry now records it (`"upper_bound": true`, or `"span": [lo, hi]`), shown
+"≤ 7/10" or "~ 6/10" with a legend; no trend arrow is drawn next to an uncertain
+score nor measured against one. Measured in a user namespace with a throwaway
+HOME, two audits: "7/10 →" before, "≤ 7/10" and its legend after.
+
+A line written before 0.30.0 kept the number alone: whether that score was a
+ceiling is not known, and showing it firm, with an arrow, said what was not
+measured. Each new line now also writes `"bound_known": true`; a line without
+it is shown "? 7/10", without an arrow, nor does the next one get a trend arrow against
+it, and a legend says why. Measured in the same way, two audits by 0.29.0 then
+two by 0.30.0 in one history: the 0.29.0 runs were ceilings (their JSON said
+`score_is_upper_bound`), their lines kept nothing of it and 0.29.0 showed
+"7/10 →"; 0.30.0 shows them "? 7/10" and its own "≤ 7/10". The arrows between
+lines written before 0.30.0 are gone with it. A history begun by 0.30.0 never
+shows "?": it appears only beside lines an earlier version wrote (an upgrade, a
+downgrade run in between, a copied file), and no longer appears in the
+displayed table once ten newer audits are listed (the file keeps its 1000
+lines). Measured across versions, real
+audits in one history: 0.29.0 twice, 0.30.0, 0.29.0 again (a downgrade), 0.30.0
+— 0.30.0 shows each 0.29.0 line "?" and each of its own "≤", no arrow between
+any of them; the same file copied into a fresh HOME reads the same; a file of
+1000 lines rotated by 0.30.0 then by 0.29.0 keeps each line as written, marks
+included, and once ten 0.30.0 lines follow, no "?" is left in the table.
+
+### Not in this release, and known limits
+
+- A chain before the input hook at policy drop is weighed port by port, but the host
+  never reads "denied by default" for it: the posture stays "input policy
+  accept, refusals on the way in" (§3).
+- The IPv6 per-port verdict is information, not scored (§4).
+- Lines written to `--history` before 0.30.0 carry no mark: whether those scores
+  were a ceiling is not known; they are shown "?", without a trend arrow (§7).
+- An earlier version reading a history written by 0.30.0 ignores the marks: 0.29.0
+  shows every line firm, with arrows, "≤" lines included (measured, §7).
+- The sparkline above the `--history` table draws every score, ceilings and
+  "?" lines included: it pictures the values written, not a trend the table
+  would compare (the table withholds its arrows there).
+- sudo: a netgroup a network source may answer for (NIS, LDAP, SSSD) is left
+  unresolved; undefined aliases, addresses, networks and `Defaults fqdn` also
+  remain unresolved (§5).
+- A rule limited to given sources (`ip saddr`, `-s`) that accepts stays not
+  established.
+- The IPv4 walk still reads a rule written with `meta nfproto ipv6` as not
+  established.
+- An ingress chain leaves the port not established (§3).
+- A listener bound to 127.0.0.1 alone that `route_localnet` lets the network
+  reach reads not established, a ceiling, not an exposure scored as an open
+  port would be (§2).
+- A refusal before a non-empty NAT prerouting chain leaves the port not
+  established, whatever destination port a later redirect names (§3).
+- A redirect that sends a listener's port elsewhere is not read: measured
+  (`tcp dport 8099 redirect to :9999`, nothing listening on 9999), the probe
+  found 8099 closed and BOB read it accepted by default,
+  `ports.uncovered_netfilter_open` −1 — 0.29.0 and 0.30.0 alike: an
+  unnecessary deduction, not a hidden one. BOB does not follow a NAT
+  translation to the port it reaches.
+- Beside nft, a legacy (x_tables) ruleset is read for its NAT table only
+  (§3): its filter, raw and mangle tables are not. Measured,
+  `iptables-legacy -A INPUT -p tcp --dport 8099 -j DROP` beside nft closed 8099 and BOB read it accepted by default, 0.29.0 and 0.30.0
+  alike — an unnecessary deduction, not a hidden one.
+- The host's addresses and interfaces are read once, with the ruleset, by
+  `ip -o addr show` and `ip -o -d link show`, with `route_localnet` (the
+  destinations: every address the host holds outside loopback, whatever
+  interface holds it, and 127.0.0.0/8 when `route_localnet` is on; the
+  interfaces a packet may arrive on: a separate set, as in §2, bond and VRF
+  ports counted, not measured): one picture per
+  audit, as the ruleset is; a change during the audit is not seen (§2).
+- samba: `--fix` edits each included file BOB read in place; another
+  configuration that includes the same file is changed with it (§6).
+- CIS references: no CIS Ubuntu 26.04 control file in ComplianceAsCode yet (an
+  open pull request); `cis_fedora` is a draft — neither is cited.
+
+### Counters
+
+Tests collected 17422 → **18529**, test files 432 → **443**, mutations 1249 →
+**1433**; locale keys 3104 → **3130**; `--explain` keys and CIS references
+(235) and sections unchanged.
+
+### Guards
+
+`test_v0300_netfilter_unknown.py` (`netfilter-unknown/*`),
+`test_v0300_firewalld_unread.py` (`firewalld-unread/*`, `exposure-unread/*`, `port-lines/*`),
+`test_v0300_nat_before_refusal.py` (`nat-before/*`, `nat-legacy/*`),
+`test_v0300_history_ceiling.py` (`history-ceiling/*`, `history-unknown/*`),
+`test_v0300_port_sets_maps_dest.py` (`port-sets-dest/*`, `localnet/*`),
+`test_v0300_route_localnet_listeners.py` (`localnet-listeners/*`),
+`test_v0300_pre_input_weighed.py` (`pre-input-weighed/*`, `chain-order/*`),
+`test_v0300_iface_rules.py` (`iface-rules/*`),
+`test_v0300_ipv6_port_verdict.py` (`ipv6-port/*`),
+`test_v0300_sudo_scopes_resolved.py` (`sudo-scopes/*`),
+`test_v0300_samba_includes.py` (`samba-includes/*`). Re-anchored
+without changing their meaning: `pre-input/*` (5), `port-verdict/*` (3),
+`pre-input-posture/*` (2), `samba-parse/*` (2), `samba-refused/*` (2),
+`accept-partial/ports-not-handed`,
+`firewalld/service-exposure-says-ufw-inactive-under-firewalld`,
+`sudo-alias/table-unread`, `sudo-defaults/host-unresolved`; four kept their
+anchor and gained a killing test (`pre-input/ipt-policy-ignored`,
+`pre-input/nft-policy-ignored`, `pre-input/nft-another-port-counts`,
+`pre-input-posture/docker-counts-ipt`). Retired with the branch it mutated,
+left dead when the iptables walk was shared: `pre-input/ipt-another-port-counts`
+(the walk's own mutations keep its case). Rewritten with the measurement,
+because they held what this release ends: `test_v0280_port_verdict.py` (a
+refusal in raw, mangle or security, or a prerouting chain at policy drop:
+"not established" → refused) and `test_v0290_sudo_scope_unresolved.py`
+(command patterns and host names now resolved; the cases left unresolved are
+an address, a host pattern, an escaped pattern, a netgroup a network source
+answers for). `--history` tests write `"bound_known": true` in their entries
+(`test_history.py`, `test_v0180_history_reads_only_what_it_wrote.py`,
+`test_v0280_compare_by_sections.py`).
+
+---
+
 ## [0.29.0] — 2026-11-01
 
 **A minor release, BREAKING for scores: the limits 0.28.0 wrote down,

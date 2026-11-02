@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.29.0
+Version:        0.30.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,14 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Mon Nov 02 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.30.0-1
+- Minor, BREAKING for scores: the per-port verdict reads destinations,
+  named sets, verdict maps, input interfaces and the chains before and on
+  the input hook; a ruleset read in part and a silent firewalld are no
+  longer reported as having no firewall; route_localnet read; sudo
+  patterns, netgroups and host names resolved; samba's --fix reaches the
+  included files; --history keeps whether a score is a ceiling.
+
 * Sun Nov 01 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.29.0-1
 - Minor, BREAKING for scores: the firewall posture reads the refusals
   outside filter's INPUT and names a chain at policy drop; sudo env_keep

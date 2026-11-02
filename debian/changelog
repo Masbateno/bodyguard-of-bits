@@ -1,3 +1,20 @@
+bodyguard-of-bits (0.30.0-1) unstable; urgency=medium
+
+  * Minor, BREAKING for scores: a 0.29.0 and a 0.30.0 score of the same host
+    are not comparable; the structured audit outputs keep their formats,
+    --history changes its display and its file gains fields.
+  * The per-port verdict reads destinations, named sets, verdict maps,
+    input interfaces and the chains before and on the input hook; a
+    refusal before a non-empty NAT prerouting chain stays not established.
+  * A ruleset read in part and a firewalld that would not answer are no
+    longer reported as having no firewall.
+  * route_localnet read: a listener bound to 127.0.0.1 is no longer said
+    unexposed when the network may reach it.
+  * sudo patterns, netgroups and host names resolved; samba's --fix reaches
+    the included files; --history keeps whether a score is a ceiling.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 02 Nov 2026 20:00:00 +0000
+
 bodyguard-of-bits (0.29.0-1) unstable; urgency=medium
 
   * Minor, BREAKING for scores: a 0.28.x and a 0.29.0 score of the same host

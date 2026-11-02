@@ -137,7 +137,8 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 
 | Version        | Supportée          |
 |----------------|--------------------|
-| 0.29.x         | ✅ courante         |
+| 0.30.x         | ✅ courante         |
+| 0.29.x         | ❌ fin de vie       |
 | 0.28.x         | ❌ fin de vie       |
 | 0.27.x         | ❌ fin de vie       |
 | 0.26.x         | ❌ fin de vie       |
@@ -160,12 +161,12 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 | 0.6.x          | ❌ fin de vie       |
 | ≤ 0.5.x        | ❌ fin de vie       |
 
-Les correctifs sortent en `0.29.x+1`. Un changement cassant incrémente la version mineure (`0.30.0`).
+Les correctifs sortent en `0.30.x+1`. Un changement cassant incrémente la version mineure (`0.31.0`).
 
-**v0.28.x est en fin de vie le jour où 0.29.0 sort**, selon la politique
+**v0.29.x est en fin de vie le jour où 0.30.0 sort**, selon la politique
 « ligne minor la plus récente uniquement » ci-dessus. Aucun correctif de
-sécurité ne sera backporté. Les utilisateurs sur v0.28.x doivent
-`pipx upgrade bodyguard-of-bits` vers v0.29.x.
+sécurité ne sera backporté. Les utilisateurs sur v0.29.x doivent
+`pipx upgrade bodyguard-of-bits` vers v0.30.x.
 
 La mise à jour change ce que le score **signifie** quand BOB ne peut pas lire
 une partie de l'hôte. Jusqu'en v0.16.0, le score était une somme sur les checks
