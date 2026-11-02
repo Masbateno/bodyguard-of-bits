@@ -91,6 +91,10 @@ class IptablesNftSnapshot:
     #: [] for none; None when one could not be followed: the port verdict then
     #: reads a NAT chain as 0.30.0 did.
     nat_rules: "list | None" = field(default=None, repr=False)
+    #: v0.31.0 — ``iptables-legacy -t T -S`` of the legacy filter, raw,
+    #: mangle and security tables held beside nft (:func:`_legacy_tables`):
+    #: {} for none, None when they could not be read.
+    legacy_tables: "dict | None" = field(default_factory=dict, repr=False)
 
     def _nat(self, families: tuple, legacy: bool) -> bool:
         return legacy or bool(self.nft_pre_input and _nft_nat_priority(self.nft_pre_input, families) is not None)
@@ -108,8 +112,9 @@ class IptablesNftSnapshot:
             return "DROP", "nat"
         plain = effect == "untouched"
         if self.backend == "nftables":
-            return nft_port_verdict(self.raw_output, port, proto, self.host_addresses,
-                                    nat_floor=_DSTNAT if self.nat_prerouting else None, nat_ignored=plain)
+            return self._with_legacy(nft_port_verdict(self.raw_output, port, proto, self.host_addresses,
+                                                      nat_floor=_DSTNAT if self.nat_prerouting else None,
+                                                      nat_ignored=plain), port, proto, plain)
         if self.backend == "iptables":
             got = ipt_port_verdict(self.raw_output, port, proto, self.other_tables, self.host_addresses,
                                    self._nat(_IPV4_FAMILIES, self.nat_prerouting) and not plain)
@@ -124,6 +129,26 @@ class IptablesNftSnapshot:
                     return "ACCEPT", "rule"
             return got
         return "UNKNOWN", ""
+
+    def _with_legacy(self, verdict: "tuple[str, str]", port: int, proto: str, plain: bool) -> "tuple[str, str]":
+        """v0.31.0 — nft's verdict met by the legacy tables beside it: a packet
+        passes both, so a refusal in either closes the port. Measured in a
+        network namespace (2 November 2026, `a2bench.sh`): a drop for 8099 in
+        legacy filter INPUT, raw PREROUTING, mangle INPUT or security INPUT, or
+        legacy filter INPUT or raw PREROUTING at policy drop, closed 8099 while
+        nft accepted it, and BOB read it accepted (−1); a legacy accept left
+        nft's drop closing it. Tables BOB could not read: not established."""
+        if verdict[0] != "ACCEPT" or self.legacy_tables == {}:
+            return verdict
+        if self.legacy_tables is None:
+            return "UNKNOWN", ""
+        tables = self.legacy_tables
+        nat = (self.nat_prerouting or _nft_nat_priority(self.raw_output) is not None) and not plain
+        legacy = ipt_port_verdict(tables.get("filter") or "-P INPUT ACCEPT\n", port, proto,
+                                  {t: x for t, x in tables.items() if t != "filter"}, self.host_addresses, nat)
+        if legacy[0] != "ACCEPT":
+            return legacy
+        return ("ACCEPT", "rule") if "rule" in (verdict[1], legacy[1]) else verdict
 
     def port_verdict_v6(self, port: int, proto: str) -> "tuple[str, str]":
         """v0.30.0 — the IPv6 verdict, read as :meth:`port_verdict` reads the
@@ -168,13 +193,16 @@ class IptablesNftSnapshot:
             nft_raw = (raw or "") if nft_answered else ""
             if raw and "hook input" in raw:
                 hosts = _host_addresses()
+                legacy = _legacy_tables()
                 return cls(
                     backend="nftables",
-                    # v0.29.0 — what the chains before input may refuse.
-                    input_policy=_with_pre_input(_nft_policy(raw, "input"), _nft_refused_before_input(
-                        raw, _nft_all_chains(raw), None, None, hosts=hosts)),
+                    # v0.29.0 — what the chains before input may refuse;
+                    # v0.31.0 — and the legacy tables beside nft.
+                    input_policy=_with_pre_input(_nft_policy(raw, "input"), _either(_nft_refused_before_input(
+                        raw, _nft_all_chains(raw), None, None, hosts=hosts), _legacy_refused(legacy, hosts))),
                     host_addresses=hosts,
-                    default_drop_before_input=_nft_default_drop_before_input(raw),
+                    legacy_tables=legacy,
+                    default_drop_before_input=_nft_default_drop_before_input(raw) + _legacy_default_drop(legacy),
                     # v0.30.0 — a legacy nat table nft does not show.
                     nat_prerouting=_legacy_nat_rewrites(),
                     nat_prerouting6=_legacy_nat_rewrites(v6=True),
@@ -1257,6 +1285,70 @@ def _nat_rules_of(*sources: "list | None") -> "list | None":
         if rules and rules not in held:
             held.append(rules)
     return None if len(held) > 1 else (held[0] if held else [])
+
+
+#: v0.31.0 — the legacy (x_tables) tables weighed beside nft.
+_LEGACY_TABLES = ("filter", "raw", "mangle", "security")
+
+
+def _legacy_tables(v6: bool = False) -> "dict[str, str] | None":
+    """v0.31.0 — ``iptables-legacy -t T -S`` of the legacy filter, raw, mangle
+    and security tables the kernel holds beside nft (``/proc/net/ip_tables_names``,
+    read without loading a module); {} when it holds none; None when the list
+    or a table could not be read, or no tool reads them. nft's ruleset does not
+    show them, and a packet passes both."""
+    try:
+        with open("/proc/net/ip6_tables_names" if v6 else "/proc/net/ip_tables_names",
+                  encoding="utf-8") as fh:
+            names = fh.read().split()
+    except FileNotFoundError:
+        return {}
+    except OSError:
+        return None
+    held = [t for t in _LEGACY_TABLES if t in names]
+    if not held:
+        return {}
+    binary = "ip6tables-legacy" if v6 else "iptables-legacy"
+    if not _command_exists(binary):
+        return None
+    out = {}
+    for table in held:
+        res = run_result(binary, "-t", table, "-S")
+        if not res.ok:
+            return None
+        out[table] = res.stdout or ""
+    return out
+
+
+def _legacy_refused(tables: "dict | None", hosts: "frozenset | None" = None) -> "bool | None":
+    """v0.31.0 — whether the legacy tables may refuse a new connection: a
+    drop or a policy at drop in filter INPUT, raw or mangle PREROUTING, mangle
+    or security INPUT. None when they could not be read."""
+    if tables is None:
+        return None
+    others = {t: x for t, x in tables.items() if t != "filter"}
+    filt = tables.get("filter")
+    return bool(_ipt_refused_before_input(others, None, None, hosts)
+                or (filt is not None and _ipt_effective_input_policy(filt) != "ACCEPT"))
+
+
+def _legacy_default_drop(tables: "dict | None") -> "list[str]":
+    """v0.31.0 — the legacy chains at policy drop, named "legacy table CHAIN"."""
+    if not tables:
+        return []
+    others = {t: x for t, x in tables.items() if t != "filter"}
+    named = [f"legacy {n}" for n in _ipt_default_drop_before_input(others)]
+    if "filter" in tables and _ipt_policy(tables["filter"], "INPUT") not in ("ACCEPT", "unknown"):
+        named.insert(0, "legacy filter INPUT")
+    return named
+
+
+def _either(first: "bool | None", second: "bool | None") -> "bool | None":
+    """True when either may refuse; None when one could not be read and the
+    other does not settle it."""
+    if first is True or second is True:
+        return True
+    return None if first is None or second is None else False
 
 
 def _legacy_nat_rewrites(v6: bool = False) -> bool:

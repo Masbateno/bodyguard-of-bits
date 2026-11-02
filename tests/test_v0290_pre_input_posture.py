@@ -52,6 +52,8 @@ def _system(monkeypatch, *, nft=None, ipt=None, ip6t=None, tables=None, tables6=
     monkeypatch.setattr(nf, "_run", lambda *a, **k: {"iptables": ipt, "ip6tables": ip6t}.get(a[0]) or "")
     # v0.30.0 — no legacy nat table: the host's own list is root-only.
     monkeypatch.setattr(nf, "_legacy_nat_rewrites", lambda v6=False: False)
+    monkeypatch.setattr(nf, "_legacy_tables", lambda v6=False: {})
+    monkeypatch.setattr(nf, "_legacy_nat_text", lambda v6=False: "")
     monkeypatch.setattr(nf, "_route_localnet", lambda: False)
 
     def run_result(*a, **k):
