@@ -59,6 +59,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from bob.checks._run import (
+    _KUBELET_NAMES,
     TranslationFunc,
     _command_exists,
     _identity_t,
@@ -145,6 +146,12 @@ class KubernetesSnapshot:
     broad_admin_bindings:       "list[str] | None" = None
     #: the container runtime's socket: (path, mode, group, members) or None.
     runtime_socket:             "tuple[str, int, str, tuple[str, ...]] | None" = None
+    #: v0.31.0 — the process holding the socket 127.0.0.1:10250 reaches, and
+    #: the API server's port (:func:`_loopback_listener`): its name, "" when
+    #: nothing listens, None when it could not be told. Only a kubelet (an API
+    #: server) is sent the anonymous probes.
+    kubelet_listener:           "str | None" = "kubelet"
+    apiserver_listener:         "str | None" = "kube-apiserver"
 
     @classmethod
     def from_system(cls) -> "KubernetesSnapshot":
@@ -161,12 +168,17 @@ class KubernetesSnapshot:
         if read is not None:
             snap.workloads_read = True
             snap.pods, snap.unread = read
-        snap.anonymous_status = _probe("https://127.0.0.1:10250/pods")
-        snap.readonly_status = _probe("http://127.0.0.1:10255/pods")
+        # v0.31.0 — the probes go to whatever holds the port; only the
+        # kubelet's answer says anything about the kubelet (`_loopback_listener`).
+        snap.kubelet_listener = _loopback_listener(10250)
+        if snap.kubelet_listener in _KUBELET_NAMES:
+            snap.anonymous_status = _probe("https://127.0.0.1:10250/pods")
+        if _loopback_listener(10255) in _KUBELET_NAMES:
+            snap.readonly_status = _probe("http://127.0.0.1:10255/pods")
         # Asked whatever GET /pods answered: a refused read says nothing about a
         # command, the kubelet checks them as different permissions (nodes/pods,
         # nodes/proxy). A 401 closes the question: the request is not authenticated.
-        if snap.anonymous_status != 401:
+        if snap.kubelet_listener in _KUBELET_NAMES and snap.anonymous_status != 401:
             snap.run_probed = True
             snap.anonymous_run_status, snap.anonymous_run_text = _probe_run()
             snap.anonymous_exec_status, snap.anonymous_exec_text = _probe_exec()
@@ -204,7 +216,9 @@ def _read_apiserver(snap: "KubernetesSnapshot") -> None:
     # Absent: the upstream default is not assumed (not measured) — "not read".
     snap.authorization_modes = tuple(x.strip() for x in modes.split(",") if x.strip()) if modes else ()
     if snap.apiserver_port:
-        snap.apiserver_anonymous_status = _probe(f"https://127.0.0.1:{snap.apiserver_port}/api/v1/namespaces")
+        snap.apiserver_listener = _loopback_listener(snap.apiserver_port)
+        if snap.apiserver_listener in _APISERVER_NAMES:
+            snap.apiserver_anonymous_status = _probe(f"https://127.0.0.1:{snap.apiserver_port}/api/v1/namespaces")
     if "RBAC" in snap.authorization_modes and _command_exists("microk8s"):
         res = run_result("microk8s", "kubectl", "get", "clusterrolebindings", "-o", "json", timeout=_CTR_TIMEOUT)
         if res.ok:
@@ -381,6 +395,60 @@ def _cap_last_cap() -> int:
         return int(Path("/proc/sys/kernel/cap_last_cap").read_text().strip())
     except (OSError, ValueError):
         return 40
+
+
+#: v0.31.0 — an API server, by process name: upstream ``kube-apiserver``,
+#: MicroK8s' ``kubelite``, k3s.
+_APISERVER_NAMES = frozenset({"kube-apiserver", "kubelite", "k3s", "k3s-server"})
+
+
+def _loopback_listener(port: int) -> "str | None":
+    """v0.31.0 — the name of the process holding the TCP socket a connection
+    to 127.0.0.1:*port* reaches (``ss -Htlnp``): one bound to 127.0.0.1 itself,
+    else one bound to every address; "" when none listens; None when BOB could
+    not tell (``ss`` missing or refused, the owner not shown).
+
+    The probes below do not verify the server's certificate — the kubelet's
+    own is self-signed — so whatever holds the port is answered: measured in a
+    network namespace (4 November 2026, `kspoof.sh`), a python3 process on
+    127.0.0.1:10250 with a self-signed certificate answering 401 made 0.30.0
+    read "the kubelet requires authentication". Only a kubelet (or an API
+    server) is now asked — a process of that name run by root: the name alone
+    is anyone's to take (measured: the same server, its binary named kubelet,
+    was asked), and the kubelet, kubelite, k3s and kube-apiserver run as root.
+    A process not run by root is named with its user id."""
+    res = run_result("ss", "-Htlnp", "sport", "=", f":{port}")
+    if not res.ok:
+        return None
+    exact = wild = None
+    for line in (res.stdout or "").splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        addr = parts[3].rsplit(":", 1)[0].split("%", 1)[0]
+        m = re.search(r'users:\(\("([^"]+)",pid=(\d+)', line)
+        owner = "?" if not m else _owner(m.group(1), m.group(2))
+        if addr == "127.0.0.1":
+            exact = exact or owner
+        elif addr in ("0.0.0.0", "*", "[::]", "[::ffff:127.0.0.1]"):
+            wild = wild or owner
+    owner = exact if exact is not None else wild
+    if owner is None:
+        return ""
+    return None if owner == "?" else owner
+
+
+def _owner(name: str, pid: str) -> str:
+    """*name* when the process runs as root, "name (uid N)" otherwise, "?"
+    when its user could not be read."""
+    try:
+        status = Path(f"/proc/{pid}/status").read_text(errors="replace")
+    except OSError:
+        return "?"
+    m = re.search(r"^Uid:\s+(\d+)", status, re.MULTILINE)
+    if not m:
+        return "?"
+    return name if m.group(1) == "0" else f"{name} (uid {m.group(1)})"
 
 
 def _request(url: str, method: str = "GET") -> "tuple[int | None, str]":
@@ -567,7 +635,16 @@ def check_kubernetes(snapshot: KubernetesSnapshot, t: "TranslationFunc | None" =
            if snapshot.run_probed else None)
     answer = (f"POST /run: {_answer(snapshot.anonymous_run_status)}, "
               f"GET /exec: {_answer(snapshot.anonymous_exec_status)}")
-    if run == RUN_AUTHORISED:
+    # v0.31.0 — the port held by another process: its answer says nothing
+    # about the kubelet, and none was asked (`_loopback_listener`).
+    listener = snapshot.kubelet_listener
+    if listener not in _KUBELET_NAMES and listener != "":
+        if listener is None:
+            result.info(message=_t("kubernetes.kubelet_listener_unknown"), key="kubernetes.kubelet_listener_unknown")
+        else:
+            result.info(message=_t("kubernetes.kubelet_listener_foreign", process=listener),
+                        key="kubernetes.kubelet_listener_foreign", template_vars={"process": listener})
+    elif run == RUN_AUTHORISED:
         # One exposure, one level: anonymous commands are the −3, and the reads
         # they come with are not counted again. A refused read does not hide it.
         if status is not None and 200 <= status < 300:
@@ -635,7 +712,17 @@ def _check_apiserver(snapshot: "KubernetesSnapshot", result: CheckResult, _t) ->
                     key="kubernetes.apiserver_unread")
         return
     anon = snapshot.apiserver_anonymous_status
-    if anon is not None and 200 <= anon < 300:
+    owner = snapshot.apiserver_listener
+    if owner not in _APISERVER_NAMES and owner != "":
+        if owner is None:
+            result.info(message=_t("kubernetes.apiserver_listener_unknown", port=snapshot.apiserver_port),
+                        key="kubernetes.apiserver_listener_unknown", template_vars={"port": snapshot.apiserver_port})
+        else:
+            result.info(message=_t("kubernetes.apiserver_listener_foreign", port=snapshot.apiserver_port,
+                                   process=owner),
+                        key="kubernetes.apiserver_listener_foreign",
+                        template_vars={"port": snapshot.apiserver_port, "process": owner})
+    elif anon is not None and 200 <= anon < 300:
         # After review: a 2xx here establishes that anonymous requests may list
         # namespaces, not what else they may do — WARN −1, as the kubelet's
         # anonymous read (0.25.0). Under AlwaysAllow the two findings add up.

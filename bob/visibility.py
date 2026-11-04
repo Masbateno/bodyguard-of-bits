@@ -152,6 +152,12 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "kubernetes.workloads_unread",
     "kubernetes.workloads_partial",
     "kubernetes.kubelet_unprobed",
+    # v0.31.0 — the port held by another process, or by one BOB could not
+    # name: the anonymous probes were not sent (kubernetes._loopback_listener).
+    "kubernetes.kubelet_listener_foreign",
+    "kubernetes.kubelet_listener_unknown",
+    "kubernetes.apiserver_listener_foreign",
+    "kubernetes.apiserver_listener_unknown",
     "kubernetes.kubelet_run_indeterminate",
     "kubernetes.kubelet_anonymous_inconclusive",
     # v0.29.0 — the API server is read on MicroK8s only.

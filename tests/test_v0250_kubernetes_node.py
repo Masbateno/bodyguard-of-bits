@@ -203,6 +203,8 @@ class TestTheCommandProbe:
         monkeypatch.setattr(k8s, "kubelet_running", lambda: True)
         monkeypatch.setattr(k8s, "_ctr_command", lambda: ())
         monkeypatch.setattr(k8s, "_command_exists", lambda c: False)
+        # v0.31.0 — the kubelet holds the port (`_loopback_listener`).
+        monkeypatch.setattr(k8s, "_loopback_listener", lambda port: "kubelet")
 
     def test_it_is_sent_whatever_the_read_answered(self, monkeypatch):
         """A refused read says nothing about a command: the probe is still sent."""
