@@ -158,6 +158,8 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "kubernetes.kubelet_listener_unknown",
     "kubernetes.apiserver_listener_foreign",
     "kubernetes.apiserver_listener_unknown",
+    "kubernetes.kubelet_listener_unverified",
+    "kubernetes.apiserver_listener_unverified",
     "kubernetes.kubelet_run_indeterminate",
     "kubernetes.kubelet_anonymous_inconclusive",
     # v0.29.0 — the API server is read on MicroK8s only.

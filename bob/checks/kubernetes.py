@@ -147,9 +147,12 @@ class KubernetesSnapshot:
     #: the container runtime's socket: (path, mode, group, members) or None.
     runtime_socket:             "tuple[str, int, str, tuple[str, ...]] | None" = None
     #: v0.31.0 — the process holding the socket 127.0.0.1:10250 reaches, and
-    #: the API server's port (:func:`_loopback_listener`): its name, "" when
-    #: nothing listens, None when it could not be told. Only a kubelet (an API
-    #: server) is sent the anonymous probes.
+    #: the API server's port (:func:`_loopback_listener`, :func:`_deciding`):
+    #: its name when run by root, "name (uid N)" when not, "name (uid ?)" when
+    #: its user could not be read; "" when nothing listens, None when it could
+    #: not be told. With several owners, the first that is not a kubelet (an
+    #: API server) run by root. Only a kubelet (an API server) run by root is
+    #: sent the anonymous probes.
     kubelet_listener:           "str | None" = "kubelet"
     apiserver_listener:         "str | None" = "kube-apiserver"
 
@@ -170,10 +173,10 @@ class KubernetesSnapshot:
             snap.pods, snap.unread = read
         # v0.31.0 — the probes go to whatever holds the port; only the
         # kubelet's answer says anything about the kubelet (`_loopback_listener`).
-        snap.kubelet_listener = _loopback_listener(10250)
+        snap.kubelet_listener = _deciding(_loopback_listener(10250), _KUBELET_NAMES)
         if snap.kubelet_listener in _KUBELET_NAMES:
             snap.anonymous_status = _probe("https://127.0.0.1:10250/pods")
-        if _loopback_listener(10255) in _KUBELET_NAMES:
+        if _deciding(_loopback_listener(10255), _KUBELET_NAMES) in _KUBELET_NAMES:
             snap.readonly_status = _probe("http://127.0.0.1:10255/pods")
         # Asked whatever GET /pods answered: a refused read says nothing about a
         # command, the kubelet checks them as different permissions (nodes/pods,
@@ -216,7 +219,7 @@ def _read_apiserver(snap: "KubernetesSnapshot") -> None:
     # Absent: the upstream default is not assumed (not measured) — "not read".
     snap.authorization_modes = tuple(x.strip() for x in modes.split(",") if x.strip()) if modes else ()
     if snap.apiserver_port:
-        snap.apiserver_listener = _loopback_listener(snap.apiserver_port)
+        snap.apiserver_listener = _deciding(_loopback_listener(snap.apiserver_port), _APISERVER_NAMES)
         if snap.apiserver_listener in _APISERVER_NAMES:
             snap.apiserver_anonymous_status = _probe(f"https://127.0.0.1:{snap.apiserver_port}/api/v1/namespaces")
     if "RBAC" in snap.authorization_modes and _command_exists("microk8s"):
@@ -402,11 +405,16 @@ def _cap_last_cap() -> int:
 _APISERVER_NAMES = frozenset({"kube-apiserver", "kubelite", "k3s", "k3s-server"})
 
 
-def _loopback_listener(port: int) -> "str | None":
-    """v0.31.0 — the name of the process holding the TCP socket a connection
-    to 127.0.0.1:*port* reaches (``ss -Htlnp``): one bound to 127.0.0.1 itself,
-    else one bound to every address; "" when none listens; None when BOB could
-    not tell (``ss`` missing or refused, the owner not shown).
+def _loopback_listener(port: int) -> "list[str] | None":
+    """v0.31.0 — the owners of the TCP sockets a connection to 127.0.0.1:*port*
+    may reach (``ss -Htlnp``): those bound to 127.0.0.1 itself when there are
+    any, else those bound to every IPv4 address — ``0.0.0.0``, or ``*``, which
+    is how ss shows a ``[::]`` socket that takes IPv4 too; ``[::]`` is one that
+    does not (measured, 4 November 2026, `ssforms.txt`: 127.0.0.1 reached the
+    first, was refused by the second). Every owner of every such socket counts:
+    with SO_REUSEPORT several sockets share the port (measured: two lines; the
+    kernel refused a uid 1000 socket joining a root one). [] when none listens;
+    None when ss failed or did not show an owner.
 
     The probes below do not verify the server's certificate — the kubelet's
     own is self-signed — so whatever holds the port is answered: measured in a
@@ -415,40 +423,60 @@ def _loopback_listener(port: int) -> "str | None":
     read "the kubelet requires authentication". Only a kubelet (or an API
     server) is now asked — a process of that name run by root: the name alone
     is anyone's to take (measured: the same server, its binary named kubelet,
-    was asked), and the kubelet, kubelite, k3s and kube-apiserver run as root.
-    A process not run by root is named with its user id."""
+    run by uid 1000, was asked), and the kubelet, kubelite, k3s and
+    kube-apiserver run as root. This identifies the local process by its name
+    and user; it does not authenticate the TLS server, and a socket may change
+    hands between the check and the probe (a race BOB does not close)."""
     res = run_result("ss", "-Htlnp", "sport", "=", f":{port}")
     if not res.ok:
         return None
-    exact = wild = None
+    exact: "list[str | None]" = []
+    wild: "list[str | None]" = []
     for line in (res.stdout or "").splitlines():
         parts = line.split()
         if len(parts) < 4:
             continue
         addr = parts[3].rsplit(":", 1)[0].split("%", 1)[0]
-        m = re.search(r'users:\(\("([^"]+)",pid=(\d+)', line)
-        owner = "?" if not m else _owner(m.group(1), m.group(2))
-        if addr == "127.0.0.1":
-            exact = exact or owner
-        elif addr in ("0.0.0.0", "*", "[::]", "[::ffff:127.0.0.1]"):
-            wild = wild or owner
-    owner = exact if exact is not None else wild
-    if owner is None:
-        return ""
-    return None if owner == "?" else owner
+        if addr in ("127.0.0.1", "[::ffff:127.0.0.1]"):
+            bucket = exact
+        elif addr in ("0.0.0.0", "*"):
+            bucket = wild
+        else:
+            continue
+        users = re.findall(r'\("([^"]+)",pid=(\d+)', line)
+        if not users:
+            users = [(None, None)]
+        bucket.extend(None if pid is None else _owner(name, pid) for name, pid in users)
+    owners = exact or wild
+    return None if None in owners else owners
 
 
 def _owner(name: str, pid: str) -> str:
-    """*name* when the process runs as root, "name (uid N)" otherwise, "?"
-    when its user could not be read."""
+    """*name* when every user id of the process is root (real, effective,
+    saved, filesystem: the ``Uid:`` line of /proc/<pid>/status); "name (uid N)"
+    with its effective uid otherwise; "name (uid ?)" when it could not be read
+    (the process gone, the line missing or malformed)."""
     try:
         status = Path(f"/proc/{pid}/status").read_text(errors="replace")
     except OSError:
-        return "?"
-    m = re.search(r"^Uid:\s+(\d+)", status, re.MULTILINE)
+        return f"{name} (uid ?)"
+    m = re.search(r"^Uid:\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*$", status, re.MULTILINE)
     if not m:
-        return "?"
-    return name if m.group(1) == "0" else f"{name} (uid {m.group(1)})"
+        return f"{name} (uid ?)"
+    if m.groups() == ("0", "0", "0", "0"):
+        return name
+    return f"{name} (uid {m.group(2)})"
+
+
+def _deciding(owners: "list[str] | None", names: frozenset) -> "str | None":
+    """v0.31.0 — the owner that decides whether a port is asked: None when not
+    known, "" when none listens, the first one not among *names* (run by root),
+    else the first: every owner must be one."""
+    if owners is None:
+        return None
+    if not owners:
+        return ""
+    return next((o for o in owners if o not in names), owners[0])
 
 
 def _request(url: str, method: str = "GET") -> "tuple[int | None, str]":
@@ -641,6 +669,10 @@ def check_kubernetes(snapshot: KubernetesSnapshot, t: "TranslationFunc | None" =
     if listener not in _KUBELET_NAMES and listener != "":
         if listener is None:
             result.info(message=_t("kubernetes.kubelet_listener_unknown"), key="kubernetes.kubelet_listener_unknown")
+        elif listener.endswith(" (uid ?)"):
+            result.info(message=_t("kubernetes.kubelet_listener_unverified", process=listener[:-len(" (uid ?)")]),
+                        key="kubernetes.kubelet_listener_unverified",
+                        template_vars={"process": listener[:-len(" (uid ?)")]})
         else:
             result.info(message=_t("kubernetes.kubelet_listener_foreign", process=listener),
                         key="kubernetes.kubelet_listener_foreign", template_vars={"process": listener})
@@ -717,6 +749,11 @@ def _check_apiserver(snapshot: "KubernetesSnapshot", result: CheckResult, _t) ->
         if owner is None:
             result.info(message=_t("kubernetes.apiserver_listener_unknown", port=snapshot.apiserver_port),
                         key="kubernetes.apiserver_listener_unknown", template_vars={"port": snapshot.apiserver_port})
+        elif owner.endswith(" (uid ?)"):
+            result.info(message=_t("kubernetes.apiserver_listener_unverified", port=snapshot.apiserver_port,
+                                   process=owner[:-len(" (uid ?)")]),
+                        key="kubernetes.apiserver_listener_unverified",
+                        template_vars={"port": snapshot.apiserver_port, "process": owner[:-len(" (uid ?)")]})
         else:
             result.info(message=_t("kubernetes.apiserver_listener_foreign", port=snapshot.apiserver_port,
                                    process=owner),
