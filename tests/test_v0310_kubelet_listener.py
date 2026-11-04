@@ -16,15 +16,18 @@ Decided with the maintainer: check who holds the port before asking.
 | named kubelet, as root | asked | asked |
 
 A process of a kubelet's (or an API server's) name run by root is asked: the
-kubelet, kubelite, k3s and kube-apiserver run as root, and a root attacker has
-no need to deceive BOB.
+kubelet, kubelite, k3s and kube-apiserver are expected to run as root (measured
+in namespaces only, not yet on a MicroK8s or a k3s node), and a root attacker
+has no need to deceive BOB.
 
 After review: every user id is read (real, effective, saved, filesystem — the
 first alone let an effective root, or a process that dropped root, pass
 either way); every owner of every socket that may take the connection counts
 (SO_REUSEPORT: measured, two lines); ``[::]`` as ss shows it is IPv6-only and
 does not take 127.0.0.1 (measured `ssforms.txt`; a dual-stack one shows as
-``*``); a user that could not be read is said as such.
+``*``); a user that could not be read is said as such. Second review: user ids
+that differ are shown whole — the effective one alone read "kubelet (uid 0)"
+beside "not run by root" for ``Uid: 1000 0 0 0``.
 """
 
 from __future__ import annotations
@@ -92,6 +95,11 @@ class TestWhoHoldsThePort:
                           SS.format(addr="127.0.0.1", port=10250, name="kubelet", pid=2)], uids={"2": "1000"})
         assert k._loopback_listener(10250) == ["kubelet", "kubelet (uid 1000)"]
 
+    def test_a_kubelet_whose_user_was_not_read_beside_one(self, monkeypatch):
+        _ss(monkeypatch, [SS.format(addr="127.0.0.1", port=10250, name="kubelet", pid=1),
+                          SS.format(addr="127.0.0.1", port=10250, name="kubelet", pid=2)], uids={"2": None})
+        assert k._deciding(k._loopback_listener(10250), k._KUBELET_NAMES) == "kubelet (uid ?)"
+
     def test_every_process_sharing_a_socket(self, monkeypatch):
         line = 'LISTEN 0 4096 127.0.0.1:10250 0.0.0.0:* users:(("kubelet",pid=1,fd=3),("python3",pid=2,fd=4))'
         _ss(monkeypatch, [line])
@@ -100,10 +108,10 @@ class TestWhoHoldsThePort:
     @pytest.mark.parametrize("status, owner", [
         ("Name:\tkubelet\nUid:\t0\t0\t0\t0\nGid:\t0\t0\t0\t0\n", "kubelet"),
         ("Name:\tkubelet\nUid:\t1000\t1000\t1000\t1000\n", "kubelet (uid 1000)"),
-        ("Name:\tkubelet\nUid:\t1000\t0\t0\t0\n", "kubelet (uid 0)"),
-        ("Name:\tkubelet\nUid:\t0\t1000\t0\t1000\n", "kubelet (uid 1000)"),
-        ("Name:\tkubelet\nUid:\t0\t0\t1000\t0\n", "kubelet (uid 0)"),
-        ("Name:\tkubelet\nUid:\t0\t0\t0\t1000\n", "kubelet (uid 0)"),
+        ("Name:\tkubelet\nUid:\t1000\t0\t0\t0\n", "kubelet (uids 1000 0 0 0)"),
+        ("Name:\tkubelet\nUid:\t0\t1000\t0\t1000\n", "kubelet (uids 0 1000 0 1000)"),
+        ("Name:\tkubelet\nUid:\t0\t0\t1000\t0\n", "kubelet (uids 0 0 1000 0)"),
+        ("Name:\tkubelet\nUid:\t0\t0\t0\t1000\n", "kubelet (uids 0 0 0 1000)"),
         ("Name:\tkubelet\nUid:\t0\n", "kubelet (uid ?)"),
         ("Name:\tkubelet\n", "kubelet (uid ?)"),
         (None, "kubelet (uid ?)"),
@@ -125,7 +133,9 @@ class TestWhoHoldsThePort:
         (None, None), ([], ""), (["kubelet"], "kubelet"), (["kubelet", "kubelet"], "kubelet"),
         (["kubelet", "python3"], "python3"), (["kubelet", "kubelet (uid 1000)"], "kubelet (uid 1000)"),
         (["kubelet (uid ?)", "python3"], "kubelet (uid ?)"),
-    ], ids=["unknown", "none", "one", "two-kubelets", "a-stranger-beside", "a-user-beside", "the-first-stranger"])
+        (["kubelet", "kubelet (uid ?)"], "kubelet (uid ?)"),
+    ], ids=["unknown", "none", "one", "two-kubelets", "a-stranger-beside", "a-user-beside", "the-first-stranger",
+            "a-kubelet-unverified-beside"])
     def test_the_deciding_owner(self, owners, deciding):
         assert k._deciding(owners, k._KUBELET_NAMES) == deciding
 
@@ -151,7 +161,9 @@ class TestOnlyTheKubeletIsAsked:
     @pytest.mark.parametrize("owners, said", [
         (["python3"], "python3"), (["kubelet (uid 1000)"], "kubelet (uid 1000)"), (None, None),
         (["kubelet (uid ?)"], "kubelet (uid ?)"), (["kubelet", "python3"], "python3"),
-    ], ids=["a-stranger", "a-user", "unknown", "unverified", "a-stranger-sharing-the-port"])
+        (["kubelet", "kubelet (uid ?)"], "kubelet (uid ?)"),
+    ], ids=["a-stranger", "a-user", "unknown", "unverified", "a-stranger-sharing-the-port",
+            "a-kubelet-unverified-sharing-the-port"])
     def test_another_process(self, monkeypatch, owners, said):
         snap, asked = self._snap(monkeypatch, {10250: owners, 10255: owners})
         assert snap.anonymous_status is None and asked == [] and not snap.run_probed

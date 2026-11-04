@@ -423,10 +423,13 @@ def _loopback_listener(port: int) -> "list[str] | None":
     read "the kubelet requires authentication". Only a kubelet (or an API
     server) is now asked — a process of that name run by root: the name alone
     is anyone's to take (measured: the same server, its binary named kubelet,
-    run by uid 1000, was asked), and the kubelet, kubelite, k3s and
-    kube-apiserver run as root. This identifies the local process by its name
-    and user; it does not authenticate the TLS server, and a socket may change
-    hands between the check and the probe (a race BOB does not close)."""
+    run by uid 1000, was asked). That the kubelet, kubelite, k3s and
+    kube-apiserver show these names and run with every uid 0 is the
+    expectation, measured in namespaces only, not yet on a MicroK8s or a k3s
+    node. The name is a sign the process is recognised by, not a proof of
+    which binary it runs; with the user it identifies the local process, it
+    does not authenticate the TLS server, and a socket may change hands
+    between the check and the probe (a race BOB does not close)."""
     res = run_result("ss", "-Htlnp", "sport", "=", f":{port}")
     if not res.ok:
         return None
@@ -453,9 +456,11 @@ def _loopback_listener(port: int) -> "list[str] | None":
 
 def _owner(name: str, pid: str) -> str:
     """*name* when every user id of the process is root (real, effective,
-    saved, filesystem: the ``Uid:`` line of /proc/<pid>/status); "name (uid N)"
-    with its effective uid otherwise; "name (uid ?)" when it could not be read
-    (the process gone, the line missing or malformed)."""
+    saved, filesystem: the ``Uid:`` line of /proc/<pid>/status); otherwise
+    "name (uid N)" when the four are N, "name (uids R E S F)" when they differ
+    — one alone could read "uid 0" for a process not run by root; "name
+    (uid ?)" when they could not be read (the process gone, the line missing
+    or malformed)."""
     try:
         status = Path(f"/proc/{pid}/status").read_text(errors="replace")
     except OSError:
@@ -463,9 +468,12 @@ def _owner(name: str, pid: str) -> str:
     m = re.search(r"^Uid:\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*$", status, re.MULTILINE)
     if not m:
         return f"{name} (uid ?)"
-    if m.groups() == ("0", "0", "0", "0"):
+    uids = m.groups()
+    if uids == ("0", "0", "0", "0"):
         return name
-    return f"{name} (uid {m.group(2)})"
+    if len(set(uids)) == 1:
+        return f"{name} (uid {uids[0]})"
+    return f"{name} (uids {' '.join(uids)})"
 
 
 def _deciding(owners: "list[str] | None", names: frozenset) -> "str | None":
