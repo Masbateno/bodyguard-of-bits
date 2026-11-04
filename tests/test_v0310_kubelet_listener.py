@@ -28,6 +28,17 @@ does not take 127.0.0.1 (measured `ssforms.txt`; a dual-stack one shows as
 ``*``); a user that could not be read is said as such. Second review: user ids
 that differ are shown whole — the effective one alone read "kubelet (uid 0)"
 beside "not run by root" for ``Uid: 1000 0 0 0``.
+
+Third review (partial ``ss`` output), measured (`kspoof4.sh`,
+`kspoof-comm.txt`, `kspoof-comm-fix.txt`): ss writes a process's name as it
+is, and any user may choose it. A uid 1000 server named ``kubelet",pid=1``
+showed as ``users:(("kubelet",pid=1",pid=10,fd=3))``, was read as pid 1 —
+root — and asked: "the kubelet requires authentication". The owners are no
+longer read from ss: it gives each socket's address and inode (``-e``), and the
+processes holding that inode are found in /proc/<pid>/fd, their names in
+/proc/<pid>/comm. A line too short, a socket without an inode, one no process
+was seen holding, descriptors that could not be read: not known. In a user
+namespace the user ids /proc shows are not the host's — not verified.
 """
 
 from __future__ import annotations
@@ -39,71 +50,197 @@ from bob.checks import kubernetes as k
 from bob.checks._run import CommandResult
 from bob.visibility import is_visibility_key
 
-SS = 'LISTEN 0 4096 {addr}:{port} 0.0.0.0:* users:(("{name}",pid={pid},fd=3))'
+SS = "LISTEN 0 4096 {addr}:10250 0.0.0.0:* ino:{ino} sk:1 cgroup:/system.slice/kubelet.service <->"
 
 
-def _ss(monkeypatch, lines, ok=True, uids=None):
-    monkeypatch.setattr(k, "run_result", lambda *a, **kw: CommandResult(stdout="\n".join(lines) + "\n", ok=ok))
-    uids = uids or {}
+def _ss(monkeypatch, lines, ok=True, holders=None, owners=None):
+    """ss answers *lines*; inode N is held by pid N unless *holders* says
+    otherwise; pid N is "kubelet" run by root unless *owners* says otherwise."""
+    asked = []
 
-    def owner(name, pid):
-        uid = uids.get(pid, "0")
-        return f"{name} (uid ?)" if uid is None else name if uid == "0" else f"{name} (uid {uid})"
-    monkeypatch.setattr(k, "_owner", owner)
+    def run(*a, **kw):
+        asked.append(a)
+        return CommandResult(stdout="\n".join(lines) + "\n", ok=ok)
+    monkeypatch.setattr(k, "run_result", run)
+    monkeypatch.setattr(k, "_socket_holders",
+                        (lambda inodes: {i: [i] for i in inodes}) if holders is None else (lambda inodes: holders))
+    owners = owners or {}
+    monkeypatch.setattr(k, "_owner", lambda pid: owners.get(pid, "kubelet"))
+    return asked
 
 
 class TestWhoHoldsThePort:
 
     @pytest.mark.parametrize("lines, owners", [
-        ([SS.format(addr="127.0.0.1", port=10250, name="kubelet", pid=1)], ["kubelet"]),
-        ([SS.format(addr="*", port=10250, name="kubelet", pid=1)], ["kubelet"]),
-        ([SS.format(addr="0.0.0.0", port=10250, name="kubelite", pid=1)], ["kubelite"]),
-        ([SS.format(addr="[::ffff:127.0.0.1]", port=10250, name="k3s", pid=1)], ["k3s"]),
-        ([SS.format(addr="[::]", port=10250, name="k3s-server", pid=1)], []),
-        ([SS.format(addr="0.0.0.0", port=10250, name="kubelet", pid=1),
-          SS.format(addr="127.0.0.1", port=10250, name="python3", pid=2)], ["python3"]),
-        ([SS.format(addr="192.0.2.5", port=10250, name="kubelet", pid=1)], []),
-        ([SS.format(addr="[::1]", port=10250, name="kubelet", pid=1)], []),
+        ([SS.format(addr="127.0.0.1", ino=11)], ["kubelet"]),
+        ([SS.format(addr="*", ino=11)], ["kubelet"]),
+        ([SS.format(addr="0.0.0.0", ino=11)], ["kubelet"]),
+        ([SS.format(addr="[::ffff:127.0.0.1]", ino=11)], ["kubelet"]),
+        ([SS.format(addr="[::]", ino=11)], []),
+        ([SS.format(addr="192.0.2.5", ino=11)], []),
+        ([SS.format(addr="[::1]", ino=11)], []),
         ([], []),
-        (["LISTEN 0 4096 127.0.0.1:10250 0.0.0.0:*"], None),
-        (["LISTEN 0 4096 0.0.0.0:10250 0.0.0.0:*",
-          SS.format(addr="127.0.0.1", port=10250, name="kubelet", pid=1)], ["kubelet"]),
-        ([SS.format(addr="0.0.0.0", port=10250, name="kubelet", pid=1),
-          "LISTEN 0 4096 0.0.0.0:10250 0.0.0.0:*"], None),
-    ], ids=["loopback", "any", "all-v4", "v4-mapped-loopback", "v6-only", "the-loopback-socket-wins",
-            "another-address", "v6-loopback", "none", "owner-not-shown",
-            "a-hidden-owner-the-loopback-socket-beats", "a-hidden-owner-beside"])
-    def test_it(self, monkeypatch, lines, owners):
+        (["", SS.format(addr="127.0.0.1", ino=11), ""], ["kubelet"]),
+    ], ids=["loopback", "any", "all-v4", "v4-mapped-loopback", "v6-only", "another-address", "v6-loopback",
+            "none", "blank-lines"])
+    def test_which_sockets(self, monkeypatch, lines, owners):
         _ss(monkeypatch, lines)
         assert k._loopback_listener(10250) == owners
+
+    def test_the_loopback_socket_wins(self, monkeypatch):
+        _ss(monkeypatch, [SS.format(addr="0.0.0.0", ino=11), SS.format(addr="127.0.0.1", ino=12)],
+            owners={"12": "python3"})
+        assert k._loopback_listener(10250) == ["python3"]
+
+    @pytest.mark.parametrize("lines", [
+        ["LISTEN 0 4096 127.0.0.1:10250"],
+        ["LISTEN 0 4096 127.0.0.1:10250 0.0.0.0:*"],
+        ["LISTEN 0 4096 127.0.0.1:10250 0.0.0.0:* sk:1"],
+        [SS.format(addr="127.0.0.1", ino=0)],
+        [SS.format(addr="127.0.0.1", ino="x1")],
+        [SS.format(addr="127.0.0.1", ino=11), "LISTEN 0 4096 127.0.0.1:10250 0.0.0.0:*"],
+    ], ids=["truncated", "no-inode", "no-inode-but-more", "inode-zero", "inode-not-a-number", "one-of-two-without"])
+    def test_a_partial_answer_is_not_a_list(self, monkeypatch, lines):
+        _ss(monkeypatch, lines)
+        assert k._loopback_listener(10250) is None
+
+    def test_a_socket_without_an_inode_the_loopback_one_beats(self, monkeypatch):
+        _ss(monkeypatch, ["LISTEN 0 4096 0.0.0.0:10250 0.0.0.0:*", SS.format(addr="127.0.0.1", ino=11)])
+        assert k._loopback_listener(10250) == ["kubelet"]
+
+    def test_the_first_inode_is_the_socket_s(self, monkeypatch):
+        """The cgroup path, written after the inode, is a delegated user's to name."""
+        line = "LISTEN 0 4096 127.0.0.1:10250 0.0.0.0:* ino:11 sk:1 cgroup:/user.slice/x ino:12 <->"
+        _ss(monkeypatch, [line], owners={"12": "python3"})
+        assert k._loopback_listener(10250) == ["kubelet"]
+
+    def test_ss_is_not_asked_for_names(self, monkeypatch):
+        """Measured: a name may forge another pid in ss -p's users:(...)."""
+        asked = _ss(monkeypatch, [SS.format(addr="127.0.0.1", ino=11)])
+        k._loopback_listener(10250)
+        assert asked == [("ss", "-Htlne", "sport", "=", ":10250")]
 
     def test_ss_failed(self, monkeypatch):
         _ss(monkeypatch, [], ok=False)
         assert k._loopback_listener(10250) is None
 
+    @pytest.mark.parametrize("holders, owners", [
+        (None, None), ({"11": []}, None), ({}, None), ({"11": ["7"]}, ["kubelet"]),
+    ], ids=["descriptors-not-read", "held-by-no-process-seen", "inode-missing", "held"])
+    def test_the_holders(self, monkeypatch, holders, owners):
+        _ss(monkeypatch, [SS.format(addr="127.0.0.1", ino=11)], holders=holders)
+        if holders is None:
+            monkeypatch.setattr(k, "_socket_holders", lambda inodes: None)
+        assert k._loopback_listener(10250) == owners
+
     def test_a_process_not_run_by_root(self, monkeypatch):
-        _ss(monkeypatch, [SS.format(addr="127.0.0.1", port=10250, name="kubelet", pid=7)], uids={"7": "1000"})
+        _ss(monkeypatch, [SS.format(addr="127.0.0.1", ino=7)], owners={"7": "kubelet (uid 1000)"})
         assert k._loopback_listener(10250) == ["kubelet (uid 1000)"]
 
-    def test_a_user_not_read(self, monkeypatch):
-        _ss(monkeypatch, [SS.format(addr="127.0.0.1", port=10250, name="kubelet", pid=7)], uids={"7": None})
-        assert k._loopback_listener(10250) == ["kubelet (uid ?)"]
+    def test_a_name_not_read(self, monkeypatch):
+        _ss(monkeypatch, [SS.format(addr="127.0.0.1", ino=7), SS.format(addr="127.0.0.1", ino=8)],
+            owners={"8": None})
+        assert k._loopback_listener(10250) is None
 
     def test_every_socket_sharing_the_port(self, monkeypatch):
         """SO_REUSEPORT: measured, two lines for one port."""
-        _ss(monkeypatch, [SS.format(addr="127.0.0.1", port=10250, name="kubelet", pid=1),
-                          SS.format(addr="127.0.0.1", port=10250, name="kubelet", pid=2)], uids={"2": "1000"})
+        _ss(monkeypatch, [SS.format(addr="127.0.0.1", ino=1), SS.format(addr="127.0.0.1", ino=2)],
+            owners={"2": "kubelet (uid 1000)"})
         assert k._loopback_listener(10250) == ["kubelet", "kubelet (uid 1000)"]
 
     def test_a_kubelet_whose_user_was_not_read_beside_one(self, monkeypatch):
-        _ss(monkeypatch, [SS.format(addr="127.0.0.1", port=10250, name="kubelet", pid=1),
-                          SS.format(addr="127.0.0.1", port=10250, name="kubelet", pid=2)], uids={"2": None})
+        _ss(monkeypatch, [SS.format(addr="127.0.0.1", ino=1), SS.format(addr="127.0.0.1", ino=2)],
+            owners={"2": "kubelet (uid ?)"})
         assert k._deciding(k._loopback_listener(10250), k._KUBELET_NAMES) == "kubelet (uid ?)"
 
     def test_every_process_sharing_a_socket(self, monkeypatch):
-        line = 'LISTEN 0 4096 127.0.0.1:10250 0.0.0.0:* users:(("kubelet",pid=1,fd=3),("python3",pid=2,fd=4))'
-        _ss(monkeypatch, [line])
+        _ss(monkeypatch, [SS.format(addr="127.0.0.1", ino=11)], holders={"11": ["1", "2"]}, owners={"2": "python3"})
         assert k._loopback_listener(10250) == ["kubelet", "python3"]
+
+
+class TestTheProcFiles:
+
+    @staticmethod
+    def _proc(monkeypatch, fds, denied=(), gone=(), listing=True):
+        """*fds*: pid -> {fd: link}; *denied*/*gone*: pids whose fd directory
+        raises PermissionError/FileNotFoundError; a link None raises
+        FileNotFoundError (closed meanwhile), "denied" PermissionError."""
+        def listdir(path):
+            if path == "/proc":
+                if not listing:
+                    raise PermissionError(path)
+                return list(fds) + list(denied) + list(gone) + ["self", "net"]
+            pid = path.split("/")[2]
+            if pid in denied:
+                raise PermissionError(path)
+            if pid in gone:
+                raise FileNotFoundError(path)
+            return list(fds[pid])
+
+        def readlink(path):
+            pid, fd = path.split("/")[2], path.split("/")[4]
+            link = fds[pid][fd]
+            if link is None:
+                raise FileNotFoundError(path)
+            if link == "denied":
+                raise PermissionError(path)
+            return link
+        monkeypatch.setattr(k.os, "listdir", listdir)
+        monkeypatch.setattr(k.os, "readlink", readlink)
+
+    def test_found(self, monkeypatch):
+        self._proc(monkeypatch, {"1": {"3": "socket:[11]", "4": "socket:[11]"}, "2": {"0": "/dev/null"},
+                                 "3": {"5": "socket:[11]", "6": "socket:[12]"}, "4": {"1": "socket:[111]"}},
+                   gone=("9",))
+        assert k._socket_holders({"11", "12"}) == {"11": ["1", "3"], "12": ["3"]}
+
+    def test_a_descriptor_closed_meanwhile(self, monkeypatch):
+        self._proc(monkeypatch, {"1": {"3": None, "4": "socket:[11]"}})
+        assert k._socket_holders({"11"}) == {"11": ["1"]}
+
+    @pytest.mark.parametrize("kw", [{"denied": ("5",)}, {"listing": False}],
+                             ids=["a-process-not-read", "proc-not-listed"])
+    def test_not_read(self, monkeypatch, kw):
+        self._proc(monkeypatch, {"1": {"3": "socket:[11]"}}, **kw)
+        assert k._socket_holders({"11"}) is None
+
+    def test_a_link_not_read(self, monkeypatch):
+        self._proc(monkeypatch, {"1": {"3": "denied", "4": "socket:[11]"}})
+        assert k._socket_holders({"11"}) is None
+
+    @pytest.mark.parametrize("uid_map, host", [
+        ("         0          0 4294967295\n", True),
+        ("         0       1000          1\n", False),
+        ("         0          0       1000\n", False),
+        ("         0          0 4294967295\n      1000 1000 1\n", False),
+        (None, False),
+    ], ids=["identity", "map-root-user", "a-part", "two-lines", "not-read"])
+    def test_the_user_namespace(self, monkeypatch, uid_map, host):
+        class P:
+            def __init__(self, path):
+                assert path == "/proc/self/uid_map"
+
+            def read_text(self, **kw):
+                if uid_map is None:
+                    raise PermissionError("denied")
+                return uid_map
+        monkeypatch.setattr(k, "Path", P)
+        assert k._host_user_ids() is host
+
+    @staticmethod
+    def _files(monkeypatch, comm, status, host=True):
+        files = {"/proc/7/comm": comm, "/proc/7/status": status}
+
+        class P:
+            def __init__(self, path):
+                self.path = path
+
+            def read_text(self, **kw):
+                if files[self.path] is None:
+                    raise FileNotFoundError(self.path)
+                return files[self.path]
+        monkeypatch.setattr(k, "Path", P)
+        monkeypatch.setattr(k, "_host_user_ids", lambda: host)
 
     @pytest.mark.parametrize("status, owner", [
         ("Name:\tkubelet\nUid:\t0\t0\t0\t0\nGid:\t0\t0\t0\t0\n", "kubelet"),
@@ -118,16 +255,22 @@ class TestWhoHoldsThePort:
     ], ids=["root", "a-user", "effective-root-of-a-user", "root-dropped-to-a-user", "saved-user",
             "filesystem-user", "a-short-line", "no-uid-line", "gone"])
     def test_the_owner(self, monkeypatch, status, owner):
-        class P:
-            def __init__(self, path):
-                pass
+        self._files(monkeypatch, "kubelet\n", status)
+        assert k._owner("7") == owner
 
-            def read_text(self, **kw):
-                if status is None:
-                    raise FileNotFoundError("gone")
-                return status
-        monkeypatch.setattr(k, "Path", P)
-        assert k._owner("kubelet", "7") == owner
+    def test_the_name_is_comm_s(self, monkeypatch):
+        """Not the name ss writes: comm, whole, compared whole."""
+        self._files(monkeypatch, 'kubelet",pid=1\n', "Uid:\t1000\t1000\t1000\t1000\n")
+        assert k._owner("7") == 'kubelet",pid=1 (uid 1000)'
+
+    def test_a_name_not_read(self, monkeypatch):
+        self._files(monkeypatch, None, "Uid:\t0\t0\t0\t0\n")
+        assert k._owner("7") is None
+
+    def test_in_a_user_namespace(self, monkeypatch):
+        """Measured: the bench namespace's root is uid 1000 outside it."""
+        self._files(monkeypatch, "kubelet\n", "Uid:\t0\t0\t0\t0\n", host=False)
+        assert k._owner("7") == "kubelet (uid ?)"
 
     @pytest.mark.parametrize("owners, deciding", [
         (None, None), ([], ""), (["kubelet"], "kubelet"), (["kubelet", "kubelet"], "kubelet"),

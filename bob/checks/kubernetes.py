@@ -50,6 +50,7 @@ The section only runs where a kubelet process runs.
 from __future__ import annotations
 
 import json
+import os
 import re
 import secrets
 import ssl
@@ -407,14 +408,21 @@ _APISERVER_NAMES = frozenset({"kube-apiserver", "kubelite", "k3s", "k3s-server"}
 
 def _loopback_listener(port: int) -> "list[str] | None":
     """v0.31.0 — the owners of the TCP sockets a connection to 127.0.0.1:*port*
-    may reach (``ss -Htlnp``): those bound to 127.0.0.1 itself when there are
-    any, else those bound to every IPv4 address — ``0.0.0.0``, or ``*``, which
-    is how ss shows a ``[::]`` socket that takes IPv4 too; ``[::]`` is one that
-    does not (measured, 4 November 2026, `ssforms.txt`: 127.0.0.1 reached the
-    first, was refused by the second). Every owner of every such socket counts:
-    with SO_REUSEPORT several sockets share the port (measured: two lines; the
-    kernel refused a uid 1000 socket joining a root one). [] when none listens;
-    None when ss failed or did not show an owner.
+    may reach: those bound to 127.0.0.1 itself when there are any, else those
+    bound to every IPv4 address — ``0.0.0.0``, or ``*``, which is how ss shows
+    a ``[::]`` socket that takes IPv4 too; ``[::]`` is one that does not
+    (measured, 4 November 2026, `ssforms.txt`: 127.0.0.1 reached the first,
+    was refused by the second). Every owner of every such socket counts: with
+    SO_REUSEPORT several sockets share the port (measured: two lines; the
+    kernel refused a uid 1000 socket joining a root one). [] when none
+    listens; None when it could not be told whom they all belong to.
+
+    ss gives each socket's address and inode (``-e``), not its owners (``-p``):
+    it writes a process's name as it is, and a name is anyone's to choose —
+    measured (`kspoof-comm.txt`), a uid 1000 server named ``kubelet",pid=1``
+    showed as ``users:(("kubelet",pid=1",pid=10,fd=3))``, read as pid 1, run
+    by root, and was asked. The holders are found in /proc/<pid>/fd instead;
+    the cgroup path ss writes after the inode is not read.
 
     The probes below do not verify the server's certificate — the kubelet's
     own is self-signed — so whatever holds the port is answered: measured in a
@@ -428,17 +436,20 @@ def _loopback_listener(port: int) -> "list[str] | None":
     expectation, measured in namespaces only, not yet on a MicroK8s or a k3s
     node. The name is a sign the process is recognised by, not a proof of
     which binary it runs; with the user it identifies the local process, it
-    does not authenticate the TLS server, and a socket may change hands
-    between the check and the probe (a race BOB does not close)."""
-    res = run_result("ss", "-Htlnp", "sport", "=", f":{port}")
+    does not authenticate the TLS server, and a socket may change hands — a
+    process end, its pid be taken again — between the check and the probe (a
+    race BOB does not close)."""
+    res = run_result("ss", "-Htlne", "sport", "=", f":{port}")
     if not res.ok:
         return None
     exact: "list[str | None]" = []
     wild: "list[str | None]" = []
     for line in (res.stdout or "").splitlines():
         parts = line.split()
-        if len(parts) < 4:
+        if not parts:
             continue
+        if len(parts) < 5:
+            return None
         addr = parts[3].rsplit(":", 1)[0].split("%", 1)[0]
         if addr in ("127.0.0.1", "[::ffff:127.0.0.1]"):
             bucket = exact
@@ -446,21 +457,75 @@ def _loopback_listener(port: int) -> "list[str] | None":
             bucket = wild
         else:
             continue
-        users = re.findall(r'\("([^"]+)",pid=(\d+)', line)
-        if not users:
-            users = [(None, None)]
-        bucket.extend(None if pid is None else _owner(name, pid) for name, pid in users)
-    owners = exact or wild
+        ino = next((p[4:] for p in parts[5:] if p.startswith("ino:")), "")
+        bucket.append(ino if ino.isdigit() and ino != "0" else None)
+    inodes = exact or wild
+    if not inodes:
+        return []
+    if None in inodes:
+        return None
+    holders = _socket_holders(set(inodes))
+    if holders is None or any(not holders.get(i) for i in inodes):
+        return None
+    owners = [_owner(pid) for i in inodes for pid in holders[i]]
     return None if None in owners else owners
 
 
-def _owner(name: str, pid: str) -> str:
-    """*name* when every user id of the process is root (real, effective,
-    saved, filesystem: the ``Uid:`` line of /proc/<pid>/status); otherwise
-    "name (uid N)" when the four are N, "name (uids R E S F)" when they differ
-    — one alone could read "uid 0" for a process not run by root; "name
-    (uid ?)" when they could not be read (the process gone, the line missing
-    or malformed)."""
+def _socket_holders(inodes: "set[str]") -> "dict[str, list[str]] | None":
+    """The pids holding each socket inode (/proc/<pid>/fd), or None when a
+    process's descriptors could not be read: a holder may be there."""
+    links = {f"socket:[{i}]": i for i in inodes}
+    found: "dict[str, list[str]]" = {i: [] for i in inodes}
+    try:
+        pids = [d for d in os.listdir("/proc") if d.isdigit()]
+    except OSError:
+        return None
+    for pid in pids:
+        try:
+            fds = os.listdir(f"/proc/{pid}/fd")
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return None
+        for fd in fds:
+            try:
+                inode = links.get(os.readlink(f"/proc/{pid}/fd/{fd}"))
+            except FileNotFoundError:
+                continue
+            except OSError:
+                return None
+            if inode is not None and pid not in found[inode]:
+                found[inode].append(pid)
+    return found
+
+
+def _host_user_ids() -> bool:
+    """True when the user ids /proc shows are the host's: BOB is not in a user
+    namespace (/proc/self/uid_map the identity, ``0 0 4294967295``). Within
+    one, uid 0 is root of that namespace only (measured: the namespace's root
+    in these benches is uid 1000 outside it), and the host's root shows as
+    the overflow uid."""
+    try:
+        text = Path("/proc/self/uid_map").read_text(errors="replace")
+    except OSError:
+        return False
+    return text.split() == ["0", "0", "4294967295"]
+
+
+def _owner(pid: str) -> "str | None":
+    """The process's name (/proc/<pid>/comm) when every user id of it is root
+    (real, effective, saved, filesystem: the ``Uid:`` line of
+    /proc/<pid>/status); otherwise "name (uid N)" when the four are N, "name
+    (uids R E S F)" when they differ — one alone could read "uid 0" for a
+    process not run by root; "name (uid ?)" when they could not be read (the
+    line missing or malformed, the process gone, BOB in a user namespace).
+    None when the name could not be read."""
+    try:
+        name = Path(f"/proc/{pid}/comm").read_text(errors="replace").rstrip("\n")
+    except OSError:
+        return None
+    if not _host_user_ids():
+        return f"{name} (uid ?)"
     try:
         status = Path(f"/proc/{pid}/status").read_text(errors="replace")
     except OSError:
