@@ -509,9 +509,12 @@ def _socket_holders(inodes: "set[str]") -> "dict[str, list[str]] | None":
     return found
 
 
-#: the inode numbers of the initial pid and user namespaces: fixed by the
-#: kernel (PROC_PID_INIT_INO, PROC_USER_INIT_INO; measured on Linux 7.0,
-#: `review4.txt`).
+#: the inode numbers of the initial pid and user namespaces, set once to
+#: fixed values since Linux 3.8 (PROC_PID_INIT_INO 0xEFFFFFFC and
+#: PROC_USER_INIT_INO 0xEFFFFFFD, assigned to init_pid_ns and init_user_ns;
+#: part of the kernel's user-space interface, uapi/linux/nsfs.h, since 6.17).
+#: Before 3.8 these links do not exist: not read, not known. Measured on Linux
+#: 7.0.0-34 and 7.0.0-42 (`review4.txt`, `k8sbob-microk8s.txt`).
 _INIT_PID_NS = "pid:[4026531836]"
 _INIT_USER_NS = "user:[4026531837]"
 
