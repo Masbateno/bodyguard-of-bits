@@ -17,8 +17,8 @@ Decided with the maintainer: check who holds the port before asking.
 
 A process of a kubelet's (or an API server's) name run by root is asked: the
 kubelet, kubelite, k3s and kube-apiserver are expected to run as root (measured
-in namespaces only, not yet on a MicroK8s or a k3s node), and a root attacker
-has no need to deceive BOB.
+in namespaces only, not yet on a MicroK8s or a k3s node); an attacker who is
+already root is outside what this check protects against.
 
 After review: every user id is read (real, effective, saved, filesystem — the
 first alone let an effective root, or a process that dropped root, pass
@@ -39,6 +39,14 @@ processes holding that inode are found in /proc/<pid>/fd, their names in
 /proc/<pid>/comm. A line too short, a socket without an inode, one no process
 was seen holding, descriptors that could not be read: not known. In a user
 namespace the user ids /proc shows are not the host's — not verified.
+
+Fourth review, measured (`review4.txt`): in a pid namespace with its own
+/proc, 3 processes are seen of the host's 500 — a holder of the socket may
+be unseen, so /proc must be the initial pid namespace's; a nested user
+namespace's map reads ``0 0 1``, the identity to its parent only, so the user
+ids are the host's only in the initial user namespace itself; ss -e writes
+``uid:N`` before ``ino:N`` for a socket not root's, and the inode is read in
+that place only.
 """
 
 from __future__ import annotations
@@ -114,6 +122,21 @@ class TestWhoHoldsThePort:
         _ss(monkeypatch, [line], owners={"12": "python3"})
         assert k._loopback_listener(10250) == ["kubelet"]
 
+    def test_after_the_socket_s_user(self, monkeypatch):
+        """Measured: a socket not root's reads ``uid:1000 ino:N``."""
+        _ss(monkeypatch, ["LISTEN 0 128 0.0.0.0:10250 0.0.0.0:* uid:1000 ino:11 sk:2 cgroup:/x <->"],
+            owners={"11": "python3 (uid 1000)"})
+        assert k._loopback_listener(10250) == ["python3 (uid 1000)"]
+
+    @pytest.mark.parametrize("line", [
+        "LISTEN 0 128 127.0.0.1:10250 0.0.0.0:* sk:1 ino:11 <->",
+        "LISTEN 0 128 127.0.0.1:10250 0.0.0.0:* cgroup:/x ino:11 <->",
+        "LISTEN 0 128 127.0.0.1:10250 0.0.0.0:* uid:1000 uid:0 ino:11 <->",
+    ], ids=["after-another-field", "after-the-cgroup", "after-two-uids"])
+    def test_an_inode_out_of_its_place_is_not_read(self, monkeypatch, line):
+        _ss(monkeypatch, [line])
+        assert k._loopback_listener(10250) is None
+
     def test_ss_is_not_asked_for_names(self, monkeypatch):
         """Measured: a name may forge another pid in ss -p's users:(...)."""
         asked = _ss(monkeypatch, [SS.format(addr="127.0.0.1", ino=11)])
@@ -187,6 +210,7 @@ class TestTheProcFiles:
             return link
         monkeypatch.setattr(k.os, "listdir", listdir)
         monkeypatch.setattr(k.os, "readlink", readlink)
+        monkeypatch.setattr(k, "_whole_proc", lambda: True)
 
     def test_found(self, monkeypatch):
         self._proc(monkeypatch, {"1": {"3": "socket:[11]", "4": "socket:[11]"}, "2": {"0": "/dev/null"},
@@ -208,24 +232,27 @@ class TestTheProcFiles:
         self._proc(monkeypatch, {"1": {"3": "denied", "4": "socket:[11]"}})
         assert k._socket_holders({"11"}) is None
 
-    @pytest.mark.parametrize("uid_map, host", [
-        ("         0          0 4294967295\n", True),
-        ("         0       1000          1\n", False),
-        ("         0          0       1000\n", False),
-        ("         0          0 4294967295\n      1000 1000 1\n", False),
-        (None, False),
-    ], ids=["identity", "map-root-user", "a-part", "two-lines", "not-read"])
-    def test_the_user_namespace(self, monkeypatch, uid_map, host):
-        class P:
-            def __init__(self, path):
-                assert path == "/proc/self/uid_map"
+    def test_a_proc_that_does_not_show_every_process(self, monkeypatch):
+        """Measured: a pid namespace's own /proc shows 3 processes of 500."""
+        self._proc(monkeypatch, {"1": {"3": "socket:[11]"}})
+        monkeypatch.setattr(k, "_whole_proc", lambda: False)
+        assert k._socket_holders({"11"}) is None
 
-            def read_text(self, **kw):
-                if uid_map is None:
-                    raise PermissionError("denied")
-                return uid_map
-        monkeypatch.setattr(k, "Path", P)
-        assert k._host_user_ids() is host
+    @pytest.mark.parametrize("link, ns, whole", [
+        ("/proc/1/ns/pid", "pid:[4026531836]", True), ("/proc/1/ns/pid", "pid:[4026533340]", False),
+        ("/proc/1/ns/pid", None, False),
+        ("/proc/self/ns/user", "user:[4026531837]", True), ("/proc/self/ns/user", "user:[4026532926]", False),
+        ("/proc/self/ns/user", None, False),
+    ], ids=["pid-initial", "pid-another", "pid-not-read", "user-initial", "user-another", "user-not-read"])
+    def test_the_namespaces(self, monkeypatch, link, ns, whole):
+        def readlink(path):
+            assert path == link
+            if ns is None:
+                raise PermissionError(path)
+            return ns
+        monkeypatch.setattr(k.os, "readlink", readlink)
+        read = k._whole_proc if link == "/proc/1/ns/pid" else k._host_user_ids
+        assert read() is whole
 
     @staticmethod
     def _files(monkeypatch, comm, status, host=True):

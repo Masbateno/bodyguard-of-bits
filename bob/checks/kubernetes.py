@@ -457,7 +457,14 @@ def _loopback_listener(port: int) -> "list[str] | None":
             bucket = wild
         else:
             continue
-        ino = next((p[4:] for p in parts[5:] if p.startswith("ino:")), "")
+        # Measured (iproute2 6.1.0, `review4.txt`): after the peer, "uid:N"
+        # when the socket's user is not root, then "ino:N"; the inode is read
+        # there and nowhere else — the cgroup path further on is a delegated
+        # user's to name.
+        extra = parts[5:]
+        if extra and extra[0].startswith("uid:"):
+            extra = extra[1:]
+        ino = extra[0][4:] if extra and extra[0].startswith("ino:") else ""
         bucket.append(ino if ino.isdigit() and ino != "0" else None)
     inodes = exact or wild
     if not inodes:
@@ -473,7 +480,10 @@ def _loopback_listener(port: int) -> "list[str] | None":
 
 def _socket_holders(inodes: "set[str]") -> "dict[str, list[str]] | None":
     """The pids holding each socket inode (/proc/<pid>/fd), or None when a
-    process's descriptors could not be read: a holder may be there."""
+    process's descriptors could not be read, or /proc is not the initial pid
+    namespace's: a holder may be there, unseen."""
+    if not _whole_proc():
+        return None
     links = {f"socket:[{i}]": i for i in inodes}
     found: "dict[str, list[str]]" = {i: [] for i in inodes}
     try:
@@ -499,17 +509,35 @@ def _socket_holders(inodes: "set[str]") -> "dict[str, list[str]] | None":
     return found
 
 
-def _host_user_ids() -> bool:
-    """True when the user ids /proc shows are the host's: BOB is not in a user
-    namespace (/proc/self/uid_map the identity, ``0 0 4294967295``). Within
-    one, uid 0 is root of that namespace only (measured: the namespace's root
-    in these benches is uid 1000 outside it), and the host's root shows as
-    the overflow uid."""
+#: the inode numbers of the initial pid and user namespaces: fixed by the
+#: kernel (PROC_PID_INIT_INO, PROC_USER_INIT_INO; measured on Linux 7.0,
+#: `review4.txt`).
+_INIT_PID_NS = "pid:[4026531836]"
+_INIT_USER_NS = "user:[4026531837]"
+
+
+def _whole_proc() -> bool:
+    """True when /proc shows every process: it belongs to the initial pid
+    namespace (its pid 1's). In another — a container's — the processes
+    outside it are not there (measured: 3 seen, 500 on the host), and a holder
+    of the socket may be one of them."""
     try:
-        text = Path("/proc/self/uid_map").read_text(errors="replace")
+        return os.readlink("/proc/1/ns/pid") == _INIT_PID_NS
     except OSError:
         return False
-    return text.split() == ["0", "0", "4294967295"]
+
+
+def _host_user_ids() -> bool:
+    """True when the user ids /proc shows are the host's: BOB is in the
+    initial user namespace. In another, uid 0 is that namespace's root only
+    (measured: the benches' namespace root is uid 1000 outside it), the
+    host's root shows as the overflow uid (``Uid: 65534 65534 65534 65534``),
+    and a map that looks like the identity may be one to the parent only
+    (measured, nested: ``0 0 1``)."""
+    try:
+        return os.readlink("/proc/self/ns/user") == _INIT_USER_NS
+    except OSError:
+        return False
 
 
 def _owner(pid: str) -> "str | None":
