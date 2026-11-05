@@ -513,21 +513,40 @@ def _socket_holders(inodes: "set[str]") -> "dict[str, list[str]] | None":
 #: fixed values since Linux 3.8 (PROC_PID_INIT_INO 0xEFFFFFFC and
 #: PROC_USER_INIT_INO 0xEFFFFFFD, assigned to init_pid_ns and init_user_ns;
 #: part of the kernel's user-space interface, uapi/linux/nsfs.h, since 6.17).
-#: Before 3.8 these links do not exist: not read, not known. Measured on Linux
+#: Before 3.8 these two entries, ns/pid and ns/user, do not exist (namespaces(7)):
+#: not read, not known. Measured on Linux
 #: 7.0.0-34 and 7.0.0-42 (`review4.txt`, `k8sbob-microk8s.txt`).
 _INIT_PID_NS = "pid:[4026531836]"
 _INIT_USER_NS = "user:[4026531837]"
 
 
 def _whole_proc() -> bool:
-    """True when /proc shows every process: it belongs to the initial pid
-    namespace (its pid 1's). In another — a container's — the processes
-    outside it are not there (measured: 3 seen, 500 on the host), and a holder
-    of the socket may be one of them."""
+    """True when /proc shows BOB every process: it belongs to the initial pid
+    namespace (its pid 1's), and BOB may read any process (CAP_SYS_PTRACE).
+    In another pid namespace — a container's — the processes outside it are
+    not there (measured: 3 seen, 500 on the host). Without CAP_SYS_PTRACE, a
+    /proc mounted with hidepid=2 or 4 leaves out, with no error, the processes
+    BOB may not read (measured, `hidepid.txt`: a root holder without it was
+    seen, its uid 1000 child sharing the socket was not); with it, all were
+    seen. A security policy (SELinux, AppArmor) that denies root reading a
+    process could hide it the same way: not measured."""
     try:
-        return os.readlink("/proc/1/ns/pid") == _INIT_PID_NS
+        if os.readlink("/proc/1/ns/pid") != _INIT_PID_NS:
+            return False
     except OSError:
         return False
+    return _ptrace_capable()
+
+
+def _ptrace_capable() -> bool:
+    """True when CAP_SYS_PTRACE (bit 19) is among BOB's effective
+    capabilities (``CapEff:`` of /proc/self/status)."""
+    try:
+        status = Path("/proc/self/status").read_text(errors="replace")
+    except OSError:
+        return False
+    m = re.search(r"^CapEff:\s+([0-9a-fA-F]+)\s*$", status, re.MULTILINE)
+    return bool(m) and bool(int(m.group(1), 16) >> 19 & 1)
 
 
 def _host_user_ids() -> bool:

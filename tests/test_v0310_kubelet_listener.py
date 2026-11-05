@@ -47,6 +47,13 @@ namespace's map reads ``0 0 1``, the identity to its parent only, so the user
 ids are the host's only in the initial user namespace itself; ss -e writes
 ``uid:N`` before ``ino:N`` for a socket not root's, and the inode is read in
 that place only.
+
+Sixth review, measured (`hidepid.sh`, `hidepid.txt`): with /proc mounted
+hidepid=2 or 4 and BOB run as root without CAP_SYS_PTRACE, a root holder
+without it was seen and its uid 1000 child, sharing the socket, was not —
+no error, a list taken as whole. With CAP_SYS_PTRACE every holder was seen;
+without hidepid the descriptors refused to be read (not known). The holders
+are sought only when BOB has CAP_SYS_PTRACE.
 """
 
 from __future__ import annotations
@@ -251,8 +258,36 @@ class TestTheProcFiles:
                 raise PermissionError(path)
             return ns
         monkeypatch.setattr(k.os, "readlink", readlink)
+        monkeypatch.setattr(k, "_ptrace_capable", lambda: True)
         read = k._whole_proc if link == "/proc/1/ns/pid" else k._host_user_ids
         assert read() is whole
+
+    def test_every_process_only_with_cap_sys_ptrace(self, monkeypatch):
+        """Measured: hidepid=2 or 4 hides, with no error, what BOB may not read."""
+        monkeypatch.setattr(k.os, "readlink", lambda path: "pid:[4026531836]")
+        monkeypatch.setattr(k, "_ptrace_capable", lambda: False)
+        assert k._whole_proc() is False
+
+    @pytest.mark.parametrize("status, capable", [
+        ("Name:\tbob\nCapEff:\t000001ffffffffff\n", True),
+        ("Name:\tbob\nCapEff:\t0000000000080000\n", True),
+        ("Name:\tbob\nCapEff:\t000001fffff7ffff\n", False),
+        ("Name:\tbob\nCapEff:\t0000000000000000\n", False),
+        ("Name:\tbob\nCapEff:\tzz\n", False),
+        ("Name:\tbob\n", False),
+        (None, False),
+    ], ids=["root", "it-alone", "all-but-it", "none", "malformed", "no-line", "not-read"])
+    def test_cap_sys_ptrace(self, monkeypatch, status, capable):
+        class P:
+            def __init__(self, path):
+                assert path == "/proc/self/status"
+
+            def read_text(self, **kw):
+                if status is None:
+                    raise PermissionError("denied")
+                return status
+        monkeypatch.setattr(k, "Path", P)
+        assert k._ptrace_capable() is capable
 
     @staticmethod
     def _files(monkeypatch, comm, status, host=True):
