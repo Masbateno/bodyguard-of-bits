@@ -68,6 +68,7 @@ from bob.checks._run import (
     path_exists,
     run_result,
 )
+from bob.checks.mount_hardening import _hidepid_level
 from bob.scoring import CheckResult
 
 _SYSTEM_NAMESPACE = "kube-system"
@@ -521,21 +522,37 @@ _INIT_USER_NS = "user:[4026531837]"
 
 
 def _whole_proc() -> bool:
-    """True when /proc shows BOB every process: it belongs to the initial pid
-    namespace (its pid 1's), and BOB may read any process (CAP_SYS_PTRACE).
-    In another pid namespace — a container's — the processes outside it are
-    not there (measured: 3 seen, 500 on the host). Without CAP_SYS_PTRACE, a
-    /proc mounted with hidepid=2 or 4 leaves out, with no error, the processes
-    BOB may not read (measured, `hidepid.txt`: a root holder without it was
-    seen, its uid 1000 child sharing the socket was not); with it, all were
-    seen. A security policy (SELinux, AppArmor) that denies root reading a
-    process could hide it the same way: not measured."""
+    """True when /proc lists BOB every process, and a process BOB may not read
+    says so: it belongs to the initial pid namespace (its pid 1's), it does not
+    hide processes (hidepid off or noaccess), and BOB may read any process
+    (CAP_SYS_PTRACE). In another pid namespace — a container's — the
+    processes outside it are not there (measured: 3 seen, 500 on the host).
+    With hidepid=2 or 4, the processes BOB may not read are left out with no
+    error (measured, `hidepid.txt`: without CAP_SYS_PTRACE, a root holder
+    without it was seen, its uid 1000 child sharing the socket was not) —
+    whatever denies the read, the capabilities or a security policy, which
+    BOB cannot list; with hidepid off or noaccess every process was listed
+    and a refused read was an error (`hidepid1.txt`, and on a real AppArmor
+    node, a confined BOB, `lsmhide.txt`)."""
     try:
         if os.readlink("/proc/1/ns/pid") != _INIT_PID_NS:
             return False
     except OSError:
         return False
+    if _proc_hidepid() not in ("off", "noaccess"):
+        return False
     return _ptrace_capable()
+
+
+def _proc_hidepid() -> str:
+    """The hidepid level of the /proc mount (the last one listed at /proc), or
+    "unknown" when /proc/mounts could not be read or holds no /proc."""
+    try:
+        lines = Path("/proc/mounts").read_text(errors="replace").splitlines()
+    except OSError:
+        return "unknown"
+    opts = [p[3] for p in (line.split() for line in lines) if len(p) >= 4 and p[1] == "/proc" and p[2] == "proc"]
+    return _hidepid_level(frozenset(opts[-1].split(","))) if opts else "unknown"
 
 
 def _ptrace_capable() -> bool:

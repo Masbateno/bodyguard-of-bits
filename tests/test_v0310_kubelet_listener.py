@@ -54,6 +54,14 @@ without it was seen and its uid 1000 child, sharing the socket, was not —
 no error, a list taken as whole. With CAP_SYS_PTRACE every holder was seen;
 without hidepid the descriptors refused to be read (not known). The holders
 are sought only when BOB has CAP_SYS_PTRACE.
+
+Seventh review (a security policy hiding a holder), measured: with hidepid=1
+every process was still listed and a refused read was an error
+(`hidepid1.txt`); on a real AppArmor node (`lsmhide.txt`, `lsmhide2.txt`),
+BOB unconfined read every holder, BOB confined failed with an error, under
+hidepid=0 and 2 alike. Not every policy can be listed; hidepid=2 or 4 is what
+turns a refused read into an absence. The holders are sought only when /proc
+is mounted with hidepid off or noaccess.
 """
 
 from __future__ import annotations
@@ -259,12 +267,48 @@ class TestTheProcFiles:
             return ns
         monkeypatch.setattr(k.os, "readlink", readlink)
         monkeypatch.setattr(k, "_ptrace_capable", lambda: True)
+        monkeypatch.setattr(k, "_proc_hidepid", lambda: "off")
         read = k._whole_proc if link == "/proc/1/ns/pid" else k._host_user_ids
         assert read() is whole
+
+    @pytest.mark.parametrize("level, whole", [
+        ("off", True), ("noaccess", True), ("invisible", False), ("ptraceable", False), ("unknown", False),
+    ])
+    def test_a_proc_that_hides_processes(self, monkeypatch, level, whole):
+        """Measured: hidepid=2 or 4 leaves out, with no error, what BOB may not read."""
+        monkeypatch.setattr(k.os, "readlink", lambda path: "pid:[4026531836]")
+        monkeypatch.setattr(k, "_ptrace_capable", lambda: True)
+        monkeypatch.setattr(k, "_proc_hidepid", lambda: level)
+        assert k._whole_proc() is whole
+
+    @pytest.mark.parametrize("mounts, level", [
+        ("proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0\n", "off"),
+        ("proc /proc proc rw,relatime,hidepid=invisible 0 0\n", "invisible"),
+        ("proc /proc proc rw,relatime,hidepid=2 0 0\n", "invisible"),
+        ("proc /proc proc rw,relatime,hidepid=noaccess 0 0\n", "noaccess"),
+        ("proc /proc proc rw,relatime 0 0\nproc /proc proc rw,relatime,hidepid=ptraceable 0 0\n", "ptraceable"),
+        ("proc /proc proc rw,relatime,hidepid=4 0 0\nproc /proc proc rw,relatime 0 0\n", "off"),
+        ("tmpfs /proc tmpfs rw 0 0\nproc /proc/x proc rw,hidepid=2 0 0\n", "unknown"),
+        ("", "unknown"),
+        (None, "unknown"),
+    ], ids=["off", "invisible", "two", "noaccess", "the-last-wins", "the-last-wins-off", "no-proc-at-proc",
+            "empty", "not-read"])
+    def test_the_hidepid_level(self, monkeypatch, mounts, level):
+        class P:
+            def __init__(self, path):
+                assert path == "/proc/mounts"
+
+            def read_text(self, **kw):
+                if mounts is None:
+                    raise PermissionError("denied")
+                return mounts
+        monkeypatch.setattr(k, "Path", P)
+        assert k._proc_hidepid() == level
 
     def test_every_process_only_with_cap_sys_ptrace(self, monkeypatch):
         """Measured: hidepid=2 or 4 hides, with no error, what BOB may not read."""
         monkeypatch.setattr(k.os, "readlink", lambda path: "pid:[4026531836]")
+        monkeypatch.setattr(k, "_proc_hidepid", lambda: "off")
         monkeypatch.setattr(k, "_ptrace_capable", lambda: False)
         assert k._whole_proc() is False
 
