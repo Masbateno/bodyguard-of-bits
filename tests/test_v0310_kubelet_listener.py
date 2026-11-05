@@ -289,10 +289,13 @@ class TestTheProcFiles:
         ("proc /proc proc rw,relatime 0 0\nproc /proc proc rw,relatime,hidepid=ptraceable 0 0\n", "ptraceable"),
         ("proc /proc proc rw,relatime,hidepid=4 0 0\nproc /proc proc rw,relatime 0 0\n", "off"),
         ("tmpfs /proc tmpfs rw 0 0\nproc /proc/x proc rw,hidepid=2 0 0\n", "unknown"),
+        ("proc /proc proc rw,relatime 0 0\ntmpfs /proc tmpfs rw 0 0\n", "unknown"),
+        ("proc /proc proc rw,hidepid=off,hidepid=invisible 0 0\n", "unknown"),
+        ("proc /proc proc rw,hidepid=7 0 0\n", "unknown"),
         ("", "unknown"),
         (None, "unknown"),
     ], ids=["off", "invisible", "two", "noaccess", "the-last-wins", "the-last-wins-off", "no-proc-at-proc",
-            "empty", "not-read"])
+            "something-else-over-proc", "hidepid-twice", "hidepid-unknown", "empty", "not-read"])
     def test_the_hidepid_level(self, monkeypatch, mounts, level):
         class P:
             def __init__(self, path):

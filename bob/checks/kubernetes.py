@@ -545,14 +545,22 @@ def _whole_proc() -> bool:
 
 
 def _proc_hidepid() -> str:
-    """The hidepid level of the /proc mount (the last one listed at /proc), or
-    "unknown" when /proc/mounts could not be read or holds no /proc."""
+    """The hidepid level of what BOB reads at /proc: the last mount listed
+    there in BOB's own mount table (/proc/mounts is /proc/self/mounts; a mount
+    over another is listed after it). "unknown" when the table could not be
+    read, holds nothing at /proc, the last mount there is not a procfs (the
+    one under it is not what BOB reads), or it names hidepid more than once."""
     try:
         lines = Path("/proc/mounts").read_text(errors="replace").splitlines()
     except OSError:
         return "unknown"
-    opts = [p[3] for p in (line.split() for line in lines) if len(p) >= 4 and p[1] == "/proc" and p[2] == "proc"]
-    return _hidepid_level(frozenset(opts[-1].split(","))) if opts else "unknown"
+    at_proc = [p for p in (line.split() for line in lines) if len(p) >= 4 and p[1] == "/proc"]
+    if not at_proc or at_proc[-1][2] != "proc":
+        return "unknown"
+    opts = at_proc[-1][3].split(",")
+    if sum(o.startswith("hidepid=") for o in opts) > 1:
+        return "unknown"
+    return _hidepid_level(frozenset(opts))
 
 
 def _ptrace_capable() -> bool:
