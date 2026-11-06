@@ -553,8 +553,9 @@ def _proc_hidepid() -> str:
     moved over /proc stays where it was (measured, `procstack.txt`: a procfs
     with hidepid=2 moved over one without it was the one seen and was listed
     first). "unknown" when either could not be read, no line has that device,
+    one that has it cannot be read whole, none of them is mounted at /proc,
     the filesystem is not a procfs, names hidepid twice, or its lines
-    disagree."""
+    disagree: a line of the device seen is never skipped."""
     try:
         dev = os.stat("/proc").st_dev
         lines = Path("/proc/self/mountinfo").read_text(errors="replace").splitlines()
@@ -562,18 +563,20 @@ def _proc_hidepid() -> str:
         return "unknown"
     want = f"{os.major(dev)}:{os.minor(dev)}"
     levels = set()
+    at_proc = False
     for line in lines:
         head, sep, tail = line.partition(" - ")
         fields, fs = head.split(), tail.split()
-        if not sep or len(fields) < 5 or len(fs) < 3 or fields[2] != want:
+        if len(fields) < 3 or fields[2] != want:
             continue
-        if fs[0] != "proc":
+        if not sep or len(fields) < 5 or len(fs) < 3 or fs[0] != "proc":
             return "unknown"
+        at_proc = at_proc or fields[4] == "/proc"
         opts = fs[2].split(",")
         if sum(o.startswith("hidepid=") for o in opts) > 1:
             return "unknown"
         levels.add(_hidepid_level(frozenset(opts)))
-    return levels.pop() if len(levels) == 1 else "unknown"
+    return levels.pop() if len(levels) == 1 and at_proc else "unknown"
 
 
 def _ptrace_capable() -> bool:

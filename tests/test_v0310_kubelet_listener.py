@@ -320,6 +320,25 @@ class TestTheProcFiles:
         monkeypatch.setattr(k.os, "stat", lambda path: type("S", (), {"st_dev": k.os.makedev(major, minor)})())
         assert k._proc_hidepid() == level
 
+    @pytest.mark.parametrize("text", [
+        "624 1 0:58 / /proc rw,relatime shared:1 - proc proc rw\n624 1 0:58 / /proc rw,relatime shared:1\n",
+        "624 1 0:58 / /proc rw,relatime shared:1 - proc proc rw\n625 1 0:58 / /proc rw - proc\n",
+        "624 1 0:58 / /proc rw,relatime shared:1 - proc proc rw\n625 1 0:58\n",
+        "624 1 0:58 / /mnt rw,relatime shared:1 - proc proc rw\n",
+    ], ids=["a-line-of-it-without-the-dash", "a-line-of-it-cut-short", "a-line-of-it-of-three-fields",
+            "mounted-elsewhere-only"])
+    def test_a_doubtful_line_of_the_device_seen_is_not_known(self, monkeypatch, text):
+        """Eleventh review: a line of the device seen is never skipped."""
+        class P:
+            def __init__(self, path):
+                pass
+
+            def read_text(self, **kw):
+                return text
+        monkeypatch.setattr(k, "Path", P)
+        monkeypatch.setattr(k.os, "stat", lambda path: type("S", (), {"st_dev": k.os.makedev(0, 58)})())
+        assert k._proc_hidepid() == "unknown"
+
     @pytest.mark.parametrize("line, level", [
         ("624 1 0:58 / /proc rw,hidepid=invisible shared:1 - proc proc rw", "off"),
         ("624 1 0:58 / /proc rw,relatime shared:1 - proc proc rw,hidepid=invisible", "invisible"),
