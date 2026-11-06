@@ -12556,6 +12556,14 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason='lines of one filesystem that disagree give no level to trust',
     ),
     Mutation(
+        id='kubelet-listener/mount-options-read',
+        file='bob/checks/kubernetes.py',
+        old='        opts = fs[2].split(",")\n',
+        new='        opts = fields[5].split(",")\n',
+        kills=('tests/test_v0310_kubelet_listener.py::TestTheProcFiles::test_hidepid_is_read_in_the_filesystem_options', ),
+        reason='tenth review: hidepid is the procfs option after the dash, not a mount option',
+    ),
+    Mutation(
         id='kubelet-listener/uid-before-inode-unread',
         file='bob/checks/kubernetes.py',
         old='        if extra and extra[0].startswith("uid:"):\n            extra = extra[1:]\n',

@@ -320,6 +320,25 @@ class TestTheProcFiles:
         monkeypatch.setattr(k.os, "stat", lambda path: type("S", (), {"st_dev": k.os.makedev(major, minor)})())
         assert k._proc_hidepid() == level
 
+    @pytest.mark.parametrize("line, level", [
+        ("624 1 0:58 / /proc rw,hidepid=invisible shared:1 - proc proc rw", "off"),
+        ("624 1 0:58 / /proc rw,relatime shared:1 - proc proc rw,hidepid=invisible", "invisible"),
+        ("624 1 0:58 / /proc rw,relatime shared:1 master:2 - proc proc rw,hidepid=ptraceable", "ptraceable"),
+    ], ids=["in-the-mount-options-only", "in-the-filesystem-options", "after-several-optional-fields"])
+    def test_hidepid_is_read_in_the_filesystem_options(self, monkeypatch, line, level):
+        """Tenth review: mountinfo keeps the mount's options before " - " and the
+        filesystem's after; hidepid is the procfs's own (measured, `procstack.txt`:
+        ``- proc proc rw,hidepid=invisible``)."""
+        class P:
+            def __init__(self, path):
+                pass
+
+            def read_text(self, **kw):
+                return line + "\n"
+        monkeypatch.setattr(k, "Path", P)
+        monkeypatch.setattr(k.os, "stat", lambda path: type("S", (), {"st_dev": k.os.makedev(0, 58)})())
+        assert k._proc_hidepid() == level
+
     @pytest.mark.parametrize("fail", ["stat", "mountinfo"])
     def test_the_hidepid_level_not_read(self, monkeypatch, fail):
         class P:
