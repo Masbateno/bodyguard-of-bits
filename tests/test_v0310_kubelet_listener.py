@@ -281,32 +281,63 @@ class TestTheProcFiles:
         monkeypatch.setattr(k, "_proc_hidepid", lambda: level)
         assert k._whole_proc() is whole
 
-    @pytest.mark.parametrize("mounts, level", [
-        ("proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0\n", "off"),
-        ("proc /proc proc rw,relatime,hidepid=invisible 0 0\n", "invisible"),
-        ("proc /proc proc rw,relatime,hidepid=2 0 0\n", "invisible"),
-        ("proc /proc proc rw,relatime,hidepid=noaccess 0 0\n", "noaccess"),
-        ("proc /proc proc rw,relatime 0 0\nproc /proc proc rw,relatime,hidepid=ptraceable 0 0\n", "ptraceable"),
-        ("proc /proc proc rw,relatime,hidepid=4 0 0\nproc /proc proc rw,relatime 0 0\n", "off"),
-        ("tmpfs /proc tmpfs rw 0 0\nproc /proc/x proc rw,hidepid=2 0 0\n", "unknown"),
-        ("proc /proc proc rw,relatime 0 0\ntmpfs /proc tmpfs rw 0 0\n", "unknown"),
-        ("proc /proc proc rw,hidepid=off,hidepid=invisible 0 0\n", "unknown"),
-        ("proc /proc proc rw,hidepid=7 0 0\n", "unknown"),
-        ("", "unknown"),
-        (None, "unknown"),
-    ], ids=["off", "invisible", "two", "noaccess", "the-last-wins", "the-last-wins-off", "no-proc-at-proc",
-            "something-else-over-proc", "hidepid-twice", "hidepid-unknown", "empty", "not-read"])
-    def test_the_hidepid_level(self, monkeypatch, mounts, level):
+    @staticmethod
+    def _mi(id, dev, mp, fs, opts):
+        return f"{id} 1 {dev} / {mp} rw,relatime shared:1 - {fs} {fs} {opts}"
+
+    @pytest.mark.parametrize("seen, lines, level", [
+        ("0:58", [("624", "0:58", "/proc", "proc", "rw")], "off"),
+        ("0:58", [("624", "0:58", "/proc", "proc", "rw,hidepid=invisible")], "invisible"),
+        ("0:58", [("624", "0:58", "/proc", "proc", "rw,hidepid=2")], "invisible"),
+        ("0:58", [("624", "0:58", "/proc", "proc", "rw,hidepid=noaccess")], "noaccess"),
+        ("0:59", [("624", "0:59", "/proc", "proc", "rw,hidepid=invisible"), ("625", "0:58", "/proc", "proc", "rw")],
+         "invisible"),
+        ("0:58", [("624", "0:59", "/proc", "proc", "rw,hidepid=invisible"), ("625", "0:58", "/proc", "proc", "rw")],
+         "off"),
+        ("0:60", [("624", "0:58", "/proc", "proc", "rw"), ("626", "0:60", "/proc", "tmpfs", "rw")], "unknown"),
+        ("0:61", [("624", "0:58", "/proc", "proc", "rw")], "unknown"),
+        ("0:58", [("624", "0:58", "/proc", "proc", "rw,hidepid=4"), ("627", "0:58", "/mnt", "proc", "rw,hidepid=4")],
+         "ptraceable"),
+        ("0:58", [("624", "0:58", "/proc", "proc", "rw,hidepid=4"), ("627", "0:58", "/mnt", "proc", "rw")], "unknown"),
+        ("0:58", [("624", "0:58", "/proc", "proc", "rw,hidepid=off,hidepid=invisible")], "unknown"),
+        ("0:58", [("624", "0:58", "/proc", "proc", "rw,hidepid=7")], "unknown"),
+        ("0:58", [], "unknown"),
+    ], ids=["off", "invisible", "two", "noaccess", "moved-over-seen", "the-one-under-seen", "tmpfs-over",
+            "no-line-for-it", "the-same-fs-twice", "the-same-fs-disagreeing", "hidepid-twice", "hidepid-unknown",
+            "empty"])
+    def test_the_hidepid_level(self, monkeypatch, seen, lines, level):
+        """Measured (`procstack.txt`): a procfs moved over /proc is listed before the one under it."""
+        text = "\n".join(self._mi(*line) for line in lines) + "\n"
+        major, minor = (int(x) for x in seen.split(":"))
+
         class P:
             def __init__(self, path):
-                assert path == "/proc/mounts"
+                assert path == "/proc/self/mountinfo"
 
             def read_text(self, **kw):
-                if mounts is None:
-                    raise PermissionError("denied")
-                return mounts
+                return text
         monkeypatch.setattr(k, "Path", P)
+        monkeypatch.setattr(k.os, "stat", lambda path: type("S", (), {"st_dev": k.os.makedev(major, minor)})())
         assert k._proc_hidepid() == level
+
+    @pytest.mark.parametrize("fail", ["stat", "mountinfo"])
+    def test_the_hidepid_level_not_read(self, monkeypatch, fail):
+        class P:
+            def __init__(self, path):
+                pass
+
+            def read_text(self, **kw):
+                if fail == "mountinfo":
+                    raise PermissionError("denied")
+                return "624 1 0:58 / /proc rw - proc proc rw\n"
+
+        def stat(path):
+            if fail == "stat":
+                raise PermissionError(path)
+            return type("S", (), {"st_dev": k.os.makedev(0, 58)})()
+        monkeypatch.setattr(k, "Path", P)
+        monkeypatch.setattr(k.os, "stat", stat)
+        assert k._proc_hidepid() == "unknown"
 
     def test_every_process_only_with_cap_sys_ptrace(self, monkeypatch):
         """Measured: hidepid=2 or 4 hides, with no error, what BOB may not read."""

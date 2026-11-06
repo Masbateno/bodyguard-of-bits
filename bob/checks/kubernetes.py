@@ -545,22 +545,35 @@ def _whole_proc() -> bool:
 
 
 def _proc_hidepid() -> str:
-    """The hidepid level of what BOB reads at /proc: the last mount listed
-    there in BOB's own mount table (/proc/mounts is /proc/self/mounts; a mount
-    over another is listed after it). "unknown" when the table could not be
-    read, holds nothing at /proc, the last mount there is not a procfs (the
-    one under it is not what BOB reads), or it names hidepid more than once."""
+    """The hidepid level of what BOB reads at /proc: the filesystem that path
+    reaches (its device, ``os.stat("/proc").st_dev``), found by that device in
+    BOB's own /proc/self/mountinfo, its options read from the filesystem's own
+    (super) options, which every mount of it shares. Not the last mount
+    listed at /proc: the table follows the order the mounts were made, and one
+    moved over /proc stays where it was (measured, `procstack.txt`: a procfs
+    with hidepid=2 moved over one without it was the one seen and was listed
+    first). "unknown" when either could not be read, no line has that device,
+    the filesystem is not a procfs, names hidepid twice, or its lines
+    disagree."""
     try:
-        lines = Path("/proc/mounts").read_text(errors="replace").splitlines()
+        dev = os.stat("/proc").st_dev
+        lines = Path("/proc/self/mountinfo").read_text(errors="replace").splitlines()
     except OSError:
         return "unknown"
-    at_proc = [p for p in (line.split() for line in lines) if len(p) >= 4 and p[1] == "/proc"]
-    if not at_proc or at_proc[-1][2] != "proc":
-        return "unknown"
-    opts = at_proc[-1][3].split(",")
-    if sum(o.startswith("hidepid=") for o in opts) > 1:
-        return "unknown"
-    return _hidepid_level(frozenset(opts))
+    want = f"{os.major(dev)}:{os.minor(dev)}"
+    levels = set()
+    for line in lines:
+        head, sep, tail = line.partition(" - ")
+        fields, fs = head.split(), tail.split()
+        if not sep or len(fields) < 5 or len(fs) < 3 or fields[2] != want:
+            continue
+        if fs[0] != "proc":
+            return "unknown"
+        opts = fs[2].split(",")
+        if sum(o.startswith("hidepid=") for o in opts) > 1:
+            return "unknown"
+        levels.add(_hidepid_level(frozenset(opts)))
+    return levels.pop() if len(levels) == 1 else "unknown"
 
 
 def _ptrace_capable() -> bool:
