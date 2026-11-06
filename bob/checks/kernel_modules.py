@@ -442,8 +442,13 @@ def _check_installed_kernels(
             key="kernel_modules.kernels_update_available",
         )
     elif snapshot.apt_checked and not snapshot.apt_update_available:
+        # v0.31.0 — the kernel apt has nothing newer than is the latest installed
+        # one; with a reboot pending that is not the running kernel (measured on
+        # Ubuntu 26.04, 6 November 2026: "Kernel 7.0.0-34 — up to date" beside
+        # "running 7.0.0-34, latest installed 7.0.0-42").
         result.ok(
-            message=_t("kernel_modules.kernels_up_to_date", version=running),
+            message=_t("kernel_modules.kernels_up_to_date",
+                       version=_strip_unsigned(most_recent) if reboot_pending else running),
             key="kernel_modules.kernels_up_to_date",
         )
 

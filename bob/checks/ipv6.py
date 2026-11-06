@@ -607,8 +607,9 @@ _SS_PROC_RE = re.compile(r'users:\(\("([^"]+)"')
 def _extract_ipv6_listeners(ss_output: str) -> set[str]:
     """
     Parse `ss -tulnp` and return the set of 'port/proto' strings for services
-    that bind to the IPv6 wildcard address [::], excluding known internal
-    processes that do not require external UFW rules.
+    that bind to the IPv6 wildcard address [::] — shown as ``[::]`` when
+    IPv6-only, as ``*`` when the socket takes IPv4 too — excluding known
+    internal processes that do not require external UFW rules.
 
     Process filtering: if ss was invoked with -p and a process name is
     present in _INTERNAL_PROCESSES, the port is silently excluded so that
@@ -627,8 +628,13 @@ def _extract_ipv6_listeners(ss_output: str) -> set[str]:
         if proto not in ("tcp", "udp"):
             continue
         local_addr = parts[4]
-        # IPv6 wildcard: [::]:PORT
-        m = re.match(r"^\[::]:(\d+)$", local_addr)
+        # IPv6 wildcard: [::]:PORT, an IPv6-only socket; *:PORT, how ss shows
+        # a [::] socket that takes IPv4 too — it takes IPv6 as well. v0.31.0:
+        # only [::] was read. Measured on Ubuntu 26.04 (6 November 2026), from
+        # a network namespace on the host over a veth pair: *:10250 and
+        # *:16443 (kubelite) accepted a connection to the host's global IPv6
+        # address, as [::]:22 did; BOB listed 22, 139, 445 and not them.
+        m = re.match(r"^(?:\[::]|\*):(\d+)$", local_addr)
         if not m:
             continue
         port_proto = f"{m.group(1)}/{proto}"

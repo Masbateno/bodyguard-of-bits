@@ -12740,6 +12740,22 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason='not established: the score is shown as an upper bound',
     ),
     Mutation(
+        id='kernel-up-to-date/names-the-running-kernel',
+        file='bob/checks/kernel_modules.py',
+        old='                       version=_strip_unsigned(most_recent) if reboot_pending else running),\n',
+        new='                       version=running),\n',
+        kills=('tests/test_kernel_modules.py::TestKernelAptUpdate::test_up_to_date_with_a_reboot_pending_names_the_latest_installed', ),
+        reason='measured: with a reboot pending the running kernel is not the up to date one',
+    ),
+    Mutation(
+        id='ipv6-listeners/dual-stack-missed',
+        file='bob/checks/ipv6.py',
+        old='        m = re.match(r"^(?:\\[::]|\\*):(\\d+)$", local_addr)\n',
+        new='        m = re.match(r"^\\[::]:(\\d+)$", local_addr)\n',
+        kills=('tests/test_ipv6.py::TestExtractIPv6Listeners::test_a_dual_stack_socket_is_an_ipv6_listener', ),
+        reason='measured: a dual-stack socket shown as a star accepted IPv6 connections',
+    ),
+    Mutation(
         id='history-ceiling/rotation-rewrites',
         file='bob/history.py',
         old='            content = "\\n".join(lines[-_MAX_HISTORY_ENTRIES:]) + "\\n"\n',

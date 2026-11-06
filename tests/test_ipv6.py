@@ -280,6 +280,17 @@ class TestExtractIPv6Listeners:
         assert "80/tcp" in result
         assert "22/tcp" in result
 
+    def test_a_dual_stack_socket_is_an_ipv6_listener(self):
+        """v0.31.0 — ss shows a [::] socket that takes IPv4 too as *:PORT.
+        Measured on Ubuntu 26.04 from a namespace on the host: *:10250 and
+        *:16443 accepted a connection to the host's global IPv6 address."""
+        out = ("Netid State  Recv-Q Send-Q Local Address:Port  Peer Address:Port Process\n"
+               'tcp   LISTEN 0      4096   *:10250    *:*    users:(("kubelite",pid=12065,fd=110))\n'
+               'udp   UNCONN 0      0      *:4789     *:*\n'
+               'tcp   LISTEN 0      4096   0.0.0.0:3000 0.0.0.0:*    users:(("node",pid=1,fd=3))\n'
+               'tcp   LISTEN 0      4096   [::]:22    [::]:*    users:(("sshd",pid=9,fd=4))\n')
+        assert _extract_ipv6_listeners(out) == {"10250/tcp", "4789/udp", "22/tcp"}
+
     # --- Internal-process filtering (ss -tulnp output) ---
 
     SS_OUTPUT_WITH_PROC = (

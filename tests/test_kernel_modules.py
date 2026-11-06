@@ -914,6 +914,24 @@ class TestKernelAptUpdate:
         assert "unsigned" not in finding.message
         assert "6.12.74+deb13+1-amd64" in finding.message
 
+    def test_up_to_date_with_a_reboot_pending_names_the_latest_installed(self):
+        """v0.31.0, measured on Ubuntu 26.04: running 7.0.0-34, 7.0.0-42 installed,
+        apt with nothing newer — "Kernel 7.0.0-34 — up to date" was false."""
+        def _t(key, **kw):
+            return f"{key}:{kw.get('version', '')}"
+
+        snap = _ksnap(
+            running="7.0.0-34-generic",
+            installed=["7.0.0-34-generic", "7.0.0-42-generic"],
+            apt_checked=True,
+            apt_update_available=False,
+        )
+        result = check_kernel_modules(snap, t=_t)
+        finding = _get_finding(result, "kernel_modules.kernels_up_to_date")
+        assert finding is not None
+        assert finding.message.endswith(":7.0.0-42-generic")
+        assert _has_finding(result, "kernel_modules.kernels_reboot_pending", FindingLevel.INFO)
+
     def test_debian_signed_unsigned_pair_uses_obsolete_same_message(self):
         """When running signed == most-recent -unsigned (same version), use _same message."""
         snap = _ksnap(
