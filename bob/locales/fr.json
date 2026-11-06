@@ -1276,6 +1276,7 @@
     "ufw_disabled_listeners_present": "{count} service(s) à l'écoute en IPv6 (::) mais UFW n'est pas configuré pour gérer l'IPv6 (IPV6=no)",
     "listeners_list": "Port(s) concerné(s) : {ports}",
     "port_no_v6_rule": "Port {port} à l'écoute en IPv6 (::) sans règle UFW (v6) correspondante",
+    "ports_default_deny": "{count} écouteur(s) IPv6 sans règle UFW (v6) propre ({ports}) — couverts par la politique par défaut {policy} d'UFW pour les connexions entrantes, qui s'applique aussi à l'IPv6",
     "all_ports_covered": "Les {count} service(s) IPv6 sont couverts par des règles UFW (v6)",
     "firewalld_v6": "Les services IPv6 sont filtrés par firewalld (mêmes règles de zone qu'en IPv4)",
     "firewalld_v6_family_rules": "Les services IPv6 sont filtrés par firewalld — par les mêmes zones que l'IPv4, dont des règles riches ouvrent certains ports à une seule famille : {rules}",
@@ -2705,10 +2706,10 @@
       },
       "port_no_v6_rule": {
         "title": "Service en écoute sur IPv6 sans règle UFW IPv6 correspondante",
-        "why": "Un service lié à une adresse IPv6 sans règle UFW correspondante ne s'appuie que sur la politique par défaut. Si cette politique est permissive ou non définie, le service est accessible depuis n'importe quelle source IPv6 sans filtrage. Les politiques de pare-feu doivent être explicites pour toutes les adresses en écoute.",
-        "how": "1. Identifiez quel service écoute :\n   sudo ss -tlnp | grep ':::'\n2. Ajoutez une règle UFW explicite (s'applique à IPv4 et IPv6 par défaut) :\n   sudo ufw allow <port>/tcp\n3. Ou refusez-le explicitement si le service ne doit pas être accessible :\n   sudo ufw deny <port>/tcp\n4. Rechargez :\n   sudo ufw reload",
+        "why": "Un service lié à une adresse IPv6 sans règle UFW (v6) propre dépend de la politique par défaut d'UFW pour l'entrant. En deny ou reject — le défaut d'UFW —, il est fermé en IPv6 comme en IPv4, et BOB le signale comme couvert. Ce constat n'apparaît que si cette politique n'est ni deny ni reject (allow, ou non lue) : le service peut alors être joignable depuis n'importe quelle source IPv6.",
+        "how": "1. Identifier le service à l'écoute :\n   sudo ss -tlnp | grep ':::'\n2. Le fermer explicitement s'il ne doit pas être joignable :\n   sudo ufw deny <port>/tcp\n3. Ou refuser l'entrant par défaut, puis n'autoriser que ce qui doit être joignable :\n   sudo ufw default deny incoming\n   sudo ufw allow <port>/tcp\n4. Recharger :\n   sudo ufw reload",
         "server": {
-          "why": "Un service écoutant en IPv6 sans règle UFW explicite est accessible via IPv6 mais non filtré. Sur un serveur avec une adresse IPv6 publique, cela crée un chemin d'exposition non contrôlé contournant toutes vos règles pare-feu IPv4. Ajoutez des règles explicites pour chaque port en écoute."
+          "why": "Sur un serveur avec une adresse IPv6 publique et une politique par défaut permissive, le service est joignable en IPv6. Refusez l'entrant par défaut et n'autorisez que les ports qui doivent être joignables."
         },
         "desktop": {
           "why": "Sur un desktop, la plupart des expositions IPv6 sont sur le réseau local. Le risque dépend de l'existence d'une adresse IPv6 publique (préfixe /64 routable de votre FAI). Sur les réseaux domestiques typiques (NAT ou link-local uniquement), c'est informatif — mais ajouter des règles UFW explicites reste une bonne pratique."

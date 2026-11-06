@@ -871,7 +871,8 @@ def run_checks(
          firewalld_family_rules=tuple(fwd_status.family_scoped_accepts()) if fwd_status.active else (),
          netfilter_v6_policy=_v6_policy,
          netfilter_v6_drop_chains=_v6_drop,
-         firewalld_unread=_firewalld_unread)
+         firewalld_unread=_firewalld_unread,
+         ufw_incoming_policy=fw_status.incoming_policy)
 
     # =========================================================================
     # GROUP 2 — EXPOSITION & SERVICES

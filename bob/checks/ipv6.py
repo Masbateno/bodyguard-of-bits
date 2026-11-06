@@ -238,7 +238,8 @@ def ipv6_closed_by_chains(snapshot: "IPv6Snapshot") -> bool:
 _MAX_PORT_DEDUCTIONS = 3   # cap per-port deductions to avoid score collapse
 
 
-def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None, firewalld_active: bool = False, netfilter_active: bool = False, firewalld_policy: str = "", netfilter_v6_policy: str = "unknown", firewalld_family_rules: tuple = (), netfilter_v6_drop_chains: tuple = (), firewalld_unread: bool = False) -> CheckResult:
+def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None, firewalld_active: bool = False, netfilter_active: bool = False, firewalld_policy: str = "", netfilter_v6_policy: str = "unknown", firewalld_family_rules: tuple = (), netfilter_v6_drop_chains: tuple = (), firewalld_unread: bool = False,
+               ufw_incoming_policy: str = "unknown") -> CheckResult:
     """
     Check IPv6 firewall consistency.
 
@@ -463,13 +464,28 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
             result.ok(message=_t("ipv6.firewalld_v6"), key="ipv6.firewalld_v6")
         elif snapshot.kernel_ipv6_enabled and snapshot.ufw_ipv6_enabled:
             covered_set = set(snapshot.ufw_v6_covered)
+            uncovered = [p for p in snapshot.ipv6_listeners if p not in covered_set]
             port_deductions = 0
-            for port_proto in snapshot.ipv6_listeners:
-                if port_proto not in covered_set:
+            # v0.31.0 — UFW managing IPv6 at default deny (or reject) incoming
+            # covers a listener with no rule of its own: measured on Ubuntu
+            # 26.04 (6 November 2026, phase B), from a network namespace on the
+            # host, the nine listeners BOB flagged were dropped over IPv6, as
+            # over IPv4. BOB warned −1 each and offered `ufw allow <port>`,
+            # which would have opened them — the kubelet, the API server and
+            # Samba among them.
+            if uncovered and ufw_incoming_policy in ("deny", "reject"):
+                result.info(message=_t("ipv6.ports_default_deny", count=len(uncovered),
+                                       ports=", ".join(uncovered), policy=ufw_incoming_policy),
+                            key="ipv6.ports_default_deny")
+                uncovered = []
+                found_issue = True
+            for port_proto in uncovered:
+                if port_proto:
+                    # v0.31.0 — was `ufw allow`, which opens the port.
                     result.warn(
                         message=_t("ipv6.port_no_v6_rule", port=port_proto),
                         nature="improvement",
-                        cmd=f"sudo ufw allow {port_proto}",
+                        cmd=f"sudo ufw deny {port_proto}",
                         key="ipv6.port_no_v6_rule",
                     )
                     if port_deductions < _MAX_PORT_DEDUCTIONS:

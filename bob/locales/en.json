@@ -1276,6 +1276,7 @@
     "ufw_disabled_listeners_present": "{count} service(s) listening on IPv6 (::) but UFW is not configured for IPv6 (IPV6=no)",
     "listeners_list": "Listening port(s): {ports}",
     "port_no_v6_rule": "Port {port} listening on IPv6 (::) without a UFW (v6) rule",
+    "ports_default_deny": "{count} IPv6 listener(s) without a UFW (v6) rule of their own ({ports}) — covered by UFW's default {policy} for incoming connections, which applies to IPv6 as well",
     "all_ports_covered": "All {count} IPv6 listener(s) are covered by UFW (v6) rules",
     "firewalld_v6": "IPv6 listeners are filtered by firewalld (same zone rules as IPv4)",
     "firewalld_v6_family_rules": "IPv6 listeners are filtered by firewalld — by the same zones as IPv4, whose rich rules open some ports to one family only: {rules}",
@@ -2705,10 +2706,10 @@
       },
       "port_no_v6_rule": {
         "title": "Service listening on IPv6 without a UFW IPv6 rule",
-        "why": "A service bound to an IPv6 address with no corresponding UFW rule relies only on the default policy. If the default policy is permissive or unset, the service is reachable from any IPv6 source with no filtering. Firewall policies should be explicit for all listening addresses.",
-        "how": "1. Identify which service is listening:\n   sudo ss -tlnp | grep ':::'\n2. Add an explicit UFW rule (applies to both IPv4 and IPv6 by default):\n   sudo ufw allow <port>/tcp\n3. Or deny it explicitly if the service should not be reachable:\n   sudo ufw deny <port>/tcp\n4. Reload:\n   sudo ufw reload",
+        "why": "A service bound to an IPv6 address with no UFW (v6) rule of its own relies on UFW's default incoming policy. At deny or reject — UFW's default — it is closed over IPv6 as over IPv4, and BOB reports it as covered. This finding is raised only when that policy is not deny or reject (allow, or not read): the service may then be reachable from any IPv6 source.",
+        "how": "1. Identify which service is listening:\n   sudo ss -tlnp | grep ':::'\n2. Close it explicitly if it should not be reachable:\n   sudo ufw deny <port>/tcp\n3. Or make the default refuse incoming connections, then allow only what must be reachable:\n   sudo ufw default deny incoming\n   sudo ufw allow <port>/tcp\n4. Reload:\n   sudo ufw reload",
         "server": {
-          "why": "A service listening on IPv6 without an explicit UFW rule is accessible via IPv6 but unfiltered. On a server with a public IPv6 address, this creates an uncontrolled exposure path that bypasses all your IPv4 firewall rules. Add explicit rules for every listening port."
+          "why": "On a server with a public IPv6 address and a permissive default policy, the service is reachable over IPv6. Refuse incoming connections by default and allow only the ports that must be reachable."
         },
         "desktop": {
           "why": "On a desktop, most IPv6 exposure is local. The risk depends on whether you have a public routable IPv6 address (a /64 from your ISP). On typical home networks using NAT or link-local only, this is informational — but adding explicit UFW rules is still good practice."
