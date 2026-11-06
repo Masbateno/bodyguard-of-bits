@@ -205,6 +205,16 @@ def _apply_native(action: dict):
 
     if action.get("kind") != "sysctl":
         return "failed", None, b"unknown fix action"
+    if "params" in action:
+        # v0.31.0 — a knob the kernel reads per interface: every value set and
+        # read back, conf/all and conf/default persisted; the first failure
+        # stops, and is the outcome.
+        for item in action["params"]:
+            conf = item.get("conf") or None
+            result = apply_sysctl(item.get("param", ""), Path(conf) if conf else None)
+            if not result.applied or (conf and not result.persisted):
+                return "failed", None, (result.reason or "not applied").encode()
+        return "ok", 0, b""
     result = apply_sysctl(action.get("param", ""),
                           Path(action.get("conf", "/etc/sysctl.d/99-hardening.conf")))
     if result.applied and result.persisted:

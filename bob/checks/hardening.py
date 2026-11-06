@@ -24,7 +24,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _identity_t, read_sysctl_boot_files, report_boot_drift, sysctl_fix
+from bob.checks._run import (TranslationFunc, _identity_t, read_sysctl_boot_files, report_boot_drift, sysctl_fix,
+                             sysctl_fix_ifaces)
 from bob.scoring import CheckResult
 
 
@@ -64,6 +65,15 @@ class HardeningSnapshot:
     rp_filter_iface:             str           = ""
     accept_redirects:            "bool | None" = None
     log_martians:                "bool | None" = None
+    #: v0.31.0 — where each per-interface knob is in effect, as the kernel
+    #: combines conf/all with the interface's own value (``_effective_where``):
+    #: interface names, and "default" for interfaces created from now on.
+    #: ``log_martians_off`` lists where martians are *not* logged.
+    accept_redirects_where:      list = field(default_factory=list)
+    log_martians_off:            list = field(default_factory=list)
+    accept_source_route_where:   list = field(default_factory=list)
+    accept_redirects_v6_where:   list = field(default_factory=list)
+    send_redirects_where:        list = field(default_factory=list)
     icmp_echo_ignore_broadcasts: "bool | None" = None
     tcp_syncookies:              "int | None"  = None
     accept_source_route:         "bool | None" = None
@@ -88,13 +98,19 @@ class HardeningSnapshot:
         """
         # --- kernel sysctl parameters ---
         rp_filter, rp_filter_all, rp_filter_iface = _effective_rp_filter()
-        accept_redirects            = _read_sysctl_bool("net.ipv4.conf.all.accept_redirects")
-        log_martians                = _read_sysctl_bool("net.ipv4.conf.all.log_martians")
+        # v0.31.0 — per interface, as the kernel decides (``_effective_where``).
+        accept_redirects_by = _effective_by_iface("accept_redirects", "redirects")
+        log_martians_by     = _effective_by_iface("log_martians", "or")
+        accept_source_route_by = _effective_by_iface("accept_source_route", "and")
+        accept_redirects_v6_by = _effective_by_iface("accept_redirects", "v6", family="ipv6")
+        send_redirects_by   = _effective_by_iface("send_redirects", "or")
+        accept_redirects            = _any_on(accept_redirects_by)
+        log_martians                = _all_on(log_martians_by)
         icmp_echo_ignore_broadcasts = _read_sysctl_bool("net.ipv4.icmp_echo_ignore_broadcasts")
         tcp_syncookies              = _read_sysctl_int("net.ipv4.tcp_syncookies")
-        accept_source_route         = _read_sysctl_bool("net.ipv4.conf.all.accept_source_route")
-        accept_redirects_v6         = _read_sysctl_bool("net.ipv6.conf.all.accept_redirects")
-        send_redirects              = _read_sysctl_bool("net.ipv4.conf.all.send_redirects")
+        accept_source_route         = _any_on(accept_source_route_by)
+        accept_redirects_v6         = _any_on(accept_redirects_v6_by)
+        send_redirects              = _any_on(send_redirects_by)
         protected_hardlinks         = _read_sysctl_bool("fs.protected_hardlinks")
         protected_symlinks          = _read_sysctl_bool("fs.protected_symlinks")
         # fifos/regular are 0/1/2 (2 strengthens 1), so read them as ints — the
@@ -109,6 +125,11 @@ class HardeningSnapshot:
             rp_filter_iface=rp_filter_iface,
             accept_redirects=accept_redirects,
             log_martians=log_martians,
+            accept_redirects_where=_on(accept_redirects_by),
+            log_martians_off=_off(log_martians_by),
+            accept_source_route_where=_on(accept_source_route_by),
+            accept_redirects_v6_where=_on(accept_redirects_v6_by),
+            send_redirects_where=_on(send_redirects_by),
             icmp_echo_ignore_broadcasts=icmp_echo_ignore_broadcasts,
             tcp_syncookies=tcp_syncookies,
             accept_source_route=accept_source_route,
@@ -177,8 +198,10 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
         result.warn_with_deduction(
             key="hardening.redirects_enabled",
             message=_t("hardening.redirects_enabled"),
+            detail=_where(_t, "hardening.where_redirects", snapshot.accept_redirects_where),
             points=1,
-            **sysctl_fix("net.ipv4.conf.all.accept_redirects=0", boot=snapshot.boot_sysctl),
+            **sysctl_fix_ifaces("net.ipv4.conf", "accept_redirects", "0", snapshot.accept_redirects_where,
+                                boot=snapshot.boot_sysctl),
             nature="action",
         )
     # --- log_martians ---
@@ -190,7 +213,8 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
     else:
         result.info(
             message=_t("hardening.log_martians_disabled"),
-            detail=_t("hardening.log_martians_disabled_detail"),
+            detail=" ".join(x for x in (_t("hardening.log_martians_disabled_detail"),
+                                        _where(_t, "hardening.where_off_or", snapshot.log_martians_off)) if x),
             **sysctl_fix("net.ipv4.conf.all.log_martians=1", boot=snapshot.boot_sysctl),
             key="hardening.log_martians_disabled",
         )
@@ -236,6 +260,7 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
         result.warn_with_deduction(
             key="hardening.accept_source_route_enabled",
             message=_t("hardening.accept_source_route_enabled"),
+            detail=_where(_t, "hardening.where_and", snapshot.accept_source_route_where),
             points=1,
             **sysctl_fix("net.ipv4.conf.all.accept_source_route=0", boot=snapshot.boot_sysctl),
             nature="action",
@@ -252,8 +277,10 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
         result.warn_with_deduction(
             key="hardening.accept_redirects_v6_enabled",
             message=_t("hardening.accept_redirects_v6_enabled"),
+            detail=_where(_t, "hardening.where_v6", snapshot.accept_redirects_v6_where),
             points=1,
-            **sysctl_fix("net.ipv6.conf.all.accept_redirects=0", boot=snapshot.boot_sysctl),
+            **sysctl_fix_ifaces("net.ipv6.conf", "accept_redirects", "0", snapshot.accept_redirects_v6_where,
+                                boot=snapshot.boot_sysctl),
             nature="action",
         )
     # --- send_redirects ---
@@ -269,8 +296,10 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             key="hardening.send_redirects_enabled",
             message=_t("hardening.send_redirects_enabled"),
             points=1,
-            detail=_t("hardening.send_redirects_detail"),
-            **sysctl_fix("net.ipv4.conf.all.send_redirects=0", boot=snapshot.boot_sysctl),
+            detail=" ".join(x for x in (_t("hardening.send_redirects_detail"),
+                                        _where(_t, "hardening.where_or", snapshot.send_redirects_where)) if x),
+            **sysctl_fix_ifaces("net.ipv4.conf", "send_redirects", "0", snapshot.send_redirects_where,
+                                boot=snapshot.boot_sysctl),
             nature="action",
         )
     # --- fs.protected_hardlinks ---
@@ -399,6 +428,16 @@ _RP_NOT_AN_INTERFACE = frozenset({"all", "default", "lo"})
 _IPV4_CONF = Path("/proc/sys/net/ipv4/conf")
 
 
+def _where(_t, key: str, names: list) -> str:
+    """v0.31.0 — the interfaces a knob is in effect on, and the kernel's rule
+    for it; "default" read as the template new interfaces inherit. Empty when
+    there is no list (a snapshot built without one)."""
+    if not names:
+        return ""
+    label = _t("hardening.where_default")
+    return _t(key, where=", ".join(label if n == "default" else n for n in names))
+
+
 def _rp_filter_context(snapshot: "HardeningSnapshot", _t) -> str:
     """One line saying what was read where, so conf/all = 0 is not mistaken
     for the verdict. Empty when there is nothing to disambiguate."""
@@ -455,6 +494,82 @@ def _effective_rp_filter() -> "tuple[int | None, int | None, str]":
     if default_val is None:
         return all_val, all_val, ""
     return max(all_val, default_val), all_val, ""
+
+
+_IPV6_CONF = Path("/proc/sys/net/ipv6/conf")
+
+
+def _effective_by_iface(knob: str, rule: str, family: str = "ipv4") -> "dict[str, bool] | None":
+    """v0.31.0 — whether *knob* is in effect on each interface (lo aside), and
+    on "default" (what an interface created from now on inherits), as the
+    kernel combines conf/all with the interface's own value. BOB read conf/all
+    alone; measured on Ubuntu 26.04 (6 November 2026), BOB's fix for
+    send_redirects set conf/all to 0 and said fixed while enp3s0 kept 1.
+
+    The rules, from the kernel (include/linux/inetdevice.h and
+    net/ipv6/route.c, Linux 6.18):
+
+    - "or": conf/all OR the interface (send_redirects: IN_DEV_TX_REDIRECTS;
+      log_martians: IN_DEV_LOG_MARTIANS);
+    - "and": conf/all AND the interface (accept_source_route:
+      IN_DEV_SOURCE_ROUTE);
+    - "redirects": IPv4 accept_redirects, AND on an interface that forwards,
+      OR on one that does not (IN_DEV_RX_REDIRECTS);
+    - "v6": IPv6 accept_redirects, the interface's own value, and none on an
+      interface that forwards (rt6_do_redirect); conf/all is not read.
+
+    None when the knob cannot be read at all (an absent /proc/sys/net/ipv6
+    under ipv6.disable=1, an unreadable conf/all). An interface that cannot be
+    read — gone while BOB read it — is left out, as ``_effective_rp_filter``
+    does.
+    """
+    base = _IPV6_CONF if family == "ipv6" else _IPV4_CONF
+    prefix = "net.ipv6.conf" if family == "ipv6" else "net.ipv4.conf"
+
+    def read(name: str, k: str) -> "bool | None":
+        return _read_sysctl_bool(f"{prefix}.{name}.{k}")
+
+    all_on = read("all", knob)
+    if all_on is None:
+        return None
+    try:
+        names = sorted(d.name for d in base.iterdir() if d.name not in _RP_NOT_AN_INTERFACE)
+    except OSError:
+        names = []
+    effective: "dict[str, bool]" = {}
+    for name in names + ["default"]:
+        own = read(name, knob)
+        if own is None:
+            continue
+        if rule == "or":
+            effective[name] = all_on or own
+        elif rule == "and":
+            effective[name] = all_on and own
+        else:
+            forwards = read(name, "forwarding")
+            if forwards is None:
+                continue
+            if rule == "redirects":
+                effective[name] = (all_on and own) if forwards else (all_on or own)
+            else:
+                effective[name] = own and not forwards
+    return effective
+
+
+def _on(by: "dict[str, bool] | None") -> list:
+    return [n for n, on in (by or {}).items() if on]
+
+
+def _off(by: "dict[str, bool] | None") -> list:
+    return [n for n, on in (by or {}).items() if not on]
+
+
+def _any_on(by: "dict[str, bool] | None") -> "bool | None":
+    return None if by is None else bool(_on(by))
+
+
+def _all_on(by: "dict[str, bool] | None") -> "bool | None":
+    return None if by is None else not _off(by)
 
 
 def _read_sysctl_int(key: str) -> "int | None":

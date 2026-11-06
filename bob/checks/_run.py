@@ -474,6 +474,28 @@ def sysctl_fix(param: str, conf: str = SYSCTL_CONF, boot=None) -> dict:
             "fix_action": {"kind": "sysctl", "param": param, "conf": conf}}
 
 
+def sysctl_fix_ifaces(prefix: str, knob: str, value: str, ifaces, conf: str = SYSCTL_CONF,
+                      boot=None) -> dict:
+    """v0.31.0 — a fix for a knob the kernel reads per interface: set now on
+    conf/all, conf/default and each interface in *ifaces* (``"default"`` among
+    them is skipped, it is set anyway), and persist conf/all and conf/default.
+
+    Setting conf/all alone was BOB's fix, and for send_redirects the kernel
+    applies conf/all OR the interface: measured on Ubuntu 26.04, conf/all went
+    to 0, enp3s0 stayed at 1, and BOB said fixed. *prefix* is
+    ``net.ipv4.conf`` or ``net.ipv6.conf``.
+    """
+    persist = [f"{prefix}.all.{knob}={value}", f"{prefix}.default.{knob}={value}"]
+    runtime = [f"{prefix}.{name}.{knob}={value}" for name in ifaces if name not in ("all", "default")]
+    confs = {param: (durable_sysctl_conf(param, boot, conf) if boot else conf) for param in persist}
+    sets = " ".join(persist + runtime)
+    saves = "; ".join(append_once(param, confs[param]) for param in persist)
+    return {"cmd": f"sudo sysctl -w {sets} && {{ {saves}; }}",
+            "fix_action": {"kind": "sysctl",
+                           "params": ([{"param": param, "conf": confs[param]} for param in persist]
+                                      + [{"param": param, "conf": ""} for param in runtime])}}
+
+
 #: The SSH server unit, spelled differently depending on who packaged it.
 #: Measured on five machines: Kali has only `ssh.service`, Arch and openSUSE
 #: only `sshd.service`, Debian 13 has both (it ships `ssh.service` with an

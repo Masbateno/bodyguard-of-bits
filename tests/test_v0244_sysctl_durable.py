@@ -99,7 +99,18 @@ class TestTheChecksUseIt:
         finding = next(f for f in check_hardening(snap, t=_t).findings
                        if f.key == "hardening.redirects_enabled")
         assert "/etc/sysctl.d/99-sysctl.conf" in finding.cmd
-        assert finding.fix_action["conf"] == "/etc/sysctl.d/99-sysctl.conf"
+        # v0.31.0 — a per-interface knob: conf/all and conf/default persisted.
+        assert {"param": f"{_KEY}=0", "conf": "/etc/sysctl.d/99-sysctl.conf"} in finding.fix_action["params"]
+
+    def test_hardening_single_value(self, no_links):
+        """A knob fixed by one value (sysctl_fix) persists where it wins too."""
+        from bob.checks.hardening import HardeningSnapshot, check_hardening
+        from tests.helpers import _t
+        boot = [("99-zz.conf", "/etc/sysctl.d/99-zz.conf", {"net.ipv4.tcp_syncookies": "0"})]
+        snap = HardeningSnapshot(tcp_syncookies=0, boot_sysctl=boot)
+        finding = next(f for f in check_hardening(snap, t=_t).findings
+                       if f.key == "hardening.tcp_syncookies_disabled")
+        assert finding.fix_action["conf"] == "/etc/sysctl.d/99-zz.conf"
 
     def test_kernel_hardening(self, no_links):
         from bob.checks.kernel_hardening import KernelHardeningSnapshot, check_kernel_hardening

@@ -98,8 +98,9 @@ def _persist(key: str, value: str, conf: Path) -> "str | None":
     return None
 
 
-def apply_sysctl(param: str, conf: Path) -> SysctlResult:
+def apply_sysctl(param: str, conf: "Path | None") -> SysctlResult:
     """Set *param* now, persist it in *conf*, and confirm by reading back.
+    With *conf* None, set and confirmed only (v0.31.0).
 
     The order matters. Persisting first would leave a file promising something
     the running kernel refused; setting first means a failure here stops before
@@ -129,6 +130,10 @@ def apply_sysctl(param: str, conf: Path) -> SysctlResult:
     if live.split() != value.split():
         return SysctlResult(False, False, f"kernel holds {live!r}, not {value!r}")
 
+    if conf is None:
+        # v0.31.0 — set now only: an interface's own value, which conf/default
+        # carries to the interfaces created later.
+        return SysctlResult(True, False)
     reason = _persist(key, value, conf)
     if reason is not None:
         # Live but not persisted is the state the shell one-liner could reach
