@@ -57,3 +57,18 @@ def test_a_name_the_shell_would_split_is_quoted():
     """Linux allows ';' in an interface name; the printed command quotes it."""
     fix = sysctl_fix_ifaces("net.ipv4.conf", "send_redirects", "0", ["a;b"])
     assert "'net.ipv4.conf.a;b.send_redirects=0'" in fix["cmd"].split("&&", 1)[0]
+
+
+def test_capitals_and_dashes_are_taken():
+    """Third review of the 0.31.1 changelog: interface names with capitals and dashes."""
+    assert sa.parse_param("net.ipv4.conf.Wlan0.send_redirects=0") == ("net.ipv4.conf.Wlan0.send_redirects", "0")
+    assert sa.parse_param("net.ipv4.conf.br-1a2b.send_redirects=0") is not None
+
+
+def test_a_rarer_character_is_refused_out_loud():
+    """'+' or ';' in a name: the native path refuses, and the fix reports failed
+    with the reason — never a silent success. The printed command quotes it."""
+    from bob import fixes
+    action = {"kind": "sysctl", "params": [{"param": "net.ipv4.conf.wg+0.send_redirects=0", "conf": ""}]}
+    status, _rc, reason = fixes._apply_native(action)
+    assert status == "failed" and b"not a sysctl assignment" in reason

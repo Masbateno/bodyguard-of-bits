@@ -14268,4 +14268,12 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         kills=('tests/test_v0311_rsa_host_key_text.py::test_ed25519_is_not_called_stronger_than_3072_bit_rsa[en]', ),
         reason='ed25519 and 3072-bit RSA are both about 128-bit security',
     ),
+    Mutation(
+        id='dotted-iface/native-refuses-capitals',
+        file='bob/_sysctl_apply.py',
+        old='_PARAM_RE = re.compile(r"^([a-z0-9_]+(?:\\.[A-Za-z0-9_*/-]+)+)=([A-Za-z0-9 ._:+-]+)$")\n',
+        new='_PARAM_RE = re.compile(r"^([a-z0-9_]+(?:\\.[a-z0-9_*/-]+)+)=([A-Za-z0-9 ._:+-]+)$")\n',
+        kills=('tests/test_v0311_dotted_iface.py::test_capitals_and_dashes_are_taken', ),
+        reason='interface names may hold capitals; the native fix path takes them',
+    ),
 )
