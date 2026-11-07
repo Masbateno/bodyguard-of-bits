@@ -30,13 +30,13 @@ from bob.checks._run import (
     _C_UTF8_LOCALE_ENV,
     _command_exists,
     _identity_t,
-    _run,
     package_installed,
     detect_install_manager,
     install_fix,
     package_name,
     package_name_candidates,
     package_query_possible,
+    run_result,
 )
 from bob.scoring import CheckResult
 
@@ -135,12 +135,27 @@ class FirmwareSnapshot:
             # device tree connectors ├ └ ─ │ render as Unicode instead of
             # degrading to ``?``, which would break _parse_fwupd_updates and
             # leak connector junk as device names.
-            out = _run(
+            res = run_result(
                 "fwupdmgr", "get-updates",
                 timeout=_FWUPD_TIMEOUT, env=_C_UTF8_LOCALE_ENV,
-            ) or ""
+            )
+            out = res.stdout or ""
+            # v0.31.0 — the exit status decides first. fwupdmgr exits 0 with
+            # updates, 2 with nothing to do, 3 when a resource is not found,
+            # 1 on failure, and writes its failures on stderr. Reading stdout
+            # alone turned a daemon it could not reach ("Failed to connect to
+            # daemon", exit 1, stdout empty) and a wedged one (killed at the
+            # timeout) into "no firmware update pending" — measured on Kali.
+            # stderr is matched against the "nothing to do" markers, never
+            # rendered.
+            if res.timed_out:
+                snap.fwupd_error = f"no answer within {_FWUPD_TIMEOUT} s"
+            elif res.code not in (0, 2) and not _FWUPD_NO_UPDATES.search(
+                    out + "\n" + (res.stderr or "")):
+                snap.fwupd_error = (f"exit status {res.code}" if res.code is not None
+                                    else "could not run")
             # Error and updates are independent: both can appear in the same output.
-            if _FWUPD_ERROR_RE.search(out):
+            elif _FWUPD_ERROR_RE.search(out):
                 first_line = out.strip().splitlines()[0] if out.strip() else out.strip()
                 snap.fwupd_error = first_line[:_MAX_ERROR_LEN]
             if out.strip() and not _FWUPD_NO_UPDATES.search(out):

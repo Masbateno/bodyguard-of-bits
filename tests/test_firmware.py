@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+from bob.checks._run import CommandResult
 from bob.checks.firmware import (
     FirmwareSnapshot,
     _detect_cpu_vendor,
@@ -390,7 +391,7 @@ class TestFromSystem:
     def test_fwupd_no_updates(self):
         with (
             patch("bob.checks.firmware._command_exists", return_value=True),
-            patch("bob.checks.firmware._run", return_value="No upgrades for any devices"),
+            patch("bob.checks.firmware.run_result", return_value=CommandResult("No upgrades for any devices", False, "", 2)),
             patch("bob.checks.firmware._detect_cpu_vendor", return_value="intel"),
             patch("bob.checks.firmware._dpkg_installed", return_value=True),
         ):
@@ -401,7 +402,7 @@ class TestFromSystem:
     def test_fwupd_error_captured(self):
         with (
             patch("bob.checks.firmware._command_exists", return_value=True),
-            patch("bob.checks.firmware._run", return_value="Failed to get updates: error connecting to daemon"),
+            patch("bob.checks.firmware.run_result", return_value=CommandResult("Failed to get updates: error connecting to daemon", True, "", 0)),
             patch("bob.checks.firmware._detect_cpu_vendor", return_value="intel"),
             patch("bob.checks.firmware._dpkg_installed", return_value=True),
         ):
@@ -409,10 +410,10 @@ class TestFromSystem:
         assert snap.fwupd_error != ""
 
     def test_fwupd_run_returns_none(self):
-        """_run returning None must not raise and must leave pending_updates empty."""
+        """A command that could not run must not raise and must leave pending_updates empty."""
         with (
             patch("bob.checks.firmware._command_exists", return_value=True),
-            patch("bob.checks.firmware._run", return_value=None),
+            patch("bob.checks.firmware.run_result", return_value=CommandResult("", False)),
             patch("bob.checks.firmware._detect_cpu_vendor", return_value="intel"),
             patch("bob.checks.firmware._dpkg_installed", return_value=True),
         ):

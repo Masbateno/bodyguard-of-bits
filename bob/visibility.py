@@ -144,6 +144,13 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     # unknown. Measured on Kali (rotating disk): 55 s cold for a 30 s budget,
     # 1.5 s warm — a cron audit lost the check and the score did not say so.
     "suid_audit.scan_skipped",
+    # v0.31.0 — the container runtime did not answer (dockerd frozen on Kali:
+    # `docker ps` killed at its timeout): a privileged container's −1 and a
+    # mounted socket's −1 are unknown, not absent.
+    "docker_hardening.scan_error",
+    # v0.31.0 — fwupdmgr failed (daemon unreachable, exit 1) or did not answer
+    # (killed at the timeout): whether firmware is pending (−1) is unknown.
+    "firmware.fwupd_error",
     "file_capabilities.partial",
     "file_capabilities.unknown",
     "cpu_security.unknown",
