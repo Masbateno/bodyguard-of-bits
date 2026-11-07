@@ -382,3 +382,140 @@ class TestTheDefaultPolicyDecidesARuleLessPort:
         res = check_single_service_display(snap, "local", i18n.t, report, False, quiet=True,
                                            ufw_active=True, ufw_incoming_policy="allow")
         assert any(d.key == "services.exposed.ssh" for d in res.deductions)
+
+
+# v0.31.0, fourth review — measured on Kali (review4-ufw-fixed.txt): a refusal on one
+# interface (P, U, V), to one destination address (Q), for one host (R), for IPv4
+# only (T), or from everyone (Q2, S, the polarity twins).
+_R4P = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp on h1             DENY IN     Anywhere
+[ 3] 8099/tcp                   ALLOW IN    Anywhere
+[ 4] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 5] 8099/tcp (v6) on h1        DENY IN     Anywhere (v6)
+[ 6] 8099/tcp (v6)              ALLOW IN    Anywhere (v6)
+"""
+_R4Q = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 203.0.113.2 8099/tcp       DENY IN     Anywhere
+[ 3] 8099/tcp                   ALLOW IN    Anywhere
+[ 4] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 5] 2001:db8:99::2 8099/tcp    DENY IN     Anywhere (v6)
+[ 6] 8099/tcp (v6)              ALLOW IN    Anywhere (v6)
+"""
+_R4Q2 = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp                   DENY IN     Anywhere
+[ 3] 8099/tcp                   ALLOW IN    203.0.113.5
+[ 4] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 5] 8099/tcp (v6)              DENY IN     Anywhere (v6)
+[ 6] 8099/tcp                   ALLOW IN    2001:db8:99::5
+"""
+_R4R = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp                   DENY IN     203.0.113.9
+[ 3] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 4] 8099/tcp                   DENY IN     2001:db8:99::9
+"""
+_R4S = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp                   DENY IN     Anywhere
+[ 3] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 4] 8099/tcp (v6)              DENY IN     Anywhere (v6)
+"""
+_R4T = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp                   DENY IN     Anywhere
+[ 3] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+"""
+_R4U = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp on h1             DENY IN     Anywhere
+[ 3] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 4] 8099/tcp (v6) on h1        DENY IN     Anywhere (v6)
+"""
+_R4V = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp on h1             DENY IN     Anywhere
+[ 3] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 4] 8099/tcp (v6) on h1        DENY IN     Anywhere (v6)
+"""
+
+
+class TestARefusalInPart:
+    """Fourth review. A refusal ends the walk only when it refuses the port from
+    every source, on every interface and to every address, in both families;
+    what the rules leave falls to UFW's default incoming policy. Each case was
+    read "explicitly blocked" while a client reached 8099."""
+
+    @pytest.mark.parametrize("rules, exposure, closes", [
+        (_R4P, Exposure.OPEN_WORLD, False),
+        (_R4Q, Exposure.OPEN_WORLD, False),
+        (_R4Q2, Exposure.DENY, True),
+        (_R4R, Exposure.DENY, False),
+        (_R4S, Exposure.DENY, True),
+        (_R4T, Exposure.DENY, False),
+        (_R4U, Exposure.DENY, False),
+        (_R4V, Exposure.DENY, False),
+    ])
+    def test_the_walk(self, rules, exposure, closes):
+        assert _classify_exposure("8099/tcp", rules) == exposure
+        assert _ufw.refusal_closes(rules, 8099, "tcp") is closes
+
+    @pytest.mark.parametrize("line", ["[ 2] 8099/tcp on h1             DENY IN     Anywhere",
+                                      "[ 5] 8099/tcp (v6) on h1        DENY IN     Anywhere (v6)"])
+    def test_the_interface_is_kept(self, line):
+        rule = _ufw.parse_rule(line)
+        assert (rule.iface, rule.to_col, rule.action) == ("h1", "8099/tcp", "DENY")
+
+    @staticmethod
+    def _check(rules, policy, monkeypatch, lang="en", loopback=None, listening=("8099/tcp",)):
+        import bob.checks.services as S
+        from bob.registry import ServiceRegistry
+        monkeypatch.setattr(S, "_detect_installation", lambda s: (True, "dpkg"))
+        monkeypatch.setattr(S, "_detect_state", lambda s: S.ServiceState.ACTIVE_ENABLED)
+        monkeypatch.setattr(S, "_resolve_ports", lambda s: ["8099/tcp"])
+        snap = S.ServiceSnapshot._build_snapshot(ServiceRegistry.load().get("ssh"), rules,
+                                                 loopback, set(listening))
+        i18n.init(lang)
+        try:
+            return snap, S.check_services([snap], network_context="local", ufw_active=True,
+                                          t=i18n.t, ufw_incoming_policy=policy)
+        finally:
+            i18n.init("en")
+
+    @pytest.mark.parametrize("rules, policy, opened", [
+        (_R4P, "deny", True), (_R4Q, "deny", True), (_R4Q2, "deny", False),
+        (_R4R, "allow", True), (_R4S, "allow", False), (_R4T, "allow", True),
+        (_R4U, "allow", True), (_R4V, "deny", False),
+    ])
+    def test_measured(self, rules, policy, opened, monkeypatch):
+        _snap, res = self._check(rules, policy, monkeypatch)
+        assert any(d.key == "services.exposed.ssh" for d in res.deductions) is opened
+        blocked = [f for f in res.findings if f.key == "services.exposure.deny"]
+        assert bool(blocked) is not opened
+
+    @pytest.mark.parametrize("rules", [_R4R, _R4T, _R4U])
+    def test_default_allow_says_why(self, rules, monkeypatch):
+        _snap, res = self._check(rules, "allow", monkeypatch)
+        assert any("only for some sources, interfaces, addresses or one family" in f.message
+                   for f in res.findings)
+
+    @pytest.mark.parametrize("policy", ["deny", "reject"])
+    def test_default_deny_closes_the_rest(self, policy, monkeypatch):
+        """Polarity twin of the policy: what the rules leave, the default refuses."""
+        _snap, res = self._check(_R4R, policy, monkeypatch)
+        assert not res.deductions
+        assert any(f.key == "services.exposure.deny" for f in res.findings)
+
+    def test_an_unread_policy_is_not_called_blocked(self, monkeypatch):
+        _snap, res = self._check(_R4R, "unknown", monkeypatch, lang="fr")
+        assert not res.deductions
+        assert not any(f.key == "services.exposure.deny" for f in res.findings)
+        assert any("n'a pas pu être lue" in f.message for f in res.findings)
+
+    def test_the_snapshot_carries_it(self, monkeypatch):
+        snap, _res = self._check(_R4R, "deny", monkeypatch)
+        assert snap.refused_in_part == frozenset({"8099/tcp"})
+        snap, _res = self._check(_R4S, "deny", monkeypatch)
+        assert snap.refused_in_part == frozenset()
+
+    def test_a_loopback_listener_stays_unreached(self, monkeypatch):
+        snap, res = self._check(_R4R, "allow", monkeypatch, loopback={"8099/tcp"})
+        assert snap.refused_in_part == frozenset() and not res.deductions
+
+    def test_a_port_nothing_listens_on_stays_unreached(self, monkeypatch):
+        snap, res = self._check(_R4R, "allow", monkeypatch, listening=())
+        assert snap.refused_in_part == frozenset() and not res.deductions

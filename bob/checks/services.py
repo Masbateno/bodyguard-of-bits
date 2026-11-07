@@ -166,6 +166,10 @@ class ServiceSnapshot:
     # v0.24.1 — for an OPEN_LOCAL port, the From column of the UFW rule that
     # allows it ("192.168.1.0/24", "192.168.1.11"). {} when not OPEN_LOCAL.
     local_sources: dict[str, str] = field(default_factory=dict)
+    # v0.31.0, fourth review — DENY ports, listening and not on loopback alone,
+    # whose rules refuse them only in part (one source, interface, address or
+    # family): UFW's default incoming policy decides the rest.
+    refused_in_part: frozenset = frozenset()
 
     @property
     def label(self) -> str:
@@ -228,12 +232,20 @@ class ServiceSnapshot:
                 for port in ports:
                     if port not in all_listening_ports and exposures.get(port) == Exposure.NO_RULE:
                         exposures[port] = Exposure.NOT_LISTENING
+            refused_in_part = frozenset(
+                port for port in ports
+                if exposures[port] == Exposure.DENY and port not in (loopback_ports or ())
+                and (all_listening_ports is None or port in all_listening_ports)
+                and port.partition("/")[0].isdigit()
+                and not _ufw.refusal_closes(ufw_rules, int(port.partition("/")[0]),
+                                            port.partition("/")[2] or "tcp", app_profiles))
         else:
             state     = ServiceState.UNKNOWN
             trigger   = ""
             ports     = list(service.ports)
             exposures = {}
             local_sources = {}
+            refused_in_part = frozenset()
 
         return cls(
             service=service,
@@ -244,6 +256,7 @@ class ServiceSnapshot:
             ports=ports,
             exposures=exposures,
             local_sources=local_sources,
+            refused_in_part=refused_in_part,
         )
 
     @classmethod
@@ -625,6 +638,22 @@ def _check_port_exposure(
         exposure = Exposure.OPEN_WORLD
         port_msg = _t("services.port_exposure", port=port,
                       exposure=_t("services.exposure.no_rule_default_allow"))
+
+    # v0.31.0, fourth review — rules that refuse the port only for one source,
+    # interface, address or family leave the rest to the default policy.
+    # Measured on Kali (review4-ufw.txt), default allow: a refusal for one host,
+    # for IPv4 only, or on one interface left 8099 answering other clients, and
+    # the services section said "explicitly blocked by a UFW rule".
+    if (exposure == Exposure.DENY and ufw_active
+            and port in getattr(snap, "refused_in_part", frozenset())):
+        if ufw_incoming_policy == "allow":
+            exposure = Exposure.OPEN_WORLD
+            port_msg = _t("services.port_exposure", port=port,
+                          exposure=_t("services.exposure.deny_in_part_default_allow"))
+        elif ufw_incoming_policy not in ("deny", "reject"):
+            exposure = Exposure.NO_RULE
+            port_msg = _t("services.port_exposure", port=port,
+                          exposure=_t("services.exposure.no_rule_policy_unread"))
 
     if exposure == Exposure.OPEN_WORLD:
         # High/critical services exposed to internet get extra penalty in public context

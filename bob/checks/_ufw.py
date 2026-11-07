@@ -39,13 +39,15 @@ _APPS_DIR = Path("/etc/ufw/applications.d")
 class UfwRule:
     """One parsed rule line: what it covers, what it does, and from where."""
 
-    __slots__ = ("to_col", "action", "from_col", "raw")
+    __slots__ = ("to_col", "action", "from_col", "raw", "iface")
 
-    def __init__(self, to_col: str, action: str, from_col: str, raw: str) -> None:
+    def __init__(self, to_col: str, action: str, from_col: str, raw: str, iface: str = "") -> None:
         self.to_col = to_col
         self.action = action
         self.from_col = from_col
         self.raw = raw
+        #: v0.31.0, fourth review — the interface of an ``on <iface>`` rule.
+        self.iface = iface
 
 
 def parse_rule(line: str) -> "UfwRule | None":
@@ -67,8 +69,10 @@ def parse_rule(line: str) -> "UfwRule | None":
     else:
         to_col, action, from_col = rest, "", ""
     to_col = to_col.replace("(v6)", "").strip()
-    to_col = re.sub(r"\s+on\s+\S+$", "", to_col).strip()
-    return UfwRule(to_col, action, from_col.strip(), line)
+    iface_m = re.search(r"\s+on\s+(\S+)$", to_col)
+    iface = iface_m.group(1) if iface_m else ""
+    to_col = to_col[:iface_m.start()].strip() if iface_m else to_col
+    return UfwRule(to_col, action, from_col.strip(), line, iface)
 
 
 def read_app_profiles(directory: "Path | None" = None) -> "dict[str, list[str]]":
@@ -308,9 +312,46 @@ def admitting_sources(
     port, met on the way adds its source. A refusal for one source does not
     take that source out of a later admission: this can overstate, never
     understate.
+
+    v0.31.0, fourth review — a refusal ends the walk only when it refuses the
+    port from every source, on every interface and to every address: an
+    ``on <iface>`` rule or a rule with a destination address left the port open
+    elsewhere. Measured on Kali (review4-ufw.txt), default deny: `deny in on
+    <public side> port 8099` or `deny 8099 to <public-side address>`, then
+    `allow 8099`, answered the private client, read "explicitly blocked".
     """
+    sources, refused, _closed = _walk_sources(ufw_numbered, port, proto, app_profiles)
+    return sources, refused
+
+
+def refusal_closes(
+    ufw_numbered: str,
+    port: int,
+    proto: str,
+    app_profiles: "dict[str, list[str]] | None" = None,
+) -> bool:
+    """v0.31.0, fourth review — True when, in both families, the walk of
+    :func:`admitting_sources` ends on a rule that refuses *port*/*proto* from
+    every source, on every interface and to every address. Otherwise what the
+    rules leave falls to UFW's default incoming policy. Measured on Kali
+    (review4-ufw.txt), default allow: a refusal for one host, for IPv4 only, or
+    on one interface left 8099 answering other clients, read "explicitly
+    blocked"; `deny 8099` refused everyone.
+    """
+    _sources, _refused, closed = _walk_sources(ufw_numbered, port, proto, app_profiles)
+    return len(closed) == 2
+
+
+def _walk_sources(
+    ufw_numbered: str,
+    port: int,
+    proto: str,
+    app_profiles: "dict[str, list[str]] | None" = None,
+) -> "tuple[list[str], bool, list[bool]]":
+    """The walk of :func:`admitting_sources`, with the families it closed."""
     sources: "list[str]" = []
     refused = False
+    closed: "list[bool]" = []
     for v6 in (False, True):
         for line in ufw_numbered.splitlines():
             rule = parse_rule(line)
@@ -328,9 +369,10 @@ def admitting_sources(
                 sources.append(source)
             elif rule.action in ("DENY", "REJECT"):
                 refused = True
-                if source == "Anywhere":
+                if source == "Anywhere" and not rule.iface and len(rule.to_col.split()) == 1:
+                    closed.append(v6)
                     break
-    return sources, refused
+    return sources, refused, closed
 
 
 def admitting(broad: "list[tuple[str, str | None, str]]", proto: str) -> "list[str]":

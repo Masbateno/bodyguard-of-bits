@@ -172,7 +172,7 @@ LAYER (top→bottom = imports flow down)
     bob/json_output.py + html_output.py + csv_output.py + markdown_output.py + report_markdown.py
         ← export formatters
     bob/formatter.py + bob/i18n.py + bob/_i18n_safe.py + bob/locales/{en,fr}.json
-        ← locale-independent reconstruction + i18n (3152 keys per language;
+        ← locale-independent reconstruction + i18n (3153 keys per language;
           _i18n_safe.py since v0.8.2 = shared make_fallback_t + t_or_hardcoded)
 
 DATA (read-only at runtime, shipped in the package)
@@ -265,7 +265,7 @@ bodyguard-of-bits/
 │   ├── breakdown.py           ← --breakdown score computation transparency
 │   ├── exposure.py            ← attack-surface table (compute_exposure)
 │   ├── formatter.py           ← locale-independent reconstruction (v0.4.1)
-│   ├── i18n.py                ← t(key, **vars), 3152 keys per locale (strict parity)
+│   ├── i18n.py                ← t(key, **vars), 3153 keys per locale (strict parity)
 │   ├── locales/
 │   │   ├── en.json            ← English translation keys
 │   │   └── fr.json            ← French translation keys (strict parity)
@@ -344,7 +344,7 @@ bodyguard-of-bits/
 | `breakdown.py` | 187 | `--breakdown` / `-B` score computation transparency display |
 | `exposure.py` | 291 | `compute_exposure()` — attack-surface table for the audit summary (synthesises firewall state + ports + network context + finding keys) |
 | `formatter.py` | 119 | `format_finding()`, `format_deduction()` — locale-independent via `template_vars` |
-| `i18n.py` | 309 | `t(key, **vars)`, locale auto-detect (POSIX), 3152 keys EN/FR |
+| `i18n.py` | 309 | `t(key, **vars)`, locale auto-detect (POSIX), 3153 keys EN/FR |
 | `compare.py` | 754 | `AuditBaseline`, `AuditDelta`, `build_baseline()`, `compute_delta()`, `display_delta()`. **v0.9.0 F-2**: `AuditBaseline.hostname` field + `BaselineLoadError` + strict-mode `load_baseline(path, strict=True)` for `--diff [PATH]` cross-machine compare. **v0.9.2**: `load_baseline` calls `bob._v090_renames.remap_finding_key` per entry to remap legacy section prefixes at load + `BaselineLoadError` raise sites use `_i18n_safe.t_or_hardcoded` for 4 new `compare.baseline_load.*` keys. |
 | `correlation.py` | 161 | 6 compound-risk rules (`CorrelationRule` with frozensets) |
 | `recurrence.py` | 101 | Recurring finding tracker: consecutive-audit counters |
@@ -909,7 +909,7 @@ plus an emulated arm64 job (`debian:bookworm-slim` under QEMU, `ci/arm64_smoke.s
 ## Quick references
 
 - **Add a service**: edit `bob/data/services.json` (38 entries, schema in `bob/data/schemas/`). No Python code change. See [README_DEV.md § Adding a service](README_DEV.md).
-- **Add a language**: copy `bob/locales/en.json` → `bob/locales/de.json`, translate all 3152 values keeping the exact key tree, then append `"de"` to `SUPPORTED_LANGS` in `bob/i18n.py` (currently `("en", "fr")`). `cli.py` validates the *shape* since v0.14.1 (`_LANG_RE = ^[A-Za-z]{2,3}([_-][A-Za-z]{2,4})?$`, enforced by `_validate_lang`) — a well-formed but unsupported code still falls back to English, while a path-shaped value is rejected outright and `i18n.init()` falls back to `DEFAULT_LANG` if the file is missing.
+- **Add a language**: copy `bob/locales/en.json` → `bob/locales/de.json`, translate all 3153 values keeping the exact key tree, then append `"de"` to `SUPPORTED_LANGS` in `bob/i18n.py` (currently `("en", "fr")`). `cli.py` validates the *shape* since v0.14.1 (`_LANG_RE = ^[A-Za-z]{2,3}([_-][A-Za-z]{2,4})?$`, enforced by `_validate_lang`) — a well-formed but unsupported code still falls back to English, while a path-shaped value is rejected outright and `i18n.init()` falls back to `DEFAULT_LANG` if the file is missing.
 - **Add a check** (full checklist):
   1. Create `bob/checks/foo.py` with `FooSnapshot.from_system()` + `check_foo(snapshot, t)` (follow the pattern of an existing simple check, e.g. `ntp.py`).
   2. Wire in `bob/runner.py`: add the import at the top, add a `_Section` entry to the `_SECTIONS` tuple (`bob/runner.py`, v0.9.0 D-2) — `_ALL_SECTIONS` is *derived* from it (`tuple(s.name for s in _SECTIONS if not s.always_on)`) and cannot be appended to, and invoke via `_sec("foo", foo_snapshot, check_foo)` in the appropriate GROUP block.
@@ -940,7 +940,7 @@ plus an emulated arm64 job (`debian:bookworm-slim` under QEMU, `ci/arm64_smoke.s
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distro containers + 1 emulated arm64 job | `.github/workflows/integration.yml` |
 | Python versions tested | 3.10, 3.11, 3.12, 3.13, 3.14 | `.github/workflows/tests.yml` + `pyproject.toml` classifiers |
-| Locale keys | 3152 EN ↔ 3152 FR (strict parity) | `bob/locales/{en,fr}.json` |
+| Locale keys | 3153 EN ↔ 3153 FR (strict parity) | `bob/locales/{en,fr}.json` |
 | EXPLAIN_KEYS | 235 (in 62 prefixes) | `bob.explain.EXPLAIN_KEYS` |
 | CIS references | 235 primary (119 CIS Ubuntu 22.04 + 7 CIS Docker 1.6 + 7 CIS Kubernetes 2.0 + **1 CIS Red Hat 8/9** + 101 BOB-authored best-practice) + **189 cross-benchmark citations** on 67 keys (63 CIS Debian 12 + 63 CIS Debian 13 + 63 CIS Ubuntu 24.04, sourced from ComplianceAsCode/content by `scripts/gen_cis_benchmarks.py`, which also re-bases the primary Ubuntu 22.04 numbering onto CAC v2.0.0 from the rule anchor) | `bob/data/cis_refs.json` |
 | Known services | 38 | `bob/data/services.json` |
