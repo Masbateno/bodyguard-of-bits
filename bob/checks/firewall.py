@@ -907,8 +907,10 @@ def _check_ipv6_coverage(
     file could not be read at all.
     """
     _bodies = [_strip_comment(ln) for ln in lines]
-    ipv4_count = sum(1 for ln in _bodies if "(v6)" not in ln)
-    ipv6_count = sum(1 for ln in _bodies if "(v6)" in ln)
+    # v0.31.0, third review — ufw marks "(v6)" only a rule naming no address:
+    # `8099/tcp ALLOW IN fd77::1` is an IPv6 rule (measured on Kali).
+    ipv6_count = sum(1 for ln in _bodies if _ufw.is_v6_rule(ln))
+    ipv4_count = len(_bodies) - ipv6_count
 
     if ipv4_count > 0 and ipv6_count == 0:
         if ipv6_enabled:

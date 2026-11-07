@@ -186,6 +186,32 @@ def _names_no_port(to_col: str) -> bool:
 _FROM_PROTO_RE = re.compile(r"/(tcp|udp)$", re.IGNORECASE)
 
 
+def is_v6_rule(line: str, rule: "UfwRule | None" = None) -> bool:
+    """v0.31.0, third review of the changelog — the rule is an IPv6 one.
+
+    ufw marks ``(v6)`` only a rule that names no address of its own. Measured
+    on Kali (7 November 2026, review3-ufw.txt): `ufw allow from fd77::1 to any
+    port 8099 proto tcp` prints ``8099/tcp  ALLOW IN  fd77::1`` — no marker;
+    the IPv6 address in the To or From column says the family.
+    """
+    if "(v6)" in line:
+        return True
+    rule = rule if rule is not None else parse_rule(line)
+    if rule is None:
+        return False
+    import ipaddress
+    for token in rule.to_col.split() + rule.from_col.split("#", 1)[0].split():
+        token = _FROM_PROTO_RE.sub("", token)
+        if ":" not in token:
+            continue
+        try:
+            if ipaddress.ip_network(token, strict=False).version == 6:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def broad_admits(ufw_numbered: str, v6: "bool | None" = None) -> "list[tuple[str, str | None, str]]":
     """v0.31.0 — the incoming ALLOW/LIMIT rules whose To column names no port.
 
@@ -208,7 +234,7 @@ def broad_admits(ufw_numbered: str, v6: "bool | None" = None) -> "list[tuple[str
         rule = parse_rule(line)
         if rule is None or rule.action not in ("ALLOW", "LIMIT"):
             continue
-        if v6 is not None and ("(v6)" in line) != v6:
+        if v6 is not None and is_v6_rule(line, rule) != v6:
             continue
         words = rule.from_col.split("#", 1)[0].split()
         if words and words[0] in ("OUT", "FWD"):
@@ -247,7 +273,7 @@ def admitted_before_own_rule(
         rule = parse_rule(line)
         if rule is None or not rule.to_col:
             continue
-        if v6 is not None and ("(v6)" in line) != v6:
+        if v6 is not None and is_v6_rule(line, rule) != v6:
             continue
         direction = rule.from_col.split()[:1]
         if direction and direction[0] in ("OUT", "FWD"):
@@ -256,6 +282,55 @@ def admitted_before_own_rule(
             return earlier, rule.action
         earlier += [b for b in broad_admits(line) if b[1] in (None, proto.lower())]
     return earlier, None
+
+
+def admitting_sources(
+    ufw_numbered: str,
+    port: int,
+    proto: str,
+    app_profiles: "dict[str, list[str]] | None" = None,
+) -> "tuple[list[str], bool]":
+    """v0.31.0, third review of the changelog — the sources the incoming rules
+    admit *port*/*proto* from, and whether a rule for the port refuses it.
+
+    UFW applies the first rule that matches a packet, and a rule matches only
+    its own source: a rule for one source leaves every other to the rules after
+    it. Measured on Kali in a network namespace (7 November 2026,
+    review3-ufw.txt), UFW at default deny, a public and a private client:
+    `allow 8099 from <private>` then `allow 8099`, or then `allow from
+    <public>` (no port), answered the public client while the services section
+    said "restricted to local network"; `deny 8099 from <another host>` then
+    `allow 8099` answered it while it said "explicitly blocked"; a refusal of
+    8099 over IPv4 only left IPv6 to the rules after it.
+
+    Each family is walked apart, up to the first rule for the port that refuses
+    it from every source; each ALLOW/LIMIT rule for the port, or naming no
+    port, met on the way adds its source. A refusal for one source does not
+    take that source out of a later admission: this can overstate, never
+    understate.
+    """
+    sources: "list[str]" = []
+    refused = False
+    for v6 in (False, True):
+        for line in ufw_numbered.splitlines():
+            rule = parse_rule(line)
+            if rule is None or not rule.to_col or is_v6_rule(line, rule) != v6:
+                continue
+            words = rule.from_col.split("#", 1)[0].split()
+            if words[:1] in (["OUT"], ["FWD"]):
+                continue
+            if not ranges_cover(to_column_ranges(rule.to_col, app_profiles), port, proto):
+                sources += [src for _p, bp, src in broad_admits(line) if bp in (None, proto.lower())]
+                continue
+            words = words[1:] if words[:1] == ["IN"] else words
+            source = " ".join(words).replace("(v6)", "").strip() or "Anywhere"
+            if rule.action in ("ALLOW", "LIMIT"):
+                sources.append(source)
+            elif rule.action in ("DENY", "REJECT"):
+                refused = True
+                if source == "Anywhere":
+                    break
+    return sources, refused
 
 
 def admitting(broad: "list[tuple[str, str | None, str]]", proto: str) -> "list[str]":

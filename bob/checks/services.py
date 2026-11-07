@@ -339,6 +339,8 @@ def check_services(
     #: ports bound to an IPv4 loopback address (PortsSnapshot.loopback_v4_ports).
     loopback_reachable: "bool | None" = False,
     loopback_v4_ports: "frozenset | set" = frozenset(),
+    #: v0.31.0 — UFW's default incoming policy (FirewallStatus.incoming_policy).
+    ufw_incoming_policy: str = "deny",
 ) -> CheckResult:
     """
     Evaluate service snapshots and return findings and deductions.
@@ -365,7 +367,8 @@ def check_services(
                               netfilter_port_verdict=netfilter_port_verdict,
                               netfilter_all_interfaces=netfilter_all_interfaces,
                               loopback_reachable=loopback_reachable,
-                              loopback_v4_ports=loopback_v4_ports)
+                              loopback_v4_ports=loopback_v4_ports,
+                              ufw_incoming_policy=ufw_incoming_policy)
 
     return result
 
@@ -384,6 +387,8 @@ def _check_single_service(
     firewalld_unread: bool = False,
     loopback_reachable: "bool | None" = False,
     loopback_v4_ports: "frozenset | set" = frozenset(),
+    #: v0.31.0 — UFW's default incoming policy (FirewallStatus.incoming_policy).
+    ufw_incoming_policy: str = "deny",
 ) -> None:
     """Evaluate a single service snapshot and add findings to result."""
 
@@ -503,7 +508,8 @@ def _check_single_service(
                              netfilter_port_verdict=netfilter_port_verdict,
                              netfilter_all_interfaces=netfilter_all_interfaces,
                              loopback_reachable=loopback_reachable,
-                             loopback_v4_ports=loopback_v4_ports)
+                             loopback_v4_ports=loopback_v4_ports,
+                              ufw_incoming_policy=ufw_incoming_policy)
 
 def _reachable_by_default(verdict_of, port: str) -> bool:
     """v0.28.0 — True when the raw ruleset reaches *port* over IPv4 only
@@ -547,6 +553,8 @@ def _check_port_exposure(
     firewalld_unread: bool = False,
     loopback_reachable: "bool | None" = False,
     loopback_v4_ports: "frozenset | set" = frozenset(),
+    #: v0.31.0 — UFW's default incoming policy (FirewallStatus.incoming_policy).
+    ufw_incoming_policy: str = "deny",
 ) -> None:
     """Add findings for a single port exposure."""
     from bob.checks.ports import _localnet_state
@@ -583,6 +591,9 @@ def _check_port_exposure(
         exp_key = "services.exposure.no_rule_firewalld_unread"
     elif not ufw_active and exposure in (Exposure.NO_RULE, Exposure.LOOPBACK_NO_RULE):
         exp_key = f"services.exposure.{exposure.value}_ufw_inactive"
+    # v0.31.0, third review — "covered by default deny" needs the policy read.
+    elif exposure == Exposure.NO_RULE and ufw_incoming_policy not in ("deny", "reject", "allow"):
+        exp_key = "services.exposure.no_rule_policy_unread"
     else:
         exp_key = f"services.exposure.{exposure.value}"
     # v0.28.0 — the listener weighed against the rules for its port (IPv4).
@@ -605,6 +616,15 @@ def _check_port_exposure(
         exposure = Exposure.OPEN_WORLD
         port_msg = _t("services.port_exposure", port=port,
                       exposure=_t("services.exposure.netfilter_open"))
+
+    # v0.31.0, third review — UFW active at default allow incoming: a port no
+    # UFW rule admits or refuses is reached by everyone. Measured on Kali in a
+    # network namespace: 8099 answered a private and a public client over IPv4
+    # and IPv6, and the services section said "covered by default deny policy".
+    if exposure == Exposure.NO_RULE and ufw_active and ufw_incoming_policy == "allow":
+        exposure = Exposure.OPEN_WORLD
+        port_msg = _t("services.port_exposure", port=port,
+                      exposure=_t("services.exposure.no_rule_default_allow"))
 
     if exposure == Exposure.OPEN_WORLD:
         # High/critical services exposed to internet get extra penalty in public context
@@ -1262,37 +1282,19 @@ def _allow_rule_source(
     ufw_rules: str,
     app_profiles: "dict[str, list[str]] | None" = None,
 ) -> str:
-    """The From column of the first UFW rule that covers *port*, or "".
+    """The sources the UFW rules admit *port* from, or "".
 
-    Same first-match walk as ``_classify_exposure``; used only to say *which*
-    local source an OPEN_LOCAL port is restricted to.
+    Same walk as ``_classify_exposure``; used only to say *which* local source
+    an OPEN_LOCAL port is restricted to.
     """
     port_num, _, proto = port.partition("/")
     if not port_num.isdigit():
         return ""
-    earlier: "list[str]" = []
-    for line in ufw_rules.splitlines():
-        rule = _ufw.parse_rule(line)
-        if rule is None or not rule.to_col:
-            continue
-        ranges = _ufw.to_column_ranges(rule.to_col, app_profiles)
-        if not _ufw.ranges_cover(ranges, int(port_num), proto or "tcp"):
-            # v0.31.0 — a rule naming no port, met first, as _classify_exposure.
-            earlier += [src for _p, bp, src in _ufw.broad_admits(line) if bp in (None, proto or "tcp")]
-            continue
-        if rule.action in ("DENY", "REJECT") and earlier:
-            return earlier[0]
-        # The parsed From column still carries the direction and the
-        # rule's comment: "IN    192.168.1.11    # Samba".
-        words = rule.from_col.split("#", 1)[0].split()
-        if words and words[0] in ("IN", "OUT", "FWD"):
-            words = words[1:]
-        return " ".join(words)
-    # v0.31.0 — the source of a rule naming no port, as _classify_exposure reads it.
-    for _printed, broad_proto, source in _ufw.broad_admits(ufw_rules):
-        if broad_proto in (None, proto or "tcp"):
-            return source
-    return ""
+    # v0.31.0, third review — every source the rules admit it from, as
+    # _classify_exposure reads them: a port open to 10.77.0.1 and fd77::1 is
+    # not "restricted to the single host 10.77.0.1".
+    sources, _refused = _ufw.admitting_sources(ufw_rules, int(port_num), proto or "tcp", app_profiles)
+    return ", ".join(dict.fromkeys(sources))
 
 
 def _single_host(source: str) -> bool:
@@ -1333,8 +1335,7 @@ def _classify_exposure(
 
     want = int(port_num)
 
-    # UFW uses first-match semantics — process rules in order and return on the
-    # first one that covers this port.
+    # UFW uses first-match semantics, per source and per family.
     #
     # The port is matched against the rule's To column only. Searching the whole
     # line, as this did until v0.15.0, let a source address stand in for a
@@ -1343,41 +1344,20 @@ def _classify_exposure(
     # network — so a host running SSH with no rule for it was told SSH was
     # restricted to the local network. `ports` already anchored on the To column
     # and said why in a docstring; the grammar now lives in one place.
-    # v0.31.0, review of the changelog — rules naming no port met before the
-    # port's own rule admit it from their source first (measured: `allow from
-    # <client>` then `deny 8099/tcp` left 8099 open to the client).
-    earlier: "list[str]" = []
-    for line in ufw_rules.splitlines():
-        rule = _ufw.parse_rule(line)
-        if rule is None or not rule.to_col:
-            continue
-        ranges = _ufw.to_column_ranges(rule.to_col, app_profiles)
-        if not _ufw.ranges_cover(ranges, want, proto):
-            earlier += [src for _p, bp, src in _ufw.broad_admits(line) if bp in (None, proto)]
-            continue
-
-        if rule.action in ("DENY", "REJECT"):
-            if earlier:
-                return (Exposure.OPEN_LOCAL if all(_line_has_private_or_loopback(s) for s in earlier)
-                        else Exposure.OPEN_WORLD)
-            return Exposure.DENY
-        if rule.action in ("ALLOW", "LIMIT"):
-            # The source restriction lives in the From column. Reading the whole
-            # line here would let a private *destination* pass for a private
-            # source.
-            if _line_has_private_or_loopback(rule.from_col) and all(
-                    _line_has_private_or_loopback(s) for s in earlier):
-                return Exposure.OPEN_LOCAL
-            return Exposure.OPEN_WORLD
-
-    # v0.31.0, review of the changelog — no rule names this port, but one that
-    # names no port admits it (``_ufw.broad_admits``): it decides as a rule for
-    # the port from the same source would. Measured on Kali in a network
-    # namespace: `ufw allow from <client>` and `ufw allow in on <iface>` opened
-    # a port the services section called "covered by the default deny policy".
-    for _printed, broad_proto, source in _ufw.broad_admits(ufw_rules):
-        if broad_proto in (None, proto):
-            return Exposure.OPEN_LOCAL if _line_has_private_or_loopback(source) else Exposure.OPEN_WORLD
+    # v0.31.0, reviews of the changelog — a rule matches only its own source,
+    # so every rule for the port, and every rule naming no port, up to the one
+    # that refuses the port from every source, decides for its source
+    # (``_ufw.admitting_sources``). Measured on Kali: `allow from <client>` then
+    # `deny 8099/tcp` left 8099 open to the client; `allow 8099 from <private>`
+    # then `allow 8099` left it open to a public client, read "restricted to
+    # local network"; `deny 8099 from <another host>` then `allow 8099`, read
+    # "explicitly blocked".
+    sources, refused = _ufw.admitting_sources(ufw_rules, want, proto, app_profiles)
+    if sources:
+        return (Exposure.OPEN_LOCAL if all(_line_has_private_or_loopback(s) for s in sources)
+                else Exposure.OPEN_WORLD)
+    if refused:
+        return Exposure.DENY
     return Exposure.NO_RULE
     if proto not in ("tcp", "udp"):
         logger.warning("Invalid protocol in registry: %r", proto)

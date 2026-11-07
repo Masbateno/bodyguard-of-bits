@@ -62,4 +62,11 @@ def test_all_covered_by_rules_still_said():
 
 
 def test_the_runner_passes_ufw_s_policy():
-    assert "ufw_incoming_policy=fw_status.incoming_policy" in inspect.getsource(runner)
+    """The IPv6 section's own call. A search of the whole source went inert once
+    the services call (third review) passed the same keyword."""
+    import ast
+    calls = [n for n in ast.walk(ast.parse(inspect.getsource(runner))) if isinstance(n, ast.Call)
+             and getattr(n.func, "id", "") == "_sec" and n.args
+             and isinstance(n.args[0], ast.Constant) and n.args[0].value == "ipv6"]
+    assert len(calls) == 1
+    assert any(k.arg == "ufw_incoming_policy" for k in calls[0].keywords)

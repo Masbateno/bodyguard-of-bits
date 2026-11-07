@@ -955,6 +955,7 @@ def run_checks(
             netfilter_all_interfaces=_v4_on_all_interfaces,
             loopback_reachable=ports_snapshot.loopback_reachable,
             loopback_v4_ports=ports_snapshot.loopback_v4_ports,
+            ufw_incoming_policy=fw_status.incoming_policy,
         )
         engine.apply(svc_result, section="services")
         # v0.17.1 — only a service BOB judged *active* has really had its ports

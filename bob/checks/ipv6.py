@@ -721,10 +721,10 @@ def _extract_ufw_v6_covered(
     """
     covered: set[str] = set()
     for line in ufw_numbered.splitlines():
-        if "(v6)" not in line:
-            continue
         rule = _ufw.parse_rule(line)
-        if rule is None or not rule.to_col:
+        # v0.31.0, third review — ufw marks "(v6)" only a rule naming no
+        # address: `8099/tcp ALLOW IN fd77::1` is an IPv6 rule (measured).
+        if rule is None or not rule.to_col or not _ufw.is_v6_rule(line, rule):
             continue
         for lo, hi, proto in _ufw.to_column_ranges(rule.to_col, app_profiles):
             # A rule without an explicit protocol covers both.

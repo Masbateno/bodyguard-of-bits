@@ -222,7 +222,8 @@ def check_single_service_display(snap, network_context, t, report, verbose,
                                   netfilter_port_verdict=None,
                                   netfilter_all_interfaces=None,
                                   loopback_reachable=False,
-                                  loopback_v4_ports=frozenset()):
+                                  loopback_v4_ports=frozenset(),
+                                  ufw_incoming_policy="deny"):
     """Run check for a single service and return its CheckResult."""
     from bob.checks.services import check_services
     result = check_services([snap], network_context=network_context,
@@ -235,7 +236,8 @@ def check_single_service_display(snap, network_context, t, report, verbose,
                             netfilter_port_verdict=netfilter_port_verdict,
                             netfilter_all_interfaces=netfilter_all_interfaces,
                             loopback_reachable=loopback_reachable,
-                            loopback_v4_ports=loopback_v4_ports)
+                            loopback_v4_ports=loopback_v4_ports,
+                            ufw_incoming_policy=ufw_incoming_policy)
     display_result(result, report, verbose, quiet=quiet)
     return result
 

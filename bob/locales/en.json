@@ -275,6 +275,8 @@
       "open_local_host": "restricted to the single host {source} by UFW rule",
       "deny": "explicitly blocked by a UFW rule",
       "no_rule": "covered by default deny policy (no explicit UFW rule needed)",
+      "no_rule_default_allow": "open to everyone — no UFW rule for this port, and UFW's default incoming policy is allow",
+      "no_rule_policy_unread": "no explicit UFW rule — UFW's default incoming policy could not be read, so what reaches this port is not established",
       "no_rule_ufw_inactive": "no active firewall protection",
       "no_rule_firewalld": "firewall managed by firewalld (not UFW) — reachable only if its zone permits this port",
       "no_rule_netfilter": "filtered by the host's nftables/iptables ruleset (no UFW/firewalld) — reachable only if that ruleset permits this port",

@@ -185,3 +185,52 @@ class TestSeveralScansHangTogether:
         assert sorted(engine.unverified) == ["docker_hardening.scan_error",
                                              "firmware.fwupd_error", "suid_audit.scan_skipped"]
         assert engine.score_is_upper_bound is True
+
+    def test_other_findings_and_the_domain_average_keep_the_ceiling(self, monkeypatch):
+        """Third external review: a deduction and OKs from other checks, then the
+        domain-averaged global score as the run computes it, must not turn the
+        ceiling back into a value."""
+        from bob.checks.suid_audit import SuidSnapshot, check_suid_audit
+        from bob.domain_scores import apply_domain_score_override
+        from bob.scoring import CheckResult
+
+        def _hang(cmd, **kw):
+            raise subprocess.TimeoutExpired(cmd, kw.get("timeout", 10))
+        docker = _docker(monkeypatch, _hang)
+        monkeypatch.setattr("bob.checks.suid_audit.subprocess.run", _hang)
+        monkeypatch.setattr("bob.checks.suid_audit.os.path.isdir", lambda p: True)
+        others = CheckResult()
+        others.warn_with_deduction(key="ssh.password_auth", message="m", reason="r", points=2)
+        others.ok(message="m", key="firewall.active")
+        others.ok(message="m", key="ports.all_covered")
+        others.ok(message="m", key="hardening.aslr_ok")
+        engine = ScoreEngine()
+        for result in (others, check_suid_audit(SuidSnapshot.from_system()),
+                       check_docker_audit(docker), check_firmware(_fwupd(_FROZEN))):
+            engine.apply(result)
+        engine.finalize()
+        apply_domain_score_override(engine)
+        assert engine.blinded_domains == []
+        assert engine.score_is_upper_bound is True
+        assert engine.score < 10
+
+    def test_a_domain_left_with_only_the_blind_scans_is_a_span_not_a_value(self, monkeypatch):
+        """Without any other finding in their domain it drops out of the average
+        (v0.16.2): the score is then given as a span — uncertain, never a value."""
+        from bob.domain_scores import apply_domain_score_override
+        from bob.scoring import CheckResult
+
+        def _hang(cmd, **kw):
+            raise subprocess.TimeoutExpired(cmd, kw.get("timeout", 10))
+        others = CheckResult()
+        others.warn_with_deduction(key="ssh.password_auth", message="m", reason="r", points=2)
+        engine = ScoreEngine()
+        for result in (others, check_docker_audit(_docker(monkeypatch, _hang)),
+                       check_firmware(_fwupd(_FROZEN))):
+            engine.apply(result)
+        engine.finalize()
+        apply_domain_score_override(engine)
+        assert engine.blinded_domains
+        assert engine.score_is_uncertain is True
+        low, high = engine.score_span
+        assert low < high

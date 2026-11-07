@@ -200,11 +200,185 @@ class TestTheRuleOrder:
         assert not res.deductions
 
     def test_the_services_section_reads_it_open_to_the_source(self):
-        assert _classify_exposure("8099/tcp", _E) == Exposure.OPEN_LOCAL
-        assert _allow_rule_source("8099/tcp", _E) == "10.77.0.1"
+        """Open to 10.77.0.1 over IPv4 and to 2001:db8:77::1 (public) over IPv6,
+        both measured; the IPv6 admission was missed until the third review."""
+        assert _classify_exposure("8099/tcp", _E) == Exposure.OPEN_WORLD
+        assert _allow_rule_source("8099/tcp", _E) == "10.77.0.1, 2001:db8:77::1"
+        v4_only = "\n".join(_E.splitlines()[:3]) + "\n"
+        assert _classify_exposure("8099/tcp", v4_only) == Exposure.OPEN_LOCAL
+        assert _allow_rule_source("8099/tcp", v4_only) == "10.77.0.1"
         assert _classify_exposure("8099/tcp", _E_FIRST) == Exposure.DENY
 
     def test_a_reject_for_the_port_is_a_refusal(self):
         """It fell through as if no rule named the port."""
         rules = "[ 1] 8099/tcp                   REJECT IN   Anywhere\n[ 2] Anywhere on h0             ALLOW IN    Anywhere\n"
         assert _classify_exposure("8099/tcp", rules) == Exposure.DENY
+
+
+# Third external review (7 November 2026): a rule matches only its own source.
+# ``ufw status numbered`` as ufw printed it on Kali for each case
+# (review3-ufw.txt); C is a private client (10.77.0.1, fd77::1), P a public one
+# (203.0.113.5, 2001:db8:99::5). "probe" is what P measured.
+_G = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp                   ALLOW IN    10.77.0.1
+[ 3] 8099/tcp                   ALLOW IN    Anywhere
+[ 4] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 5] 8099/tcp                   ALLOW IN    fd77::1
+[ 6] 8099/tcp (v6)              ALLOW IN    Anywhere (v6)
+"""
+_H = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp                   ALLOW IN    10.77.0.1
+[ 3] Anywhere                   ALLOW IN    203.0.113.5
+[ 4] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 5] 8099/tcp                   ALLOW IN    fd77::1
+[ 6] Anywhere (v6)              ALLOW IN    2001:db8:99::5
+"""
+_I = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp                   DENY IN     203.0.113.9
+[ 3] 8099/tcp                   ALLOW IN    Anywhere
+[ 4] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 5] 8099/tcp                   DENY IN     2001:db8:99::9
+[ 6] 8099/tcp (v6)              ALLOW IN    Anywhere (v6)
+"""
+_J = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp                   ALLOW IN    10.77.0.1
+[ 3] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 4] 8099/tcp                   ALLOW IN    fd77::1
+"""
+_K = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp                   DENY IN     Anywhere
+[ 3] Anywhere                   ALLOW IN    203.0.113.5
+[ 4] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 5] 8099/tcp (v6)              DENY IN     Anywhere (v6)
+[ 6] Anywhere (v6)              ALLOW IN    2001:db8:99::5
+"""
+_L = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp                   DENY IN     Anywhere
+[ 3] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 4] Anywhere (v6)              ALLOW IN    2001:db8:99::5
+"""
+_M = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp                   ALLOW OUT   Anywhere                   (out)
+[ 3] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 4] 8099/tcp (v6)              ALLOW OUT   Anywhere (v6)              (out)
+"""
+
+
+class TestEverySourceDecides:
+
+    @pytest.mark.parametrize("rules, exposure, measured", [
+        (_G, Exposure.OPEN_WORLD, "G: P reached it, read restricted to local network"),
+        (_H, Exposure.OPEN_WORLD, "H: P reached it, read restricted to local network"),
+        (_I, Exposure.OPEN_WORLD, "I: P reached it, read explicitly blocked"),
+        (_L, Exposure.OPEN_WORLD, "L: P reached it over IPv6, read explicitly blocked"),
+        (_M, Exposure.NO_RULE, "M: dropped, read open to the internet"),
+        (_J, Exposure.OPEN_LOCAL, "J (polarity): only C reached it"),
+        (_K, Exposure.DENY, "K (polarity): nobody reached it"),
+    ])
+    def test_the_measured_cases(self, rules, exposure, measured):
+        assert _classify_exposure("8099/tcp", rules) == exposure, measured
+
+    def test_two_private_sources_are_not_a_single_host(self):
+        """J: C reached it over IPv4 and IPv6 — two addresses BOB cannot tie to one host."""
+        assert _allow_rule_source("8099/tcp", _J) == "10.77.0.1, fd77::1"
+
+    def test_a_refusal_from_every_source_ends_the_walk(self):
+        assert _ufw.admitting_sources(_K, 8099, "tcp") == ([], True)
+
+    def test_a_refusal_for_one_source_does_not(self):
+        assert _ufw.admitting_sources(_I, 8099, "tcp") == (["Anywhere", "Anywhere"], True)
+
+    def test_an_outgoing_rule_admits_nothing(self):
+        assert _ufw.admitting_sources(_M, 8099, "tcp") == ([], False)
+
+
+class TestTheFamilyOfARule:
+    """ufw marks "(v6)" only a rule naming no address of its own (measured)."""
+
+    @pytest.mark.parametrize("line, v6", [
+        ("[ 5] 8099/tcp                   ALLOW IN    fd77::1", True),
+        ("[ 5] 8099/tcp                   DENY IN     2001:db8:99::9", True),
+        ("[ 6] 8099/tcp (v6)              ALLOW IN    Anywhere (v6)", True),
+        ("[ 2] 8099/tcp                   ALLOW IN    10.77.0.1", False),
+        ("[ 1] 6000:6007/tcp              ALLOW IN    Anywhere", False),
+        ("[ 3] 2001:db8::2 8099/tcp       ALLOW IN    Anywhere", True),
+        ("[ 3] Anywhere                   ALLOW IN    2001:db8:77::1/udp", True),
+    ])
+    def test_the_address_says_the_family(self, line, v6):
+        assert _ufw.is_v6_rule(line) is v6
+
+    def test_an_unmarked_ipv6_rule_covers_an_ipv6_listener(self):
+        from bob.checks.ipv6 import _extract_ufw_v6_covered
+        assert "8099/tcp" in _extract_ufw_v6_covered(_J)
+
+    def test_an_unmarked_ipv6_rule_is_not_an_ipv4_one(self):
+        earlier, action = _ufw.admitted_before_own_rule(_J, 8099, "tcp", v6=False)
+        assert action == "ALLOW"
+        assert _ufw.broad_admits("[ 3] Anywhere                   ALLOW IN    2001:db8:77::1/udp\n",
+                                 v6=False) == []
+
+    def test_the_firewall_section_counts_it_as_ipv6(self):
+        from bob.checks.firewall import _check_ipv6_coverage
+        from bob.scoring import CheckResult
+        lines = [l for l in _J.splitlines() if "(v6)" not in l]
+        result = CheckResult()
+        _check_ipv6_coverage(lines, lambda k, **kw: k, result, True)
+        assert {f.key for f in result.findings} == {"firewall_rules.ipv6_ok"}
+
+
+class TestTheDefaultPolicyDecidesARuleLessPort:
+    """Third review, measured on Kali (review3-allow.txt): UFW active at default
+    allow incoming, 8099 with no rule (or only `allow out 8099`) answered every
+    client, and the services section said "covered by default deny policy"."""
+
+    @staticmethod
+    def _check(policy, exposure=Exposure.NO_RULE, lang="en"):
+        from bob.checks.services import check_services
+        from tests.test_services import make_snapshot
+        snap = make_snapshot(exposures={"22/tcp": exposure})
+        i18n.init(lang)
+        try:
+            return check_services([snap], network_context="local", ufw_active=True,
+                                  t=i18n.t, ufw_incoming_policy=policy)
+        finally:
+            i18n.init("en")
+
+    def test_default_allow_opens_it(self):
+        res = self._check("allow")
+        assert any(d.key == "services.exposed.ssh" for d in res.deductions)
+        assert not any("default deny" in f.message for f in res.findings)
+        assert any("default incoming policy is allow" in f.message for f in res.findings)
+
+    def test_an_outgoing_rule_alone_under_default_allow(self):
+        assert _classify_exposure("8099/tcp", _M) == Exposure.NO_RULE
+        assert any(d.key == "services.exposed.ssh" for d in self._check("allow").deductions)
+
+    @pytest.mark.parametrize("policy", ["deny", "reject"])
+    def test_default_deny_covers_it(self, policy):
+        """Polarity twin: the measured norm."""
+        res = self._check(policy)
+        assert not res.deductions
+        assert any("covered by default deny" in f.message for f in res.findings)
+
+    def test_an_unread_policy_is_not_called_deny(self):
+        res = self._check("unknown", lang="fr")
+        assert not res.deductions
+        assert not any("deny par défaut" in f.message for f in res.findings)
+        assert any("n'a pas pu être lue" in f.message for f in res.findings)
+
+    def test_the_run_hands_the_policy(self):
+        import ast
+        from pathlib import Path
+        src = (Path(__file__).resolve().parent.parent / "bob" / "runner.py").read_text(encoding="utf-8")
+        calls = [n for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Call)
+                 and getattr(n.func, "id", "") == "check_single_service_display"]
+        assert calls and all(any(k.arg == "ufw_incoming_policy" for k in c.keywords) for c in calls)
+
+    def test_the_display_path_hands_it_on(self, capsys):
+        from bob.display import check_single_service_display
+        from tests.test_services import make_snapshot
+        snap = make_snapshot(exposures={"22/tcp": Exposure.NO_RULE})
+        report = type("R", (), {"write_finding": lambda self, *a, **k: None})()
+        res = check_single_service_display(snap, "local", i18n.t, report, False, quiet=True,
+                                           ufw_active=True, ufw_incoming_policy="allow")
+        assert any(d.key == "services.exposed.ssh" for d in res.deductions)
