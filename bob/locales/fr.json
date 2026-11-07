@@ -273,6 +273,8 @@
       "open_world": "exposé sur internet — règle UFW autorise depuis toutes les adresses (Anywhere)",
       "open_local": "restreint au réseau local par règle UFW",
       "open_local_host": "restreint au seul hôte {source} par règle UFW",
+      "open_local_default_allow": "ouvert à tous — ses règles UFW n'admettent ce port que depuis {source}, mais aucune règle ne le refuse aux autres clients, et la politique UFW par défaut pour l'entrant est allow",
+      "open_local_policy_unread": "admis depuis {source} par ses règles UFW ; aucune règle ne le refuse aux autres clients, et la politique UFW par défaut pour l'entrant n'a pas pu être lue : ce qui atteint d'autre ce port n'est pas établi",
       "deny": "bloqué explicitement par règle UFW",
       "deny_in_part_default_allow": "ouvert à tous ceux que ses règles UFW ne refusent pas — elles ne refusent ce port que pour certaines sources, interfaces, adresses ou une seule famille, et la politique UFW par défaut pour l'entrant est allow",
       "no_rule": "couvert par la politique deny par défaut (aucune règle UFW explicite nécessaire)",

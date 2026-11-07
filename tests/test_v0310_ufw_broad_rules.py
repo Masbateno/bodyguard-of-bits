@@ -519,3 +519,78 @@ class TestARefusalInPart:
     def test_a_port_nothing_listens_on_stays_unreached(self, monkeypatch):
         snap, res = self._check(_R4R, "allow", monkeypatch, listening=())
         assert snap.refused_in_part == frozenset() and not res.deductions
+
+
+# v0.31.0, tenth review — measured on Kali (review10-ufw.txt): rules admitting 8099
+# from the private client only, at default allow (W1, W4) or default deny (W3),
+# and the same followed by `deny 8099` at default allow (W2, the polarity twin).
+_R10W1 = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp                   ALLOW IN    10.77.0.1
+[ 3] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 4] 8099/tcp                   ALLOW IN    fd77::1
+"""
+_R10W2 = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp                   ALLOW IN    10.77.0.1
+[ 3] 8099/tcp                   DENY IN     Anywhere
+[ 4] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 5] 8099/tcp                   ALLOW IN    fd77::1
+[ 6] 8099/tcp (v6)              DENY IN     Anywhere (v6)
+"""
+_R10W3 = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp                   ALLOW IN    10.77.0.1
+[ 3] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 4] 8099/tcp                   ALLOW IN    fd77::1
+"""
+_R10W4 = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp                   ALLOW IN    10.77.0.1
+[ 3] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+"""
+
+
+class TestAnAdmissionInPart:
+    """Tenth review. Rules that admit the port from private sources only, and
+    refuse it to no one else, leave the other clients to UFW's default
+    incoming policy: at default allow, a public client reached 8099 while the
+    services section said "restricted to local network"."""
+
+    _check = staticmethod(TestARefusalInPart._check)
+
+    @pytest.mark.parametrize("rules, policy, opened", [
+        (_R10W1, "allow", True), (_R10W2, "allow", False),
+        (_R10W3, "deny", False), (_R10W4, "allow", True),
+    ])
+    def test_measured(self, rules, policy, opened, monkeypatch):
+        _snap, res = self._check(rules, policy, monkeypatch)
+        assert any(d.key == "services.exposed.ssh" for d in res.deductions) is opened
+        assert not any("restricted to" in f.message for f in res.findings) is opened
+
+    def test_the_reason_names_the_source(self, monkeypatch):
+        _snap, res = self._check(_R10W4, "allow", monkeypatch)
+        assert any("admit this port from 10.77.0.1 only" in f.message for f in res.findings)
+
+    @pytest.mark.parametrize("policy", ["deny", "reject"])
+    def test_default_deny_keeps_it_local(self, policy, monkeypatch):
+        """Polarity twin of the policy."""
+        _snap, res = self._check(_R10W1, policy, monkeypatch)
+        assert not res.deductions
+        assert any(f.key == "services.exposure.open_local" for f in res.findings)
+
+    def test_an_unread_policy_is_not_called_restricted(self, monkeypatch):
+        _snap, res = self._check(_R10W4, "unknown", monkeypatch, lang="fr")
+        assert not res.deductions
+        assert not any(f.key == "services.exposure.open_local_host" for f in res.findings)
+        assert any("n'a pas pu être lue" in f.message for f in res.findings)
+
+    def test_the_snapshot_carries_it(self, monkeypatch):
+        snap, _res = self._check(_R10W1, "deny", monkeypatch)
+        assert snap.admitted_in_part == frozenset({"8099/tcp"})
+        snap, _res = self._check(_R10W2, "deny", monkeypatch)
+        assert snap.admitted_in_part == frozenset()
+
+    def test_a_loopback_listener_stays_unreached(self, monkeypatch):
+        snap, res = self._check(_R10W1, "allow", monkeypatch, loopback={"8099/tcp"})
+        assert snap.admitted_in_part == frozenset() and not res.deductions
+
+    def test_a_port_nothing_listens_on_stays_unreached(self, monkeypatch):
+        snap, res = self._check(_R10W1, "allow", monkeypatch, listening=())
+        assert snap.admitted_in_part == frozenset() and not res.deductions

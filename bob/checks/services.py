@@ -170,6 +170,10 @@ class ServiceSnapshot:
     # whose rules refuse them only in part (one source, interface, address or
     # family): UFW's default incoming policy decides the rest.
     refused_in_part: frozenset = frozenset()
+    # v0.31.0, tenth review — OPEN_LOCAL ports, listening and not on loopback
+    # alone, whose rules admit them from private sources and refuse them to no
+    # one else in some family: UFW's default incoming policy decides the rest.
+    admitted_in_part: frozenset = frozenset()
 
     @property
     def label(self) -> str:
@@ -232,13 +236,17 @@ class ServiceSnapshot:
                 for port in ports:
                     if port not in all_listening_ports and exposures.get(port) == Exposure.NO_RULE:
                         exposures[port] = Exposure.NOT_LISTENING
-            refused_in_part = frozenset(
-                port for port in ports
-                if exposures[port] == Exposure.DENY and port not in (loopback_ports or ())
-                and (all_listening_ports is None or port in all_listening_ports)
-                and port.partition("/")[0].isdigit()
-                and not _ufw.refusal_closes(ufw_rules, int(port.partition("/")[0]),
-                                            port.partition("/")[2] or "tcp", app_profiles))
+
+            def _left_to_default(kind: Exposure) -> frozenset:
+                return frozenset(
+                    port for port in ports
+                    if exposures[port] == kind and port not in (loopback_ports or ())
+                    and (all_listening_ports is None or port in all_listening_ports)
+                    and port.partition("/")[0].isdigit()
+                    and not _ufw.refusal_closes(ufw_rules, int(port.partition("/")[0]),
+                                                port.partition("/")[2] or "tcp", app_profiles))
+            refused_in_part = _left_to_default(Exposure.DENY)
+            admitted_in_part = _left_to_default(Exposure.OPEN_LOCAL)
         else:
             state     = ServiceState.UNKNOWN
             trigger   = ""
@@ -246,6 +254,7 @@ class ServiceSnapshot:
             exposures = {}
             local_sources = {}
             refused_in_part = frozenset()
+            admitted_in_part = frozenset()
 
         return cls(
             service=service,
@@ -257,6 +266,7 @@ class ServiceSnapshot:
             exposures=exposures,
             local_sources=local_sources,
             refused_in_part=refused_in_part,
+            admitted_in_part=admitted_in_part,
         )
 
     @classmethod
@@ -655,6 +665,24 @@ def _check_port_exposure(
             port_msg = _t("services.port_exposure", port=port,
                           exposure=_t("services.exposure.no_rule_policy_unread"))
 
+    # v0.31.0, tenth review — rules that admit the port from private sources
+    # only, and refuse it to no one else, leave the other clients to the
+    # default policy. Measured on Kali (review10-ufw.txt), default allow:
+    # `allow 8099 from <private>` left 8099 answering a public client, read
+    # "restricted to local network" (or "to the single host").
+    rest_unread = False
+    if (exposure == Exposure.OPEN_LOCAL and ufw_active
+            and port in getattr(snap, "admitted_in_part", frozenset())):
+        local = (getattr(snap, "local_sources", None) or {}).get(port, "").replace("(v6)", "").strip()
+        if ufw_incoming_policy == "allow":
+            exposure = Exposure.OPEN_WORLD
+            port_msg = _t("services.port_exposure", port=port,
+                          exposure=_t("services.exposure.open_local_default_allow", source=local))
+        elif ufw_incoming_policy not in ("deny", "reject"):
+            rest_unread = True
+            port_msg = _t("services.port_exposure", port=port,
+                          exposure=_t("services.exposure.open_local_policy_unread", source=local))
+
     if exposure == Exposure.OPEN_WORLD:
         # High/critical services exposed to internet get extra penalty in public context
         base_points = 1
@@ -688,7 +716,7 @@ def _check_port_exposure(
         # local network", and the advice to restrict it further does not apply
         # (measured on the Mint desktop: Samba 445/139 ALLOW IN 192.168.1.11).
         source = (getattr(snap, "local_sources", None) or {}).get(port, "")
-        if _single_host(source):
+        if _single_host(source) and not rest_unread:
             result.info(
                 message=_t("services.port_exposure", port=port,
                            exposure=_t("services.exposure.open_local_host",
