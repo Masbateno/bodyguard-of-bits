@@ -7195,6 +7195,14 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         reason='data in clear on a portable host weighs as a plain root does',
     ),
     Mutation(
+        id='suid-scan-skipped/not-a-visibility-limit',
+        file='bob/visibility.py',
+        old='    "suid_audit.scan_skipped",\n',
+        new='',
+        kills=('tests/test_v0310_suid_scan_skipped.py::TestATimedOutScanIsNotAClean::test_the_skipped_scan_bounds_the_score',),
+        reason='measured on Kali: a cold SUID find timed out, its −1 vanished and the score did not say it was a ceiling',
+    ),
+    Mutation(
         id='disk-beyond-root/undecided-not-visibility',
         file='bob/visibility.py',
         old='    "disk_encryption.data_unknown",\n',

@@ -140,6 +140,10 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "ssh.config_unreadable",
     "ssl_certs.dir_unreadable",
     "suid_audit.ok_partial",
+    # v0.31.0 — the find over the SUID roots timed out or failed: its −1 is
+    # unknown. Measured on Kali (rotating disk): 55 s cold for a 30 s budget,
+    # 1.5 s warm — a cron audit lost the check and the score did not say so.
+    "suid_audit.scan_skipped",
     "file_capabilities.partial",
     "file_capabilities.unknown",
     "cpu_security.unknown",
