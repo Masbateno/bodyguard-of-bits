@@ -156,11 +156,12 @@ class TestTheFix:
         assert fix["cmd"].startswith("sudo sysctl -w net.ipv4.conf.all.send_redirects=0 "
                                      "net.ipv4.conf.default.send_redirects=0 net.ipv4.conf.enp3s0.send_redirects=0 && ")
         assert "tee -a /etc/sysctl.d/99-hardening.conf" in fix["cmd"]
-        assert "enp3s0" not in fix["cmd"].split("&&", 1)[1]
+        # v0.31.1 — the interface's own value is persisted too.
+        assert "net.ipv4.conf.enp3s0.send_redirects=0 | sudo tee" in fix["cmd"].split("&&", 1)[1]
         assert fix["fix_action"]["params"] == [
             {"param": "net.ipv4.conf.all.send_redirects=0", "conf": "/etc/sysctl.d/99-hardening.conf"},
             {"param": "net.ipv4.conf.default.send_redirects=0", "conf": "/etc/sysctl.d/99-hardening.conf"},
-            {"param": "net.ipv4.conf.enp3s0.send_redirects=0", "conf": ""},
+            {"param": "net.ipv4.conf.enp3s0.send_redirects=0", "conf": "/etc/sysctl.d/99-hardening.conf"},
         ]
 
     def test_the_finding_names_the_interfaces_and_fixes_them(self):

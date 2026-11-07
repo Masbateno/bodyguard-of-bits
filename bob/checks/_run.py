@@ -484,16 +484,24 @@ def sysctl_fix_ifaces(prefix: str, knob: str, value: str, ifaces, conf: str = SY
     applies conf/all OR the interface: measured on Ubuntu 26.04, conf/all went
     to 0, enp3s0 stayed at 1, and BOB said fixed. *prefix* is
     ``net.ipv4.conf`` or ``net.ipv6.conf``.
+
+    v0.31.1 — each named interface's value is persisted too (decided 7
+    November 2026). An interface created before conf/default reaches its new
+    value keeps its own: on a Mint desktop UFW applies /etc/ufw/sysctl.conf
+    (all and default at 0) once enp10s0 exists, which stayed at 1. Measured on
+    Kali (sysctl-iface-udev.txt): systemd's udev rule runs systemd-sysctl for
+    each interface as it appears, so a key written for it is applied then
+    (0), where a persisted conf/default alone left an interface created while
+    the running default was 1 at 1.
     """
-    persist = [f"{prefix}.all.{knob}={value}", f"{prefix}.default.{knob}={value}"]
-    runtime = [f"{prefix}.{name}.{knob}={value}" for name in ifaces if name not in ("all", "default")]
+    persist = ([f"{prefix}.all.{knob}={value}", f"{prefix}.default.{knob}={value}"]
+               + [f"{prefix}.{name}.{knob}={value}" for name in ifaces if name not in ("all", "default")])
     confs = {param: (durable_sysctl_conf(param, boot, conf) if boot else conf) for param in persist}
-    sets = " ".join(persist + runtime)
+    sets = " ".join(persist)
     saves = "; ".join(append_once(param, confs[param]) for param in persist)
     return {"cmd": f"sudo sysctl -w {sets} && {{ {saves}; }}",
             "fix_action": {"kind": "sysctl",
-                           "params": ([{"param": param, "conf": confs[param]} for param in persist]
-                                      + [{"param": param, "conf": ""} for param in runtime])}}
+                           "params": [{"param": param, "conf": confs[param]} for param in persist]}}
 
 
 #: The SSH server unit, spelled differently depending on who packaged it.
