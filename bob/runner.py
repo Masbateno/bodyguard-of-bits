@@ -29,6 +29,7 @@ from bob.output import print_group, print_info, print_section, print_service_hea
 from bob.registry import ServiceRegistry
 from bob.report import AuditReport, Report
 from bob.scoring import CheckResult, ScoreEngine
+from bob.sysinfo import shown_network_context
 from bob.checks import _ufw
 from bob.checks.ddns import DdnsSnapshot, check_ddns, ddns_effective_context
 from bob.checks.auth_log import AuthLogSnapshot, check_auth_log
@@ -937,7 +938,8 @@ def run_checks(
                 _port_note = t("service_risk.nonstandard_port_note")
             display_risk_context(snap.service.label, config.lang, t, report,
                                  context_note=_risk_note,
-                                 is_local=(network_context == "local"),
+                                 is_local=(shown_network_context(
+                                     network_context, ipv6_snapshot.has_global_ipv6) == "local"),
                                  quiet=config.quiet)
             if _port_note and not config.quiet:
                 print_info(_port_note)

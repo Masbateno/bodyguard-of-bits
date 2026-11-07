@@ -514,6 +514,23 @@ def get_public_ip(offline: bool = False) -> str:
     return ""
 
 
+def shown_network_context(network_context: str, has_global_ipv6: bool) -> str:
+    """The network context as the report states it — display only.
+
+    v0.31.0. ``detect_network_context`` answers "local" as soon as the IPv4
+    gateway is private, before it looks at IPv6 — so a dual-stack home router
+    (IPv4 behind NAT, a global IPv6 address handed to each host) read "local
+    network only" and "behind NAT / no direct public IP". Measured on a real
+    Kali behind a Freebox with its IPv6 firewall off: a phone on mobile data
+    reached the host's ``[::]:8080`` from outside the home prefix. Whether the
+    router filters inbound IPv6 cannot be seen from the host, so the label says
+    exactly that. The context the checks score with is unchanged ("local").
+    """
+    if network_context == "local" and has_global_ipv6:
+        return "local_v6"
+    return network_context
+
+
 def detect_network_context(offline: bool = False) -> tuple[str, str]:
     """
     Detect whether the machine has a direct public IP.

@@ -432,7 +432,8 @@
     "context": {
       "local": "Réseau local uniquement",
       "public": "IP publique directe",
-      "ddns": "Exposition publique via DDNS"
+      "ddns": "Exposition publique via DDNS",
+      "local_v6": "IPv4 en NAT, IPv6 publique (filtrage box non vérifié)"
     },
     "posture": {
       "firewall_inactive": "majoré par posture : pare-feu inactif",
@@ -4292,7 +4293,8 @@
     "updates_stale": "état inconnu — cache APT obsolète",
     "updates_inconsistent": "état inconnu — état des paquets APT incohérent",
     "updates_no_channel": "mises à jour en attente — pas de canal sécurité pour classer",
-    "updates_ok": "à jour"
+    "updates_ok": "à jour",
+    "internet_facing_local_v6": "IPv4 derrière NAT ; l'hôte a une adresse IPv6 publique directe — le filtrage par la box n'est pas vérifiable d'ici"
   },
   "corr": {
     "section_title": "RISQUES COMPOSÉS",

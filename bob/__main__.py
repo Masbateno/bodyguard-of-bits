@@ -76,7 +76,9 @@ from bob.runner import (
     sections_run,
 )
 from bob.scoring import ScoreEngine
-from bob.sysinfo import collect_system_info, detect_default_profile, detect_network_context
+from bob.sysinfo import (
+    collect_system_info, detect_default_profile, detect_network_context, shown_network_context,
+)
 
 # ---------------------------------------------------------------------------
 # Exit codes — STABLE PUBLIC API
@@ -707,6 +709,10 @@ def _run(argv=None) -> int:
             net_snapshot       = result.net_snapshot
             hardening_snapshot = result.hardening_snapshot
             ipv6_snapshot      = result.ipv6_snapshot
+            # v0.31.0 — what the report says of the network; the checks
+            # keep scoring with network_context.
+            shown_context      = shown_network_context(network_context,
+                                                       ipv6_snapshot.has_global_ipv6)
             fw_active          = result.fw_active
             fw_policy          = result.fw_policy
             fw_backend         = result.fw_backend
@@ -796,7 +802,7 @@ def _run(argv=None) -> int:
             # report.write_* calls always run so the .log file remains
             # complete". The gate is now where that sentence says it is.
             audit_seconds = _time.monotonic() - _audit_started
-            print_audit_summary(engine, network_context, public_ip, config, t, report, snapshots,
+            print_audit_summary(engine, shown_context, public_ip, config, t, report, snapshots,
                                 profile_name=active_profile.name,
                                 prev_score=prev_baseline.score if prev_baseline else None,
                                 fw_policy=fw_policy,
@@ -815,7 +821,7 @@ def _run(argv=None) -> int:
                                                   config=config):
                     print(_line)
                 print()
-                _exposure = compute_exposure(engine, ports_snapshot, network_context,
+                _exposure = compute_exposure(engine, ports_snapshot, shown_context,
                                              fw_active, fw_policy, t,
                                              fw_backend=fw_backend,
                                              fw_unread=fw_unread)
@@ -829,7 +835,7 @@ def _run(argv=None) -> int:
             report.write_risk_context_section(
                 section_title=t("sections.risk_context"),
                 entries=build_risk_context_entries(snapshots, config.lang, t,
-                                                   network_context=network_context),
+                                                   network_context=shown_context),
             )
             report.write_next_steps(
                 [t("report.next_1"), t("report.next_2"), t("report.next_3")],

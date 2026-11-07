@@ -72,6 +72,14 @@ def compute_exposure(
             icon="⚠", color="warn",
             detail=t("exposure.internet_facing_ddns"),
         ))
+    elif network_context == "local_v6":
+        # v0.31.0 — IPv4 behind NAT, a global IPv6 address on the host
+        # (sysinfo.shown_network_context): not "no direct public IP".
+        items.append(ExposureItem(
+            label=t("exposure.internet_facing"),
+            icon="⚠", color="warn",
+            detail=t("exposure.internet_facing_local_v6"),
+        ))
     else:
         items.append(ExposureItem(
             label=t("exposure.internet_facing"),

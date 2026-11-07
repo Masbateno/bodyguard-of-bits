@@ -432,7 +432,8 @@
     "context": {
       "local": "Local network only",
       "public": "Direct public IP",
-      "ddns": "Public exposure via DDNS"
+      "ddns": "Public exposure via DDNS",
+      "local_v6": "IPv4 behind NAT, public IPv6 (router filter unverified)"
     },
     "posture": {
       "firewall_inactive": "raised by posture: firewall inactive",
@@ -4292,7 +4293,8 @@
     "updates_stale": "state unknown — APT cache stale",
     "updates_inconsistent": "state unknown — APT package state inconsistent",
     "updates_no_channel": "updates pending — no security channel to classify",
-    "updates_ok": "up to date"
+    "updates_ok": "up to date",
+    "internet_facing_local_v6": "IPv4 behind NAT; the host has a direct public IPv6 address — whether the router filters it cannot be checked from here"
   },
   "corr": {
     "section_title": "COMPOUND RISKS",
