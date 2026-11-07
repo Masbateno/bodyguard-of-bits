@@ -87,3 +87,21 @@ def test_the_runner_hands_whether_ipv4_is_behind_nat():
              and isinstance(n.args[0], ast.Constant) and n.args[0].value == "ipv6"]
     kw = {k.arg: k.value for k in calls[0].keywords}
     assert "behind_ipv4_nat" in kw and ast.unparse(kw["behind_ipv4_nat"]) == "network_context == 'local'"
+
+
+class TestWhatIsSaid:
+    """A ceiling for what BOB cannot read is not called an exposure."""
+
+    @staticmethod
+    def _message(**kw):
+        res = check_ipv6(_snap(ufw_present=False), ufw_active=False, t=_t, behind_ipv4_nat=True, **kw)
+        return next(f.message for f in res.findings if f.key == KEY)
+
+    def test_reachable(self):
+        assert self._message().startswith("ipv6.router_filter_unverified")
+        assert "unweighed" not in self._message()
+
+    def test_a_default_drop_not_weighed_port_by_port(self):
+        msg = self._message(netfilter_active=True, netfilter_v6_policy="DROP")
+        assert "ipv6.router_filter_unverified_unweighed" in msg
+

@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from bob.checks._run import (TranslationFunc, _identity_t, read_sysctl_boot_files, report_boot_drift, sysctl_fix,
-                             sysctl_fix_ifaces)
+                             sysctl_fix_ifaces, sysctl_iface_key, sysctl_relpath)
 from bob.scoring import CheckResult
 
 
@@ -502,7 +502,7 @@ def _effective_rp_filter() -> "tuple[int | None, int | None, str]":
     except OSError:
         ifaces = []
     for name in ifaces:
-        iface_val = _read_sysctl_int(f"net.ipv4.conf.{name}.rp_filter")
+        iface_val = _read_sysctl_int(sysctl_iface_key("net.ipv4.conf", name, "rp_filter"))
         if iface_val is None:
             continue
         effective = max(all_val, iface_val)
@@ -550,7 +550,7 @@ def _effective_by_iface(knob: str, rule: str, family: str = "ipv4") -> "dict[str
     prefix = "net.ipv6.conf" if family == "ipv6" else "net.ipv4.conf"
 
     def read(name: str, k: str) -> "bool | None":
-        return _read_sysctl_bool(f"{prefix}.{name}.{k}")
+        return _read_sysctl_bool(sysctl_iface_key(prefix, name, k))
 
     all_on = read("all", knob)
     if all_on is None:
@@ -601,7 +601,7 @@ def _read_sysctl_int(key: str) -> "int | None":
 
     See ``_read_sysctl_bool`` for why there is no default.
     """
-    path = Path("/proc/sys") / key.replace(".", "/")
+    path = Path("/proc/sys") / sysctl_relpath(key)
     try:
         return int(path.read_text(encoding="ascii", errors="ignore").strip())
     except (OSError, ValueError):
@@ -621,7 +621,7 @@ def _read_sysctl_bool(key: str) -> "bool | None":
 
     None means "not read", which is a distinct answer from any value.
     """
-    path = Path("/proc/sys") / key.replace(".", "/")
+    path = Path("/proc/sys") / sysctl_relpath(key)
     try:
         val = path.read_text(encoding="ascii", errors="ignore").strip()
         return val == "1"

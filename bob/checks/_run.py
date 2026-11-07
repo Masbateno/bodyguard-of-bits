@@ -313,6 +313,31 @@ def config_drifted(newest_mtime: float, applied: float) -> bool:
 SYSCTL_CONF = "/etc/sysctl.d/99-hardening.conf"
 
 
+def sysctl_iface_key(prefix: str, name: str, knob: str) -> str:
+    """v0.31.1 — the sysctl key of *knob* on interface *name*, a dot inside the
+    name written ``/`` (sysctl(8), sysctl.d(5): the first separator is a dot,
+    so a slash stands for a dot inside a component).
+
+    Measured on Kali (dotted-iface.txt), a VLAN named bob.99:
+    ``sysctl -w net.ipv4.conf.bob.99.send_redirects=0`` failed (".../conf/bob/
+    99/send_redirects": no such file), while ``net.ipv4.conf.bob/99.…`` set it,
+    on the command line and in a file. BOB read the dotted form, so the VLAN
+    sending redirects (conf/all at 0, bob.99 at 1) was left out and read OK.
+    """
+    return f"{prefix}.{name.replace('.', '/')}.{knob}"
+
+
+def sysctl_relpath(key: str) -> str:
+    """v0.31.1 — the path of a sysctl *key* under /proc/sys: a dot separates,
+    a slash stands for a dot inside a component (see :func:`sysctl_iface_key`)."""
+    return key.translate(str.maketrans("./", "/."))
+
+
+def sysctl_path(key: str) -> Path:
+    """The /proc/sys file of a sysctl *key* (:func:`sysctl_relpath`)."""
+    return Path("/proc/sys") / sysctl_relpath(key)
+
+
 def append_once(line: str, path: str) -> str:
     """A shell command that adds *line* to *path* only if it is not there yet.
 
@@ -495,9 +520,9 @@ def sysctl_fix_ifaces(prefix: str, knob: str, value: str, ifaces, conf: str = SY
     the running default was 1 at 1.
     """
     persist = ([f"{prefix}.all.{knob}={value}", f"{prefix}.default.{knob}={value}"]
-               + [f"{prefix}.{name}.{knob}={value}" for name in ifaces if name not in ("all", "default")])
+               + [f"{sysctl_iface_key(prefix, name, knob)}={value}" for name in ifaces if name not in ("all", "default")])
     confs = {param: (durable_sysctl_conf(param, boot, conf) if boot else conf) for param in persist}
-    sets = " ".join(persist)
+    sets = " ".join(shlex.quote(param) for param in persist)
     saves = "; ".join(append_once(param, confs[param]) for param in persist)
     return {"cmd": f"sudo sysctl -w {sets} && {{ {saves}; }}",
             "fix_action": {"kind": "sysctl",

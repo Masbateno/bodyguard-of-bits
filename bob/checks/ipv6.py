@@ -266,6 +266,12 @@ _V6_NOT_CLOSED = frozenset({
     "ipv6.firewalld_v6_open", "ipv6.firewalld_unread", "ipv6.listeners_unknown",
     "ipv6.ufw_disabled_listeners_present", "ipv6.ufw_config_unreadable", "ipv6.kernel_state_unknown",
 })
+#: Among them, those whose listeners the host's rules leave reachable.
+_V6_REACHABLE = frozenset({
+    "ipv6.port_no_v6_rule", "ipv6.ports_broad_rule", "ipv6.ports_refused_after_broad_rule",
+    "ipv6.all_ports_covered", "ipv6.netfilter_v6_open", "ipv6.no_firewall_v6",
+    "ipv6.firewalld_v6_open", "ipv6.ufw_disabled_listeners_present",
+})
 
 
 def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None, firewalld_active: bool = False, netfilter_active: bool = False, firewalld_policy: str = "", netfilter_v6_policy: str = "unknown", firewalld_family_rules: tuple = (), netfilter_v6_drop_chains: tuple = (), firewalld_unread: bool = False,
@@ -297,8 +303,12 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
     emitted = {f.key for f in result.findings}
     allowed_by_rule = bool(set(snapshot.ipv6_listeners) & set(snapshot.ufw_v6_covered or ()))
     if emitted & _V6_NOT_CLOSED or allowed_by_rule:
+        # Reachable by the host's rules, or only not established there (a
+        # filtering BOB detects but does not weigh port by port): said apart,
+        # so a ceiling for what BOB cannot read is not read as an exposure.
+        reachable = allowed_by_rule or bool(emitted & _V6_REACHABLE)
         result.info(
-            message=_t("ipv6.router_filter_unverified",
+            message=_t("ipv6.router_filter_unverified" if reachable else "ipv6.router_filter_unverified_unweighed",
                        ports=", ".join(snapshot.ipv6_listeners) or "?"),
             detail=_t("ipv6.router_filter_unverified_detail"),
             key="ipv6.router_filter_unverified",

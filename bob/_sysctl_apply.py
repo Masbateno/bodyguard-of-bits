@@ -27,7 +27,9 @@ from bob._atomic import atomic_write
 
 #: `key = value`, with the keys the kernel actually exposes. Anything else is
 #: refused rather than passed to a subprocess: this value reaches argv.
-_PARAM_RE = re.compile(r"^([a-z0-9_]+(?:\.[a-z0-9_*-]+)+)=([A-Za-z0-9 ._:+-]+)$")
+# v0.31.1 — a component may hold "/" (a dot inside an interface name, as
+# sysctl writes it) and capitals (interface names).
+_PARAM_RE = re.compile(r"^([a-z0-9_]+(?:\.[A-Za-z0-9_*/-]+)+)=([A-Za-z0-9 ._:+-]+)$")
 
 _TIMEOUT = 10
 
@@ -66,7 +68,8 @@ def parse_param(param: str) -> "tuple[str, str] | None":
 
 def _read_live(key: str) -> "str | None":
     """The kernel's current value, or None when it cannot be read."""
-    path = Path("/proc/sys") / key.replace(".", "/")
+    from bob.checks._run import sysctl_path
+    path = sysctl_path(key)
     try:
         return path.read_text(encoding="utf-8", errors="replace").strip()
     except OSError:
