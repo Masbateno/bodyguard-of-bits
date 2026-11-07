@@ -235,6 +235,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("Kernel Modules", [
         "kernel_modules.risky_fs",
+        "kernel_modules.usb_storage",
         "kernel_modules.risky_net",
         "kernel_modules.kernels_obsolete",
         "kernel_modules.kernels_reboot_pending",

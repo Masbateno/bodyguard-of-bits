@@ -1541,6 +1541,9 @@
     "no_lsmod": "lsmod non disponible — vérification des modules noyau ignorée",
     "risky_fs": "Module(s) de système de fichiers à risque chargé(s) : {modules}",
     "risky_fs_detail": "Ces modules sont rarement nécessaires sur un serveur et élargissent la surface d'attaque. Déchargez-les et placez-les en liste noire.",
+    "usb_storage": "Pilote de stockage de masse USB chargé (usb_storage) — des disques et clés USB peuvent être branchés et lus sur cet hôte",
+    "usb_storage_reason": "Pilote de stockage de masse USB chargé (usb_storage)",
+    "usb_storage_detail": "usb_storage (avec uas, qui le tient quand il est chargé) permet au noyau de piloter disques et clés USB : un moyen de sortir des données ou d'introduire du code sur un serveur qui n'en a pas l'usage. Il ne se décharge que si aucun disque USB n'est en cours d'utilisation ; pour l'empêcher de se charger, ajouter 'install usb-storage /bin/false' sous /etc/modprobe.d. Sur un poste de travail, c'est un usage ordinaire, signalé sans déduction.",
     "risky_fs_reason": "Module(s) de système de fichiers à risque chargé(s) : {modules}",
     "risky_net": "Module(s) de protocole réseau à risque chargé(s) : {modules}",
     "risky_net_detail": "Ces protocoles (DCCP, SCTP, RDS, TIPC) sont rarement utilisés et ont un historique d'exploits noyau. Déchargez-les et placez-les en liste noire.",
@@ -2665,8 +2668,8 @@
       },
       "risky_fs": {
         "title": "Modules noyau de systèmes de fichiers risqués chargés",
-        "why": "Les pilotes de systèmes de fichiers (cramfs, freevxfs, hfs, hfsplus, jffs2, squashfs, udf, usb_storage) élargissent inutilement la surface d'attaque du noyau. Des vulnérabilités dans ces pilotes peuvent être déclenchées en montant une image de système de fichiers malveillante ou en insérant un périphérique USB, permettant potentiellement une escalade de privilèges ou une exécution de code arbitraire dans l'espace noyau.",
-        "how": "1. Déchargez le module maintenant :\n   sudo modprobe -r <nom_du_module>\n2. Mettez-le sur liste noire pour empêcher le rechargement :\n   echo 'blacklist <module>' | sudo tee -a /etc/modprobe.d/blacklist-rare-fs.conf\n   echo 'install <module> /bin/false' | sudo tee -a /etc/modprobe.d/blacklist-rare-fs.conf\n3. Reconstruisez l'initramfs :\n   sudo update-initramfs -u\nNote : ne bloquez que les modules que votre système n'utilise pas (ex : usb_storage est nécessaire pour les clés USB).",
+        "why": "Les pilotes de systèmes de fichiers (cramfs, freevxfs, hfs, hfsplus, jffs2, squashfs, udf) élargissent inutilement la surface d'attaque du noyau. Des vulnérabilités dans ces pilotes peuvent être déclenchées en montant une image de système de fichiers malveillante, permettant potentiellement une escalade de privilèges ou une exécution de code arbitraire dans l'espace noyau.",
+        "how": "1. Déchargez le module maintenant :\n   sudo modprobe -r <nom_du_module>\n2. Mettez-le sur liste noire pour empêcher le rechargement :\n   echo 'blacklist <module>' | sudo tee -a /etc/modprobe.d/blacklist-rare-fs.conf\n   echo 'install <module> /bin/false' | sudo tee -a /etc/modprobe.d/blacklist-rare-fs.conf\n3. Reconstruisez l'initramfs :\n   sudo update-initramfs -u\nNote : ne bloquez que les modules que votre système n'utilise pas (ex : udf est nécessaire pour les DVD).",
         "server": {
           "why": "Les modules de systèmes de fichiers exotiques (cramfs, freevxfs, hfs, hfsplus, jffs2, squashfs, udf) élargissent la surface d'attaque du noyau sur un serveur. Des vulnérabilités dans ces pilotes peuvent être déclenchées par une image de fichiers malveillante, permettant potentiellement une escalade de privilèges en espace noyau."
         },
@@ -2676,6 +2679,20 @@
         "container": {
           "why": "Le chargement de modules noyau est restreint par défaut dans les containers (CAP_SYS_MODULE non accordée). Cette détection n'est pas réalisable depuis un container — traitez-la sur le système hôte.",
           "how": "Appliquer sur le système hôte :\n   echo 'blacklist <module>' | sudo tee -a /etc/modprobe.d/blacklist-rare-fs.conf\n   echo 'install <module> /bin/false' | sudo tee -a /etc/modprobe.d/blacklist-rare-fs.conf\n   sudo update-initramfs -u"
+        }
+      },
+      "usb_storage": {
+        "title": "Pilote de stockage de masse USB chargé",
+        "why": "usb_storage est le pilote noyau des disques et clés USB (uas, quand il est chargé, repose dessus). Sur un serveur qui n'a jamais besoin de stockage amovible, c'est un moyen de sortir des données ou d'introduire du code par un port USB, et un pilote qu'on atteint en branchant un périphérique forgé.",
+        "how": "1. Le décharger maintenant (seulement si aucun disque USB n'est utilisé ; uas d'abord quand il est chargé) :\n   sudo modprobe -r uas usb_storage\n2. L'empêcher de se charger :\n   echo 'install usb-storage /bin/false' | sudo tee /etc/modprobe.d/usb-storage.conf\n3. Reconstruire l'initramfs :\n   sudo update-initramfs -u",
+        "server": {
+          "why": "Sur un serveur qui n'a jamais besoin de stockage amovible, un usb_storage chargé veut dire qu'un port USB peut faire sortir des données ou entrer du code. Le décharger et l'empêcher de se charger, sauf si l'hôte utilise vraiment des disques USB (sauvegardes, appliances)."
+        },
+        "desktop": {
+          "why": "Sur un poste de travail, disques et clés USB sont un usage ordinaire : BOB signale le pilote pour information, sans déduction. Ne le désactiver que si cette machine ne doit jamais lire de stockage amovible."
+        },
+        "container": {
+          "why": "Le chargement de modules noyau est restreint par défaut dans les conteneurs (CAP_SYS_MODULE non accordée). Ce constat ne se traite pas depuis un conteneur — à corriger sur l'hôte."
         }
       },
       "risky_net": {

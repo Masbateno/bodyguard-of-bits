@@ -132,10 +132,11 @@ class TestRiskyFsModules:
         assert _deduction_points(result) == 1
 
     def test_usb_storage_detected(self):
-        """lsmod uses underscores: usb_storage, not usb-storage."""
+        """lsmod uses underscores: usb_storage, not usb-storage. v0.31.1 — a
+        storage driver, not a filesystem module: its own finding."""
         snap = base_snapshot(loaded_modules=["usb_storage"])
         result = check_kernel_modules(snap)
-        assert _has_finding(result, "kernel_modules.risky_fs", FindingLevel.WARN)
+        assert _has_finding(result, "kernel_modules.usb_storage", FindingLevel.WARN)
 
     def test_risky_fs_nature_is_improvement(self):
         snap = base_snapshot(loaded_modules=["squashfs"])

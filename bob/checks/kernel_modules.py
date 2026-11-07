@@ -51,8 +51,16 @@ _RISKY_FS: frozenset[str] = frozenset({
     "hfsplus",
     "squashfs",
     "udf",
-    "usb_storage",   # lsmod uses underscores, not hyphens
 })
+
+# v0.31.1 — the USB mass-storage driver, which 0.31.0 and earlier listed among
+# the filesystem modules ("risky filesystem module(s) loaded: usb_storage").
+# It is a device driver: its own finding, which the desktop and workstation
+# profiles report without a deduction (a USB disk or key is ordinary use there).
+# uas, when loaded, holds it: measured on a Mint desktop, `lsmod` shows
+# "usb_storage ... 1 uas", so `modprobe -r usb_storage` alone is refused.
+_USB_STORAGE = "usb_storage"   # lsmod uses underscores, not hyphens
+_USB_STORAGE_HOLDERS = ("uas",)
 
 # Network protocol modules — rarely needed, historically exploited or redundant
 _RISKY_NET: frozenset[str] = frozenset({
@@ -204,6 +212,17 @@ def check_kernel_modules(
                 points=1,
                 detail=_t("kernel_modules.risky_fs_detail"),
                 cmd=_unload_cmd(risky_fs),
+                nature="improvement",
+            )
+
+        if _USB_STORAGE in loaded:
+            result.warn_with_deduction(
+                key="kernel_modules.usb_storage",
+                message=_t("kernel_modules.usb_storage"),
+                reason=_t("kernel_modules.usb_storage_reason"),
+                points=1,
+                detail=_t("kernel_modules.usb_storage_detail"),
+                cmd=_unload_cmd([m for m in _USB_STORAGE_HOLDERS if m in loaded] + [_USB_STORAGE]),
                 nature="improvement",
             )
 

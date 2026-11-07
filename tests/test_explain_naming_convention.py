@@ -291,7 +291,9 @@ class TestExplainAuditInvariants:
         # beyond the node, measured on MicroK8s 1.35.6).
         # → 235: ports.uncovered_netfilter_open (v0.28.0, lot 4 scoring: a
         # listener the PARTIAL raw ruleset reaches by default is scored).
-        assert len(EXPLAIN_KEYS) == 235, (
+        # → 236: kernel_modules.usb_storage (v0.31.1: a storage driver, not a
+        # filesystem module — its own finding).
+        assert len(EXPLAIN_KEYS) == 236, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."

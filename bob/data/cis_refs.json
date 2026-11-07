@@ -808,6 +808,24 @@
     "ref": "CIS Ubuntu 22.04 L1 — 1.1.1.x — Ensure mounting of legacy/rare filesystems is disabled",
     "code": "CIS:1.1.1"
   },
+  "kernel_modules.usb_storage": {
+    "ref": "CIS Ubuntu 22.04 L1 — 1.1.1.8 — Ensure usb-storage kernel module is not available (Automated)",
+    "code": "CIS:1.1.1.8",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "1.1.1.9",
+        "title": "Ensure usb-storage kernel module is not available (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "1.1.1.9",
+        "title": "Ensure usb-storage kernel module is not available (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "1.1.1.10",
+        "title": "Ensure usb-storage kernel module is not available (Automated)"
+      }
+    }
+  },
   "kernel_modules.risky_net": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.4.x — Ensure DCCP/SCTP/RDS/TIPC is disabled",
     "code": "CIS:3.4"

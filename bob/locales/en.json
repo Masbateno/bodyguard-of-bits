@@ -1541,6 +1541,9 @@
     "no_lsmod": "lsmod not available — kernel module check skipped",
     "risky_fs": "Risky filesystem module(s) loaded: {modules}",
     "risky_fs_detail": "These modules are rarely needed on a server and widen the attack surface. Unload and blacklist them.",
+    "usb_storage": "USB mass-storage driver loaded (usb_storage) — USB disks and keys can be attached and read on this host",
+    "usb_storage_reason": "USB mass-storage driver loaded (usb_storage)",
+    "usb_storage_detail": "usb_storage (with uas, which holds it when loaded) lets the kernel drive USB disks and keys: a way to copy data out or bring code in on a server that has no use for them. It unloads only while no USB disk is in use; to keep it from loading, add 'install usb-storage /bin/false' under /etc/modprobe.d. On a desktop or workstation it is ordinary use, reported without a deduction.",
     "risky_fs_reason": "Risky filesystem module(s) loaded: {modules}",
     "risky_net": "Risky network protocol module(s) loaded: {modules}",
     "risky_net_detail": "These protocols (DCCP, SCTP, RDS, TIPC) are rarely used and have a history of kernel exploits. Unload and blacklist them.",
@@ -2665,8 +2668,8 @@
       },
       "risky_fs": {
         "title": "Risky filesystem kernel modules loaded",
-        "why": "Filesystem drivers (cramfs, freevxfs, hfs, hfsplus, jffs2, squashfs, udf, usb_storage) expand kernel attack surface unnecessarily on servers. Vulnerabilities in these drivers can be triggered by mounting a maliciously crafted filesystem image or inserting a USB device, potentially enabling privilege escalation or arbitrary code execution in kernel space.",
-        "how": "1. Unload the module now:\n   sudo modprobe -r <module_name>\n2. Blacklist to prevent reloading:\n   echo 'blacklist <module>' | sudo tee -a /etc/modprobe.d/blacklist-rare-fs.conf\n   echo 'install <module> /bin/false' | sudo tee -a /etc/modprobe.d/blacklist-rare-fs.conf\n3. Rebuild initramfs:\n   sudo update-initramfs -u\nNote: only blacklist modules your system does not use (e.g. usb_storage is needed for USB drives).",
+        "why": "Filesystem drivers (cramfs, freevxfs, hfs, hfsplus, jffs2, squashfs, udf) expand kernel attack surface unnecessarily on servers. Vulnerabilities in these drivers can be triggered by mounting a maliciously crafted filesystem image, potentially enabling privilege escalation or arbitrary code execution in kernel space.",
+        "how": "1. Unload the module now:\n   sudo modprobe -r <module_name>\n2. Blacklist to prevent reloading:\n   echo 'blacklist <module>' | sudo tee -a /etc/modprobe.d/blacklist-rare-fs.conf\n   echo 'install <module> /bin/false' | sudo tee -a /etc/modprobe.d/blacklist-rare-fs.conf\n3. Rebuild initramfs:\n   sudo update-initramfs -u\nNote: only blacklist modules your system does not use (e.g. udf is needed for DVDs).",
         "server": {
           "why": "Exotic filesystem modules (cramfs, freevxfs, hfs, hfsplus, jffs2, squashfs, udf) expand kernel attack surface on a server. Vulnerabilities in these drivers can be triggered by a crafted filesystem image, potentially enabling kernel-space privilege escalation. Blacklist what you do not use."
         },
@@ -2676,6 +2679,20 @@
         "container": {
           "why": "Kernel module loading is restricted by default in containers (CAP_SYS_MODULE not granted). This finding is not actionable from within a container — address it on the host system.",
           "how": "Apply on the host system:\n   echo 'blacklist <module>' | sudo tee -a /etc/modprobe.d/blacklist-rare-fs.conf\n   echo 'install <module> /bin/false' | sudo tee -a /etc/modprobe.d/blacklist-rare-fs.conf\n   sudo update-initramfs -u"
+        }
+      },
+      "usb_storage": {
+        "title": "USB mass-storage driver loaded",
+        "why": "usb_storage is the kernel driver for USB disks and keys (uas, when loaded, sits on top of it). On a server that never needs removable storage, it is a way to copy data out or bring code in through a USB port, and a driver reachable by plugging in a crafted device.",
+        "how": "1. Unload it now (only while no USB disk is in use; uas first when it is loaded):\n   sudo modprobe -r uas usb_storage\n2. Keep it from loading:\n   echo 'install usb-storage /bin/false' | sudo tee /etc/modprobe.d/usb-storage.conf\n3. Rebuild the initramfs:\n   sudo update-initramfs -u",
+        "server": {
+          "why": "On a server that never needs removable storage, a loaded usb_storage means a USB port can bring data out or code in. Unload it and keep it from loading, unless the host really uses USB disks (backups, appliances)."
+        },
+        "desktop": {
+          "why": "On a desktop or workstation, USB disks and keys are ordinary use: BOB reports the driver for information, without a deduction. Disable it only if this machine must never read removable storage."
+        },
+        "container": {
+          "why": "Kernel module loading is restricted by default in containers (CAP_SYS_MODULE not granted). This finding is not actionable from within a container — address it on the host system."
         }
       },
       "risky_net": {

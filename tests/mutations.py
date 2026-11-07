@@ -312,8 +312,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/cis-reference-count-stale",
         file="DOCUMENTS/README_TECH.md",
-        old="235 entries (120 formal CIS, 101 best-practice, 7 Docker, 7 Kubernetes)",
-        new="178 entries (120 formal CIS, 101 best-practice, 7 Docker, 7 Kubernetes)",
+        old="236 entries (121 formal CIS, 101 best-practice, 7 Docker, 7 Kubernetes)",
+        new="178 entries (121 formal CIS, 101 best-practice, 7 Docker, 7 Kubernetes)",
         kills=(f"{_CLAIMS}::TestTheCataloguesMatch",),
         reason="the count drifted by 18 entries across several releases",
     ),
@@ -896,7 +896,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/locale-key-total-stale",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="locale auto-detect (POSIX), 3158 keys EN/FR",
+        old="locale auto-detect (POSIX), 3167 keys EN/FR",
         new="locale auto-detect (POSIX), 3123 keys EN/FR",
         kills=(f"{_LIVECOUNT}::test_no_document_misstates_the_locale_key_total",),
         reason="the locale total sat at '2014 keys' against files holding 2595 "
@@ -906,8 +906,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/profile-prose-mix-overstated",
         file="DOCUMENTS/README_DEV.md",
-        old="server, desktop and container sections for 69 of them, server and desktop for 2, container only",
-        new="server, desktop and container sections for 71 of them, server and desktop for 2, container only",
+        old="server, desktop and container sections for 70 of them, server and desktop for 2, container only",
+        new="server, desktop and container sections for 72 of them, server and desktop for 2, container only",
         kills=("tests/test_v0151_doc_prose_figures.py::TestProfileVariantCount"
                "::test_it_matches_the_real_mechanism[en]",),
         reason="the module table said 71 keys times 3 profiles while two of "
@@ -936,8 +936,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/explain-count-stale-beside-dated-note",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="`--explain` TUI + `EXPLAIN_KEYS` (235 keys, 62 prefixes) + `EXPLAIN_KEY_ALIASES`",
-        new="`--explain` TUI + `EXPLAIN_KEYS` (235 keys, 61 prefixes) + `EXPLAIN_KEY_ALIASES`",
+        old="`--explain` TUI + `EXPLAIN_KEYS` (236 keys, 62 prefixes) + `EXPLAIN_KEY_ALIASES`",
+        new="`--explain` TUI + `EXPLAIN_KEYS` (236 keys, 61 prefixes) + `EXPLAIN_KEY_ALIASES`",
         kills=(f"{_SWEEP}::test_no_counter_in_a_current_state_document_is_stale[DOCUMENTS/SNAPSHOT.md]",),
         reason="a stale prefix count on a SNAPSHOT row that also cites a release "
                "was invisible to the sweep for several releases",
@@ -2195,8 +2195,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/cis-breakdown-mis-split",
         file="DOCUMENTS/README_TECH.md",
-        old="235 entries (120 formal CIS, 101 best-practice, 7 Docker, 7 Kubernetes)",
-        new="235 entries (116 formal CIS, 101 best-practice, 7 Docker, 7 Kubernetes)",
+        old="236 entries (121 formal CIS, 101 best-practice, 7 Docker, 7 Kubernetes)",
+        new="236 entries (116 formal CIS, 101 best-practice, 7 Docker, 7 Kubernetes)",
         kills=(f"{_LIVECOUNT}::"
                "test_the_readme_tech_cis_breakdown_matches_the_live_categories",),
         reason="v0163 checks only that the parts sum to the total, so a wrong "
@@ -6293,8 +6293,8 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id='docs/dev-cis-breakdown-unguarded',
         file='DOCUMENTS/README_DEV_FR.md',
-        old='235 entrées : 120 CIS formels, 101 best-practice, 7 Docker, 7 Kubernetes)',
-        new='235 entrées : 117 CIS formels, 89 best-practice, 7 Docker, 7 Kubernetes)',
+        old='236 entrées : 121 CIS formels, 101 best-practice, 7 Docker, 7 Kubernetes)',
+        new='236 entrées : 117 CIS formels, 89 best-practice, 7 Docker, 7 Kubernetes)',
         kills=('tests/test_v0211_live_count_claims.py::test_the_readme_tech_cis_breakdown_matches_the_live_categories',),
         reason='README_DEV_FR said 89 best-practice and README_DEV 94 while the live count was 95; no guard read that form',
     ),
@@ -14091,5 +14091,53 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         new='                        if d.name not in _RP_NOT_AN_INTERFACE)\n',
         kills=('tests/test_v0311_l2_ports.py::TestEveryKnob::test_rp_filter_skips_a_port', ),
         reason='rp_filter read on a port its bridge overrides',
+    ),
+    Mutation(
+        id='usb-storage/a-filesystem-again',
+        file='bob/checks/kernel_modules.py',
+        old='    "udf",\n})\n',
+        new='    "udf",\n    "usb_storage",\n})\n',
+        kills=('tests/test_v0311_usb_storage.py::TestItsOwnFinding::test_not_a_filesystem_module', ),
+        reason='measured on Mint: usb_storage read as a filesystem module',
+    ),
+    Mutation(
+        id='usb-storage/holder-ignored',
+        file='bob/checks/kernel_modules.py',
+        old='                cmd=_unload_cmd([m for m in _USB_STORAGE_HOLDERS if m in loaded] + [_USB_STORAGE]),\n',
+        new='                cmd=_unload_cmd([_USB_STORAGE]),\n',
+        kills=('tests/test_v0311_usb_storage.py::TestItsOwnFinding::test_the_command_unloads_what_holds_it_first', ),
+        reason='measured on Mint: uas holds usb_storage, modprobe -r usb_storage alone is refused',
+    ),
+    Mutation(
+        id='usb-storage/unreported',
+        file='bob/checks/kernel_modules.py',
+        old='        if _USB_STORAGE in loaded:\n',
+        new='        if False:\n',
+        kills=('tests/test_v0311_usb_storage.py::TestItsOwnFinding::test_not_a_filesystem_module', 'tests/test_v0311_usb_storage.py::TestTheProfiles::test_a_server_loses_the_point', ),
+        reason='a loaded USB storage driver is reported on a server',
+    ),
+    Mutation(
+        id='usb-storage/desktop-scores',
+        file='bob/data/profiles/desktop.conf',
+        old='kernel_modules.usb_storage = info\n',
+        new='',
+        kills=('tests/test_v0311_usb_storage.py::TestTheProfiles::test_a_desktop_or_workstation_does_not', ),
+        reason='decided: a USB disk is ordinary use on a desktop',
+    ),
+    Mutation(
+        id='usb-storage/workstation-scores',
+        file='bob/data/profiles/workstation.conf',
+        old='kernel_modules.usb_storage = info\n',
+        new='',
+        kills=('tests/test_v0311_usb_storage.py::TestTheProfiles::test_a_desktop_or_workstation_does_not', ),
+        reason='decided: a USB disk is ordinary use on a workstation',
+    ),
+    Mutation(
+        id='usb-storage/cis-hand-written',
+        file='bob/data/cis_refs.json',
+        old='"code": "CIS:1.1.1.8"',
+        new='"code": "CIS:1.1.1"',
+        kills=('tests/test_v0311_usb_storage.py::test_its_cis_reference_comes_from_complianceascode', ),
+        reason='the reference comes from ComplianceAsCode, not from memory',
     ),
 )

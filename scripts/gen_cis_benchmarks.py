@@ -54,6 +54,7 @@ MAP = {
  "hardening.redirects_enabled": ["sysctl_net_ipv4_conf_all_accept_redirects"],
  "hardening.accept_redirects_v6_enabled": ["sysctl_net_ipv6_conf_all_accept_redirects"],
  "hardening.send_redirects_enabled": ["sysctl_net_ipv4_conf_all_send_redirects"],
+ "kernel_modules.usb_storage": ["kernel_module_usb-storage_disabled"],
  "hardening.log_martians_disabled": ["sysctl_net_ipv4_conf_all_log_martians"],
  "hardening.tcp_syncookies_disabled": ["sysctl_net_ipv4_tcp_syncookies"],
  "hardening.accept_source_route_enabled": ["sysctl_net_ipv4_conf_all_accept_source_route"],
