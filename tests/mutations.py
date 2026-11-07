@@ -14196,4 +14196,20 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         kills=('tests/test_v0311_router_filter.py::TestTheRouterDecides::test_it_makes_the_score_a_ceiling', ),
         reason='what BOB cannot read leaves the score a ceiling',
     ),
+    Mutation(
+        id='rsa-host-key/fingerprint-unsaid-en',
+        file='bob/locales/en.json',
+        old='Regenerating a host key changes the fingerprint every client has recorded',
+        new='Regenerating a host key keeps working for every client',
+        kills=('tests/test_v0311_rsa_host_key_text.py::test_the_notice[en]', ),
+        reason='regenerating a host key changes the fingerprint clients recorded',
+    ),
+    Mutation(
+        id='rsa-host-key/fingerprint-unsaid-fr',
+        file='bob/locales/fr.json',
+        old="Régénérer une clé hôte change l'empreinte que chaque client a enregistrée",
+        new="Régénérer une clé hôte ne gêne aucun client",
+        kills=('tests/test_v0311_rsa_host_key_text.py::test_the_notice[fr]', ),
+        reason='regenerating a host key changes the fingerprint clients recorded',
+    ),
 )

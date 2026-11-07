@@ -1415,8 +1415,8 @@
     "host_key_dsa": "Clé hôte serveur DSA trouvée : {name} — DSA est cryptographiquement cassé",
     "host_key_dsa_detail": "Les clés hôte DSA utilisent un algorithme cassé et peuvent être forgées par un attaquant disposant de ressources suffisantes. Supprimez la clé DSA et régénérez-la en ed25519. Tous les clients ayant mis en cache cette clé hôte devront accepter la nouvelle.",
     "host_key_dsa_reason": "Clé hôte serveur DSA en service : {name}",
-    "host_key_rsa_short": "Clé hôte serveur RSA {name} : {bits} bits — envisagez de régénérer à 4096 bits ou de passer à ed25519",
-    "host_key_rsa_short_detail": "Les clés hôte RSA inférieures à 4096 bits sont techniquement acceptables mais ne sont plus considérées comme optimales. Les clients et autorités modernes recommandent RSA 4096 bits ou ed25519 pour les clés d'identité serveur.",
+    "host_key_rsa_short": "Clé hôte serveur RSA {name} : {bits} bits — RSA 4096 bits ou ed25519 seraient plus robustes",
+    "host_key_rsa_short_detail": "Le NIST évalue RSA 2048 bits à une sécurité de 112 bits, acceptable jusqu'en 2030, et RSA 3072 bits à 128 bits, acceptable au-delà (SP 800-57 partie 1) ; sous 2048 bits, les signatures RSA sont interdites (SP 800-131A). Régénérer une clé hôte change l'empreinte que chaque client a enregistrée : chacun signalera que l'identité de l'hôte a changé tant que son known_hosts n'est pas mis à jour — le planifier, et donner la nouvelle empreinte aux utilisateurs (ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub).",
     "host_key_ok": "Clé hôte serveur {name} ({type}) : algorithme fort",
     "match_block_skipped": "sshd_config contient un bloc Match — les directives qui le suivent n'ont pas été analysées",
     "x11": {

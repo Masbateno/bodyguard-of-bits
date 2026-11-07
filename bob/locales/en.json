@@ -1415,8 +1415,8 @@
     "host_key_dsa": "DSA server host key found: {name} — DSA is cryptographically broken",
     "host_key_dsa_detail": "DSA host keys use a broken algorithm and can be forged by an attacker with sufficient resources. Remove the DSA host key and regenerate as ed25519. All clients that have cached this host key will need to accept the new one.",
     "host_key_dsa_reason": "DSA server host key in use: {name}",
-    "host_key_rsa_short": "RSA server host key {name}: {bits} bits — consider regenerating at 4096 bits or switching to ed25519",
-    "host_key_rsa_short_detail": "RSA host keys below 4096 bits are technically acceptable but no longer considered optimal. Modern clients and CAs recommend 4096-bit RSA or ed25519 for server identity keys.",
+    "host_key_rsa_short": "RSA server host key {name}: {bits} bits — 4096-bit RSA or ed25519 would be stronger",
+    "host_key_rsa_short_detail": "NIST rates 2048-bit RSA at 112-bit security, acceptable through 2030, and 3072-bit RSA at 128-bit, acceptable beyond (SP 800-57 Part 1); below 2048 bits, RSA signatures are disallowed (SP 800-131A). Regenerating a host key changes the fingerprint every client has recorded: each will warn that the host identification has changed until its known_hosts is updated — plan it, and give users the new fingerprint (ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub).",
     "host_key_ok": "Server host key {name} ({type}): strong algorithm",
     "match_block_skipped": "sshd_config contains a Match block — directives after it were not analysed",
     "x11": {
