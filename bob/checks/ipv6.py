@@ -255,8 +255,59 @@ def ipv6_closed_by_chains(snapshot: "IPv6Snapshot") -> bool:
 _MAX_PORT_DEDUCTIONS = 3   # cap per-port deductions to avoid score collapse
 
 
+#: v0.31.1 — the IPv6 section's findings that leave a listener reachable by the
+#: host's own rules, or its filtering not established: behind an IPv4 NAT with
+#: a public IPv6 address, the router's filter then decides, and BOB cannot see
+#: it from the host.
+_V6_NOT_CLOSED = frozenset({
+    "ipv6.port_no_v6_rule", "ipv6.ports_broad_rule", "ipv6.ports_refused_after_broad_rule",
+    "ipv6.all_ports_covered", "ipv6.netfilter_v6_open", "ipv6.netfilter_v6",
+    "ipv6.netfilter_v6_filtered", "ipv6.no_firewall_v6", "ipv6.firewalld_v6",
+    "ipv6.firewalld_v6_open", "ipv6.firewalld_unread", "ipv6.listeners_unknown",
+    "ipv6.ufw_disabled_listeners_present", "ipv6.ufw_config_unreadable", "ipv6.kernel_state_unknown",
+})
+
+
 def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None, firewalld_active: bool = False, netfilter_active: bool = False, firewalld_policy: str = "", netfilter_v6_policy: str = "unknown", firewalld_family_rules: tuple = (), netfilter_v6_drop_chains: tuple = (), firewalld_unread: bool = False,
-               ufw_incoming_policy: str = "unknown") -> CheckResult:
+               ufw_incoming_policy: str = "unknown", behind_ipv4_nat: bool = False) -> CheckResult:
+    """The IPv6 section (:func:`_check_ipv6_body`), and v0.31.1 the router's
+    filter where it decides.
+
+    0.31.0 stopped calling a host behind an IPv4 NAT that holds a public IPv6
+    address "behind NAT" (display only). Measured on a real Kali behind a home
+    router, its IPv6 firewall off: a phone on mobile data reached the host's
+    ``[::]:8080``; on, nothing arrived. Whether the router filters cannot be
+    seen from the host, so when the host's own rules leave an IPv6 listener
+    reachable (or their filtering is not established), the checks that relax
+    on a local network rest on something BOB did not establish: the score is a
+    ceiling. When the host's rules close IPv6 inbound (UFW IPV6=no with its
+    DROP, or its default deny with no IPv6 listener allowed by a rule), the
+    router does not decide and nothing changes.
+    """
+    _t = t if t is not None else _identity_t
+    result = _check_ipv6_body(snapshot, ufw_active=ufw_active, t=t, firewalld_active=firewalld_active,
+                              netfilter_active=netfilter_active, firewalld_policy=firewalld_policy,
+                              netfilter_v6_policy=netfilter_v6_policy, firewalld_family_rules=firewalld_family_rules,
+                              netfilter_v6_drop_chains=netfilter_v6_drop_chains, firewalld_unread=firewalld_unread,
+                              ufw_incoming_policy=ufw_incoming_policy)
+    if not (behind_ipv4_nat and snapshot.has_global_ipv6):
+        return result
+    if not (snapshot.ipv6_listeners or not snapshot.listeners_readable):
+        return result
+    emitted = {f.key for f in result.findings}
+    allowed_by_rule = bool(set(snapshot.ipv6_listeners) & set(snapshot.ufw_v6_covered or ()))
+    if emitted & _V6_NOT_CLOSED or allowed_by_rule:
+        result.info(
+            message=_t("ipv6.router_filter_unverified",
+                       ports=", ".join(snapshot.ipv6_listeners) or "?"),
+            detail=_t("ipv6.router_filter_unverified_detail"),
+            key="ipv6.router_filter_unverified",
+        )
+    return result
+
+
+def _check_ipv6_body(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFunc | None = None, firewalld_active: bool = False, netfilter_active: bool = False, firewalld_policy: str = "", netfilter_v6_policy: str = "unknown", firewalld_family_rules: tuple = (), netfilter_v6_drop_chains: tuple = (), firewalld_unread: bool = False,
+                     ufw_incoming_policy: str = "unknown") -> CheckResult:
     """
     Check IPv6 firewall consistency.
 

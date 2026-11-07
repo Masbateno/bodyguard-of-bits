@@ -40,6 +40,9 @@ from __future__ import annotations
 # deductions it did not make are unknown rather than absent.
 VISIBILITY_KEYS: frozenset[str] = frozenset({
     "auditd.rules_unreadable",
+    # v0.31.1 — behind an IPv4 NAT with a public IPv6 address, the router's
+    # filter decides what the host's rules leave open; it cannot be read.
+    "ipv6.router_filter_unverified",
     "auditd.state_unknown",
     "container_security.seccomp_unknown",
     "cron.unreadable_files",

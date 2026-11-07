@@ -1312,6 +1312,8 @@
     "ufw_v6_off_rules_unresolved": "{count} service(s) listening on IPv6 (::), link-local addresses only: not reachable from the internet — UFW IPv6 is disabled and its DROP is in place, but the IPv6 INPUT chain holds other rules, so BOB cannot show whether the local network reaches them",
     "ufw_disabled_listeners_link_local": "{count} service(s) listening on IPv6 (::) but UFW IPv6 is disabled — link-local addresses only: not reachable from the internet, but reachable from the local network without UFW filtering them",
     "kernel_state_unknown": "Kernel IPv6 state could not be read",
+    "router_filter_unverified": "This host is behind an IPv4 NAT but holds a public IPv6 address, and its own rules leave IPv6 listeners reachable or their filtering not established ({ports}) — whether the router filters inbound IPv6 cannot be checked from here",
+    "router_filter_unverified_detail": "Over IPv4 the router's NAT keeps inbound connections out; over IPv6 each host has its own public address, and only the router's IPv6 firewall stands in front of it. BOB cannot read that firewall from the host, so what the checks relax on a local network (SSH password login, a service's deduction tier) is not established: the score is a ceiling. Check the router's IPv6 firewall, or close IPv6 inbound on this host.",
     "kernel_state_unknown_detail": "/proc/sys/net/ipv6 exists but conf/all/disable_ipv6 could not be read, so BOB cannot say whether the IPv6 stack is active. It does not assume either way. The findings below are computed as if IPv6 were enabled, which is the cautious reading. Check with: sysctl net.ipv6.conf.all.disable_ipv6"
   },
   "audit": {

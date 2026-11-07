@@ -873,7 +873,8 @@ def run_checks(
          netfilter_v6_policy=_v6_policy,
          netfilter_v6_drop_chains=_v6_drop,
          firewalld_unread=_firewalld_unread,
-         ufw_incoming_policy=fw_status.incoming_policy)
+         ufw_incoming_policy=fw_status.incoming_policy,
+         behind_ipv4_nat=network_context == "local")
 
     # =========================================================================
     # GROUP 2 — EXPOSITION & SERVICES

@@ -1312,6 +1312,8 @@
     "ufw_v6_off_rules_unresolved": "{count} service(s) en écoute sur IPv6 (::), adresses link-local uniquement : pas joignable depuis internet — UFW IPv6 est désactivé et son DROP est en place, mais la chaîne INPUT IPv6 porte d'autres règles, donc BOB ne peut pas montrer si le réseau local les joint",
     "ufw_disabled_listeners_link_local": "{count} service(s) en écoute sur IPv6 (::) mais UFW IPv6 est désactivé — adresses link-local uniquement : pas joignable depuis internet, mais joignable depuis le réseau local sans filtrage par UFW",
     "kernel_state_unknown": "Impossible de lire l'état IPv6 du noyau",
+    "router_filter_unverified": "Cet hôte est derrière une NAT IPv4 mais détient une adresse IPv6 publique, et ses propres règles laissent des écouteurs IPv6 joignables ou leur filtrage non établi ({ports}) — que la box filtre l'IPv6 entrant n'est pas vérifiable d'ici",
+    "router_filter_unverified_detail": "En IPv4, la NAT de la box tient les connexions entrantes dehors ; en IPv6, chaque hôte a sa propre adresse publique, et seul le pare-feu IPv6 de la box se tient devant lui. BOB ne peut pas lire ce pare-feu depuis l'hôte, donc ce que les contrôles assouplissent sur un réseau local (connexion SSH par mot de passe, palier de déduction d'un service) n'est pas établi : le score est un plafond. Vérifier le pare-feu IPv6 de la box, ou fermer l'IPv6 entrant sur cet hôte.",
     "kernel_state_unknown_detail": "/proc/sys/net/ipv6 existe mais conf/all/disable_ipv6 n'a pas pu être lu : BOB ne peut pas dire si la pile IPv6 est active. Il ne tranche pas. Les constats ci-dessous sont calculés comme si IPv6 était activé, la lecture la plus prudente. Vérifier avec : sysctl net.ipv6.conf.all.disable_ipv6"
   },
   "audit": {
