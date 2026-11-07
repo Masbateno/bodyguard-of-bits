@@ -29,6 +29,8 @@ def test_the_notice(lang, nist, fingerprint):
         i18n.init("en")
     f = next(f for f in result.findings if f.key == "ssh.host_key_rsa_short")
     assert nist in f.detail and fingerprint in f.detail
+    # Review 2 of the 0.31.1 changelog: legacy use covers verifying 1024- to 2047-bit signatures only.
+    assert "1024" in f.detail and "2047" in f.detail
     assert "recommend" not in f.detail and "recommandent" not in f.detail
 
 
