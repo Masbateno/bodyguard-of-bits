@@ -67,6 +67,9 @@ class IPv6Snapshot:
     ufw_v6_covered:      list[str]  = field(default_factory=list)
     #: v0.31.0 — the (v6) ALLOW/LIMIT IN rules naming no port (_ufw.broad_admits).
     ufw_v6_admits:       list       = field(default_factory=list)
+    #: v0.31.0 — listener → the (v6) rules naming no port that admit it before
+    #: its own rule, which refuses it (_ufw.admitted_before_own_rule).
+    ufw_v6_admitted_first: dict     = field(default_factory=dict)
     has_global_ipv6:     bool       = False
     #: v0.24.1 — UFW exists on this host (its binary or /etc/default/ufw). An
     #: absent /etc/default/ufw reads as "IPv6 managed" — ufw's own default —
@@ -125,6 +128,15 @@ class IPv6Snapshot:
             _extract_ufw_v6_covered(ufw_out, _ufw.read_app_profiles())
         )
         ufw_v6_admits = _ufw.broad_admits(ufw_out, v6=True)
+        ufw_v6_admitted_first = {}
+        _apps = _ufw.read_app_profiles()
+        for pp in ipv6_listeners:
+            port, _, proto = pp.partition("/")
+            if port.isdigit():
+                earlier, action = _ufw.admitted_before_own_rule(ufw_out, int(port), proto or "tcp", v6=True,
+                                                                app_profiles=_apps)
+                if earlier and action in ("DENY", "REJECT"):
+                    ufw_v6_admitted_first[pp] = [r for r, _, _ in earlier]
 
         return cls(
             kernel_ipv6_enabled=kernel_ipv6_enabled,
@@ -134,6 +146,7 @@ class IPv6Snapshot:
             ipv6_listeners=ipv6_listeners,
             ufw_v6_covered=ufw_v6_covered,
             ufw_v6_admits=ufw_v6_admits,
+            ufw_v6_admitted_first=ufw_v6_admitted_first,
             has_global_ipv6=has_global_ipv6,
             ufw_present=ufw_present,
             ip6_input_policy=ip6_input_policy,
@@ -470,6 +483,16 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
             covered_set = set(snapshot.ufw_v6_covered)
             uncovered = [p for p in snapshot.ipv6_listeners if p not in covered_set]
             port_deductions = 0
+            # v0.31.0, review of the changelog — a listener whose own (v6) rule
+            # refuses it, behind a rule naming no port that admits it first:
+            # UFW applies the first rule that matches (measured).
+            first = {p: r for p, r in snapshot.ufw_v6_admitted_first.items() if p in covered_set}
+            if first:
+                rules = sorted({r for rs in first.values() for r in rs})
+                result.info(message=_t("ipv6.ports_refused_after_broad_rule", count=len(first),
+                                       ports=", ".join(sorted(first)), rules="; ".join(rules)),
+                            key="ipv6.ports_refused_after_broad_rule")
+                found_issue = True
             # v0.31.0 — UFW managing IPv6 at default deny (or reject) incoming
             # covers a listener with no rule of its own: measured on Ubuntu
             # 26.04 (6 November 2026, phase B), from a network namespace on the

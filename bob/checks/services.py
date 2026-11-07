@@ -1270,18 +1270,24 @@ def _allow_rule_source(
     port_num, _, proto = port.partition("/")
     if not port_num.isdigit():
         return ""
+    earlier: "list[str]" = []
     for line in ufw_rules.splitlines():
         rule = _ufw.parse_rule(line)
         if rule is None or not rule.to_col:
             continue
         ranges = _ufw.to_column_ranges(rule.to_col, app_profiles)
-        if _ufw.ranges_cover(ranges, int(port_num), proto or "tcp"):
-            # The parsed From column still carries the direction and the
-            # rule's comment: "IN    192.168.1.11    # Samba".
-            words = rule.from_col.split("#", 1)[0].split()
-            if words and words[0] in ("IN", "OUT", "FWD"):
-                words = words[1:]
-            return " ".join(words)
+        if not _ufw.ranges_cover(ranges, int(port_num), proto or "tcp"):
+            # v0.31.0 — a rule naming no port, met first, as _classify_exposure.
+            earlier += [src for _p, bp, src in _ufw.broad_admits(line) if bp in (None, proto or "tcp")]
+            continue
+        if rule.action in ("DENY", "REJECT") and earlier:
+            return earlier[0]
+        # The parsed From column still carries the direction and the
+        # rule's comment: "IN    192.168.1.11    # Samba".
+        words = rule.from_col.split("#", 1)[0].split()
+        if words and words[0] in ("IN", "OUT", "FWD"):
+            words = words[1:]
+        return " ".join(words)
     # v0.31.0 — the source of a rule naming no port, as _classify_exposure reads it.
     for _printed, broad_proto, source in _ufw.broad_admits(ufw_rules):
         if broad_proto in (None, proto or "tcp"):
@@ -1337,21 +1343,30 @@ def _classify_exposure(
     # network — so a host running SSH with no rule for it was told SSH was
     # restricted to the local network. `ports` already anchored on the To column
     # and said why in a docstring; the grammar now lives in one place.
+    # v0.31.0, review of the changelog — rules naming no port met before the
+    # port's own rule admit it from their source first (measured: `allow from
+    # <client>` then `deny 8099/tcp` left 8099 open to the client).
+    earlier: "list[str]" = []
     for line in ufw_rules.splitlines():
         rule = _ufw.parse_rule(line)
         if rule is None or not rule.to_col:
             continue
         ranges = _ufw.to_column_ranges(rule.to_col, app_profiles)
         if not _ufw.ranges_cover(ranges, want, proto):
+            earlier += [src for _p, bp, src in _ufw.broad_admits(line) if bp in (None, proto)]
             continue
 
-        if rule.action == "DENY":
+        if rule.action in ("DENY", "REJECT"):
+            if earlier:
+                return (Exposure.OPEN_LOCAL if all(_line_has_private_or_loopback(s) for s in earlier)
+                        else Exposure.OPEN_WORLD)
             return Exposure.DENY
         if rule.action in ("ALLOW", "LIMIT"):
             # The source restriction lives in the From column. Reading the whole
             # line here would let a private *destination* pass for a private
             # source.
-            if _line_has_private_or_loopback(rule.from_col):
+            if _line_has_private_or_loopback(rule.from_col) and all(
+                    _line_has_private_or_loopback(s) for s in earlier):
                 return Exposure.OPEN_LOCAL
             return Exposure.OPEN_WORLD
 

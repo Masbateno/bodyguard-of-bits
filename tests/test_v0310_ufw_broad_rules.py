@@ -151,3 +151,60 @@ class TestTheServicesSection:
 
     def test_a_rule_naming_the_port_still_decides_first(self):
         assert _classify_exposure("22/tcp", _only(1, 2)) == Exposure.OPEN_WORLD
+
+
+# Second external review (7 November 2026): UFW applies the first rule that
+# matches. As ufw printed them on Kali (review2-ufw.txt), 8099 answered the
+# client in E and not in E'.
+_E = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] Anywhere                   ALLOW IN    10.77.0.1
+[ 3] 8099/tcp                   DENY IN     Anywhere
+[ 4] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 5] Anywhere (v6)              ALLOW IN    2001:db8:77::1
+[ 6] 8099/tcp (v6)              DENY IN     Anywhere (v6)
+"""
+_E_FIRST = """[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 8099/tcp                   DENY IN     Anywhere
+[ 3] Anywhere                   ALLOW IN    10.77.0.1
+[ 4] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 5] 8099/tcp (v6)              DENY IN     Anywhere (v6)
+[ 6] Anywhere (v6)              ALLOW IN    2001:db8:77::1
+"""
+
+
+class TestTheRuleOrder:
+
+    def test_a_portless_allow_before_the_deny_admits_first(self):
+        earlier, action = _ufw.admitted_before_own_rule(_E, 8099, "tcp", v6=False)
+        assert [r for r, _, _ in earlier] == ["Anywhere ALLOW IN 10.77.0.1"] and action == "DENY"
+
+    def test_after_the_deny_it_does_not(self):
+        assert _ufw.admitted_before_own_rule(_E_FIRST, 8099, "tcp", v6=False) == ([], "DENY")
+
+    def test_the_families_are_walked_apart(self):
+        earlier, _ = _ufw.admitted_before_own_rule(_E, 8099, "tcp", v6=True)
+        assert [r for r, _, _ in earlier] == ["Anywhere (v6) ALLOW IN 2001:db8:77::1"]
+
+    def test_the_ports_section_says_so(self):
+        keys = {f.key for f in _ports(_E).findings}
+        assert "ports.refused_after_broad_rule" in keys
+        assert "ports.refused_after_broad_rule" not in {f.key for f in _ports(_E_FIRST).findings}
+
+    def test_the_ipv6_section_says_so(self):
+        snap = IPv6Snapshot(kernel_ipv6_enabled=True, ufw_ipv6_enabled=True,
+                            ipv6_listeners=["8099/tcp"], ufw_v6_covered=["22/tcp", "8099/tcp"],
+                            ufw_v6_admitted_first={"8099/tcp": ["Anywhere (v6) ALLOW IN 2001:db8:77::1"]},
+                            has_global_ipv6=True)
+        res = check_ipv6(snap, ufw_active=True, ufw_incoming_policy="deny")
+        assert "ipv6.ports_refused_after_broad_rule" in {f.key for f in res.findings}
+        assert not res.deductions
+
+    def test_the_services_section_reads_it_open_to_the_source(self):
+        assert _classify_exposure("8099/tcp", _E) == Exposure.OPEN_LOCAL
+        assert _allow_rule_source("8099/tcp", _E) == "10.77.0.1"
+        assert _classify_exposure("8099/tcp", _E_FIRST) == Exposure.DENY
+
+    def test_a_reject_for_the_port_is_a_refusal(self):
+        """It fell through as if no rule named the port."""
+        rules = "[ 1] 8099/tcp                   REJECT IN   Anywhere\n[ 2] Anywhere on h0             ALLOW IN    Anywhere\n"
+        assert _classify_exposure("8099/tcp", rules) == Exposure.DENY

@@ -227,6 +227,37 @@ def broad_admits(ufw_numbered: str, v6: "bool | None" = None) -> "list[tuple[str
     return found
 
 
+def admitted_before_own_rule(
+    ufw_numbered: str,
+    port: int,
+    proto: str,
+    v6: "bool | None" = None,
+    app_profiles: "dict[str, list[str]] | None" = None,
+) -> "tuple[list[tuple[str, str | None, str]], str | None]":
+    """v0.31.0 — the rules naming no port met before the first incoming rule
+    for *port*/*proto*, and that rule's action (None when none names it).
+
+    UFW applies the first rule that matches a packet. Measured on Kali in a
+    network namespace (7 November 2026), UFW at default deny: `ufw allow from
+    10.77.0.1` then `ufw deny 8099/tcp` left 8099 open to 10.77.0.1, and BOB
+    read the port as refused by its rule; `deny 8099/tcp` first closed it.
+    """
+    earlier: "list[tuple[str, str | None, str]]" = []
+    for line in ufw_numbered.splitlines():
+        rule = parse_rule(line)
+        if rule is None or not rule.to_col:
+            continue
+        if v6 is not None and ("(v6)" in line) != v6:
+            continue
+        direction = rule.from_col.split()[:1]
+        if direction and direction[0] in ("OUT", "FWD"):
+            continue
+        if ranges_cover(to_column_ranges(rule.to_col, app_profiles), port, proto):
+            return earlier, rule.action
+        earlier += [b for b in broad_admits(line) if b[1] in (None, proto.lower())]
+    return earlier, None
+
+
 def admitting(broad: "list[tuple[str, str | None, str]]", proto: str) -> "list[str]":
     """The rules of :func:`broad_admits` that admit *proto*, as printed."""
     return [printed for printed, p, _ in broad if p in (None, proto.lower())]

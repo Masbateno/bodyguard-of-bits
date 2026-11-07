@@ -164,3 +164,24 @@ class TestAnUnreachableFwupd:
         """Exit 3 ("resource not found") with a "no devices found" marker: nothing to update."""
         snap = _fwupd(CommandResult("", False, "No devices found\n", 3))
         assert snap.fwupd_error == ""
+
+
+class TestSeveralScansHangTogether:
+    """Second external review: the three at once must each stay listed."""
+
+    def test_each_is_listed_and_the_score_is_a_ceiling(self, monkeypatch):
+        from bob.checks.suid_audit import SuidSnapshot, check_suid_audit
+
+        def _hang(cmd, **kw):
+            raise subprocess.TimeoutExpired(cmd, kw.get("timeout", 10))
+        docker = _docker(monkeypatch, _hang)
+        monkeypatch.setattr("bob.checks.suid_audit.subprocess.run", _hang)
+        monkeypatch.setattr("bob.checks.suid_audit.os.path.isdir", lambda p: True)
+        suid = SuidSnapshot.from_system()
+        engine = ScoreEngine()
+        for result in (check_suid_audit(suid), check_docker_audit(docker),
+                       check_firmware(_fwupd(_FROZEN))):
+            engine.apply(result)
+        assert sorted(engine.unverified) == ["docker_hardening.scan_error",
+                                             "firmware.fwupd_error", "suid_audit.scan_skipped"]
+        assert engine.score_is_upper_bound is True

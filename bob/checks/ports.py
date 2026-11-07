@@ -358,6 +358,7 @@ def check_ports(
     reported_warn_ports:   set[str] = set()  # deduplicate warn/alert ports (multi-address)
     reported_alert_ports:  set[str] = set()  # deduplicate alert ports
     reported_local_ports:  set[str] = set()  # deduplicate local/loopback ports (multi-address)
+    reported_order_ports:  set[str] = set()  # v0.31.0 — refused by a rule an earlier portless rule overrides
 
     # Parse UFW rules once instead of re-scanning the rules string for every
     # listening port (was O(N×M); now O(M) parse + O(N) lookups).
@@ -414,6 +415,21 @@ def check_ports(
 
         if category == PortCategory.COVERED:
             # Already covered by a rule — no finding needed (services handles this)
+            # v0.31.0, review of the changelog — unless that rule refuses it
+            # and a rule naming no port, earlier, admits it: UFW applies the
+            # first rule that matches (measured: `allow from <client>` then
+            # `deny 8099/tcp` left 8099 open to the client).
+            earlier, action = _ufw.admitted_before_own_rule(
+                _rules_text, lport.port, lport.proto, v6=":" in lport.address,
+                app_profiles=snapshot.ufw_apps)
+            if earlier and action in ("DENY", "REJECT") and pp not in reported_order_ports:
+                reported_order_ports.add(pp)
+                pp_info = f"{pp} ({lport.process})" if lport.process else pp
+                result.info(
+                    message=_t("ports.refused_after_broad_rule", port=pp_info,
+                               rules="; ".join(r for r, _, _ in earlier)),
+                    key="ports.refused_after_broad_rule",
+                )
             continue
 
         if category == PortCategory.UNCOVERED_PUBLIC:
