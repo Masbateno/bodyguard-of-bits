@@ -424,6 +424,29 @@ _RP_RANK = {1: 2, 2: 1, 0: 0}
 #: max()-ed into every interface, ``default`` is the template for future ones,
 #: and ``lo`` (loopback) cannot receive a spoofed packet from the network.
 _RP_NOT_AN_INTERFACE = frozenset({"all", "default", "lo"})
+_SYS_NET = Path("/sys/class/net")
+
+
+def _l2_port(name: str) -> bool:
+    """v0.31.1 — an interface whose frames its bridge or bond takes before its
+    own IP stack sees them: a bridge port (``brport/``) or a bond slave
+    (``bonding_slave/``). Its own conf/<name> values decide nothing.
+
+    Measured on Kali in network namespaces (7 November 2026,
+    bridgeport-redirect-0311.txt), an ICMPv6 redirect sent through the port:
+    the port at 1, its bridge or bond at 0 — refused, while 0.31.0 reported
+    "IPv6 redirects accepted" (−1; seen on a Mint desktop, enp10s0 a port of
+    br0); the bridge or bond at 1 — accepted. A VRF member keeps its own IP
+    stack (its value at 1: accepted) and is still weighed. An interface whose
+    markers cannot be read is weighed, as before.
+    """
+    for marker in ("brport", "bonding_slave"):
+        try:
+            if (_SYS_NET / name / marker).is_dir():
+                return True
+        except OSError:
+            continue
+    return False
 
 _IPV4_CONF = Path("/proc/sys/net/ipv4/conf")
 
@@ -475,7 +498,7 @@ def _effective_rp_filter() -> "tuple[int | None, int | None, str]":
     weakest_iface = ""
     try:
         ifaces = sorted(d.name for d in _IPV4_CONF.iterdir()
-                        if d.name not in _RP_NOT_AN_INTERFACE)
+                        if d.name not in _RP_NOT_AN_INTERFACE and not _l2_port(d.name))
     except OSError:
         ifaces = []
     for name in ifaces:
@@ -533,7 +556,8 @@ def _effective_by_iface(knob: str, rule: str, family: str = "ipv4") -> "dict[str
     if all_on is None:
         return None
     try:
-        names = sorted(d.name for d in base.iterdir() if d.name not in _RP_NOT_AN_INTERFACE)
+        names = sorted(d.name for d in base.iterdir()
+                       if d.name not in _RP_NOT_AN_INTERFACE and not _l2_port(d.name))
     except OSError:
         names = []
     effective: "dict[str, bool]" = {}
