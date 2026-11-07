@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.31.0
+Version:        0.31.1
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,14 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun Nov 08 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.31.1-1
+- Patch, BREAKING for scores: bridge ports and bond slaves are no longer
+  weighed by their own sysctls; usb_storage has its own finding (no
+  deduction on a desktop or workstation); behind an IPv4 NAT with a public
+  IPv6 address, an IPv6 listener the host leaves reachable makes the score
+  a ceiling; the redirect fixes persist each named interface; interfaces
+  whose name holds a dot are read and fixed; the RSA host-key text.
+
 * Sat Nov 07 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.31.0-1
 - Minor, BREAKING for scores: the per-port verdict follows a destination
   NAT and weighs the IPv4 legacy tables; anonymous Kubernetes probes only

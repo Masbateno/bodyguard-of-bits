@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.31.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.31.1-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -68,7 +68,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 - **kexec / kernel lockdown** — reads `kernel.kexec_load_disabled` and `/sys/kernel/security/lockdown`: kexec locked, or lockdown in `integrity`/`confidentiality`, → OK; otherwise → INFO; an interface absent on a kernel built without it reads as unknown; INFO-only (v0.21.0)
 - **Kernel hardening** — ASLR, `kernel.yama.ptrace_scope` and `fs.suid_dumpable` → WARN −1 pt each when weakened; `kptr_restrict`, `dmesg_restrict` → INFO; unprivileged eBPF, `perf_event_paranoid` and user namespaces → INFO-only, reported as state, never as a fix (v0.24.0)
 - **MAC policy (AppArmor / SELinux)** — no MAC, AppArmor off in the kernel, inactive or without profiles, SELinux disabled, nothing enforcing → WARN −1 pt; profiles in complain mode → INFO
-- **Kernel modules** — risky filesystem or network modules currently loaded → WARN −1 pt; installed-kernel cleanup with a profile-aware retention policy; **module blacklist** (v0.22.0, INFO) — rarely-needed modules neither loaded nor kept from loading by modprobe.d (CIS 3.4)
+- **Kernel modules** — risky filesystem or network modules currently loaded → WARN −1 pt; the USB storage driver (usb_storage) has its own finding since v0.31.1 → WARN −1 pt on a server, INFO on a desktop or workstation; installed-kernel cleanup with a profile-aware retention policy; **module blacklist** (v0.22.0, INFO) — rarely-needed modules neither loaded nor kept from loading by modprobe.d (CIS 3.4)
 - **User accounts** — a non-root UID 0 → ALERT (up to −3 pts); empty passwords → ALERT (up to −2 pts); expired accounts → INFO. v0.24.0: `su` restriction (pam_wheel, `su`'s own file mode, BusyBox `su` which ignores PAM) → WARN −1 pt, scored only when root has a usable password; interactive homes writable by every account (`o+w`) or owned by another account → WARN −1 pt; `.netrc` accessible to group or others → WARN −1 pt; legacy `.rhosts`/`.shosts`/`.forward` and duplicate UIDs or user names → INFO
 - **Password policy** — no `pam_pwquality`/`pam_cracklib`, or a weak `minlen` → WARN −1 pt (INFO under the desktop/workstation profiles); password aging → INFO; a weak hashing algorithm (MD5/DES/bigcrypt) in `login.defs` or any `pam_unix` stack → WARN −1 pt (v0.24.0); BusyBox `passwd`, which reads neither, is reported as built-in
 - **Root PATH** (v0.22.0) — root's configured PATH (`ENV_SUPATH`, sudoers `secure_path`) with a world-writable, `.` or relative component → WARN −1 pt
@@ -398,7 +398,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.31.0  │  Linux hardening auditor                                     ║
+║  BOB 0.31.1  │  Linux hardening auditor                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║

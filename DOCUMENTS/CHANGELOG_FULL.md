@@ -6,6 +6,206 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.31.1] — 2026-11-08
+
+**A patch, BREAKING for scores: six corrections, from a real Mint desktop audit
+of 0.31.0 and what measuring it showed. Bridge ports and bond slaves are no
+longer weighed by their own sysctls; usb_storage is a storage driver with its
+own finding; behind an IPv4 NAT with a public IPv6 address, an IPv6 listener the
+host leaves reachable makes the score a ceiling; the redirect fixes persist each
+named interface; an interface whose name holds a dot is read and fixed; the RSA
+host-key text. Measured on a real Kali Rolling and on the Mint desktop (read
+only).**
+
+BREAKING for scores means: the same host can score differently under 0.31.0
+and 0.31.1 — global, per domain, and the `--history` trend across the upgrade —
+because findings that feed the formula changed. The scoring formula is
+unchanged; no JSON-output-schema or CSV-column change; no section added or
+removed; no finding key renamed or removed.
+
+Scores that move (**rises**: the score can go up; **drops**: it can go down; a
+ceiling, "≤": the score shown is a maximum, as BOB could not establish
+everything that feeds it):
+
+| Where | 0.31.0 | 0.31.1 | § |
+|---|---|---|---|
+| a redirect, source-route, martian-logging or rp_filter knob whose only interface in effect is a bridge port or a bond slave (its master and conf/all safe) | the port named; the finding's deduction where it carries one (measured on the Mint: IPv6 `accept_redirects`, enp10s0 a port of br0, −1, first under "to fix") | the port not weighed, for all four knobs; only the knobs that carry a deduction (not martian logging, which is INFO) can raise the score (**rises**) | 1 |
+| a VRF member at 1 | weighed | weighed (unchanged: it keeps its own IP stack) | 1 |
+| usb_storage loaded, desktop or workstation profile | `kernel_modules.risky_fs` WARN −1, "risky filesystem module(s) loaded: usb_storage" | `kernel_modules.usb_storage` INFO, no deduction (**rises**) | 2 |
+| usb_storage loaded, server profile | `kernel_modules.risky_fs` WARN −1 | `kernel_modules.usb_storage` WARN −1 (the same −1; only the finding key changes) | 2 |
+| usb_storage and a filesystem module (cramfs, udf…) loaded, server profile | one `kernel_modules.risky_fs` WARN −1 for both | `kernel_modules.risky_fs` −1 and `kernel_modules.usb_storage` −1 (**drops**) | 2 |
+| behind an IPv4 NAT, a public IPv6 address, an IPv6 listener the host's rules leave reachable or whose filtering is not established | the score given as a value | `ipv6.router_filter_unverified` INFO, the score a ceiling; the text says which: reachable, or not established (a gap in what BOB reads, not a measured exposure) (**ceiling**) | 3 |
+| the same, the host's rules closing IPv6 inbound (UFW IPV6=no with its DROP; UFW's default deny with no IPv6 listener allowed by a rule) | the score given as a value | the same (unchanged) | 3 |
+| a redirect knob in effect (conf/all at 0) on an interface whose name holds a dot (a VLAN, enp3s0.99) | not read: OK (measured) | weighed, the interface named (**drops** where the finding carries a deduction) | 4 |
+
+### 1. A bridge port or a bond slave is not weighed by its own sysctls
+
+0.31.0 read the redirect, source-route and martian-logging knobs, and
+rp_filter, per interface. A bridge port and a bond slave hand their frames to
+their master before their own IP stack sees them, so their own conf/<name>
+values decide nothing. Seen on the Mint desktop: enp10s0, a port of br0 and
+without an IPv6 address, was alone at 1 for IPv6 `accept_redirects` (br0, all
+and default at 0), and BOB reported "IPv6 ICMP redirects accepted", −1, first
+under "to fix". Measured on Kali in network namespaces with an ICMPv6 redirect
+sent through the member, conf/all and conf/default at 0: a bridge port or a
+bond slave at 1, its master at 0 — the redirect was refused, and 0.31.0 flagged
+the port; the master at 1 — accepted (polarity); a VRF member at 1 — accepted,
+since a VRF member keeps its own IP stack: it is still weighed. /sys gives no
+device type for a VRF, so a port is told by its own markers (`brport/`,
+`bonding_slave/`), not by its master's kind; a marker that cannot be read
+leaves the interface weighed, as before. After the fix, 7/7 measured cases
+right. Limits: team and Open vSwitch ports carry neither marker and are still
+weighed (BOB can then overstate, as 0.31.0 did); on the Mint, the IPv4 knobs
+with conf/all at 1 still apply on every interface, so their findings stand.
+
+### 2. usb_storage: a USB storage driver, not a filesystem module
+
+0.31.0 and earlier listed usb_storage among the filesystem modules: the Mint
+audit read "Module(s) de système de fichiers à risque chargé(s) : usb_storage",
+−1 under the workstation profile, with `sudo modprobe -r usb_storage` — which
+modprobe refuses while uas holds it: `lsmod` on the Mint shows `usb_storage ...
+1 uas`, and on Kali `modprobe -r usb_storage` answered "Module usb_storage is in
+use" while `modprobe -r uas usb_storage` unloaded both (measured). It now has
+its own finding, `kernel_modules.usb_storage` ("USB mass-storage driver
+loaded"): −1 on a server; INFO without a deduction under the desktop and
+workstation profiles, where a USB disk or key is ordinary use (decided 7
+November 2026) — a BOB scoring choice: the CIS control below calls for the
+module to be unavailable, it does not set this per-profile weighting; the
+command unloads uas first when it is loaded (`sudo modprobe -r uas
+usb_storage`), and only while no USB disk is in use. Its CIS reference is
+generated from ComplianceAsCode (rule `kernel_module_usb-storage_disabled`): CIS
+Ubuntu 22.04 L1 — 1.1.1.8 — "Ensure usb-storage kernel module is not available",
+cited in CIS Ubuntu 24.04 (1.1.1.9), Debian 12 (1.1.1.9) and Debian 13
+(1.1.1.10). `kernel_modules.risky_fs` keeps the filesystem modules (cramfs,
+freevxfs, hfs, hfsplus, jffs2, squashfs, udf), and its `--explain` text no
+longer names usb_storage. Limits: squashfs, which snap packages use, stays among
+the filesystem modules (unchanged).
+
+### 3. Behind an IPv4 NAT with a public IPv6 address, the router decides
+
+0.31.0 stopped calling such a host "behind NAT" (display only) and left the
+score to this release. Measured on a real Kali behind a home router: with the
+router's IPv6 firewall off, a phone on mobile data reached the host's
+`[::]:8080`; with it on, nothing arrived. The router's filter cannot be read
+from the host. The IPv6 section now receives whether IPv4 is behind a NAT, and
+`ipv6.router_filter_unverified` (INFO) makes the score a ceiling when the host
+holds a public IPv6 address, an IPv6 listener exists (or the listeners could not
+be read), and the host's own rules leave a listener reachable or their filtering
+not established: a listener a UFW rule allows, no firewall, a ruleset that
+accepts IPv6 or was not read, a firewalld zone. When the host's rules close IPv6
+inbound — UFW with IPV6=no and its DROP, or UFW's default deny with no IPv6
+listener allowed by a rule — the router decides nothing and nothing changes.
+Measured on the Kali (UFW inactive, a public IPv6 address): 0.31.0 never
+mentioned the router; 0.31.1 lists `ipv6.router_filter_unverified` among the
+unverified keys. The finding says which case it is: the host's rules leave a
+listener reachable; or its filtering is detected but not weighed port by port (a
+raw ruleset at policy drop on IPv6, firewalld's zones, a ruleset not read) —
+then the text says it is a gap in what BOB can read, not a measured exposure.
+The Mint desktop holds no public IPv6 address: nothing changes there. Limits: a
+raw ruleset at policy drop on IPv6 (`ipv6.netfilter_v6_filtered`) counts as not
+established, since BOB does not weigh its per-port accepts — such a host gets
+the ceiling even when nothing is accepted (said as such, not as an exposure);
+`detect_network_context`'s IPv6 branch was looked at and is kept (it serves
+IPv6-only hosts and hosts with a public IPv4 gateway).
+
+### 4. The redirect fixes persist each named interface; dotted interface names
+
+0.31.0's fix for `send_redirects` and both `accept_redirects` set conf/all,
+conf/default and each named interface, and persisted conf/all and conf/default
+only. An interface created before conf/default reaches its new value keeps its
+own: on the Mint, UFW applies `/etc/ufw/sysctl.conf` (all and default at 0)
+once enp10s0 exists, which stayed at 1. The fix now persists each named
+interface's value too (decided 7 November 2026). Measured on Kali: systemd's
+udev rule runs `systemd-sysctl` for each network interface as it appears — a
+key written for the interface was applied at its creation (0); without a key,
+the interface took the running default (1); with only conf/default persisted,
+an interface created while the running default was 1 stayed at 1. Round trip:
+BOB's generated command set the interface to 0 and wrote its line to
+`/etc/sysctl.d/99-hardening.conf`; the interface, recreated while the running
+default was 1, came back at 0. Limits: measured through udev on Kali, not
+across a real reboot; a host without systemd's udev rule (OpenRC) applies the
+keys once at boot, for the interfaces present then; a key names the interface,
+so a renamed interface leaves a key that applies to nothing. Applying the
+fix twice leaves one line per key (the shell command checks the exact line; the
+native `--fix --apply` path rewrites the key's line); when a file applied
+later at boot sets the same key to another value, the fix is written where it
+wins, as for every sysctl fix (exact keys only; glob assignments are not
+weighed).
+
+Interfaces whose name holds a dot. sysctl writes a dot inside an interface name
+as "/" in a key (sysctl(8), sysctl.d(5)), and BOB read `/proc/sys/` + the key
+with every dot turned into a slash. Measured on Kali: a VLAN `bob.99` at 1 for
+`send_redirects`, conf/all at 0 — the kernel sends redirects there, and 0.31.0
+left the VLAN out and read OK; `sysctl -w net.ipv4.conf.bob.99.send_redirects=0`
+failed ("no such file"), while `net.ipv4.conf.bob/99.send_redirects=0` set it,
+on the command line and in a file. BOB now reads such an interface, names it,
+and writes its key the way sysctl does; the printed command quotes each key (a
+Linux interface name may hold a character the shell splits on). Measured after
+the fix: the VLAN read and flagged; BOB's command and the native `--fix --apply`
+path set it to 0 and persisted `net.ipv4.conf.bob/99.send_redirects=0`; udev
+applied that key when the VLAN was recreated. Limits: the native `--fix --apply`
+path takes letters (capitals included), digits, `_`, `-` and the dot; a name
+holding a rarer character Linux allows (`+`, `;`…) is refused and the fix
+reported failed, with its reason — the printed command quotes it for an operator
+to run.
+
+### 5. The RSA host-key notice
+
+For a 3072-bit RSA host key, BOB 0.31.0 read "technically acceptable but no
+longer considered optimal. Modern clients and CAs recommend 4096-bit RSA or
+ed25519", with a command to regenerate it (seen on the Mint, in French). NIST
+rates 3072-bit RSA at 128-bit security, acceptable beyond 2030, and 2048-bit at
+112-bit, acceptable through 2030 (SP 800-57 Part 1); under NIST SP 800-131A,
+generating RSA signatures with keys below 2048 bits is disallowed; verifying
+signatures made with 1024- to 2047-bit keys remains a legacy use. The notice
+stays INFO, with no deduction and the same thresholds; it now reads "4096-bit
+RSA gives a higher security margin; ed25519 is a modern alternative" (ed25519,
+like 3072-bit RSA, is about 128-bit security), its detail gives the NIST figures
+and warns that regenerating a host key changes the fingerprint every client has
+recorded. Measured: without a terminal, `ssh-keygen` refuses to overwrite the
+existing key ("Overwrite (y/n)?", exit 1). Limits: a host key under 2048 bits
+stays an INFO without a deduction (as before).
+
+New finding keys: `kernel_modules.usb_storage` (WARN −1 on a server; INFO on a
+desktop or a workstation), `ipv6.router_filter_unverified` (INFO, a ceiling).
+Existing texts changed: `ssh.host_key_rsa_short` and its detail;
+`kernel_modules.risky_fs`'s `--explain` entry. A second text for
+`ipv6.router_filter_unverified` (filtering not established) is a message of the
+same finding, not a new key.
+
+### Counters
+
+Tests collected 19727 → **19886**, test files 452 → **457**, mutations 1628 →
+**1655**; locale keys 3158 → **3170** (12 strings, none removed: three
+`kernel_modules.usb_storage` texts, six for its `--explain` entry, three for
+`ipv6.router_filter_unverified` — its two messages and its detail); `--explain`
+keys and CIS references 235 → **236**; sections unchanged. Cross-benchmark
+citations: 195 on 69 keys — 68 mapped by the generator, one
+(`file_perms.nopass_root_equivalent`) maintained by hand since 0.27.0; the
+documentation's count was stale before this release (189 on 67 keys written, 192
+on 68 held).
+
+### Guards
+
+`test_v0311_l2_ports.py` (`l2-port/*`), `test_v0311_usb_storage.py`
+(`usb-storage/*`), `test_v0311_router_filter.py` (`router-filter/*`),
+`test_v0311_rsa_host_key_text.py` (`rsa-host-key/*`),
+`test_v0311_dotted_iface.py` (`dotted-iface/*`),
+`test_v0310_sysctl_per_iface.py` (`sysctl-persist/*`): 27 new mutations
+(`l2-port` 4, `usb-storage` 6, `router-filter` 8, `rsa-host-key` 3,
+`sysctl-persist` 1, `dotted-iface` 5), none retired. Re-anchored without
+changing their meaning (10): `sysctl-per-iface/*` (3: lo-weighed,
+fix-interfaces-not-set, fix-default-not-kept),
+`ipv6-default-deny/runner-policy-unpassed`, and six documentation-counter
+anchors (`docs/cis-breakdown-mis-split`, `docs/cis-reference-count-stale`,
+`docs/dev-cis-breakdown-unguarded`,
+`docs/explain-count-stale-beside-dated-note`, `docs/locale-key-total-stale`,
+`docs/profile-prose-mix-overstated`). Older tests adapted:
+`test_kernel_modules.py` (usb_storage's own finding),
+`test_explain_naming_convention.py` (236 keys).
+
+---
+
 ## [0.31.0] — 2026-11-07
 
 **A minor release, BREAKING for scores. Five areas BOB read too coarsely,

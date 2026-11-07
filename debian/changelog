@@ -1,3 +1,19 @@
+bodyguard-of-bits (0.31.1-1) unstable; urgency=medium
+
+  * Patch, BREAKING for scores: a 0.31.0 and a 0.31.1 score of the same host
+    are not comparable; the structured audit outputs keep their formats.
+  * A bridge port or a bond slave is no longer weighed by its own redirect,
+    source-route, martian-logging or rp_filter value.
+  * usb_storage has its own finding: -1 on a server, no deduction on a
+    desktop or a workstation; its unload command unloads uas first.
+  * Behind an IPv4 NAT with a public IPv6 address, an IPv6 listener the
+    host's rules leave reachable makes the score a ceiling.
+  * The redirect fixes persist each named interface; interfaces whose name
+    holds a dot are read and fixed.
+  * The RSA host-key notice states NIST's figures and the fingerprint change.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 08 Nov 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.31.0-1) unstable; urgency=medium
 
   * Minor, BREAKING for scores: a 0.30.0 and a 0.31.0 score of the same host

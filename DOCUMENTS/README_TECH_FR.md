@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.31.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.31.1-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -68,7 +68,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 - **kexec / lockdown noyau** — lit `kernel.kexec_load_disabled` et `/sys/kernel/security/lockdown` : kexec verrouillé, ou lockdown en `integrity`/`confidentiality`, → OK ; sinon → INFO ; une interface absente sur un noyau compilé sans elle lit inconnu ; INFO seulement (v0.21.0)
 - **Durcissement noyau** — ASLR, `kernel.yama.ptrace_scope` et `fs.suid_dumpable` → WARN −1 pt chacun s'ils sont affaiblis ; `kptr_restrict`, `dmesg_restrict` → INFO ; eBPF non privilégié, `perf_event_paranoid` et espaces de noms utilisateur → INFO seulement, rapportés comme un état, jamais comme un correctif (v0.24.0)
 - **Politique MAC (AppArmor / SELinux)** — pas de MAC, AppArmor désactivé dans le noyau, inactif ou sans profils, SELinux désactivé, rien en enforce → WARN −1 pt ; profils en mode plainte → INFO
-- **Modules noyau** — modules de système de fichiers ou réseau à risque chargés → WARN −1 pt ; nettoyage des noyaux installés selon une rétention adaptée au profil ; **blacklist des modules** (v0.22.0, INFO) — modules rarement utiles ni chargés ni empêchés de charger par modprobe.d (CIS 3.4)
+- **Modules noyau** — modules de système de fichiers ou réseau à risque chargés → WARN −1 pt ; le pilote de stockage USB (usb_storage) a son propre constat depuis la v0.31.1 → WARN −1 pt sur un serveur, INFO sur un desktop ou une workstation ; nettoyage des noyaux installés selon une rétention adaptée au profil ; **blacklist des modules** (v0.22.0, INFO) — modules rarement utiles ni chargés ni empêchés de charger par modprobe.d (CIS 3.4)
 - **Comptes utilisateurs** — un UID 0 autre que root → ALERT (jusqu'à −3 pts) ; mots de passe vides → ALERT (jusqu'à −2 pts) ; comptes expirés → INFO. v0.24.0 : restriction de `su` (pam_wheel, mode du fichier `su`, `su` BusyBox qui ignore PAM) → WARN −1 pt, scoré seulement si root a un mot de passe utilisable ; homes interactifs modifiables par tous (`o+w`) ou appartenant à un autre compte → WARN −1 pt ; `.netrc` accessible au groupe ou aux autres → WARN −1 pt ; `.rhosts`/`.shosts`/`.forward` hérités et UID ou noms en double → INFO
 - **Politique de mots de passe** — pas de `pam_pwquality`/`pam_cracklib`, ou un `minlen` faible → WARN −1 pt (INFO sous les profils desktop/workstation) ; vieillissement des mots de passe → INFO ; un algorithme de hachage faible (MD5/DES/bigcrypt) dans `login.defs` ou une pile `pam_unix` → WARN −1 pt (v0.24.0) ; le `passwd` BusyBox, qui ne lit ni l'un ni l'autre, est signalé comme intégré
 - **PATH de root** (v0.22.0) — PATH configuré de root (`ENV_SUPATH`, `secure_path` de sudoers) avec un composant modifiable par tous, `.` ou relatif → WARN −1 pt
@@ -398,7 +398,7 @@ Exemple (tronqué pour la lisibilité) :
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.31.0  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.31.1  │  Auditeur de durcissement Linux                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
