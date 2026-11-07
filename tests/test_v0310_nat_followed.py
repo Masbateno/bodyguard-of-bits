@@ -271,9 +271,15 @@ class TestTheSources:
 
 class TestWhatIsSaid:
 
+    # Review of the 0.31.0 changelog (7 November 2026): "not reached on this
+    # port from the network" read as "the port is closed". Measured on Kali in
+    # namespaces (review-dnat.txt): a DNAT of 8099 to a backend that serves it
+    # — the host's 8099 answered, from the backend; the host's own listener
+    # was reached in none of the three NAT cases. The text names the listener.
+
     @pytest.mark.parametrize("lang, words", [
-        ("en", "a NAT rule of the nftables/iptables ruleset sends this port's new connections elsewhere: not reached on this port from the network"),
-        ("fr", "une règle NAT du jeu de règles nftables/iptables envoie ailleurs les nouvelles connexions vers ce port : pas atteint sur ce port depuis le réseau"),
+        ("en", "a NAT rule of the nftables/iptables ruleset sends this port's new connections elsewhere (another port or another host): this listener is not reached through it — whatever answers there instead is not weighed by this finding"),
+        ("fr", "une règle NAT du jeu de règles nftables/iptables envoie ailleurs (un autre port ou une autre machine) les nouvelles connexions vers ce port : ce service n'y est pas atteint — ce qui y répond à sa place n'est pas évalué par ce constat"),
     ])
     def test_the_ports_line(self, lang, words):
         from bob.checks.ports import ListeningPort, PortsSnapshot, check_ports

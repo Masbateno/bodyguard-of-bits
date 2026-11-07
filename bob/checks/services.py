@@ -1282,6 +1282,10 @@ def _allow_rule_source(
             if words and words[0] in ("IN", "OUT", "FWD"):
                 words = words[1:]
             return " ".join(words)
+    # v0.31.0 — the source of a rule naming no port, as _classify_exposure reads it.
+    for _printed, broad_proto, source in _ufw.broad_admits(ufw_rules):
+        if broad_proto in (None, proto or "tcp"):
+            return source
     return ""
 
 
@@ -1351,6 +1355,14 @@ def _classify_exposure(
                 return Exposure.OPEN_LOCAL
             return Exposure.OPEN_WORLD
 
+    # v0.31.0, review of the changelog — no rule names this port, but one that
+    # names no port admits it (``_ufw.broad_admits``): it decides as a rule for
+    # the port from the same source would. Measured on Kali in a network
+    # namespace: `ufw allow from <client>` and `ufw allow in on <iface>` opened
+    # a port the services section called "covered by the default deny policy".
+    for _printed, broad_proto, source in _ufw.broad_admits(ufw_rules):
+        if broad_proto in (None, proto):
+            return Exposure.OPEN_LOCAL if _line_has_private_or_loopback(source) else Exposure.OPEN_WORLD
     return Exposure.NO_RULE
     if proto not in ("tcp", "udp"):
         logger.warning("Invalid protocol in registry: %r", proto)

@@ -362,6 +362,11 @@ def check_ports(
     # Parse UFW rules once instead of re-scanning the rules string for every
     # listening port (was O(N×M); now O(M) parse + O(N) lookups).
     covered_ports = _parse_ufw_covered_ports(snapshot.ufw_rules, snapshot.ufw_apps)
+    # v0.31.0 — UFW rules naming no port admit every port from their source
+    # (_ufw.broad_admits): a listener they admit is not "covered by the default deny".
+    _rules_text = snapshot.ufw_rules if isinstance(snapshot.ufw_rules, str) else ""
+    broad = {False: _ufw.broad_admits(_rules_text, v6=False),
+             True: _ufw.broad_admits(_rules_text, v6=True)}
 
     for lport in snapshot.ports:
         pp = lport.port_proto
@@ -497,6 +502,13 @@ def check_ports(
                 continue
             if default_incoming_policy in ("deny", "reject"):
                 pp_info = f"{pp} ({lport.process})" if lport.process else pp
+                admits = _ufw.admitting(broad[":" in lport.address], lport.proto)
+                if admits:
+                    result.info(
+                        message=_t("ports.uncovered_broad_rule", port=pp_info, rules="; ".join(admits)),
+                        key="ports.uncovered_broad_rule",
+                    )
+                    continue
                 result.info(
                     message=_t("ports.uncovered_default_deny", port=pp_info),
                     key="ports.uncovered_default_deny",

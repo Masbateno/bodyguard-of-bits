@@ -169,6 +169,69 @@ def ranges_cover(
                for lo, hi, rp in ranges)
 
 
+def _names_no_port(to_col: str) -> bool:
+    """v0.31.0 — a To column that names no port: Anywhere, or a bare address
+    (``80`` and ``6000:6007`` are ports, not addresses)."""
+    if to_col == "Anywhere":
+        return True
+    import ipaddress
+    try:
+        ipaddress.ip_network(to_col, strict=False)
+    except ValueError:
+        return False
+    return True
+
+
+#: The protocol of a rule naming no port, as ufw prints it after the source.
+_FROM_PROTO_RE = re.compile(r"/(tcp|udp)$", re.IGNORECASE)
+
+
+def broad_admits(ufw_numbered: str, v6: "bool | None" = None) -> "list[tuple[str, str | None, str]]":
+    """v0.31.0 — the incoming ALLOW/LIMIT rules whose To column names no port.
+
+    Such a rule admits every port (of its protocol) from its source, so a
+    listener with no rule of its own is not "covered by the default deny".
+    Measured on Kali in a network namespace (7 November 2026), UFW at default
+    deny: `ufw allow from 10.77.0.1` and `ufw allow in on h0` opened 8099 over
+    IPv4 and IPv6, and BOB said it was covered. As ufw prints them::
+
+        [ 2] Anywhere                   ALLOW IN    10.77.0.1
+        [ 3] Anywhere                   ALLOW IN    10.77.0.3/tcp
+        [ 5] Anywhere on h0             ALLOW IN    Anywhere
+        [ 7] Anywhere                   ALLOW FWD   10.77.0.6       (routed: not this)
+
+    Returns ``(rule as printed, protocol or None, source)``; *v6* keeps only
+    the ``(v6)`` rules (True) or only the others (False).
+    """
+    found = []
+    for line in ufw_numbered.splitlines():
+        rule = parse_rule(line)
+        if rule is None or rule.action not in ("ALLOW", "LIMIT"):
+            continue
+        if v6 is not None and ("(v6)" in line) != v6:
+            continue
+        words = rule.from_col.split("#", 1)[0].split()
+        if words and words[0] in ("OUT", "FWD"):
+            continue
+        if words and words[0] == "IN":
+            words = words[1:]
+        if not _names_no_port(rule.to_col):
+            continue
+        source = " ".join(words).replace("(v6)", "").strip()
+        m = _FROM_PROTO_RE.search(source)
+        proto = m.group(1).lower() if m else None
+        if m:
+            source = source[:m.start()]
+        printed = re.sub(r"\s+", " ", _NUMBERED_RE.match(line).group(1).split("#", 1)[0]).strip()
+        found.append((printed, proto, source or "Anywhere"))
+    return found
+
+
+def admitting(broad: "list[tuple[str, str | None, str]]", proto: str) -> "list[str]":
+    """The rules of :func:`broad_admits` that admit *proto*, as printed."""
+    return [printed for printed, p, _ in broad if p in (None, proto.lower())]
+
+
 def is_rule_line(line: str) -> bool:
     """True if *line* is a numbered rule row rather than a header or blank."""
     return _NUMBERED_RE.match(line) is not None

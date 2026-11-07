@@ -319,6 +319,7 @@
     "listening_verbose_hint": "Utilisez -v pour afficher le tableau complet des ports",
     "process_disclaimer": "Ce port appartient à {process} — le bloquer peut interrompre l'application. N'exécutez la commande ci-dessus que si vous savez précisément ce que vous faites.",
     "uncovered_default_deny": "Port {port} en écoute sur toutes les interfaces — aucune règle UFW explicite, mais couvert par la politique de refus par défaut",
+    "uncovered_broad_rule": "Port {port} en écoute sur toutes les interfaces — aucune règle UFW propre, et pas couvert par le refus par défaut : une règle UFW qui ne nomme aucun port l'admet ({rules})",
     "uncovered_ufw_inactive": "Port {port} en écoute sur toutes les interfaces — aucun pare-feu actif pour le filtrer",
     "uncovered_firewalld": "Port {port} en écoute sur toutes les interfaces — régi par la zone firewalld de l'interface par laquelle on l'atteint, pas par une règle UFW",
     "uncovered_firewalld_docker": "Port {port} en écoute sur toutes les interfaces — publié par Docker : avec Docker qui écrit ses propres règles de pare-feu et le StrictForwardPorts de firewalld désactivé (les deux valeurs par défaut), la zone firewalld ne filtrait pas un tel port lors des mesures (Fedora, openSUSE et Debian ; voir la section Docker)",
@@ -337,7 +338,7 @@
       "accept_default": "le jeu nftables/iptables l'accepte par défaut et aucune règle ne refuse ce port : joignable depuis le réseau",
       "drop_rule": "une règle du jeu nftables/iptables pour ce port le refuse : injoignable depuis le réseau",
       "drop_default": "le jeu nftables/iptables le refuse par défaut et aucune règle n'accepte ce port avant : injoignable depuis le réseau",
-      "drop_nat": "une règle NAT du jeu de règles nftables/iptables envoie ailleurs les nouvelles connexions vers ce port : pas atteint sur ce port depuis le réseau",
+      "drop_nat": "une règle NAT du jeu de règles nftables/iptables envoie ailleurs (un autre port ou une autre machine) les nouvelles connexions vers ce port : ce service n'y est pas atteint — ce qui y répond à sa place n'est pas évalué par ce constat",
       "detail": "BOB a lu les chaînes d'entrée dans l'ordre et pesé les règles qui nomment le numéro de ce port (un port, une liste, une plage, multiport), mis à part les règles de boucle locale, established/related et invalid seul, et suivi les sauts inconditionnels ; toute autre règle aurait laissé le port non établi, comme une règle qui peut le refuser ailleurs sur le chemin d'entrée : avant le hook input (prerouting, ingress, PREROUTING de raw ou de mangle) ou sur lui dans une autre table (INPUT de mangle ou de security, qui passent encore après qu'INPUT de filter a accepté). Mesuré dans un espace de noms réseau : ces règles ont ouvert ou fermé exactement les ports qu'elles nomment. Pesés depuis la 0.30.0 (mesuré) : une destination, ou une interface d'entrée, qui couvre toutes les adresses IPv4 ou interfaces de l'hôte ou aucune, un set de ports nommé, une verdict map par port. Non pesés : l'IPv6 (voir la section IPv6), les règles limitées à des sources, une destination ou une interface qui ne couvre qu'une partie de celles de l'hôte, un set mis à jour à l'exécution, un verdict de map qui saute vers une chaîne.",
       "detail6": "BOB a lu les chaînes d'entrée IPv6 (ip6 et inet, les règles purement IPv4 mises de côté) et les chaînes placées avant elles comme il lit celles de l'IPv4, règle par règle pour le numéro de ce port. Mesuré dans un espace de noms réseau (1er novembre 2026) : un drop pour le port dans une chaîne inet ou ip6 l'a fermé en IPv6, dans une chaîne ip non. Donné à titre d'information : le score pèse l'exposition IPv6 dans la section IPv6, pas port par port."
     }
@@ -1278,6 +1279,7 @@
     "listeners_list": "Port(s) concerné(s) : {ports}",
     "port_no_v6_rule": "Port {port} à l'écoute en IPv6 (::) sans règle UFW (v6) correspondante",
     "ports_default_deny": "{count} écouteur(s) IPv6 sans règle UFW (v6) propre ({ports}) — couverts par la politique par défaut {policy} d'UFW pour les connexions entrantes, qui s'applique aussi à l'IPv6",
+    "ports_broad_rule": "{count} écouteur(s) IPv6 sans règle UFW (v6) propre ({ports}) — pas couverts par le refus par défaut : une règle UFW (v6) qui ne nomme aucun port les admet ({rules})",
     "all_ports_covered": "Les {count} service(s) IPv6 sont couverts par des règles UFW (v6)",
     "firewalld_v6": "Les services IPv6 sont filtrés par firewalld (mêmes règles de zone qu'en IPv4)",
     "firewalld_v6_family_rules": "Les services IPv6 sont filtrés par firewalld — par les mêmes zones que l'IPv4, dont des règles riches ouvrent certains ports à une seule famille : {rules}",

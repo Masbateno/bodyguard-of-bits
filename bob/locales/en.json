@@ -319,6 +319,7 @@
     "listening_verbose_hint": "Use -v to display the full port table",
     "process_disclaimer": "This port belongs to {process} — blocking it may interrupt the application. Only run the command above if you know exactly what you are doing.",
     "uncovered_default_deny": "Port {port} listening on all interfaces — no explicit UFW rule, but covered by default deny policy",
+    "uncovered_broad_rule": "Port {port} listening on all interfaces — no UFW rule of its own, and not covered by the default deny: a UFW rule that names no port admits it ({rules})",
     "uncovered_ufw_inactive": "Port {port} listening on all interfaces — no active firewall to filter it",
     "uncovered_firewalld": "Port {port} listening on all interfaces — governed by the firewalld zone of the interface it is reached on, not a UFW rule",
     "uncovered_firewalld_docker": "Port {port} listening on all interfaces — published by Docker: with Docker writing its own firewall rules and firewalld's StrictForwardPorts off (both the defaults), the firewalld zone did not filter such a port when measured (Fedora, openSUSE and Debian; see the Docker section)",
@@ -337,7 +338,7 @@
       "accept_default": "the nftables/iptables ruleset accepts it by default and no rule refuses this port: reachable from the network",
       "drop_rule": "a rule of the nftables/iptables ruleset for this port refuses it: not reachable from the network",
       "drop_default": "the nftables/iptables ruleset refuses it by default and no rule accepts this port first: not reachable from the network",
-      "drop_nat": "a NAT rule of the nftables/iptables ruleset sends this port's new connections elsewhere: not reached on this port from the network",
+      "drop_nat": "a NAT rule of the nftables/iptables ruleset sends this port's new connections elsewhere (another port or another host): this listener is not reached through it — whatever answers there instead is not weighed by this finding",
       "detail": "BOB read the input chains in order and weighed the rules naming this port's number (a single port, a list, a range, multiport), set aside the loopback, established/related and invalid-only rules, and followed unconditional jumps; any other rule would have left the port not established, as would a rule that may refuse it elsewhere on the way in: before the input hook (prerouting, ingress, raw or mangle PREROUTING) or on it in another table (mangle or security INPUT, which still run after filter's INPUT accepts). Measured in a network namespace: such rules opened or closed exactly the ports they name. Weighed since 0.30.0 (measured): a destination, or an input interface, covering all or none of this host's IPv4 addresses or interfaces, a named port set, a verdict map keyed by port. Not weighed: IPv6 (see the IPv6 section), rules limited to some sources, a destination or an interface covering only part of the host's, a set updated at run time, a map verdict that jumps.",
       "detail6": "BOB read the IPv6 input chains (ip6 and inet, IPv4-only rules set aside) and the chains before them as it reads IPv4's, rule by rule for this port's number. Measured in a network namespace (1 November 2026): a drop for the port in an inet or ip6 chain closed it over IPv6, one in an ip chain did not. Shown for information: the score weighs IPv6 exposure in the IPv6 section, not port by port."
     }
@@ -1278,6 +1279,7 @@
     "listeners_list": "Listening port(s): {ports}",
     "port_no_v6_rule": "Port {port} listening on IPv6 (::) without a UFW (v6) rule",
     "ports_default_deny": "{count} IPv6 listener(s) without a UFW (v6) rule of their own ({ports}) — covered by UFW's default {policy} for incoming connections, which applies to IPv6 as well",
+    "ports_broad_rule": "{count} IPv6 listener(s) without a UFW (v6) rule of their own ({ports}) — not covered by the default deny: a UFW (v6) rule that names no port admits them ({rules})",
     "all_ports_covered": "All {count} IPv6 listener(s) are covered by UFW (v6) rules",
     "firewalld_v6": "IPv6 listeners are filtered by firewalld (same zone rules as IPv4)",
     "firewalld_v6_family_rules": "IPv6 listeners are filtered by firewalld — by the same zones as IPv4, whose rich rules open some ports to one family only: {rules}",

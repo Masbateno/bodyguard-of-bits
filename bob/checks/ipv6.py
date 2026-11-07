@@ -65,6 +65,8 @@ class IPv6Snapshot:
     ufw_ipv6_enabled:    "bool | None" = True
     ipv6_listeners:      list[str]  = field(default_factory=list)
     ufw_v6_covered:      list[str]  = field(default_factory=list)
+    #: v0.31.0 — the (v6) ALLOW/LIMIT IN rules naming no port (_ufw.broad_admits).
+    ufw_v6_admits:       list       = field(default_factory=list)
     has_global_ipv6:     bool       = False
     #: v0.24.1 — UFW exists on this host (its binary or /etc/default/ufw). An
     #: absent /etc/default/ufw reads as "IPv6 managed" — ufw's own default —
@@ -122,6 +124,7 @@ class IPv6Snapshot:
         ufw_v6_covered = sorted(
             _extract_ufw_v6_covered(ufw_out, _ufw.read_app_profiles())
         )
+        ufw_v6_admits = _ufw.broad_admits(ufw_out, v6=True)
 
         return cls(
             kernel_ipv6_enabled=kernel_ipv6_enabled,
@@ -130,6 +133,7 @@ class IPv6Snapshot:
             ufw_ipv6_enabled=ufw_ipv6_enabled,
             ipv6_listeners=ipv6_listeners,
             ufw_v6_covered=ufw_v6_covered,
+            ufw_v6_admits=ufw_v6_admits,
             has_global_ipv6=has_global_ipv6,
             ufw_present=ufw_present,
             ip6_input_policy=ip6_input_policy,
@@ -474,9 +478,23 @@ def check_ipv6(snapshot: IPv6Snapshot, ufw_active: bool = True, t: TranslationFu
             # which would have opened them — the kubelet, the API server and
             # Samba among them.
             if uncovered and ufw_incoming_policy in ("deny", "reject"):
-                result.info(message=_t("ipv6.ports_default_deny", count=len(uncovered),
-                                       ports=", ".join(uncovered), policy=ufw_incoming_policy),
-                            key="ipv6.ports_default_deny")
+                # v0.31.0, review of the changelog — a (v6) rule naming no
+                # port admits a listener with no rule of its own: not covered
+                # (measured: `ufw allow from <client>` and `ufw allow in on
+                # <iface>` opened 8099 over IPv6 under the default deny).
+                admitted = {p: _ufw.admitting(snapshot.ufw_v6_admits, p.rpartition("/")[2])
+                            for p in uncovered}
+                admitted = {p: r for p, r in admitted.items() if r}
+                if admitted:
+                    rules = sorted({r for rs in admitted.values() for r in rs})
+                    result.info(message=_t("ipv6.ports_broad_rule", count=len(admitted),
+                                           ports=", ".join(admitted), rules="; ".join(rules)),
+                                key="ipv6.ports_broad_rule")
+                covered_by_default = [p for p in uncovered if p not in admitted]
+                if covered_by_default:
+                    result.info(message=_t("ipv6.ports_default_deny", count=len(covered_by_default),
+                                           ports=", ".join(covered_by_default), policy=ufw_incoming_policy),
+                                key="ipv6.ports_default_deny")
                 uncovered = []
                 found_issue = True
             for port_proto in uncovered:
