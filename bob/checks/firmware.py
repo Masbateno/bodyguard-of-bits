@@ -167,6 +167,21 @@ class FirmwareSnapshot:
 # Check logic
 # ---------------------------------------------------------------------------
 
+def _fwupd_error_text(error: str, _t) -> str:
+    """v0.31.0 — the three errors BOB itself describes (the exit status, the
+    timeout, a command that could not run), in the audit's language; anything
+    else is fwupdmgr's own first line, shown as it came."""
+    m = re.fullmatch(r"exit status (-?\d+)", error)
+    if m:
+        return _t("firmware.fwupd_error_exit", code=m.group(1))
+    m = re.fullmatch(r"no answer within (\d+) s", error)
+    if m:
+        return _t("firmware.fwupd_error_timeout", seconds=m.group(1))
+    if error == "could not run":
+        return _t("firmware.fwupd_error_not_run")
+    return error
+
+
 def check_firmware(snapshot: FirmwareSnapshot, t: TranslationFunc | None = None) -> CheckResult:
     """
     Audit firmware update status and CPU microcode installation.
@@ -196,7 +211,7 @@ def check_firmware(snapshot: FirmwareSnapshot, t: TranslationFunc | None = None)
     else:
         if snapshot.fwupd_error:
             result.info(
-                message=_t("firmware.fwupd_error", error=snapshot.fwupd_error),
+                message=_t("firmware.fwupd_error", error=_fwupd_error_text(snapshot.fwupd_error, _t)),
                 key="firmware.fwupd_error",
             )
         # v0.24.0: dbx is the UEFI list of revoked boot signatures, and only

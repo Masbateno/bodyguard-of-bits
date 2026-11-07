@@ -234,3 +234,41 @@ class TestSeveralScansHangTogether:
         assert engine.score_is_uncertain is True
         low, high = engine.score_span
         assert low < high
+
+
+class TestTheErrorInTheAuditLanguage:
+    """The errors BOB describes itself are rendered in the audit's language;
+    fwupdmgr's own first line is shown as it came. Found while writing the
+    French changelog of 0.31.0: a French audit printed "fwupdmgr get-updates a
+    retourné une erreur : exit status 1"."""
+
+    @staticmethod
+    def _message(snap, lang):
+        from bob import i18n
+        i18n.init(lang)
+        try:
+            return next(f.message for f in check_firmware(snap, t=i18n.t).findings
+                        if f.key == "firmware.fwupd_error")
+        finally:
+            i18n.init("en")
+
+    def test_the_exit_status(self):
+        msg = self._message(_fwupd(_DAEMON_UNREACHABLE), "fr")
+        assert msg.endswith(": code de sortie 1") and "exit status" not in msg
+
+    def test_the_timeout(self):
+        msg = self._message(_fwupd(_FROZEN), "fr")
+        assert msg.endswith(": pas de réponse en 30 s") and "no answer" not in msg
+
+    def test_a_command_that_could_not_run(self):
+        snap = _fwupd(CommandResult("", False, "", None))
+        assert snap.fwupd_error == "could not run"
+        assert "n'a pas pu être lancé" in self._message(snap, "fr")
+
+    def test_english_reads_as_before(self):
+        """Polarity twin: the English text is the one 0.31.0's tests measured."""
+        assert self._message(_fwupd(_DAEMON_UNREACHABLE), "en").endswith(": exit status 1")
+
+    def test_fwupdmgr_s_own_line_is_shown_as_it_came(self):
+        snap = FirmwareSnapshot(fwupd_available=True, fwupd_error="Failed to get updates: x")
+        assert self._message(snap, "fr").endswith(": Failed to get updates: x")

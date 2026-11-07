@@ -4159,6 +4159,9 @@
   "firmware": {
     "fwupd_missing": "fwupd non installé — impossible de déterminer l'état des mises à jour firmware",
     "fwupd_error": "fwupdmgr get-updates a retourné une erreur : {error}",
+    "fwupd_error_exit": "code de sortie {code}",
+    "fwupd_error_timeout": "pas de réponse en {seconds} s",
+    "fwupd_error_not_run": "n'a pas pu être lancé",
     "fwupd_dbx_sb_off": "Mise à jour de la liste de révocation UEFI en attente ({devices}) — non appliquée tant que Secure Boot est désactivé",
     "fwupd_dbx_sb_off_detail": "dbx est la liste des signatures de démarrage que l'UEFI refuse d'exécuter, et seul Secure Boot la consulte. Secure Boot désactivé, elle ne protège rien aujourd'hui : c'est donc signalé sans déduction ; appliquez-la (sudo fwupdmgr update) avant d'activer Secure Boot, pour que les chargeurs révoqués soient refusés dès le premier démarrage.",
     "fwupd_updates": "{count} mise(s) à jour firmware en attente : {devices}",

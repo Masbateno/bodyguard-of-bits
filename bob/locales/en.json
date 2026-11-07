@@ -4159,6 +4159,9 @@
   "firmware": {
     "fwupd_missing": "fwupd not installed — firmware update status cannot be determined",
     "fwupd_error": "fwupdmgr get-updates returned an error: {error}",
+    "fwupd_error_exit": "exit status {code}",
+    "fwupd_error_timeout": "no answer within {seconds} s",
+    "fwupd_error_not_run": "could not run",
     "fwupd_dbx_sb_off": "UEFI revocation list update pending ({devices}) — not enforced while Secure Boot is disabled",
     "fwupd_dbx_sb_off_detail": "dbx is the list of boot signatures UEFI refuses to run, and only Secure Boot consults it. With Secure Boot disabled it protects nothing today, so it is reported without a deduction; apply it (sudo fwupdmgr update) before turning Secure Boot on, so revoked bootloaders are refused from the first boot.",
     "fwupd_updates": "{count} pending firmware update(s): {devices}",

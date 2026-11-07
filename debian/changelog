@@ -1,3 +1,19 @@
+bodyguard-of-bits (0.31.0-1) unstable; urgency=medium
+
+  * Minor, BREAKING for scores: a 0.30.0 and a 0.31.0 score of the same host
+    are not comparable; the structured audit outputs keep their formats.
+  * The per-port verdict follows a destination NAT to the port it reaches
+    and weighs the IPv4 legacy filter, raw, mangle and security tables.
+  * Anonymous Kubernetes probes are sent only after checking, by local
+    criteria, every process holding the socket; otherwise a ceiling.
+  * Redirect, source-route and martian-logging sysctls read per interface;
+    the redirect ones fixed per interface.
+  * UFW rules read as UFW applies them: rules naming no port, first match,
+    each rule for its own source and family, the default policy for the rest.
+  * A hung SUID scan, container runtime or fwupd leaves the score a ceiling.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 07 Nov 2026 20:00:00 +0000
+
 bodyguard-of-bits (0.30.0-1) unstable; urgency=medium
 
   * Minor, BREAKING for scores: a 0.29.0 and a 0.30.0 score of the same host

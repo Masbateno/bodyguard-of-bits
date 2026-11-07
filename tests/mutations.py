@@ -896,7 +896,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/locale-key-total-stale",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="locale auto-detect (POSIX), 3155 keys EN/FR",
+        old="locale auto-detect (POSIX), 3158 keys EN/FR",
         new="locale auto-detect (POSIX), 3123 keys EN/FR",
         kills=(f"{_LIVECOUNT}::test_no_document_misstates_the_locale_key_total",),
         reason="the locale total sat at '2014 keys' against files holding 2595 "
@@ -14027,5 +14027,37 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         new='',
         kills=('tests/test_v0310_ufw_broad_rules.py::TestAnAdmissionInPart::test_the_snapshot_carries_it', 'tests/test_v0310_ufw_broad_rules.py::TestAnAdmissionInPart::test_measured', ),
         reason='the check reads what collect found',
+    ),
+    Mutation(
+        id='fwupd-text/unrendered',
+        file='bob/checks/firmware.py',
+        old='error=_fwupd_error_text(snapshot.fwupd_error, _t)),\n',
+        new='error=snapshot.fwupd_error),\n',
+        kills=('tests/test_v0310_blind_scans_bound.py::TestTheErrorInTheAuditLanguage::test_the_exit_status', 'tests/test_v0310_blind_scans_bound.py::TestTheErrorInTheAuditLanguage::test_the_timeout', ),
+        reason='a French audit printed the exit status in English',
+    ),
+    Mutation(
+        id='fwupd-text/exit-raw',
+        file='bob/checks/firmware.py',
+        old='        return _t("firmware.fwupd_error_exit", code=m.group(1))\n',
+        new='        return error\n',
+        kills=('tests/test_v0310_blind_scans_bound.py::TestTheErrorInTheAuditLanguage::test_the_exit_status', ),
+        reason='the exit status in the audit language',
+    ),
+    Mutation(
+        id='fwupd-text/timeout-raw',
+        file='bob/checks/firmware.py',
+        old='        return _t("firmware.fwupd_error_timeout", seconds=m.group(1))\n',
+        new='        return error\n',
+        kills=('tests/test_v0310_blind_scans_bound.py::TestTheErrorInTheAuditLanguage::test_the_timeout', ),
+        reason='the timeout in the audit language',
+    ),
+    Mutation(
+        id='fwupd-text/not-run-raw',
+        file='bob/checks/firmware.py',
+        old='        return _t("firmware.fwupd_error_not_run")\n',
+        new='        return error\n',
+        kills=('tests/test_v0310_blind_scans_bound.py::TestTheErrorInTheAuditLanguage::test_a_command_that_could_not_run', ),
+        reason='a command that could not run, in the audit language',
     ),
 )

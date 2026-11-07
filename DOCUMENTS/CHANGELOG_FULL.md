@@ -6,6 +6,451 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.31.0] — 2026-11-07
+
+**A minor release, BREAKING for scores. Five areas BOB read too coarsely,
+measured, then read as the system applies them: a destination NAT and the IPv4
+legacy (x_tables) tables on the per-port verdict; the holder of a local
+Kubernetes port before BOB sends it an anonymous probe; the redirect,
+source-route and martian-logging sysctls, per interface; IPv6 listeners on
+dual-stack sockets and under UFW's default deny; and UFW's rules as UFW applies
+them — a rule that names no port, which BOB read as covered by the default deny,
+the first rule that matches, each rule for its own source and its own family,
+and the default policy for what the rules leave. And three checks that could
+hang now leave the score a ceiling instead of a clean value. Measured in network
+namespaces with nft, iptables and iptables-legacy (a TCP probe against each
+case), on a real Ubuntu 26.04 node (kernel 7.0, iproute2 6.19.0) running
+MicroK8s 1.35.6 and then k3s v1.37.2+k3s1, on a real Kali Rolling (rotating
+disk, Docker 28.5.2, fwupd 2.1.8), and against the Linux 6.18 sources (the rules
+used are unchanged in 7.0, the kernel measured).**
+
+BREAKING for scores means: the same host can score differently under 0.30.0 and
+0.31.0 — global, per domain, and the `--history` trend across the upgrade —
+because findings that feed the formula changed. The global scoring formula is
+unchanged; no JSON-output-schema or CSV-column change; no section added or
+removed; no finding key renamed or removed.
+
+Scores that move (**rises**: the score can go up; **drops**: it can go down; a
+ceiling, "≤": the score shown is a maximum, as BOB could not establish
+everything that feeds it):
+
+| Where | Before | 0.31.0 | § |
+|---|---|---|---|
+| a port a destination NAT rewrites to another port or host (`redirect to :P`, `dnat to A:P`, nft or iptables, legacy too) | accepted, −1 (`ports.uncovered_netfilter_open`) | INFO (`ports.uncovered_netfilter_unweighed`, the existing key for a ruleset that accepts by default; under one that refuses by default, `ports.uncovered_netfilter`): this listener is not reached; what answers there instead is not weighed by the finding (**rises**) | 1 |
+| a port refused before the NAT translation point, while the NAT rules do not translate that port | not established (INFO) | refused (INFO) | 1 |
+| a port an IPv4 legacy filter, raw, mangle or security table refuses beside nftables | accepted, −1 | refused (INFO) (**rises**) | 2 |
+| nft input at policy accept with no rule, IPv4 legacy filter INPUT at policy drop (or a legacy drop on the way in) | `firewall.inactive` ALERT, "INPUT ACCEPT — no rule refuses it" −3, the Firewall & Network domain capped at 3/10 (measured on the bench host: ≤ 5) | accept with refusals on the way in, the legacy chain named; ports weighed one by one (measured: ≤ 7 — the bench host's score was a ceiling with both versions) (**rises**) | 2 |
+| a fake read-only kubelet: any local user serving 127.0.0.1:10255, where the kubelet does not listen | asked: `kubernetes.kubelet_readonly_port` WARN −1 (measured on MicroK8s and k3s: a uid 1000 process serving the port under a forged name, `kubelite",pid=1` and `k3s",pid=1`, which `ss -p` prints as pid 1) | not asked: its holder is not a kubelet process run by root (**rises**) | 3 |
+| 127.0.0.1:10250 or the API server's port held by another process, or by one BOB could not identify or verify | asked: its answer read as the kubelet's (measured: a python3 server answering 401 read as "The kubelet refuses anonymous requests on port 10250 (401)", OK) | not asked; `kubernetes.{kubelet,apiserver}_listener_{foreign,unknown,unverified}` INFO, a ceiling (**ceiling**) | 3 |
+| `send_redirects`: conf/all 0, an interface 1 | OK | WARN −1, the interfaces named (**drops**) | 4 |
+| IPv4 `accept_redirects`: conf/all 0, an interface 1 that does not forward | OK | WARN −1 (**drops**) | 4 |
+| IPv6 `accept_redirects`: conf/all 1, interfaces that forward (a router, a Kubernetes node) | WARN −1, read from conf/all alone (which the kernel does not consult for this knob) | OK: the kernel ignores redirects on an interface that forwards (**rises**) | 4 |
+| IPv6 `accept_redirects`: conf/all 0, an interface 1 that does not forward | OK, read from conf/all alone | WARN −1 (**drops**) | 4 |
+| `accept_source_route`: conf/all 1, every interface 0 | WARN −1 | OK: the kernel needs both (**rises**) | 4 |
+| a knob safe on conf/all and every current interface, unsafe on conf/default (what interfaces created later inherit) | OK | the same finding and weight as for an interface, `default` named as the setting interfaces created later inherit; one finding and one deduction per knob, never a second for the same knob (**drops** where it carries a deduction) | 4 |
+| IPv6 listeners that are all dual-stack sockets (`*:port`), the ruleset accepting IPv6, a global address | no IPv6 listener seen, no finding | `ipv6.netfilter_v6_open` WARN −2 (**drops**) | 5 |
+| UFW active, IPV6=yes, default deny (or reject) incoming, an IPv6 listener without a (v6) rule of its own, admitted by no rule naming no port | `ipv6.port_no_v6_rule` WARN, −1 each up to 3, fix `sudo ufw allow <port>` | `ipv6.ports_default_deny` INFO, no fix (**rises**) | 5 |
+| the same, and a (v6) rule naming no port admits the listener (`allow from <source>`, `allow in on <interface>`) | `ipv6.port_no_v6_rule` WARN, −1 each up to 3 | `ipv6.ports_broad_rule` INFO, the rule named (**rises**) | 5 |
+| UFW at default deny, an IPv4 listener without a rule of its own, admitted by a rule naming no port | `ports.uncovered_default_deny` INFO, "covered by default deny" | `ports.uncovered_broad_rule` INFO, the rule named (no score change) | 5 |
+| UFW at default deny, a known service's port without a rule of its own, admitted by a rule naming no port | `services.exposure.no_rule` INFO, "covered by default deny" | classified using that rule's source, as if it were a rule for the port (the interface not weighed): restricted to the local network (no deduction), or open — `services.exposed.<id>`, −1, −2 high or critical, −3 also public (**drops**) | 5 |
+| a port whose own UFW rule refuses it, after a rule naming no port that admits it | ports and IPv6: nothing said (covered); services: "blocked explicitly by a UFW rule" (OK) | ports and IPv6: `*.refused_after_broad_rule` INFO; services: open to that source, as above (**drops** where open) | 5 |
+| a known service's port admitted from a private source by an earlier rule, then from a public source by a later rule (for the port, or naming no port); or refused for one host before a later rule admits other sources; or refused over IPv4 but admitted over IPv6 | "restricted to local network" (WARN, no deduction) or "explicitly blocked" (OK) | open, as above (**drops**) | 5 |
+| a known service's port refused on one interface (`deny in on <interface>`) or to one destination address, then admitted by a later rule | "explicitly blocked" (OK) | open, as above (**drops**) | 5 |
+| UFW at default allow incoming, a known service's port its rules refuse only for one host, one family, one interface or one address | "explicitly blocked" (OK) | open: `services.exposed.<id>`, the reason named (**drops**); refused from every source, both families: blocked (unchanged); default deny or reject: blocked (unchanged); policy not read: "not established" (INFO) | 5 |
+| UFW at default allow incoming, a known service's port admitted from private sources only, with no rule refusing the other sources | "restricted to local network" (WARN) or "to the single host" (INFO), no deduction | open: `services.exposed.<id>`, the reason and the private sources named (**drops**); refused to the others by a later rule, or default deny or reject: unchanged; policy not read: "not established" (WARN, no deduction) | 5 |
+| a known service's port with only an outgoing rule (`allow out <port>`) | open to the internet, deducted as such | no rule for incoming traffic: covered at default deny (**rises**), open at default allow (unchanged) | 5 |
+| UFW active at default allow incoming, a known service's port with no rule | `services.exposure.no_rule` INFO, "covered by default deny policy", beside `firewall.policy_open` ALERT "all ports are open by default" | open: `services.exposed.<id>`, −1, −2 high or critical, −3 also public (measured on Kali, SSH: score 9 → 8) (**drops**) | 5 |
+| UFW active, its default incoming policy not read, a known service's port with no rule | "covered by default deny policy" | "not established" (INFO, no score change) | 5 |
+| a UFW rule from an IPv6 source (`allow from fd00::1 to any port 22`), which ufw prints without "(v6)" | read as an IPv4 rule: the IPv6 listener without a rule (`ipv6.port_no_v6_rule` −1 at default allow), "no IPv6 rules" (`firewall_rules.ipv6_missing` −1) when it was the only kind | an IPv6 rule (**rises**) | 5 |
+| the SUID scan timed out or failed (a cold rotating disk) | `suid_audit.scan_skipped` INFO, score given as a value | the same INFO, score a ceiling ("≤") | 6 |
+| the container runtime frozen (`docker ps` killed at its timeout) | `docker_hardening.scan_error` INFO, score given as a value | the same INFO, score a ceiling ("≤") | 6 |
+| fwupd unreachable (exit 1, error on stderr) or frozen (killed at the timeout) | `firmware.fwupd_ok` (OK: "No pending firmware updates (fwupd)") | `firmware.fwupd_error` INFO, score a ceiling ("≤") | 6 |
+
+### 1. The per-port verdict follows a destination NAT
+
+0.30.0 read a non-empty NAT prerouting chain as a reason to leave a port "not
+established", or ignored it. A destination NAT moves the packet before the
+filter sees it: a redirect from 8099 to 9999 leaves 8099 unreachable, and brings
+9999 the packets addressed to 8099. BOB now reads the forms it can follow —
+`[meta l4proto|ip protocol P] [tcp|udp dport SPEC] redirect [to :P]` and `dnat
+[ip] to A[:P]`, nft and iptables, legacy included — and decides per port:
+rewritten away (the listener is not reached), untouched (the NAT ignored), or
+brought from another port (read as in 0.30.0). Measured in network namespaces
+(eleven cases): the five ports rewritten elsewhere were closed to a probe and
+read accepted (−1) in 0.30.0; they now read as not reaching their listener. "Not
+reached" is about the listener, not the port: measured with a DNAT of 8099 to a
+second namespace (three cases and a control), the host's own listener answered
+in none of them, but the port answered from the backend when it served 8099,
+refused when it did not, and timed out when the host's forward chain dropped.
+The finding says so: "this listener is not reached through it — whatever answers
+there instead is not weighed by this finding". The forwarded path is not weighed
+port by port (FORWARD at policy accept is the −1 of
+`firewall_iptables.forward_accept`, as before).
+
+When a NAT chain holds a rule BOB cannot follow — a condition on an interface, a
+source or a destination, a jump, a map, a port range as target, a second NAT
+chain — BOB follows none of the NAT rules in that chain, and the port is read as
+0.30.0 read it, which errs towards caution: a refusal before the NAT point
+leaves the port not established; a matching refusal in the input chains, which
+see the port after translation, closes it whatever the NAT did; an accept is −1.
+Measured with a rule BOB does not follow (`iifname h0 tcp dport 7000 redirect to
+:8099`): an input drop of 8099 closed 8099 and 7000, and BOB read 8099 refused;
+an input drop of 7000 — the port before translation — closed nothing (both
+answered), and BOB read 8099 accepted (−1). With a DNAT of 8099 to a backend
+that serves it and forward at policy accept, the port answered from the backend;
+BOB said this listener is not reached and that what answers is not weighed,
+beside `firewall_iptables.forward_accept` (−1): nothing reads the backend as
+protected. A port behind a refusal that 0.30.0 left not established because a
+NAT chain came after it (a redirect for another port only) now reads refused.
+The ports left open read accepted, as before. Limits: IPv4 only; a NAT rule with
+an input interface (`iifname`) is not followed (not established); a DNAT to a
+loopback address is not followed (`route_localnet` decides whether it is
+reachable).
+
+### 2. The IPv4 legacy tables beside nftables
+
+When nftables chains and legacy (x_tables) chains are both attached to the
+packet's path, a refusal in either closes the port. 0.30.0 read the legacy NAT
+table only. BOB now reads the legacy filter, raw, mangle and security tables
+listed in `/proc/net/ip_tables_names` (`iptables-legacy -t T -S`). Measured in
+network namespaces, a drop rule in legacy filter INPUT, raw PREROUTING, mangle
+INPUT or security INPUT each closed the port. A chain policy set to drop did the
+same in legacy filter INPUT, raw PREROUTING, mangle PREROUTING, mangle INPUT and
+security INPUT. 0.30.0 read such a port accepted (−1); it now reads refused. A
+legacy ACCEPT rule does not open a port nftables refuses (measured). In the
+posture, nft input at policy accept with no rule beside a legacy refusal read
+"firewall inactive" (−3, the domain capped at 3/10, score ≤ 5); it now reads
+accept with refusals on the way in, the legacy chain named (score ≤ 7; the bench
+host's score was a ceiling with both versions). The legacy tables listed but not
+readable, or `iptables-legacy` absent while they are loaded: not established.
+Limits: IPv6 legacy tables are not read; a host with the `ip_tables` module
+loaded but no `iptables-legacy` reads every port not established (not measured
+on a real host).
+
+### 3. Kubernetes: anonymous probes restricted to locally identified socket holders
+
+pkgradar flagged `ssl.CERT_NONE` in `bob/checks/kubernetes.py` (0.30.0). The
+probes are anonymous, aimed at 127.0.0.1, and do not verify the server's
+certificate, because the kubelet's is self-signed. The real risk was not on the
+network: whatever local process held the port was answered. Measured: a python3
+server on 127.0.0.1:10250 answering 401 made 0.30.0 report "The kubelet refuses
+anonymous requests on port 10250 (401)" (OK); on a real MicroK8s and a real k3s
+node, any local user serving 127.0.0.1:10255 (where the kubelet does not listen)
+made 0.30.0 report the read-only port open (−1).
+
+**This is not a TLS fix.** `ssl.CERT_NONE` remains, and pkgradar will keep
+reporting it. What changed: before each probe, BOB checks the holders of the
+sockets that may receive the connection:
+
+- the sockets bound to 127.0.0.1 (or `[::ffff:127.0.0.1]`) when there are any,
+  else those bound to every IPv4 address (`0.0.0.0`, or `*`, a dual-stack
+  socket; a `[::]` socket as ss shows it is IPv6-only and does not count —
+  measured);
+- each socket's inode from `ss -e`, the processes holding it from
+  `/proc/<pid>/fd`, their names from `/proc/<pid>/comm` — not from `ss -p`,
+  which copies a process's name as it is: measured, a uid 1000 process named
+  `kubelet",pid=1` read as pid 1, root, and was asked (in a development tree,
+  never released);
+- the probe goes only if every holder has a recognised name (`kubelet`,
+  `kubelite`, `k3s`, `k3s-server`, `k3s-agent`; for the API server
+  `kube-apiserver`, `kubelite`, `k3s`, `k3s-server`) and all four UID fields
+  (real, effective, saved, filesystem) are 0, read from the initial user
+  namespace;
+- the holders are sought only in a `/proc` of the initial pid namespace,
+  mounted without `hidepid=2` or `4` (read from the filesystem `/proc`
+  reaches), and with `CAP_SYS_PTRACE`: otherwise a holder may be hidden with no
+  error (measured).
+
+Otherwise BOB does not probe and says why, as a ceiling: the port is held by
+another process (named, with its user ids), its holder could not be identified,
+or its user could not be verified. Measured on the real node: on MicroK8s 1.35.6
+(`kubelite` holds 10250 and 16443, all uids 0), BOB asks the kubelet (10250) and
+the API server (16443); on k3s v1.37.2+k3s1 (`k3s-server` holds 10250 and 6443),
+it asks the kubelet (10250) only — it does not discover k3s's API server, so
+6443 is not probed, as in 0.30.0. The probes BOB sent answered as in 0.30.0; the
+fake read-only kubelet is not asked. This validates the probes BOB sends, not
+every socket these processes hold. Limits: a race remains between the check and
+the connection (a socket may change hands); a process run by root that takes a
+recognised name is asked; the name is a criterion, not a proof of the binary;
+k3s's API server is not probed (above); a host whose /proc hides processes, or a
+BOB run outside the initial pid or user namespace or without `CAP_SYS_PTRACE`,
+does not probe (a ceiling); measured on one node of each distribution, k3s
+started by hand (not its systemd service), no agent-only node.
+
+### 4. The redirect, source-route and martian-logging sysctls, per interface
+
+BOB read conf/all alone for `send_redirects`, `accept_redirects` (IPv4 and
+IPv6), `accept_source_route` and `log_martians`, and its fix set conf/all alone.
+The kernel combines conf/all with each interface's own value, by a rule proper
+to each knob (`include/linux/inetdevice.h`, `net/ipv6/route.c`; Linux 6.18, and
+identical in Linux 7.0, the kernel measured): conf/all OR the interface for
+`send_redirects` and `log_martians`; AND for `accept_source_route`; for IPv4
+`accept_redirects`, AND on an interface that forwards and OR on one that does
+not; for IPv6 `accept_redirects`, the interface's own value only, and none on an
+interface that forwards (conf/all is not read). Measured on the real node: BOB's
+`send_redirects` fix set conf/all to 0, enp3s0 stayed at 1, and BOB said fixed.
+Each knob is now weighed per interface (lo aside) and on conf/default (what an
+interface created later inherits), and the finding names the interfaces where it
+is in effect. The fix for `send_redirects` and both `accept_redirects` sets
+conf/all, conf/default and each named interface, and persists conf/all and
+conf/default; measured across a real reboot, enp3s0 came back at 0. For
+`accept_source_route` (AND) and `log_martians` (OR, set to 1), conf/all at its
+safe value decides every interface, and the fix sets conf/all, as before. `--fix
+--apply` sets each value and reads it back. Limits: persistence was measured on
+Ubuntu 26.04 only; an interface that exists before the sysctl files are applied
+at boot would keep its value — BOB then reports it at the next audit.
+conf/default is weighed as an interface — the one every interface created later
+(a container's, a VPN's) inherits — with the same finding and weight, as CIS
+checks conf/all and conf/default alike: a host whose current interfaces are safe
+but whose conf/default is not now loses the point 0.30.0 did not take (conf/all
+alone was read). BOB persists conf/all and conf/default only, not an interface's
+own value, so its fix does not correct that case durably; it only reports it
+again. `log_martians` was and stays INFO: reading it per interface changes its
+text (the interfaces named) and when it is said (conf/all at 0 with every
+interface at 1 no longer reads "disabled"), not the score.
+
+### 5. IPv6 listeners and UFW rule evaluation
+
+ss shows a `[::]` socket that also takes IPv4 as `*:port`; BOB counted only
+`[::]:port` as an IPv6 listener. Measured on the real node from a network
+namespace on the host: all eleven `*:port` and `[::]:port` listeners accepted a
+connection to the host's global IPv6 address; BOB listed three. They now count.
+
+Under UFW with IPV6=yes, BOB warned −1 per IPv6 listener without a (v6) rule of
+its own (up to 3) and offered `sudo ufw allow <port>`. Measured on the real node
+with UFW active at default deny: those listeners were dropped over IPv6 as over
+IPv4 — following the advice would have opened them, the kubelet, the API server
+and Samba among them. At default deny or reject, such a listener that no rule
+naming no port admits (below) is now reported as covered (INFO, no fix);
+otherwise the warning stays and its command is `sudo ufw deny <port>`.
+
+Rules that name no port: the ports and services sections said "covered by the
+default deny" of a listener a UFW rule naming no port admits — `ufw allow from
+<source>`, `ufw allow in on <interface>`. Measured on Kali in a network
+namespace, UFW at default deny: with either rule, 8099 answered over IPv4 and
+IPv6 while both sections called it covered; the IPv6 reading above takes such a
+rule into account. Such a rule (ALLOW or LIMIT, incoming, its To column
+`Anywhere` or a bare address; its protocol, when it has one, printed after the
+source — measured) is now read as admitting every port of its protocol, and BOB
+classifies the port using that rule's source, as if it were a rule for the port:
+the ports and IPv6 sections name it (`ports.uncovered_broad_rule`,
+`ipv6.ports_broad_rule`, INFO, no deduction, as for a rule naming the port); the
+services section reads the service as restricted to the local network (a private
+source) or open (any or a public source, with the deduction a rule for the port
+carries). A LIMIT rule counts as an ALLOW: it admits, at a rate, and BOB does
+not read the limit as a protection. Routed (`FWD`), outgoing and deny rules
+admit nothing; a rule for UDP only does not admit a TCP listener (measured).
+
+Rule order: UFW applies the first rule that matches. Measured: `ufw allow from
+<client>` then `ufw deny 8099/tcp` left 8099 open to the client, and the
+services section read it "blocked explicitly by a UFW rule"; the deny first
+closed it. A rule naming no port met before the port's own rule now decides for
+its source: the ports and IPv6 sections say the port's rule refuses it but an
+earlier rule admits it (`ports.refused_after_broad_rule`,
+`ipv6.ports_refused_after_broad_rule`, INFO); the services section reads it open
+to that source. A REJECT rule for a known service's port, which the services
+section read as no rule at all, now reads as a refusal.
+
+Sources and families: a rule matches only its own source. Measured on Kali, UFW
+at default deny, a private and a public client: `allow 8099 from <private>` then
+`allow 8099`, or then `allow from <public>` (no port), answered the public
+client, and the services section read it "restricted to local network"; `deny
+8099 from <another host>` then `allow 8099` answered it, read "explicitly
+blocked"; `deny 8099` over IPv4 only then `allow from <public>` over IPv6
+answered over IPv6, read "explicitly blocked"; `allow out 8099` alone answered
+no one, read "open to internet" with its deduction. The services section now
+reads each family apart, up to the first rule for the port that refuses it from
+every source, on every interface and to every address; every ALLOW or LIMIT rule
+encountered before that refusal (for the port, or naming no port, of the port's
+protocol) adds its source: restricted to the local network only when all are
+private; a single host named only when it is the only source. Outgoing and
+routed rules admit nothing. A refusal for one source, one interface or one
+address does not end the walk, and does not take its source out of a later
+admission — this can overstate the exposure, never understate it. The same
+measurement showed ufw prints "(v6)" only on a rule that names no address:
+`allow from fd77::1 to any port 8099` prints `8099/tcp ALLOW IN fd77::1`. Such a
+rule was read as an IPv4 one; the address now says the family (the IPv6
+section's covered listeners, the firewall section's IPv6 rule count, and the
+walks above).
+
+Default policy: the services section never read UFW's default incoming policy —
+a known service with no rule was "covered by default deny policy" whatever the
+policy. Measured on Kali, UFW active at default allow: 8099 with no rule, or
+with only `allow out 8099`, answered every client; on the host itself BOB 0.30.0
+printed `firewall.policy_open` ("all ports are open by default") and, two
+sections later, "Port 22/tcp — covered by default deny policy". At default allow
+such a port is now open, with the deduction an open rule carries (SSH: ALERT,
+score 9 → 8, re-measured); with the policy not read, "not established" (INFO).
+Default deny and reject read as before.
+
+Refusals in part: a refusal could end that walk too early. Measured on Kali, two
+clients again: `deny in on <public side> port 8099` or `deny 8099 to
+<public-side address>`, then `allow 8099`, answered the private client — read
+"explicitly blocked"; at default allow, a refusal of 8099 for one host, for IPv4
+only, or on one interface answered the others — read "explicitly blocked". Such
+a refusal no longer ends the walk, and what the rules leave falls to the default
+policy: at default allow the port is open, the reason named; at deny or reject,
+blocked; policy not read, "not established". Polarity: `deny 8099` at default
+allow refused everyone and read blocked, before and after; `deny 8099` then an
+allow for one host refused everyone and reads blocked; a refusal on one
+interface alone at default deny refused everyone and reads blocked.
+
+Admissions in part: at default allow, rules that admit a port from private
+sources only, with no rule refusing the other sources, leave those clients to
+the default policy. Measured on Kali: `allow 8099 from <private>` (both
+families, or IPv4 only) answered the public client over IPv4 and IPv6, read
+"restricted to local network" or "restricted to the single host". It is now
+open, the private sources named; at default deny or reject, or with a later
+`deny 8099` (polarity, measured: the public client refused), it stays
+restricted; policy not read, "not established".
+
+This is a classification by source and rule order; it does not reconstruct UFW's
+whole policy (`ufw-before-input` and the other `before` chains, the logging and
+rate-limit chains). Limits: BOB does not model the interface or destination
+constraint — it treats an `on <interface>` rule or a rule to one address as
+admitting from its source on every interface and to every address, and a refusal
+so limited as refusing no one that a later rule or the default policy admits,
+which can overstate the exposure (measured: the two cases above read "open to
+internet" while the public client was refused), never understate it, in the
+services section. The ports and IPv6 sections are not reworked: they still count
+a port with any rule of its own as covered (no deduction, as before), even a
+rule that refuses it for one source, one interface or one address only — there,
+BOB can understate, as in 0.30.0 — and report only a rule naming no port met
+before that rule. And the "open to internet" wording of an open service says
+"from any address (Anywhere)" even when the rule names one public source (as
+before).
+
+### 6. Smaller
+
+- A host behind an IPv4 NAT that holds a global IPv6 address is no longer
+  reported "Local network only", "behind NAT / no direct public IP", with
+  each service's risk tagged "• LAN". BOB decided "local" as soon as the
+  IPv4 gateway was private, before looking at IPv6 — a dual-stack home router
+  hands every host a public IPv6 address. Measured on a real Kali behind a
+  home router with its IPv6 firewall off: a phone on mobile data, outside the
+  home prefix, reached the host's `[::]:8080`; with the firewall on, nothing
+  arrived. Whether the router filters cannot be seen from the host, so the
+  summary now reads "IPv4 behind NAT, public IPv6 (router filter
+  unverified)", the glance "⚠ IPv4 behind NAT; the host has a direct public
+  IPv6 address — whether the router filters it cannot be checked from here",
+  and the "• LAN" tag is dropped. Display only: the context the checks score
+  with stays `local`, and so does the JSON `network_context`. Treating the
+  case as unknown (a ceiling) is planned for 0.31.1.
+- A scan that never answered now makes the score a ceiling, measured on a real
+  Kali (rotating disk, Docker 28.5.2, fwupd 2.1.8):
+  - the SUID `find` (`suid_audit.scan_skipped`): 55 s with the page cache
+    dropped and 1.5 s warm, for a 30 s budget. Cold — the first audit after the
+    boot was — the 15 unexpected SUID binaries and their −1 vanished, System
+    Hardening went from 5 to 6 and `unverified` stayed empty; now "≤ 7/10",
+    range 6–7. A partial walk (`suid_audit.ok_partial`) already did this. The
+    budget is unchanged.
+  - the container runtime (`docker_hardening.scan_error`): with `dockerd`
+    frozen, `docker ps` is killed at its timeout and a privileged container's
+    −1 vanished; now "≤ 7/10", range 6–7.
+  - fwupd (`firmware.fwupd_error`): BOB read `fwupdmgr get-updates`' stdout
+    only. Its failures go to stderr — "Failed to connect to daemon", exit 1 —
+    and a frozen daemon is killed at the timeout with nothing printed; both read
+    as "No pending firmware updates (fwupd)", an OK. The exit status now decides
+    first: 0 (success) and 2 (nothing to do), as the manual of fwupdmgr 2.1.8
+    (the version measured) documents, are read as before; any other status is an
+    error unless one of BOB's existing "nothing to do" markers matches stdout or
+    stderr (stderr is checked, never rendered). The finding reads "fwupdmgr
+    get-updates returned an error: exit status 1" or "…: no answer within 30 s",
+    in the audit's language, INFO, and the score is a ceiling; an error found on
+    stdout, detected as before, now bounds the score too. The normal answer
+    measured on the Kali (exit 2, "No updatable devices" on stderr) stays an OK,
+    not a ceiling.
+  Tested together: each of the three is listed, and the score stays a ceiling
+  beside other checks' deductions and OKs, through the domain average.
+  A guard now sweeps the keys emitted under `if snapshot.<…skipped|…error|
+  timed_out>` as it already swept `if not snapshot.<…readable>`: the three
+  were outside both.
+- The kernel finding "Kernel X — up to date in the apt repository" named the
+  running kernel; with a reboot pending it now names the latest installed one
+  (measured: "Kernel 7.0.0-34 — up to date in the apt repository" beside "Reboot
+  pending — running kernel (7.0.0-34) is not the latest installed (7.0.0-42)").
+
+New finding keys: `kubernetes.kubelet_listener_{foreign,unknown,unverified}`,
+`kubernetes.apiserver_listener_{foreign,unknown,unverified}` (INFO, ceilings),
+`ipv6.ports_default_deny`, `ipv6.ports_broad_rule`,
+`ipv6.ports_refused_after_broad_rule`, `ports.uncovered_broad_rule`,
+`ports.refused_after_broad_rule` (INFO). A port a NAT rule sends elsewhere is
+reported, INFO, under the existing `ports.uncovered_netfilter_unweighed` (a
+ruleset that accepts by default) or `ports.uncovered_netfilter` (one that
+refuses by default), with a new verdict text. Existing keys, now counted as
+ceilings: `suid_audit.scan_skipped`, `docker_hardening.scan_error`, and
+`firmware.fwupd_error` (now also emitted where 0.30.0 emitted
+`firmware.fwupd_ok`). `services.exposed.<id>` is now also emitted where UFW's
+default incoming policy is allow and no rule names the port, or its rules refuse
+it, or admit it, only in part. The new services texts (`services.exposure.*`,
+five of them) are messages of existing findings, not new keys.
+
+Known limit, reported separately: on a host with MicroK8s installed but stopped
+while another Kubernetes runs, BOB reads MicroK8s's API server arguments and
+reports a mode and a port for a server that is not running (measured, unchanged
+since 0.28.0).
+
+### Not in this release, and known limits
+
+- NAT (§1): IPv4 only; a NAT rule with an input interface (`iifname`) and a
+  DNAT to a loopback address are not followed; the path a DNAT sends a port
+  to — FORWARD and the backend — is not weighed per port.
+- Legacy tables (§2): the IPv6 legacy tables are not read; a host with the
+  `ip_tables` module loaded but no `iptables-legacy` reads every port not
+  established (not measured on a real host).
+- Kubernetes (§3): `ssl.CERT_NONE` remains, and pkgradar keeps reporting it;
+  a race remains between the check and the connection; a recognised name run
+  by root is a criterion, not a proof of the binary; k3s's API server is not
+  probed; no agent-only node was measured.
+- sysctls (§4): persistence was measured on Ubuntu 26.04 only; an interface's
+  own value is set, not persisted.
+- UFW (§5): the interface and destination constraints are not modelled (the
+  services section can overstate the exposure); the ports and IPv6 sections
+  still count a port with any rule of its own as covered (they can understate
+  it, as in 0.30.0); an open service reads "from any address (Anywhere)" even
+  when the rule names one public source.
+- A host behind an IPv4 NAT holding a public IPv6 address (§6): display only;
+  treating the case as unknown (a ceiling) is planned for 0.31.1.
+- CIS references: no CIS Ubuntu 26.04 control file in ComplianceAsCode yet (an
+  open pull request); `cis_fedora` is a draft — neither is cited.
+
+### Counters
+
+Tests collected 18529 → **19727**, test files 443 → **452**, mutations 1433 →
+**1628**; locale keys 3130 → **3158** (28 strings, none removed: the 11 finding
+keys above, the NAT verdict text, six `hardening.where_*` texts, two display
+labels for the public-IPv6 context, five services texts, three fwupd error
+details); `--explain` keys and CIS references (235) and sections unchanged.
+
+### Guards
+
+`test_v0310_nat_followed.py` (`nat-followed/*`), `test_v0310_legacy_tables.py`
+(`legacy-tables/*`, `legacy-policy/*`), `test_v0310_kubelet_listener.py`
+(`kubelet-listener/*`), `test_v0310_sysctl_per_iface.py` and
+`test_v0244_sysctl_durable.py` (`sysctl-per-iface/*`),
+`test_v0310_ipv6_default_deny.py` (`ipv6-default-deny/*`), `test_ipv6.py`
+(`ipv6-listeners/*`), `test_v0310_ufw_broad_rules.py` (`ufw-broad/*`,
+`ufw-order/*`, `ufw-sources/*`, `ufw-family/*`, `ufw-default/*`, `ufw-part/*`,
+`ufw-local/*` — the measured `ufw status numbered` outputs as fixtures),
+`test_v0310_blind_scans_bound.py` (`blind-scans/*`, `fwupd-text/*`),
+`test_v0310_suid_scan_skipped.py` (`suid-scan-skipped/*`),
+`test_v0310_shown_network_context.py` (`shown-context/*`),
+`test_kernel_modules.py` (`kernel-up-to-date/*`): 195 new mutations, none
+retired. Re-anchored without changing their meaning (18):
+`docs/locale-key-total-stale`, `wording/single-host-rule-called-local-network`,
+`wording/rule-source-keeps-direction`, `k8s-node/*` (2),
+`k8s-apiserver/anon-2xx-unscored`, `pre-input/nft-ignored`,
+`pre-input-posture/*` (2), `pre-input-default-drop/nft-unread`,
+`firewalld-unread/ipv6-not-handed`, `nat-before/*` (2), `nat-legacy/*` (2),
+`port-sets-dest/empty-set-unknown`, `ipv6-port/pre-input-ipv4-only`,
+`pre-input-weighed/snapshot-opened-scored`. Older tests adapted to the new
+seams: `test_firmware.py` (the exit status read),
+`test_v0250_kubernetes_node.py` (the socket holder),
+`test_v0280_port_verdict.py` and `test_v0290_pre_input_posture.py` (no legacy
+tables on the test host).
+
+---
+
 ## [0.30.0] — 2026-11-02
 
 **A minor release, BREAKING for scores: the limits documented in 0.29.0,

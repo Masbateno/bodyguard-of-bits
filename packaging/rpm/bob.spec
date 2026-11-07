@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.30.0
+Version:        0.31.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,15 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sat Nov 07 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.31.0-1
+- Minor, BREAKING for scores: the per-port verdict follows a destination
+  NAT and weighs the IPv4 legacy tables; anonymous Kubernetes probes only
+  after checking the processes holding the socket; redirect, source-route
+  and martian-logging sysctls read per interface; UFW rules read as UFW
+  applies them (rules naming no port, first match, source, family, default
+  policy); a hung SUID scan, container runtime or fwupd leaves the score a
+  ceiling.
+
 * Mon Nov 02 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.30.0-1
 - Minor, BREAKING for scores: the per-port verdict reads destinations,
   named sets, verdict maps, input interfaces and the chains before and on
