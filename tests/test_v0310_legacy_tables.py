@@ -67,8 +67,14 @@ class TestTheMeasuredCases:
         (_with(mangle=MANGLE + "-A INPUT " + DROP_8099), D),
         (_with(security=SECURITY + "-A INPUT " + DROP_8099), D),
         (_with(raw=RAW.replace("-P PREROUTING ACCEPT", "-P PREROUTING DROP") + "-A PREROUTING -p tcp -m tcp --dport 8098 -j ACCEPT\n"), DD),
+        # Eighth review of the changelog, measured on Kali (a2policy.txt): a
+        # mangle or security chain at policy DROP closed 8099; 0.30.0 read it
+        # accepted.
+        (_with(mangle=MANGLE.replace("-P PREROUTING ACCEPT", "-P PREROUTING DROP") + "-A PREROUTING -p tcp -m tcp --dport 8098 -j ACCEPT\n"), DD),
+        (_with(mangle=MANGLE.replace("-P INPUT ACCEPT", "-P INPUT DROP") + "-A INPUT -p tcp -m tcp --dport 8098 -j ACCEPT\n"), DD),
+        (_with(security=SECURITY.replace("-P INPUT ACCEPT", "-P INPUT DROP") + "-A INPUT -p tcp -m tcp --dport 8098 -j ACCEPT\n"), DD),
         (EMPTY, A),
-    ], ids=["L2", "L4", "L5", "L6", "L7", "L9", "L0"])
+    ], ids=["L2", "L4", "L5", "L6", "L7", "L9", "M1", "M2", "M3", "L0"])
     def test_it(self, legacy, v8099):
         assert _snap(legacy).port_verdict(8099, "tcp") == v8099
 
@@ -165,7 +171,10 @@ class TestThePosture:
         (EMPTY, []), (None, []), ({}, []),
         (_with(filter=FILTER.replace("-P INPUT ACCEPT", "-P INPUT DROP")), ["legacy filter INPUT"]),
         (_with(raw=RAW.replace("-P PREROUTING ACCEPT", "-P PREROUTING DROP")), ["legacy raw PREROUTING"]),
-    ], ids=["empty", "not-read", "none", "filter", "raw"])
+        (_with(mangle=MANGLE.replace("-P PREROUTING ACCEPT", "-P PREROUTING DROP")), ["legacy mangle PREROUTING"]),
+        (_with(mangle=MANGLE.replace("-P INPUT ACCEPT", "-P INPUT DROP")), ["legacy mangle INPUT"]),
+        (_with(security=SECURITY.replace("-P INPUT ACCEPT", "-P INPUT DROP")), ["legacy security INPUT"]),
+    ], ids=["empty", "not-read", "none", "filter", "raw", "mangle-prerouting", "mangle-input", "security"])
     def test_named(self, legacy, named):
         assert nf._legacy_default_drop(legacy) == named
 

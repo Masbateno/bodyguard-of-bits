@@ -13980,4 +13980,20 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         kills=('tests/test_v0310_ufw_broad_rules.py::TestARefusalInPart::test_the_snapshot_carries_it', 'tests/test_v0310_ufw_broad_rules.py::TestARefusalInPart::test_measured', ),
         reason='the check reads what collect found',
     ),
+    Mutation(
+        id='legacy-policy/mangle-prerouting-unread',
+        file='bob/checks/iptables_nftables.py',
+        old='_IPT_PRE_INPUT = {"raw": ("PREROUTING",), "mangle": ("PREROUTING", "INPUT"), "security": ("INPUT",)}\n',
+        new='_IPT_PRE_INPUT = {"raw": ("PREROUTING",), "mangle": ("INPUT",), "security": ("INPUT",)}\n',
+        kills=('tests/test_v0310_legacy_tables.py::TestTheMeasuredCases::test_it', 'tests/test_v0310_legacy_tables.py::TestThePosture::test_named', ),
+        reason='measured (M1): legacy mangle PREROUTING at policy DROP closed the port',
+    ),
+    Mutation(
+        id='legacy-policy/security-unread',
+        file='bob/checks/iptables_nftables.py',
+        old='_IPT_PRE_INPUT = {"raw": ("PREROUTING",), "mangle": ("PREROUTING", "INPUT"), "security": ("INPUT",)}\n',
+        new='_IPT_PRE_INPUT = {"raw": ("PREROUTING",), "mangle": ("PREROUTING", "INPUT")}\n',
+        kills=('tests/test_v0310_legacy_tables.py::TestTheMeasuredCases::test_it', 'tests/test_v0310_legacy_tables.py::TestThePosture::test_named', ),
+        reason='measured (M3): legacy security INPUT at policy DROP closed the port',
+    ),
 )
