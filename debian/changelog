@@ -1,3 +1,17 @@
+bodyguard-of-bits (0.31.2-1) unstable; urgency=medium
+
+  * Patch, BREAKING for scores: a 0.31.1 and a 0.31.2 score of the same host
+    are not comparable; the structured audit outputs keep their formats.
+  * At UFW's default allow, the ports and IPv6 sections no longer read a port
+    as covered when its own rules admit it from some sources only or refuse
+    it only in part, with no rule admitting it from any address.
+  * An open service names the sources its UFW rules admit it from instead of
+    "any address (Anywhere)", and says when other clients reach it too.
+  * Those texts no longer say no rule refuses the port when one refuses
+    another source; the clients left are those no rule matches.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 09 Nov 2026 15:36:08 +0000
+
 bodyguard-of-bits (0.31.1-1) unstable; urgency=medium
 
   * Patch, BREAKING for scores: a 0.31.0 and a 0.31.1 score of the same host

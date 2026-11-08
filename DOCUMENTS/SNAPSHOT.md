@@ -123,8 +123,8 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  bob 0.31.1     ~59.3 kLoC Python · 0 runtime deps outside stdlib        │
-│                 19886 unit tests · 28 doc files · 7+ distros field-tested │
+│  bob 0.31.2     ~59.4 kLoC Python · 0 runtime deps outside stdlib        │
+│                 20003 unit tests · 28 doc files · 7+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -238,7 +238,7 @@ bodyguard-of-bits/
 │   │   ├── _awall.py          ← **NEW 0.26.0** `AwallStatus.from_system()` — awall installed, enabled policies (`awall list`), unreadable kept apart; read only where neither UFW nor firewalld is active (39 L)
 │   │   ├── _firewalld.py      ← **NEW v0.20.2** `FirewalldStatus.from_system()` — `firewall-cmd` state/default-zone/services/ports, shared by `firewall`, `iptables_nftables`, `ports`, `ipv6` and `services` so a firewalld host (Fedora/RHEL/openSUSE) is not read as "wide open / UFW not installed" — 936 L
 │   │   ├── _run.py            ← shared subprocess helper with _C_LOCALE_ENV (centrality anchor — see Dependency graph)
-│   │   ├── _ufw.py            ← **v0.15.0** one parser for `ufw status numbered`, shared by `ports` and `services` — their two matchers disagreed, and `ALLOW IN 192.168.1.22` made port 22 look covered by a rule for port 80; `parse_rule`, `expand_port_spec`, `ranges_cover`, `read_app_profiles` — 413 L
+│   │   ├── _ufw.py            ← **v0.15.0** one parser for `ufw status numbered`, shared by `ports` and `services` — their two matchers disagreed, and `ALLOW IN 192.168.1.22` made port 22 look covered by a rule for port 80; `parse_rule`, `expand_port_spec`, `ranges_cover`, `read_app_profiles` — 438 L
 │   │   └── ssh/               ← split package since v0.6.0 (was 1296 L monolith)
 │   │       ├── __init__.py    ← public re-exports for backwards-compat (64 L)
 │   │       ├── _directives.py ← _BadDirective table + _BAD_DIRECTIVES + _WEAK_CIPHERS/_WEAK_MACS/_WEAK_KEX sets (250 L)
@@ -300,7 +300,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 457 test files, ~8396 functions, 19886 collected (0.31.1)
+├── tests/                     ← 458 test files, ~8415 functions, 20003 collected (0.31.2)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -383,11 +383,11 @@ bodyguard-of-bits/
 | `firewall.py` | 1051 | firewall_network | UFW state, `check_rules()` for duplicates / open-any (section name `firewall_rules` since v0.9.0 D-1; file still `firewall.py`); `FirewallPosture` / `resolve_firewall_posture()` — the one answer every summary reads: UFW, firewalld (zone target) or a raw DROP/REJECT ruleset (v0.24.1) |
 | `firewall_stack.py` | 627 | firewall_network | Docker iptables bypass, nftables parallel rules (section name `firewall_drivers` since v0.9.0 D-1) |
 | `iptables_nftables.py` | 2144 | firewall_network | Fallback audit when UFW inactive (INPUT/FORWARD policy) (section name `firewall_iptables` since v0.9.0 D-1) |
-| `ipv6.py` | 796 | firewall_network | IPv6 listener vs UFW v6 rule consistency; on a host without UFW, listeners attributed to the governing filter, no address-family claim (v0.24.1) |
+| `ipv6.py` | 829 | firewall_network | IPv6 listener vs UFW v6 rule consistency; on a host without UFW, listeners attributed to the governing filter, no address-family claim (v0.24.1) |
 | `network_context.py` | 355 | firewall_network | Interface table, established TCP, sensitive remote ports |
-| `services.py` | 1448 | exposure_services | 38 known services, risk context, exposure classification; `_PRIVATE_ADDR` constant retired (v0.7.4 M) — now delegates to `sysinfo._is_private_or_loopback_ipv4`; +6 modern services in v0.8.0 T2 (32 → 38); states include socket-activated (v0.18.1) and condition-unmet — skipped by its own Condition…/ExecCondition (v0.24.1); a single-host UFW source named as such (v0.24.1) |
+| `services.py` | 1476 | exposure_services | 38 known services, risk context, exposure classification; `_PRIVATE_ADDR` constant retired (v0.7.4 M) — now delegates to `sysinfo._is_private_or_loopback_ipv4`; +6 modern services in v0.8.0 T2 (32 → 38); states include socket-activated (v0.18.1) and condition-unmet — skipped by its own Condition…/ExecCondition (v0.24.1); a single-host UFW source named as such (v0.24.1) |
 | `services_state.py` | 243 | health_resilience | Boot-enabled but currently inactive security services (section name `services_health` since v0.9.0 D-1) |
-| `ports.py` | 851 | exposure_services | Listening ports analysis, `_parse_ufw_covered_ports()` (v0.4.4 refactor) (section name `ports` since v0.9.0 D-1, was `ports_analysis`) |
+| `ports.py` | 875 | exposure_services | Listening ports analysis, `_parse_ufw_covered_ports()` (v0.4.4 refactor) (section name `ports` since v0.9.0 D-1, was `ports_analysis`) |
 | `logs.py` | 1104 | exposure_services | UFW log analysis, brute-force, top IPs (GeoIP optional); hand-rolled private-IP regex retired — now delegates to `sysinfo._is_private_or_loopback_ipv4/_ipv6` (v0.5.6) |
 | `log_rotation.py` | 461 | health_resilience | logrotate, journald persistence, SystemMaxUse |
 | `auth_log.py` | 324 | access_control | SSH connection log, brute-force detection |
@@ -503,7 +503,7 @@ These are the **integration points**. They're the entry/orchestration layer.
 | 1657 | `bob/explain.py` | EXPLAIN_KEYS (236 keys / 62 prefixes) + alias map (emptied v0.9.0 D-3, first live entry v0.10.1) + interactive TUI |
 | 1502 | `bob/checks/_run.py` | Shared helpers every check module imports: `_run()` / `run_result()` and the timeout policy, `_C_LOCALE_ENV`, unit and OpenRC state, sysctl fix and boot-drift helpers, package ownership / installation queries and install commands, PAM stack paths, safe path probes |
 | 1289 | `bob/tui/cron.py` | Curses TUI for cron wizards (extracted v0.4.1) |
-| 1448 | `bob/checks/services.py` | 38 services × detection paths × risk classification (32 → 38 via v0.8.0 T2) |
+| 1476 | `bob/checks/services.py` | 38 services × detection paths × risk classification (32 → 38 via v0.8.0 T2) |
 | 1354 | `bob/runner.py` | `_sec()` closure + unified `_SECTIONS` tuple (v0.9.0 D-2) + v0.9.0 D-1 fatal migration error path via `SECTION_RENAMES_V090` |
 | 1212 | `bob/display.py` | Renders all sections + risk context blocks + summary box + posture annotation helper (v0.7.2 M-10) + the A1 footer under the summary box (v0.8.0) |
 | 1288 | `bob/manage_logs.py` | Full curses TUI: folder picker (tracked dirs) → per-directory list + preview + score chart |
@@ -802,7 +802,7 @@ v0.7.0 T3 introduced `SandboxRunner` (Tier 2 restrictions) as the **single execu
 
 ---
 
-## Tests-to-source mapping (457 test files cover 132 non-`__init__` modules)
+## Tests-to-source mapping (458 test files cover 132 non-`__init__` modules)
 
 Naming convention: `tests/test_<module_basename>.py` mirrors `bob/<module>.py` or `bob/checks/<module>.py`. Some shared tests:
 
@@ -935,7 +935,7 @@ plus an emulated arm64 job (`debian:bookworm-slim` under QEMU, `ci/arm64_smoke.s
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 53,849 LoC across 137 files (0.26.0 work tree) | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 457 test files, ~8396 functions, **19886 collected** (0.31.1) | `pytest --collect-only -q` |
+| Tests | 458 test files, ~8415 functions, **20003 collected** (0.31.2) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distro containers + 1 emulated arm64 job | `.github/workflows/integration.yml` |
@@ -953,7 +953,7 @@ plus an emulated arm64 job (`debian:bookworm-slim` under QEMU, `ci/arm64_smoke.s
 | Doc files | 26 public markdown (20 in `DOCUMENTS/` + 6 at the repo root) + 3 man pages | `DOCUMENTS/` + `man/` |
 | JSON schema_version | `"3"` only (v1 retired v0.9.0 F-3, v2 retired v0.12.0 F9) | `bob.json_output.DEFAULT_SCHEMA_VERSION` |
 | Release-engineering CI guards | 5 — 3 workflow-level (integration-first / smoke-after-commit / smoke-plugin) + 2 pytest guards (`tests/test_version_consistency.py`, `tests/test_doc_version_consistency.py`) **plus the ruff correctness gate** (v0.13.3, `bob/` only, nothing ignored since v0.14.0) | `.github/workflows/*.yml` |
-| Version | 0.31.1, released 2026-11-08 (bare SemVer, no `v` prefix since 0.21.0) | `pyproject.toml::version` |
+| Version | 0.31.2, released 2026-11-09 (bare SemVer, no `v` prefix since 0.21.0) | `pyproject.toml::version` |
 | Supported branch | 0.26.x (everything ≤ 0.25.x is EOL — latest-minor-only policy) | `SECURITY.md` |
 | First release | v0.1.0 (2026-04-26) | `CHANGELOG.md` |
 

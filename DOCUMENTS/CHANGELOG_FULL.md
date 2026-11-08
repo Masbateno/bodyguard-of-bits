@@ -6,6 +6,134 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.31.2] — 2026-11-09
+
+**A patch, BREAKING for scores: the ports and IPv6 sections read UFW's rules
+as the services section has read them since 0.31.0, and an open service names
+the sources its rules admit it from.**
+
+BREAKING for scores means: the same host can score differently under 0.31.1
+and 0.31.2 — global, per domain, and the `--history` trend across the upgrade —
+because findings that feed the formula changed. The scoring formula is
+unchanged; no JSON-output-schema or CSV-column change; no section added or
+removed; no finding key renamed or removed.
+
+Scores that move (**drops**: the score can go down):
+
+| Where | 0.31.1 | 0.31.2 | § |
+|---|---|---|---|
+| UFW at default allow, a port listening on every interface whose own rules admit it from some sources only (`allow 8099 from <private>`) or refuse it only in part (for one host, for one family, on one interface, to one address), with no rule admitting it from any address (Anywhere) | covered: no finding (ports); "All … IPv6 listener(s) are covered by UFW (v6) rules" (IPv6) | ports: `ports.uncovered` WARN −1 (−2 if the host is public or reached through DDNS), "its UFW rules refuse it only in part, or admit it from some sources only … the clients no rule matches reach it"; IPv6: `ipv6.port_no_v6_rule` WARN −1 (up to 3; INFO without points under the desktop and workstation profiles), the same reason (**drops**) | 1 |
+| the same port, its rules determining the outcome for every source in its family (`deny 8099`, or `allow 8099 from <private>` then `deny 8099`), or a rule admitting it from any address (`allow 8099`, even after `deny 8099 from <one host>`) | covered | covered (unchanged: the rules decide every source — admitted or refused, none left to the default — or an explicit Anywhere allow) | 1 |
+| UFW at default deny or reject, any of the above | covered, or covered by the default | the same (unchanged) | 1 |
+
+### 1. The ports and IPv6 sections weigh what a port's own rules leave open
+
+Since 0.31.0 the services section reads UFW's rules as UFW applies them — the
+first rule that matches, each rule for its own source and family, the default
+policy for what the rules leave. The ports and IPv6 sections still counted a
+port with any rule of its own as covered, a limit 0.31.0 and 0.31.1 wrote down:
+there, BOB could understate. Measured on Kali in network namespaces at UFW's
+default allow, a private and a public client: `allow 8099 from <private>`
+answered the public client, over IPv4 and IPv6; `deny 8099 from <another host>`
+answered it; `deny 8099` over IPv4 only answered over IPv6; `deny 8099` refused
+everyone. Run on those rule sets, 0.31.1's ports section said nothing of 8099
+and its IPv6 section read "All … IPv6 listener(s) are covered by UFW (v6) rules"
+in the first two cases.
+
+Measured on Kali on 8 November 2026 (network namespaces, a private and a
+public client, port 8099 listening over IPv4 and IPv6, server profile; the
+bench host read as public, hence −2):
+
+| UFW rules for 8099 | default | reached (over IPv4 / IPv6) | 0.31.1 | 0.31.2 |
+|---|---|---|---|---|
+| allow from the private client | allow | both clients / both clients | nothing | ports −2, IPv6 −1 |
+| deny from another public host | allow | both / both | nothing | ports −2, IPv6 −1 |
+| deny over IPv4 only | allow | nobody / both | IPv6 −1 | ports −2, IPv6 −1 |
+| deny | allow | nobody / nobody | nothing | nothing |
+| allow | allow | both / both | nothing (opened on purpose) | the same |
+| none | allow | both / both | ports −2, IPv6 −1 | the same |
+| allow from the private client | deny | the private client / the private client | nothing | nothing |
+| none | deny | nobody / nobody | nothing | nothing |
+
+Each client was probed over IPv4 and over IPv6; "both" means the private and
+the public client both reached the listener over that family. An IPv4-only
+listener refused over IPv4 read covered in both versions. Under the desktop and
+workstation profiles the IPv6 finding is INFO without points.
+
+At UFW's default allow, a port listening on every interface is now covered by
+its own rules only when those rules determine the outcome for every client in
+that address family, leaving none to the default policy — by refusing every
+source, or by admitting some named sources and refusing the rest; a refusal
+limited to one source, one interface or one address does not — or when a rule
+admits it from any address (`Anywhere`) — opened on purpose, as before, even
+when an earlier rule refuses a few sources (measured: `deny 8099 from <one
+host>` then `allow 8099` answered every other client). Otherwise the clients no
+rule matches reach it: the ports section weighs it as an uncovered port
+(`ports.uncovered`, −1; −2 if the host is public or reached through DDNS) and
+the IPv6 section as a listener without a (v6) rule (`ipv6.port_no_v6_rule`, −1,
+up to 3; INFO without points under the desktop and workstation profiles, as for
+a listener with no (v6) rule since before), each with a text that says why; both
+sections suggest the same command, `sudo ufw deny <port>`: ufw appends it after
+the rules that admit a source, so it refuses the clients those rules do not
+admit while the sources they admit keep their access (measured: `allow 8099 from
+<private>` then `deny 8099` — the private client answered, the public one was
+refused). Closing the port to those sources too means deleting or changing their
+rules, or inserting a refusal before them with ufw's `insert` (not measured
+here); BOB does not propose it, since a rule for a source is read as intended.
+An IPv4 listener refused from every source over IPv4 is covered even when IPv6
+is not refused; the IPv6 listener on the same port is weighed on its own family.
+At default deny or reject nothing changes: the default refuses what the rules
+leave. A listener bound to loopback alone is not weighed.
+
+### 2. An open service names its sources
+
+The services section read a service open to the internet as "UFW rule allows
+from any address (Anywhere)" whatever its rules named — a limit 0.31.0 wrote
+down. When no rule admits any address, it now names the sources the UFW rules
+admit it from ("open to the internet — UFW rules allow it from 10.77.0.1,
+203.0.113.5, …"): not those they refuse, and not a list of every client that can
+reach it. At default allow, when its rules leave some clients to the default
+policy — neither admitted nor refused by a rule — the text says those reach it
+too ("open to the internet — its UFW rules admit this port from 10.77.0.1,
+203.0.113.5 only but leave some other clients unrefused, and UFW's default
+incoming policy is allow"), as for a port admitted from private sources only
+since 0.31.0. Those 0.31.0 texts said "no rule refuses it to the other clients"
+even when a rule refused one other source, or every source over IPv4; they now
+say "leave some other clients unrefused" — the same finding, level and
+deduction. Measured on Kali in a network namespace, ssh admitted from a private
+and a public host: 0.31.1 read "from any address (Anywhere)" at default deny and
+at default allow; 0.31.2 names the sources, and at default allow says the other
+clients reach it, without calling a source a rule refuses unrefused; with a rule
+admitting any address, "(Anywhere)" is kept. The finding, its level and its
+deduction are unchanged.
+
+Limits, unchanged: the interface and destination constraints of a UFW rule are
+not modelled (BOB can overstate a service's exposure, never understate it in
+the services section); the UFW `before` chains and the rate-limit chains are
+not reconstructed. At a default incoming policy BOB could not read, the ports
+and IPv6 sections read as in 0.31.1.
+
+New texts (messages of existing findings; no new finding key):
+`ports.uncovered_rules_in_part`, `deduction.port_rules_in_part`,
+`ipv6.port_v6_rules_in_part`, `services.exposure.open_world_sources`,
+`services.exposure.open_world_sources_default_allow`. Reworded (0.31.0 texts):
+`services.exposure.open_local_default_allow`,
+`services.exposure.open_local_policy_unread`.
+
+### Counters
+
+Tests collected 19886 → **20003**, test files 457 → **458**, mutations 1655 →
+**1673**; locale keys 3170 → **3175** (5 new keys, 2 existing strings reworded,
+none removed); `--explain` keys and CIS references (236) and sections unchanged.
+
+### Guards
+
+`test_v0312_ufw_rest_open.py` (`ufw-rest/*`: 18 new mutations, none retired).
+Re-anchored without changing its meaning: `ipv6-default-deny/command-opens`;
+the locale-count anchor.
+
+---
+
 ## [0.31.1] — 2026-11-08
 
 **A patch, BREAKING for scores: six corrections, from a real Mint desktop audit

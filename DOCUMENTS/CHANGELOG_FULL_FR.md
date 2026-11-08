@@ -6,6 +6,59 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.31.2] — 09-11-2026
+
+**Un correctif, BREAKING (scores) : les sections ports et IPv6 lisent les règles UFW comme la section services les lit depuis la 0.31.0, et un service ouvert nomme les sources depuis lesquelles ses règles l'admettent.**
+
+BREAKING (scores) veut dire : un même hôte peut obtenir un score différent sous la 0.31.1 et sous la 0.31.2 — le score global, les scores par domaine et la tendance de `--history` à travers la mise à jour — parce que des constats qui alimentent la formule ont changé. La formule de score est inchangée ; aucun changement de schéma de la sortie JSON ni de colonne CSV ; aucune section ajoutée ni retirée ; aucune clé de constat renommée ni retirée.
+
+Les scores qui bougent (**baisse** : le score peut baisser) :
+
+| Où | 0.31.1 | 0.31.2 | § |
+|---|---|---|---|
+| UFW en allow par défaut, un port en écoute sur toutes les interfaces dont les propres règles ne l'admettent que depuis certaines sources (`allow 8099 from <privée>`) ou ne le refusent qu'en partie (pour un hôte, pour une famille, sur une interface, vers une adresse), sans règle qui l'admette depuis n'importe quelle adresse (Anywhere) | couvert : aucun constat (ports) ; « Les … service(s) IPv6 sont couverts par des règles UFW (v6) » (IPv6) | ports : `ports.uncovered` WARN −1 (−2 si l'hôte est public ou joint par DDNS), « ses règles UFW ne le refusent qu'en partie, ou ne l'admettent que depuis certaines sources … les clients qu'aucune règle ne vise l'atteignent » ; IPv6 : `ipv6.port_no_v6_rule` WARN −1 (jusqu'à 3 ; INFO sans point sous les profils desktop et workstation), la même raison (**baisse**) | 1 |
+| le même port, ses règles décidant du sort de chaque source de sa famille (`deny 8099`, ou `allow 8099 from <privée>` puis `deny 8099`), ou une règle l'admettant depuis n'importe quelle adresse (`allow 8099`, même après `deny 8099 from <un hôte>`) | couvert | couvert (inchangé : les règles décident de chaque source — admise ou refusée, aucune laissée à la politique par défaut — ou une admission Anywhere explicite) | 1 |
+| UFW en deny ou reject par défaut, tous les cas ci-dessus | couvert, ou couvert par la politique par défaut | le même (inchangé) | 1 |
+
+### 1. Les sections ports et IPv6 pèsent ce que les propres règles d'un port laissent ouvert
+
+Depuis la 0.31.0, la section services lit les règles UFW comme UFW les applique — la première règle qui correspond, chaque règle pour sa propre source et sa propre famille, la politique par défaut pour ce que les règles laissent. Les sections ports et IPv6 comptaient encore comme couvert un port ayant une règle à lui, une limite que la 0.31.0 et la 0.31.1 avaient écrite : là, BOB pouvait sous-estimer. Mesuré sur Kali dans des espaces de noms réseau, UFW en allow par défaut, un client privé et un client public : `allow 8099 from <privée>` a répondu au client public, en IPv4 et en IPv6 ; `deny 8099 from <un autre hôte>` lui a répondu ; `deny 8099` en IPv4 seulement a répondu en IPv6 ; `deny 8099` a refusé tout le monde. Lancée sur ces jeux de règles, la section ports de la 0.31.1 ne disait rien de 8099 et sa section IPv6 lisait « Les … service(s) IPv6 sont couverts par des règles UFW (v6) » dans les deux premiers cas.
+
+Mesuré sur Kali le 8 novembre 2026 (espaces de noms réseau, un client privé et un client public, le port 8099 en écoute en IPv4 et en IPv6, profil serveur ; l'hôte du banc lu comme public, d'où −2) :
+
+| Règles UFW pour 8099 | défaut | atteint (en IPv4 / IPv6) | 0.31.1 | 0.31.2 |
+|---|---|---|---|---|
+| allow depuis le client privé | allow | les deux clients / les deux clients | rien | ports −2, IPv6 −1 |
+| deny depuis un autre hôte public | allow | les deux / les deux | rien | ports −2, IPv6 −1 |
+| deny en IPv4 seulement | allow | personne / les deux | IPv6 −1 | ports −2, IPv6 −1 |
+| deny | allow | personne / personne | rien | rien |
+| allow | allow | les deux / les deux | rien (ouvert volontairement) | le même |
+| aucune | allow | les deux / les deux | ports −2, IPv6 −1 | le même |
+| allow depuis le client privé | deny | le client privé / le client privé | rien | rien |
+| aucune | deny | personne / personne | rien | rien |
+
+Chaque client a été sondé en IPv4 et en IPv6 ; « les deux » veut dire que le client privé et le client public ont tous deux atteint l'écouteur dans cette famille. Un écouteur IPv4 seul, refusé en IPv4, était lu couvert dans les deux versions. Sous les profils desktop et workstation, le constat IPv6 est une INFO sans point.
+
+UFW en allow par défaut, un port en écoute sur toutes les interfaces n'est désormais couvert par ses propres règles que quand elles décident du sort de chaque client de cette famille d'adresses, sans en laisser aucun à la politique par défaut — en refusant chaque source, ou en admettant certaines sources nommées et en refusant le reste ; un refus limité à une source, une interface ou une adresse ne suffit pas — ou quand une règle l'admet depuis n'importe quelle adresse (`Anywhere`) — ouvert volontairement, comme avant, même quand une règle antérieure refuse quelques sources (mesuré : `deny 8099 from <un hôte>` puis `allow 8099` a répondu à chaque autre client). Sinon, les clients qu'aucune règle ne vise l'atteignent : la section ports le pèse comme un port non couvert (`ports.uncovered`, −1 ; −2 si l'hôte est public ou joint par DDNS) et la section IPv6 comme un écouteur sans règle (v6) (`ipv6.port_no_v6_rule`, −1, jusqu'à 3 ; INFO sans point sous les profils desktop et workstation, comme déjà pour un écouteur sans règle (v6)), chacune avec un texte qui dit pourquoi ; les deux sections proposent la même commande, `sudo ufw deny <port>` : ufw l'ajoute après les règles qui admettent une source, donc elle refuse les clients que ces règles n'admettent pas, et les sources qu'elles admettent gardent leur accès (mesuré : `allow 8099 from <privée>` puis `deny 8099` — le client privé a répondu, le public a été refusé). Fermer aussi le port à ces sources demande de supprimer ou de modifier leurs règles, ou d'insérer un refus avant elles avec `insert` d'ufw (non mesuré ici) ; BOB ne le propose pas, puisqu'une règle pour une source est lue comme voulue. Un écouteur IPv4 refusé depuis chaque source en IPv4 est couvert même quand l'IPv6 n'est pas refusé ; l'écouteur IPv6 du même port est pesé dans sa propre famille. En deny ou reject par défaut, rien ne change : la politique par défaut refuse ce que les règles laissent. Un écouteur lié à la seule boucle locale n'est pas pesé.
+
+### 2. Un service ouvert nomme ses sources
+
+La section services lisait un service ouvert sur internet comme « règle UFW autorise depuis toutes les adresses (Anywhere) » quoi que ses règles nomment — une limite que la 0.31.0 avait écrite. Quand aucune règle n'admet n'importe quelle adresse, elle nomme désormais les sources depuis lesquelles les règles UFW l'admettent (« exposé sur internet — les règles UFW l'autorisent depuis 10.77.0.1, 203.0.113.5, … ») : pas celles qu'elles refusent, et pas une liste de chaque client qui peut l'atteindre. En allow par défaut, quand ses règles laissent des clients à la politique par défaut — ni admis ni refusés par une règle —, le texte dit qu'ils l'atteignent aussi (« exposé sur internet — ses règles UFW n'admettent ce port que depuis 10.77.0.1, 203.0.113.5, mais certains autres clients ne sont refusés par aucune d'elles, et la politique UFW par défaut pour l'entrant est allow »), comme pour un port admis depuis des sources privées seulement depuis la 0.31.0. Ces textes de la 0.31.0 disaient « aucune règle ne le refuse aux autres clients » même quand une règle refusait une autre source, ou chaque source en IPv4 ; ils disent désormais « certains autres clients ne sont refusés par aucune d'elles » — le même constat, le même niveau, la même déduction. Mesuré sur Kali dans un espace de noms réseau, ssh admis depuis un hôte privé et un hôte public : la 0.31.1 lisait « depuis toutes les adresses (Anywhere) » en deny comme en allow par défaut ; la 0.31.2 nomme les sources, et en allow par défaut dit que les autres clients l'atteignent, sans dire non refusée une source qu'une règle refuse ; avec une règle qui admet n'importe quelle adresse, « (Anywhere) » est gardé. Le constat, son niveau et sa déduction sont inchangés.
+
+Limites, inchangées : les contraintes d'interface et de destination d'une règle UFW ne sont pas modélisées (BOB peut surestimer l'exposition d'un service, jamais la sous-estimer dans la section services) ; les chaînes `before` d'UFW et ses chaînes de limitation de débit ne sont pas reconstruites. Sous une politique entrante par défaut que BOB n'a pas pu lire, les sections ports et IPv6 lisent comme la 0.31.1.
+
+Nouveaux textes (messages de constats existants ; aucune nouvelle clé de constat) : `ports.uncovered_rules_in_part`, `deduction.port_rules_in_part`, `ipv6.port_v6_rules_in_part`, `services.exposure.open_world_sources`, `services.exposure.open_world_sources_default_allow`. Reformulés (textes de la 0.31.0) : `services.exposure.open_local_default_allow`, `services.exposure.open_local_policy_unread`.
+
+### Compteurs
+
+Tests collectés 19886 → **20003**, fichiers de test 457 → **458**, mutations 1655 → **1673** ; clés de locale 3170 → **3175** (5 nouvelles clés, 2 chaînes existantes reformulées, aucune retirée) ; clés `--explain` et références CIS (236) et sections inchangées.
+
+### Gardes
+
+`test_v0312_ufw_rest_open.py` (`ufw-rest/*` : 18 nouvelles mutations, aucune retirée). Réancrées sans changer leur sens : `ipv6-default-deny/command-opens` ; l'ancre du compte de clés de locale.
+
+---
+
 ## [0.31.1] — 08-11-2026
 
 **Un correctif, BREAKING (scores) : six corrections, issues d'un audit réel de la 0.31.0 sur un poste Mint et de ce que leur mesure a montré. Les ports de pont et les esclaves de bond ne sont plus jugés sur leurs propres sysctls ; usb_storage est un pilote de stockage avec son propre constat ; derrière une NAT IPv4 avec une adresse IPv6 publique, un écouteur IPv6 que l'hôte laisse joignable met le score en plafond ; les correctifs de redirection rendent persistante chaque interface nommée ; une interface dont le nom contient un point est lue et corrigée ; le texte de la clé hôte RSA. Mesuré sur une Kali Rolling réelle et sur le poste Mint (en lecture seule).**

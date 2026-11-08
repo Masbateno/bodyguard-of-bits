@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.31.1
+Version:        0.31.2
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,14 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Mon Nov 09 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.31.2-1
+- Patch, BREAKING for scores: at UFW's default allow, the ports and IPv6
+  sections no longer read a port as covered when its own rules admit it from
+  some sources only or refuse it only in part, with no Anywhere rule; an open
+  service names the sources its rules admit it from and says when other
+  clients reach it too; its text no longer says no rule refuses the port
+  when one refuses another source.
+
 * Sun Nov 08 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.31.1-1
 - Patch, BREAKING for scores: bridge ports and bond slaves are no longer
   weighed by their own sysctls; usb_storage has its own finding (no
