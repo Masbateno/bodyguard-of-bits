@@ -394,7 +394,7 @@ bodyguard-of-bits/
 | `ddns.py` | 473 | exposure_services | DDNS client + crossed with open UFW ports |
 | `docker.py` | 427 | exposure_services | iptables bypass detection, container port exposure |
 | `docker_audit.py` | 369 | system_hardening | daemon.json hardening, privileged containers, sensitive mounts (section name `docker_hardening` since v0.9.0 D-1) |
-| `kubernetes.py` | 987 | system_hardening | **v0.25.0** Kubernetes node: pods' rights through `ctr` (containerd, MicroK8s, k3s) or `crictl` (CRI-O) (privileged, node-handing host paths, host namespaces; kube-system said, not deducted), kubelet anonymous access (10250) and read-only port (10255); skipped where no kubelet runs |
+| `kubernetes.py` | 987 | system_hardening | **v0.25.0** Kubernetes node: pods' rights through `ctr` (containerd, MicroK8s, k3s) or `crictl` (CRI-O) (privileged, node-handing host paths, host namespaces; kube-system said, not deducted), kubelet anonymous access (10250) and read-only port (10255); the API server (v0.28.0 MicroK8s args file, v0.31.3 a k3s server's journal line); skipped where no kubelet runs |
 | `virtualization.py` | 212 | exposure_services | KVM/VirtualBox/VMware/LXC + Snap network packages |
 | `samba.py` | 532 | exposure_services | SMBv1, signing, map-to-guest, bind interfaces |
 | `smtp.py` | 193 | exposure_services | MTA exposure (Postfix/Exim/Sendmail) |

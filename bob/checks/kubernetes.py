@@ -166,6 +166,8 @@ class KubernetesSnapshot:
         ctr = _ctr_command()
         if ctr:
             read = _read_pods(ctr)
+        elif ctr is None:
+            read = None                           # a k3s server, its ctr not found
         elif _command_exists("crictl"):
             read = _read_pods_cri(("crictl", f"--timeout={_CTR_TIMEOUT}s"))
         else:
@@ -202,32 +204,155 @@ _BROAD_SUBJECTS = frozenset({("Group", "system:authenticated"), ("Group", "syste
                              ("Group", "system:serviceaccounts"), ("User", "system:anonymous")})
 
 
-def _read_apiserver(snap: "KubernetesSnapshot") -> None:
-    """The API server's authorization mode and port (MicroK8s args file), its
-    answer to an anonymous read, and the cluster-admin bindings (read-only,
-    through MicroK8s' own kubectl). Leaves the fields None where not read."""
-    try:
-        text = _MICROK8S_APISERVER_ARGS.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return
+#: v0.31.3 — k3s runs the API server inside its ``k3s server`` process, and that
+#: process blanks its own command line: measured on Kali, k3s v1.37.2+k3s1,
+#: ``/proc/<pid>/cmdline`` reads ``k3s server`` and NUL bytes whatever flags,
+#: ``config.yaml`` or ``config.yaml.d`` set. What the API server runs with is
+#: in the line k3s logs as it starts it, ``Running kube-apiserver --…`` (under
+#: systemd, in the journal, attached to that process); the port its clients
+#: reach, in the kubeconfig it writes for its own kubectl. Not
+#: ``--advertise-port`` in that line: measured ``--advertise-port=7000`` while
+#: k3s listened on 6443, and the kubeconfig said 6443.
+_K3S_SERVER = "k3s-server"
+_K3S_KUBECONFIG = Path("/etc/rancher/k3s/k3s.yaml")
+_K3S_APISERVER_LINE = "Running kube-apiserver "
+_K3S_CONTAINERD_SOCKET = "/run/k3s/containerd/containerd.sock"
+_PROC = Path("/proc")
+
+
+def _parse_args(text: str) -> "dict[str, str]":
+    """``--name=value`` (or ``--name value``) arguments, one per line or
+    separated by spaces, the last of a name winning."""
     args = {}
     for line in text.splitlines():
         m = re.match(r"^\s*(--[\w-]+)(?:[=\s]+(.*))?$", line)
         if m:
             args[m.group(1)] = (m.group(2) or "").strip().strip('"')
-    port = args.get("--secure-port", "6443")
-    snap.apiserver_port = int(port) if port.isdigit() else None
+    return args
+
+
+def _modes(args: "dict[str, str]") -> "tuple[str, ...]":
     modes = args.get("--authorization-mode")
     # Absent: the upstream default is not assumed (not measured) — "not read".
-    snap.authorization_modes = tuple(x.strip() for x in modes.split(",") if x.strip()) if modes else ()
-    if snap.apiserver_port:
-        snap.apiserver_listener = _deciding(_loopback_listener(snap.apiserver_port), _APISERVER_NAMES)
-        if snap.apiserver_listener in _APISERVER_NAMES:
-            snap.apiserver_anonymous_status = _probe(f"https://127.0.0.1:{snap.apiserver_port}/api/v1/namespaces")
+    return tuple(x.strip() for x in modes.split(",") if x.strip()) if modes else ()
+
+
+def _read_apiserver(snap: "KubernetesSnapshot") -> None:
+    """The API server's authorization mode and port, its answer to an
+    anonymous read, and the cluster-admin bindings (read-only, through the
+    distribution's own kubectl): MicroK8s' args file, else a k3s server's
+    journal (v0.31.3). Leaves the fields None where not read."""
+    try:
+        text = _MICROK8S_APISERVER_ARGS.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        _read_k3s_apiserver(snap)
+        return
+    args = _parse_args(text)
+    port = args.get("--secure-port", "6443")
+    snap.apiserver_port = int(port) if port.isdigit() else None
+    snap.authorization_modes = _modes(args)
+    _probe_apiserver(snap)
     if "RBAC" in snap.authorization_modes and _command_exists("microk8s"):
         res = run_result("microk8s", "kubectl", "get", "clusterrolebindings", "-o", "json", timeout=_CTR_TIMEOUT)
         if res.ok:
             snap.broad_admin_bindings = _broad_admin_bindings(res.stdout)
+
+
+def _probe_apiserver(snap: "KubernetesSnapshot") -> None:
+    """The anonymous read, sent only to an API server run by root on the port."""
+    if snap.apiserver_port:
+        snap.apiserver_listener = _deciding(_loopback_listener(snap.apiserver_port), _APISERVER_NAMES)
+        if snap.apiserver_listener in _APISERVER_NAMES:
+            snap.apiserver_anonymous_status = _probe(f"https://127.0.0.1:{snap.apiserver_port}/api/v1/namespaces")
+
+
+def _read_k3s_apiserver(snap: "KubernetesSnapshot") -> None:
+    """v0.31.3 — the API server of the one running k3s server, from the line it
+    logged when it started it. k3s started outside systemd (OpenRC, by hand)
+    logs elsewhere: not read, said as before (``kubernetes.apiserver_unread``)."""
+    pid = _k3s_server_pid()
+    line = _k3s_apiserver_line(pid) if pid else None
+    if line is None:
+        return
+    args = _parse_args(line.split(_K3S_APISERVER_LINE, 1)[1].split('"', 1)[0].replace(" --", "\n--"))
+    snap.authorization_modes = _modes(args)
+    snap.apiserver_port = _k3s_port()
+    _probe_apiserver(snap)
+    kubectl = _k3s_tool(pid, "kubectl") if "RBAC" in snap.authorization_modes else None
+    if kubectl:
+        # The kubeconfig is named: a KUBECONFIG in BOB's environment would
+        # otherwise point k3s's kubectl at another cluster.
+        res = run_result(kubectl, f"--kubeconfig={_K3S_KUBECONFIG}", "get", "clusterrolebindings",
+                         "-o", "json", timeout=_CTR_TIMEOUT)
+        if res.ok:
+            snap.broad_admin_bindings = _broad_admin_bindings(res.stdout)
+
+
+def _k3s_tool(pid: str, name: str) -> "str | None":
+    """The ``kubectl`` or ``ctr`` link beside the binary the k3s server runs
+    (measured: ``/var/lib/rancher/k3s/data/<hash>/bin/kubectl -> k3s``, and
+    ``ctr``), when it is that very file. Not ``k3s`` from PATH: k3s installs
+    in /usr/local/bin, which sudo's secure_path leaves out on Kali (measured),
+    so ``sudo bob`` would not find it."""
+    try:
+        exe = Path(os.readlink(_PROC / pid / "exe"))
+        tool = exe.parent / name
+        return str(tool) if os.path.samefile(tool, exe) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _k3s_server_pid() -> "str | None":
+    """The one process named ``k3s-server`` (measured: the server's name under
+    systemd and started by hand); None when there is none, or more than one."""
+    try:
+        pids = [d for d in _PROC.iterdir() if d.name.isdigit()]
+    except OSError:
+        return None
+    found = []
+    for pid in pids:
+        try:
+            if (pid / "comm").read_text(errors="replace").strip() == _K3S_SERVER:
+                found.append(pid.name)
+        except OSError:
+            continue
+    return found[0] if len(found) == 1 else None
+
+
+def _process_start(pid: str) -> "int | None":
+    """When ``pid`` started, in seconds since the epoch, rounded down (its
+    start in clock ticks after boot, plus the boot time)."""
+    try:
+        ticks = int((_PROC / pid / "stat").read_text().rsplit(")", 1)[1].split()[19])
+        boot = next(int(x.split()[1]) for x in (_PROC / "stat").read_text().splitlines() if x.startswith("btime "))
+    except (OSError, ValueError, IndexError, StopIteration):
+        return None
+    return boot + ticks // os.sysconf("SC_CLK_TCK")
+
+
+def _k3s_apiserver_line(pid: str) -> "str | None":
+    """The last ``Running kube-apiserver`` line this very process wrote to the
+    journal: its PID and name, this boot, since it started — not a line an
+    earlier k3s left."""
+    start = _process_start(pid)
+    if start is None:
+        return None
+    res = run_result("journalctl", f"_PID={pid}", f"_COMM={_K3S_SERVER}", "-b", f"--since=@{start}",
+                     "-o", "cat", "--no-pager", "--grep", _K3S_APISERVER_LINE.strip(), timeout=_CTR_TIMEOUT)
+    lines = [x for x in res.stdout.splitlines() if _K3S_APISERVER_LINE in x]
+    return lines[-1] if lines else None
+
+
+def _k3s_port() -> "int | None":
+    """The port in the kubeconfig k3s writes for its own kubectl, when it names
+    one local address; None otherwise (not read, nothing probed)."""
+    try:
+        text = _K3S_KUBECONFIG.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    ports = set(re.findall(r'^\s*server:\s*"?https://(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)/?"?\s*$', text, re.M))
+    servers = re.findall(r"^\s*server:", text, re.M)
+    return int(ports.pop()) if len(ports) == 1 and len(servers) == 1 else None
 
 
 def _broad_admin_bindings(raw: str) -> "list[str] | None":
@@ -251,11 +376,15 @@ def _broad_admin_bindings(raw: str) -> "list[str] | None":
 def _runtime_socket() -> "tuple[str, int, str, tuple[str, ...]] | None":
     """The first container-runtime socket present: its mode, group and the
     group's members (v0.28.0; measured on MicroK8s 1.35.6:
-    /var/snap/microk8s/common/run/containerd.sock, 0660 root:microk8s)."""
+    /var/snap/microk8s/common/run/containerd.sock, 0660 root:microk8s).
+
+    v0.31.3 — on a running k3s server, its own socket only (measured on
+    Kali: /run/k3s/containerd/containerd.sock, 0660 root:root), as for its
+    ``ctr``: the first socket present was Docker's containerd."""
     import grp
     import os
     import stat
-    for path in _RUNTIME_SOCKETS:
+    for path in (_K3S_CONTAINERD_SOCKET,) if _k3s_server_pid() else _RUNTIME_SOCKETS:
         try:
             st = os.stat(path)
         except OSError:
@@ -271,8 +400,21 @@ def _runtime_socket() -> "tuple[str, int, str, tuple[str, ...]] | None":
     return None
 
 
-def _ctr_command() -> "tuple[str, ...]":
-    """The ``ctr`` invocation that reaches this node's Kubernetes containers."""
+def _ctr_command() -> "tuple[str, ...] | None":
+    """The ``ctr`` invocation that reaches this node's Kubernetes containers;
+    None when a k3s server runs and its own ``ctr`` was not found.
+
+    v0.31.3 — a running k3s server is asked through the ``ctr`` beside the
+    binary it runs, on its own socket. Measured on Kali (k3s v1.37.2, Docker
+    running): ``k3s`` was not in sudo's PATH, so BOB fell through to
+    ``/usr/bin/ctr`` on ``/run/containerd/containerd.sock`` — Docker's
+    containerd — listed 0 containers and called them read, while k3s's
+    containerd ran 4 (coredns among them). Nothing else is that server's
+    runtime: without its ``ctr``, nothing is read (and said)."""
+    pid = _k3s_server_pid()
+    if pid:
+        ctr = _k3s_tool(pid, "ctr")
+        return (ctr, "-a", _K3S_CONTAINERD_SOCKET, "-n", "k8s.io") if ctr else None
     for wrapper in ("microk8s.ctr", "/snap/bin/microk8s.ctr"):
         if _command_exists(wrapper) or (wrapper.startswith("/") and path_exists(Path(wrapper))):
             return (wrapper,)                     # namespace k8s.io set by the wrapper
@@ -903,6 +1045,8 @@ def _check_apiserver(snapshot: "KubernetesSnapshot", result: CheckResult, _t) ->
         # server where MicroK8s keeps its arguments; on k3s (measured: its
         # process is `k3s server`, a kubelet name BOB knows) and kubeadm
         # nothing was said, and the score read as if the cluster were clean.
+        # v0.31.3 — a k3s server under systemd is read from its journal
+        # (`_read_k3s_apiserver`); one whose start line is not there is not.
         result.info(message=_t("kubernetes.apiserver_unread"),
                     detail=_t("kubernetes.apiserver_unread_detail"),
                     key="kubernetes.apiserver_unread")
@@ -926,7 +1070,11 @@ def _check_apiserver(snapshot: "KubernetesSnapshot", result: CheckResult, _t) ->
     elif anon is not None and 200 <= anon < 300:
         # After review: a 2xx here establishes that anonymous requests may list
         # namespaces, not what else they may do — WARN −1, as the kubelet's
-        # anonymous read (0.25.0). Under AlwaysAllow the two findings add up.
+        # anonymous read (0.25.0). v0.31.3 — not under AlwaysAllow: the API
+        # server then turns anonymous authentication off (measured on k3s
+        # v1.37.2: "AnonymousAuth is not allowed with the AlwaysAllow
+        # authorizer. Resetting AnonymousAuth to false.", and a 401; MicroK8s
+        # 1.35.6 answered 401 there too).
         result.warn_with_deduction(
             key="kubernetes.apiserver_anonymous",
             message=_t("kubernetes.apiserver_anonymous", port=snapshot.apiserver_port),

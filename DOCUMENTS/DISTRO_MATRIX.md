@@ -997,6 +997,31 @@ The real ufw 0.36.2 at `IPV6=no` in the same namespace bench left exactly `-P IN
 `-P FORWARD DROP`, `-P OUTPUT DROP`, `-A INPUT -i lo -j ACCEPT`, `-A OUTPUT -o lo -j ACCEPT`:
 the one table for which BOB says "IPv6 is unusable on this host".
 
+### 0.31.3 field pass — a k3s server on Kali, beside Docker
+
+*Kali Rolling (kernel 6.19.14, systemd 260, Docker and its containerd running,
+sudo's `secure_path` without `/usr/local/bin`), real, 2026-11-08. k3s
+v1.37.2+k3s1, the official binary (sha256 checked against the release's list),
+run as a systemd unit as the installer writes it, and by hand;
+`--disable traefik,metrics-server,local-storage,servicelb`. The disk was 95 %
+full: the kubelet's eviction thresholds were lowered to 1 % for the pass.*
+
+| Measured | 0.31.2 | 0.31.3 |
+|---|---|---|
+| stock settings, a privileged pod in `default` | "0 pod(s) outside kube-system … no container with every Linux capability" (OK): `k3s` is not in sudo's PATH, and `/usr/bin/ctr` read Docker's containerd; the API server not read | the pod reported, WARN −1; the API server read: Node,RBAC, the anonymous read refused (401), cluster-admin bound to `system:masters` only (OK) |
+| `kube-apiserver-arg: authorization-mode=AlwaysAllow` (in `config.yaml.d`) | not read | ALERT −2; the entry removed and k3s restarted → Node,RBAC, the alert gone |
+| `anonymous-auth=true`, the anonymous user allowed to list namespaces, cluster-admin bound to `system:authenticated` | not read | WARN −1 (200) and ALERT −3; the entry removed, k3s restarted, the binding deleted → 401, OK |
+| k3s started by hand (its output not in the journal) | not read | not read (said, the score a ceiling); its pods read |
+
+Measured along the way: k3s blanks its command line (`/proc/<pid>/cmdline` reads
+`k3s server` whatever its flags or `config.yaml` set); `--advertise-port` in the API
+server's start line is not the port k3s listens on (7000 announced, 6443
+listened); under AlwaysAllow the API server turns anonymous authentication off
+("AnonymousAuth is not allowed with the AlwaysAllow authorizer. Resetting
+AnonymousAuth to false."), so an anonymous read answers 401 whatever
+`--anonymous-auth` says; changing `https-listen-port` after a first start leaves
+k3s's own kubeconfigs on the old internal port, and k3s exits.
+
 ### 0.25.1 field pass — doas on Alpine
 
 *Alpine 3.24 (OpenRC, BusyBox, doas, Python 3.14.7), real, 2026-10-17. The 0.25.1
