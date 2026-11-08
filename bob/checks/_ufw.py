@@ -352,7 +352,7 @@ def rules_leave_rest_open(
     """v0.31.2 — True when, in family *v6*, the rules for *port*/*proto* (or
     naming no port) neither refuse it from every source, on every interface and
     to every address, nor admit it from any source (``Anywhere``): under UFW's
-    default allow, the clients they do not name reach it.
+    default allow, the clients no rule matches reach it.
 
     0.31.1 counted a port with any rule of its own as covered in the ports and
     IPv6 sections. Measured on Kali at default allow (review10-ufw.txt W1,

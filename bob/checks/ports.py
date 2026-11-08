@@ -432,7 +432,7 @@ def check_ports(
                 )
             # v0.31.2 — at UFW's default allow, a port whose own rules refuse
             # it only in part, or admit it from some sources only, is reached
-            # by the clients they do not name, as a port with no rule is
+            # by the clients no rule matches, as a port with no rule is
             # (measured on Kali: `allow 8099 from <private>`, `deny 8099 from
             # <another host>` — the public client answered, read covered).
             if (ufw_active and default_incoming_policy == "allow" and lport.is_all_interfaces

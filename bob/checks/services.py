@@ -176,6 +176,10 @@ class ServiceSnapshot:
     # alone, whose rules admit them from private sources and refuse them to no
     # one else in some family: UFW's default incoming policy decides the rest.
     admitted_in_part: frozenset = frozenset()
+    # v0.31.2, field run — OPEN_WORLD ports no rule admits from Anywhere,
+    # listening and not on loopback alone, whose rules refuse them to no one
+    # else in some family: UFW's default incoming policy decides the rest.
+    world_in_part: frozenset = frozenset()
 
     @property
     def label(self) -> str:
@@ -253,6 +257,8 @@ class ServiceSnapshot:
                                                 port.partition("/")[2] or "tcp", app_profiles))
             refused_in_part = _left_to_default(Exposure.DENY)
             admitted_in_part = _left_to_default(Exposure.OPEN_LOCAL)
+            world_in_part = frozenset(p for p in _left_to_default(Exposure.OPEN_WORLD)
+                                      if "Anywhere" not in world_sources.get(p, "Anywhere"))
         else:
             state     = ServiceState.UNKNOWN
             trigger   = ""
@@ -262,6 +268,7 @@ class ServiceSnapshot:
             world_sources = {}
             refused_in_part = frozenset()
             admitted_in_part = frozenset()
+            world_in_part = frozenset()
 
         return cls(
             service=service,
@@ -275,6 +282,7 @@ class ServiceSnapshot:
             world_sources=world_sources,
             refused_in_part=refused_in_part,
             admitted_in_part=admitted_in_part,
+            world_in_part=world_in_part,
         )
 
     @classmethod
@@ -637,9 +645,14 @@ def _check_port_exposure(
     # to one public source too: the sources are named when no rule admits
     # Anywhere.
     _world = (getattr(snap, "world_sources", None) or {}).get(port, "")
+    # Field run on Kali (8 November 2026): at default allow, rules admitting
+    # 22 from a private and a public source only left every other client
+    # reaching it, and the text named only those sources — say so.
     if exp_key == "services.exposure.open_world" and _world and "Anywhere" not in _world:
+        _rest = ufw_incoming_policy == "allow" and port in getattr(snap, "world_in_part", frozenset())
         port_msg = _t("services.port_exposure", port=port,
-                      exposure=_t("services.exposure.open_world_sources", sources=_world))
+                      exposure=_t("services.exposure.open_world_sources_default_allow" if _rest
+                                  else "services.exposure.open_world_sources", sources=_world))
 
     # v0.28.0 — under a PARTIAL raw ruleset (no front-end), a service the
     # permissive default reaches with no rule refusing it is a measured

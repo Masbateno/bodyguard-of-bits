@@ -80,6 +80,15 @@ def test_the_text_says_why():
     assert "(v6) rules refuse it only in part" in msg6
 
 
+def test_the_clients_left_are_those_no_rule_matches():
+    """Seventh review: a rule limited to one interface names every source, yet
+    a client arriving on another interface matches no rule and reaches the
+    port — "the clients they do not name" was not exact."""
+    for res, key in ((_ports(_R4R, "allow"), "ports.uncovered"), (_ipv6(_R4R, "allow"), "ipv6.port_no_v6_rule")):
+        assert "the clients no rule matches reach it" in next(f.message for f in res.findings if f.key == key)
+    assert "none of them matches" in next(d.reason for d in _ports(_R4R, "allow").deductions)
+
+
 @pytest.mark.parametrize("rules, v6, rest_open", [
     (_R10W1, False, True), (_R4R, True, True), (_R4T, False, False), (_R4T, True, True),
     (_R4S, False, False), (ALLOW_ALL, True, False),
@@ -139,3 +148,74 @@ def test_rule_order_combinations_at_default_allow(name):
     assert not _ufw.rules_leave_rest_open(rules, 8099, "tcp", v6=False)
     assert not _ufw.rules_leave_rest_open(rules, 8099, "tcp", v6=True)
     assert not _ports(rules, "allow").deductions and not _ipv6(rules, "allow").deductions
+
+
+# Field run on Kali (8 November 2026, services-sources-0312.txt): ssh on 22
+# admitted from the private client and from the public host only. At default
+# allow every other client reached it, and 0.31.2's first text named only the
+# two sources; at default deny, the sources named are the clients that reach it.
+_S5 = """[ 1] 8099/tcp                   ALLOW IN    10.77.0.1
+[ 2] 8099/tcp                   ALLOW IN    203.0.113.5
+[ 3] 8099/tcp                   ALLOW IN    2001:db8:99::5
+"""
+_S5_CLOSED = _S5 + """[ 4] 8099/tcp                   DENY IN     Anywhere
+[ 5] 8099/tcp (v6)              DENY IN     Anywhere (v6)
+"""
+_REST = "leave some other clients unrefused"
+
+
+class TestTheSourcesAtDefaultAllow:
+
+    @staticmethod
+    def _check(rules, policy, monkeypatch, **kw):
+        from tests.test_v0310_ufw_broad_rules import TestARefusalInPart
+        snap, res = TestARefusalInPart._check(rules, policy, monkeypatch, **kw)
+        return snap, next(f.message for f in res.findings if "8099" in f.message)
+
+    def test_the_other_clients_are_said(self, monkeypatch):
+        snap, msg = self._check(_S5, "allow", monkeypatch)
+        assert snap.world_in_part == frozenset({"8099/tcp"})
+        assert "203.0.113.5" in msg and _REST in msg
+
+    @pytest.mark.parametrize("policy", ["deny", "reject"])
+    def test_at_default_deny_the_sources_alone(self, policy, monkeypatch):
+        _snap, msg = self._check(_S5, policy, monkeypatch)
+        assert "203.0.113.5" in msg and _REST not in msg
+
+    def test_rules_that_refuse_the_rest(self, monkeypatch):
+        snap, msg = self._check(_S5_CLOSED, "allow", monkeypatch)
+        assert snap.world_in_part == frozenset() and "203.0.113.5" in msg and _REST not in msg
+
+    def test_an_anywhere_rule_is_not_in_part(self, monkeypatch):
+        snap, msg = self._check(ALLOW_ALL, "allow", monkeypatch)
+        assert snap.world_in_part == frozenset() and "(Anywhere)" in msg
+
+    def test_a_loopback_listener_is_not_in_part(self, monkeypatch):
+        snap, _msg = self._check(_S5, "allow", monkeypatch, loopback={"8099/tcp"})
+        assert snap.world_in_part == frozenset()
+
+    def test_in_french(self, monkeypatch):
+        _snap, msg = self._check(_S5, "allow", monkeypatch, lang="fr")
+        assert "certains autres clients ne sont refusés par aucune d'elles" in msg
+
+
+# Fourth review: a rule that refuses one other source, or every source over
+# one family, still leaves clients to the default — and the text must not say
+# that no rule refuses the port (0.31.0's private-source texts said it too).
+_AB = """[ 1] 8099/tcp                   ALLOW IN    203.0.113.5
+[ 2] 8099/tcp                   DENY IN     203.0.113.9
+"""
+_AB_V4 = """[ 1] 8099/tcp                   ALLOW IN    203.0.113.5
+[ 2] 8099/tcp                   DENY IN     Anywhere
+"""
+_AB_LOCAL = """[ 1] 8099/tcp                   ALLOW IN    10.77.0.1
+[ 2] 8099/tcp                   DENY IN     203.0.113.9
+"""
+
+
+@pytest.mark.parametrize("rules, policy", [(_AB, "allow"), (_AB_V4, "allow"), (_AB_LOCAL, "allow"),
+                                           (_AB_LOCAL, "unknown")],
+                         ids=["one-other-refused", "refused-over-ipv4", "private-one-refused", "private-policy-unread"])
+def test_a_refused_source_is_not_said_unrefused(rules, policy, monkeypatch):
+    _snap, msg = TestTheSourcesAtDefaultAllow._check(rules, policy, monkeypatch)
+    assert "no rule refuses" not in msg and _REST in msg

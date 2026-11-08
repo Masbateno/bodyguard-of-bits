@@ -587,7 +587,7 @@ def _check_ipv6_body(snapshot: IPv6Snapshot, ufw_active: bool = True, t: Transla
                 found_issue = True
             # v0.31.2 — at UFW's default allow, a listener whose own (v6) rules
             # refuse it only in part, or admit it from some sources only, is
-            # reached by the clients they do not name (measured on Kali).
+            # reached by the clients no rule matches (measured on Kali).
             if ufw_incoming_policy == "allow":
                 for port_proto in [p for p in snapshot.ipv6_listeners if p in set(snapshot.ufw_v6_in_part)]:
                     result.warn(
@@ -790,7 +790,7 @@ def _extract_ipv6_listeners(ss_output: str) -> set[str]:
 
 def _v6_rules_in_part(ufw_out: str, covered, app_profiles=None) -> "list[str]":
     """v0.31.2 — the covered listeners whose own (v6) rules leave the clients
-    they do not name to UFW's default (``_ufw.rules_leave_rest_open``)."""
+    no rule matches to UFW's default (``_ufw.rules_leave_rest_open``)."""
     return [p for p in covered
             if p.partition("/")[0].isdigit()
             and _ufw.rules_leave_rest_open(ufw_out, int(p.partition("/")[0]), p.partition("/")[2] or "tcp",
