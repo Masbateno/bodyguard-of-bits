@@ -167,6 +167,7 @@ class TestReadApiserver:
         args = tmp_path / "kube-apiserver"
         args.write_text(text, encoding="utf-8")
         monkeypatch.setattr(k, "_MICROK8S_APISERVER_ARGS", args)
+        monkeypatch.setattr(k, "_microk8s_runs", lambda: True)        # v0.31.3: read while it runs
         monkeypatch.setattr(k, "_probe", lambda url: 401)
         monkeypatch.setattr(k, "_command_exists", lambda c: False)
         snap = k.KubernetesSnapshot(kubelet_running=True)

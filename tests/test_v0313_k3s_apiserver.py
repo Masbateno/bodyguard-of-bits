@@ -83,6 +83,7 @@ def node(tmp_path, monkeypatch):
     kc = tmp_path / "k3s.yaml"
     kc.write_text(_KUBECONFIG.format(port=6443), encoding="utf-8")
     monkeypatch.setattr(k, "_MICROK8S_APISERVER_ARGS", tmp_path / "no-microk8s")
+    monkeypatch.setattr(k, "_microk8s_runs", lambda: False)
     monkeypatch.setattr(k, "_K3S_KUBECONFIG", kc)
     monkeypatch.setattr(k, "_k3s_server_pid", lambda: "4242")
     monkeypatch.setattr(k, "_k3s_apiserver_line", lambda pid: _LINE)
@@ -175,10 +176,11 @@ class TestTheApiServerOfAK3sServer:
         assert snap.broad_admin_bindings is None and not node["run"]
         assert "kubernetes.cluster_admin_unread" in _keys(snap)
 
-    def test_microk8s_args_are_still_read_first(self, node, tmp_path, monkeypatch):
+    def test_a_running_microk8s_is_still_read_first(self, node, tmp_path, monkeypatch):
         args = tmp_path / "kube-apiserver"
         args.write_text("--authorization-mode=AlwaysAllow\n--secure-port=16443\n")
         monkeypatch.setattr(k, "_MICROK8S_APISERVER_ARGS", args)
+        monkeypatch.setattr(k, "_microk8s_runs", lambda: True)
         snap = _read()
         assert snap.authorization_modes == ("AlwaysAllow",) and snap.apiserver_port == 16443
 
@@ -303,6 +305,7 @@ class TestItsContainers:
 
     def test_without_k3s_the_order_is_unchanged(self, monkeypatch):
         monkeypatch.setattr(k, "_k3s_server_pid", lambda: None)
+        monkeypatch.setattr(k, "_microk8s_runs", lambda: True)
         monkeypatch.setattr(k, "_command_exists", lambda c: c == "microk8s.ctr")
         assert k._ctr_command() == ("microk8s.ctr",)
 
@@ -349,6 +352,64 @@ class TestWhatIsSaid:
                                              ("fr", "la ligne que le serveur k3s en cours a écrite dans le journal systemd")],
                              ids=["en", "fr"])
     def test_what_is_not_read_says_where_k3s_is_read(self, lang, words):
+        i18n.init(lang)
+        try:
+            assert words in i18n.t("kubernetes.apiserver_unread_detail")
+        finally:
+            i18n.init(lang="en")
+
+
+class TestAStoppedMicroK8s:
+    """Measured on Ubuntu Server 26.04 (6 November 2026, final-k3s-c6d5d5e.txt):
+    MicroK8s 1.35.6 installed and stopped, k3s running. BOB read MicroK8s'
+    arguments file — AlwaysAllow, port 16443 — and raised ALERT −2 for an API
+    server that did not run, while k3s's ran Node,RBAC on 6443. MicroK8s runs
+    as one process, ``kubelite`` (measured: comm and /snap/microk8s/<rev>/kubelite)."""
+
+    def _stopped(self, node, tmp_path, monkeypatch):
+        args = tmp_path / "kube-apiserver"
+        args.write_text("--authorization-mode=AlwaysAllow\n--secure-port=16443\n")
+        monkeypatch.setattr(k, "_MICROK8S_APISERVER_ARGS", args)
+        monkeypatch.setattr(k, "_microk8s_runs", lambda: False)
+
+    def test_its_arguments_are_not_read_k3s_s_are(self, node, tmp_path, monkeypatch):
+        self._stopped(node, tmp_path, monkeypatch)
+        snap = _read()
+        assert snap.authorization_modes == ("Node", "RBAC") and snap.apiserver_port == 6443
+        res = k.check_kubernetes(snap, t=lambda key, **kw: key)
+        assert not any(d.key == "kubernetes.apiserver_always_allow" for d in res.deductions)
+
+    def test_with_nothing_else_running_nothing_is_read(self, node, tmp_path, monkeypatch):
+        self._stopped(node, tmp_path, monkeypatch)
+        monkeypatch.setattr(k, "_k3s_server_pid", lambda: None)
+        snap = _read()
+        assert snap.authorization_modes is None and not node["probe"]
+        assert "kubernetes.apiserver_unread" in _keys(snap)
+
+    def test_its_ctr_wrapper_is_not_asked(self, monkeypatch):
+        monkeypatch.setattr(k, "_k3s_server_pid", lambda: None)
+        monkeypatch.setattr(k, "_microk8s_runs", lambda: False)
+        monkeypatch.setattr(k, "_command_exists", lambda c: c in ("microk8s.ctr", "ctr"))
+        monkeypatch.setattr(k, "path_exists", lambda p: str(p) == "/run/containerd/containerd.sock")
+        assert k._ctr_command() == ("ctr", "-a", "/run/containerd/containerd.sock", "-n", "k8s.io")
+
+    def test_it_runs_while_kubelite_runs(self, tmp_path, monkeypatch):
+        _proc(tmp_path, monkeypatch, {"1": "systemd", "12065": "kubelite"})
+        assert k._microk8s_runs()
+
+    @pytest.mark.parametrize("comm", ["k3s-server", "kubelet", "snapd"])
+    def test_other_processes_are_not_microk8s(self, tmp_path, monkeypatch, comm):
+        _proc(tmp_path, monkeypatch, {"1": "systemd", "12065": comm})
+        assert not k._microk8s_runs()
+
+    def test_an_unlistable_proc_finds_nothing(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(k, "_PROC", tmp_path / "no-proc")
+        assert k._pids_named("kubelite") == [] and k._k3s_server_pid() is None
+
+    @pytest.mark.parametrize("lang, words", [("en", "while MicroK8s runs (a kubelite process)"),
+                                             ("fr", "tant que MicroK8s tourne (un processus kubelite)")],
+                             ids=["en", "fr"])
+    def test_the_detail_says_microk8s_is_read_while_it_runs(self, lang, words):
         i18n.init(lang)
         try:
             assert words in i18n.t("kubernetes.apiserver_unread_detail")

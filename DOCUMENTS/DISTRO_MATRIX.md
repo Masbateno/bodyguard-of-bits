@@ -1012,6 +1012,7 @@ full: the kubelet's eviction thresholds were lowered to 1 % for the pass.*
 | `kube-apiserver-arg: authorization-mode=AlwaysAllow` (in `config.yaml.d`) | not read | ALERT −2; the entry removed and k3s restarted → Node,RBAC, the alert gone |
 | `anonymous-auth=true`, the anonymous user allowed to list namespaces, cluster-admin bound to `system:authenticated` | not read | WARN −1 (200) and ALERT −3; the entry removed, k3s restarted, the binding deleted → 401, OK |
 | k3s started by hand (its output not in the journal) | not read | not read (said, the score a ceiling); its pods read |
+| the arguments file of an installed, stopped MicroK8s left beside k3s (`AlwaysAllow`, `--secure-port=16443`, no `kubelite` process) | ALERT −2 "authorization-mode is AlwaysAllow" for an API server that does not run — also measured on Ubuntu Server 26.04 on 2026-11-06, MicroK8s 1.35.6 stopped | the file not read; k3s's API server read: Node,RBAC, 401, OK |
 
 Measured along the way: k3s blanks its command line (`/proc/<pid>/cmdline` reads
 `k3s server` whatever its flags or `config.yaml` set); `--advertise-port` in the API

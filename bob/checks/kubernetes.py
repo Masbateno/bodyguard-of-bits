@@ -214,6 +214,7 @@ _BROAD_SUBJECTS = frozenset({("Group", "system:authenticated"), ("Group", "syste
 #: ``--advertise-port`` in that line: measured ``--advertise-port=7000`` while
 #: k3s listened on 6443, and the kubeconfig said 6443.
 _K3S_SERVER = "k3s-server"
+_MICROK8S_PROCESS = "kubelite"
 _K3S_KUBECONFIG = Path("/etc/rancher/k3s/k3s.yaml")
 _K3S_APISERVER_LINE = "Running kube-apiserver "
 _K3S_CONTAINERD_SOCKET = "/run/k3s/containerd/containerd.sock"
@@ -241,11 +242,18 @@ def _read_apiserver(snap: "KubernetesSnapshot") -> None:
     """The API server's authorization mode and port, its answer to an
     anonymous read, and the cluster-admin bindings (read-only, through the
     distribution's own kubectl): MicroK8s' args file, else a k3s server's
-    journal (v0.31.3). Leaves the fields None where not read."""
+    journal (v0.31.3). Leaves the fields None where not read.
+
+    v0.31.3 — MicroK8s' file only while MicroK8s runs: measured on Ubuntu
+    Server 26.04 (6 November 2026), MicroK8s 1.35.6 installed and stopped, k3s
+    running — its arguments file still said AlwaysAllow, and BOB raised an
+    ALERT −2 for a stopped API server while k3s's ran Node,RBAC."""
+    if not _microk8s_runs():
+        _read_k3s_apiserver(snap)
+        return
     try:
         text = _MICROK8S_APISERVER_ARGS.read_text(encoding="utf-8", errors="replace")
     except OSError:
-        _read_k3s_apiserver(snap)
         return
     args = _parse_args(text)
     port = args.get("--secure-port", "6443")
@@ -302,21 +310,35 @@ def _k3s_tool(pid: str, name: str) -> "str | None":
         return None
 
 
-def _k3s_server_pid() -> "str | None":
-    """The one process named ``k3s-server`` (measured: the server's name under
-    systemd and started by hand); None when there is none, or more than one."""
+def _pids_named(name: str) -> "list[str]":
+    """The processes whose name (``/proc/<pid>/comm``) is ``name``; none when
+    /proc cannot be listed."""
     try:
         pids = [d for d in _PROC.iterdir() if d.name.isdigit()]
     except OSError:
-        return None
+        return []
     found = []
     for pid in pids:
         try:
-            if (pid / "comm").read_text(errors="replace").strip() == _K3S_SERVER:
+            if (pid / "comm").read_text(errors="replace").strip() == name:
                 found.append(pid.name)
         except OSError:
             continue
+    return found
+
+
+def _k3s_server_pid() -> "str | None":
+    """The one process named ``k3s-server`` (measured: the server's name under
+    systemd and started by hand); None when there is none, or more than one."""
+    found = _pids_named(_K3S_SERVER)
     return found[0] if len(found) == 1 else None
+
+
+def _microk8s_runs() -> bool:
+    """v0.31.3 — a ``kubelite`` process runs (measured on MicroK8s 1.35.6: its
+    one Kubernetes process, ``/snap/microk8s/<rev>/kubelite``); installed and
+    stopped, it runs none."""
+    return bool(_pids_named(_MICROK8S_PROCESS))
 
 
 def _process_start(pid: str) -> "int | None":
@@ -415,7 +437,9 @@ def _ctr_command() -> "tuple[str, ...] | None":
     if pid:
         ctr = _k3s_tool(pid, "ctr")
         return (ctr, "-a", _K3S_CONTAINERD_SOCKET, "-n", "k8s.io") if ctr else None
-    for wrapper in ("microk8s.ctr", "/snap/bin/microk8s.ctr"):
+    # v0.31.3 — MicroK8s' wrapper only while MicroK8s runs: installed and
+    # stopped, its containerd is down and another kubelet's pods went unread.
+    for wrapper in ("microk8s.ctr", "/snap/bin/microk8s.ctr") if _microk8s_runs() else ():
         if _command_exists(wrapper) or (wrapper.startswith("/") and path_exists(Path(wrapper))):
             return (wrapper,)                     # namespace k8s.io set by the wrapper
     if _command_exists("k3s"):

@@ -462,6 +462,8 @@ class TestReadingThroughTheCri:
 
 class TestWhichCtr:
     def test_microk8s(self, monkeypatch):
+        monkeypatch.setattr(k8s, "_k3s_server_pid", lambda: None)
+        monkeypatch.setattr(k8s, "_microk8s_runs", lambda: True)      # v0.31.3: asked while it runs
         monkeypatch.setattr(k8s, "_command_exists", lambda c: c in ("microk8s.ctr", "ctr"))
         assert k8s._ctr_command() == ("microk8s.ctr",)
 

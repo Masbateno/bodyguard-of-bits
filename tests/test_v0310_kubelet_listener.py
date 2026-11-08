@@ -494,6 +494,7 @@ class TestOnlyTheKubeletIsAsked:
         args = tmp_path / "kube-apiserver"
         args.write_text("--secure-port=16443\n", encoding="utf-8")
         monkeypatch.setattr(k, "_MICROK8S_APISERVER_ARGS", args)
+        monkeypatch.setattr(k, "_microk8s_runs", lambda: True)        # v0.31.3: read while it runs
         monkeypatch.setattr(k, "_command_exists", lambda n: False)
         asked = []
         monkeypatch.setattr(k, "_probe", lambda url: asked.append(url) or 401)
