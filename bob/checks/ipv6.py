@@ -65,6 +65,9 @@ class IPv6Snapshot:
     ufw_ipv6_enabled:    "bool | None" = True
     ipv6_listeners:      list[str]  = field(default_factory=list)
     ufw_v6_covered:      list[str]  = field(default_factory=list)
+    #: v0.31.2 — covered listeners whose own (v6) rules neither refuse them
+    #: from every source nor admit them from any (``_ufw.rules_leave_rest_open``).
+    ufw_v6_in_part:      list[str]  = field(default_factory=list)
     #: v0.31.0 — the (v6) ALLOW/LIMIT IN rules naming no port (_ufw.broad_admits).
     ufw_v6_admits:       list       = field(default_factory=list)
     #: v0.31.0 — listener → the (v6) rules naming no port that admit it before
@@ -145,6 +148,7 @@ class IPv6Snapshot:
             ufw_ipv6_enabled=ufw_ipv6_enabled,
             ipv6_listeners=ipv6_listeners,
             ufw_v6_covered=ufw_v6_covered,
+            ufw_v6_in_part=_v6_rules_in_part(ufw_out, ufw_v6_covered, _ufw.read_app_profiles()),
             ufw_v6_admits=ufw_v6_admits,
             ufw_v6_admitted_first=ufw_v6_admitted_first,
             has_global_ipv6=has_global_ipv6,
@@ -581,6 +585,26 @@ def _check_ipv6_body(snapshot: IPv6Snapshot, ufw_active: bool = True, t: Transla
                                 key="ipv6.ports_default_deny")
                 uncovered = []
                 found_issue = True
+            # v0.31.2 — at UFW's default allow, a listener whose own (v6) rules
+            # refuse it only in part, or admit it from some sources only, is
+            # reached by the clients they do not name (measured on Kali).
+            if ufw_incoming_policy == "allow":
+                for port_proto in [p for p in snapshot.ipv6_listeners if p in set(snapshot.ufw_v6_in_part)]:
+                    result.warn(
+                        message=_t("ipv6.port_v6_rules_in_part", port=port_proto),
+                        nature="improvement",
+                        cmd=f"sudo ufw deny {port_proto}",
+                        key="ipv6.port_no_v6_rule",
+                    )
+                    if port_deductions < _MAX_PORT_DEDUCTIONS:
+                        result.add_deduction(
+                            reason=_t("ipv6.port_v6_rules_in_part", port=port_proto),
+                            points=1,
+                            context="local",
+                            key="ipv6.port_no_v6_rule",
+                        )
+                        port_deductions += 1
+                    found_issue = True
             for port_proto in uncovered:
                 if port_proto:
                     # v0.31.0 — was `ufw allow`, which opens the port.
@@ -762,6 +786,15 @@ def _extract_ipv6_listeners(ss_output: str) -> set[str]:
             continue
         listeners.add(port_proto)
     return listeners
+
+
+def _v6_rules_in_part(ufw_out: str, covered, app_profiles=None) -> "list[str]":
+    """v0.31.2 — the covered listeners whose own (v6) rules leave the clients
+    they do not name to UFW's default (``_ufw.rules_leave_rest_open``)."""
+    return [p for p in covered
+            if p.partition("/")[0].isdigit()
+            and _ufw.rules_leave_rest_open(ufw_out, int(p.partition("/")[0]), p.partition("/")[2] or "tcp",
+                                           v6=True, app_profiles=app_profiles)]
 
 
 def _extract_ufw_v6_covered(

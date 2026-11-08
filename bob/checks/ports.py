@@ -430,6 +430,30 @@ def check_ports(
                                rules="; ".join(r for r, _, _ in earlier)),
                     key="ports.refused_after_broad_rule",
                 )
+            # v0.31.2 — at UFW's default allow, a port whose own rules refuse
+            # it only in part, or admit it from some sources only, is reached
+            # by the clients they do not name, as a port with no rule is
+            # (measured on Kali: `allow 8099 from <private>`, `deny 8099 from
+            # <another host>` — the public client answered, read covered).
+            if (ufw_active and default_incoming_policy == "allow" and lport.is_all_interfaces
+                    and pp not in reported_alert_ports
+                    and _ufw.rules_leave_rest_open(_rules_text, lport.port, lport.proto,
+                                                   v6=":" in lport.address, app_profiles=snapshot.ufw_apps)):
+                reported_alert_ports.add(pp)
+                has_uncovered_public = True
+                pp_display = f"{pp} ({lport.process})" if lport.process else pp
+                result.warn(
+                    message=_t("ports.uncovered_rules_in_part", port=pp_display),
+                    nature="improvement",
+                    cmd=f"sudo ufw deny {pp}",
+                    key="ports.uncovered",
+                )
+                result.add_deduction(
+                    reason=_t("deduction.port_rules_in_part", port=pp),
+                    points=2 if network_context in ("public", "ddns") else 1,
+                    context=network_context,
+                    key="ports.uncovered",
+                )
             continue
 
         if category == PortCategory.UNCOVERED_PUBLIC:

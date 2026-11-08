@@ -166,6 +166,8 @@ class ServiceSnapshot:
     # v0.24.1 — for an OPEN_LOCAL port, the From column of the UFW rule that
     # allows it ("192.168.1.0/24", "192.168.1.11"). {} when not OPEN_LOCAL.
     local_sources: dict[str, str] = field(default_factory=dict)
+    # v0.31.2 — for an OPEN_WORLD port, the sources its UFW rules admit it from.
+    world_sources: dict[str, str] = field(default_factory=dict)
     # v0.31.0, fourth review — DENY ports, listening and not on loopback alone,
     # whose rules refuse them only in part (one source, interface, address or
     # family): UFW's default incoming policy decides the rest.
@@ -221,6 +223,10 @@ class ServiceSnapshot:
                 port: _allow_rule_source(port, ufw_rules, app_profiles)
                 for port in ports if exposures[port] == Exposure.OPEN_LOCAL
             }
+            world_sources = {
+                port: _allow_rule_source(port, ufw_rules, app_profiles)
+                for port in ports if exposures[port] == Exposure.OPEN_WORLD
+            }
 
             # Override exposure for ports bound exclusively to loopback
             if loopback_ports:
@@ -253,6 +259,7 @@ class ServiceSnapshot:
             ports     = list(service.ports)
             exposures = {}
             local_sources = {}
+            world_sources = {}
             refused_in_part = frozenset()
             admitted_in_part = frozenset()
 
@@ -265,6 +272,7 @@ class ServiceSnapshot:
             ports=ports,
             exposures=exposures,
             local_sources=local_sources,
+            world_sources=world_sources,
             refused_in_part=refused_in_part,
             admitted_in_part=admitted_in_part,
         )
@@ -625,6 +633,13 @@ def _check_port_exposure(
     port_msg = (_t("services.port_exposure", port=port,
                    exposure=_t("services.exposure.no_rule_netfilter_weighed", verdict=_t(weighed)))
                 if weighed else _t("services.port_exposure", port=port, exposure=_t(exp_key)))
+    # v0.31.2 — "from any address (Anywhere)" was said of a port a rule opens
+    # to one public source too: the sources are named when no rule admits
+    # Anywhere.
+    _world = (getattr(snap, "world_sources", None) or {}).get(port, "")
+    if exp_key == "services.exposure.open_world" and _world and "Anywhere" not in _world:
+        port_msg = _t("services.port_exposure", port=port,
+                      exposure=_t("services.exposure.open_world_sources", sources=_world))
 
     # v0.28.0 — under a PARTIAL raw ruleset (no front-end), a service the
     # permissive default reaches with no rule refusing it is a measured

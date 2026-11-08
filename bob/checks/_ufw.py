@@ -342,17 +342,42 @@ def refusal_closes(
     return len(closed) == 2
 
 
+def rules_leave_rest_open(
+    ufw_numbered: str,
+    port: int,
+    proto: str,
+    v6: bool,
+    app_profiles: "dict[str, list[str]] | None" = None,
+) -> bool:
+    """v0.31.2 — True when, in family *v6*, the rules for *port*/*proto* (or
+    naming no port) neither refuse it from every source, on every interface and
+    to every address, nor admit it from any source (``Anywhere``): under UFW's
+    default allow, the clients they do not name reach it.
+
+    0.31.1 counted a port with any rule of its own as covered in the ports and
+    IPv6 sections. Measured on Kali at default allow (review10-ufw.txt W1,
+    review4-ufw.txt R): `allow 8099 from <private>`, or `deny 8099 from
+    <another host>`, answered the public client while both sections read the
+    port covered; `deny 8099` refused everyone (closed), and `allow 8099`
+    opens it on purpose (Anywhere) — neither is this case.
+    """
+    sources, _refused, closed = _walk_sources(ufw_numbered, port, proto, app_profiles, families=(v6,))
+    return not closed and "Anywhere" not in sources
+
+
 def _walk_sources(
     ufw_numbered: str,
     port: int,
     proto: str,
     app_profiles: "dict[str, list[str]] | None" = None,
+    families: "tuple[bool, ...]" = (False, True),
 ) -> "tuple[list[str], bool, list[bool]]":
-    """The walk of :func:`admitting_sources`, with the families it closed."""
+    """The walk of :func:`admitting_sources`, with the families it closed;
+    v0.31.2 — *families* limits it to IPv4 (False) or IPv6 (True)."""
     sources: "list[str]" = []
     refused = False
     closed: "list[bool]" = []
-    for v6 in (False, True):
+    for v6 in families:
         for line in ufw_numbered.splitlines():
             rule = parse_rule(line)
             if rule is None or not rule.to_col or is_v6_rule(line, rule) != v6:

@@ -271,6 +271,7 @@
     },
     "exposure": {
       "open_world": "open to internet — UFW rule allows from any address (Anywhere)",
+      "open_world_sources": "open to the internet — UFW rules allow it from {sources}",
       "open_local": "restricted to local network by UFW rule",
       "open_local_host": "restricted to the single host {source} by UFW rule",
       "open_local_default_allow": "open to everyone — its UFW rules admit this port from {source} only, but no rule refuses it to the other clients, and UFW's default incoming policy is allow",
@@ -306,6 +307,7 @@
     "all_covered_policy_ipv4": "All ports listening on all interfaces are filtered by UFW over IPv4 — by an explicit rule or by the default deny policy; over IPv6 (UFW's IPV6=no), what reaches them is not established — see the IPv6 section",
     "all_covered_policy_ipv6_closed": "All ports listening on all interfaces are filtered — over IPv4 by UFW, by an explicit rule or the default deny policy; over IPv6 inbound is closed by the host's rules, UFW running with IPV6=no — see the IPv6 section",
     "uncovered": "Port {port} listening on all interfaces without explicit UFW rule",
+    "uncovered_rules_in_part": "Port {port} listening on all interfaces — its UFW rules refuse it only in part, or admit it from some sources only, and UFW's default incoming policy is allow: the clients they do not name reach it",
     "uncovered_local": "Port {port} — bound to localhost only — no external exposure",
     "uncovered_local_localnet": "Port {port} — bound to localhost only, but route_localnet is on: a packet from the network reaches 127.0.0.0/8 — whether this port is reachable is not established",
     "uncovered_local_localnet_unread": "Port {port} — bound to localhost only; route_localnet could not be read, and when it is on a packet from the network reaches 127.0.0.0/8 — whether this port is reachable is not established",
@@ -1284,6 +1286,7 @@
     "ufw_disabled_listeners_present": "{count} service(s) listening on IPv6 (::) but UFW is not configured for IPv6 (IPV6=no)",
     "listeners_list": "Listening port(s): {ports}",
     "port_no_v6_rule": "Port {port} listening on IPv6 (::) without a UFW (v6) rule",
+    "port_v6_rules_in_part": "Port {port} listening on IPv6 — its UFW (v6) rules refuse it only in part, or admit it from some sources only, and UFW's default incoming policy is allow: the clients they do not name reach it",
     "ports_default_deny": "{count} IPv6 listener(s) without a UFW (v6) rule of their own ({ports}) — covered by UFW's default {policy} for incoming connections, which applies to IPv6 as well",
     "ports_broad_rule": "{count} IPv6 listener(s) without a UFW (v6) rule of their own ({ports}) — not covered by the default deny: a UFW (v6) rule that names no port admits them ({rules})",
     "ports_refused_after_broad_rule": "{count} IPv6 listener(s) ({ports}) — their UFW (v6) rule refuses them, but an earlier (v6) rule that names no port admits them from its source, and UFW applies the first rule that matches ({rules})",
@@ -1336,6 +1339,7 @@
     "docker_bypass": "Docker bypass: {container} {port}",
     "netbios_no_rule": "NetBIOS port {port} without UFW rule",
     "port_no_rule": "Port {port} on 0.0.0.0 without UFW rule",
+    "port_rules_in_part": "Port {port}: its UFW rules leave it open to the clients they do not name (default allow)",
     "blocked_repeat_public": "{attempts} blocked connection attempts from {ip} on {port}",
     "port_scan_public": "Port scan from {ip} ({ports} distinct ports)",
     "service_open_world": "{label} {port} open world"
