@@ -124,3 +124,18 @@ def test_the_ipv6_snapshot_fills_it(monkeypatch):
 def test_the_command_refuses():
     f = next(f for f in _ipv6(_R4R, "allow").findings if f.key == "ipv6.port_no_v6_rule")
     assert f.cmd == "sudo ufw deny 8099/tcp"
+
+
+@pytest.mark.parametrize("name", ["I", "W2"])
+def test_rule_order_combinations_at_default_allow(name):
+    """Review of the 0.31.2 changelog. I (measured, review3): `deny 8099 from
+    <another host>` then `allow 8099` — every other client reached it: a rule
+    admits any address, the port is open on purpose (covered, as in 0.31.1).
+    W2 (measured, review10): `allow 8099 from <private>` then `deny 8099` — the
+    private client kept its access, the public one was refused: the refusal
+    from every source closes the rest (covered)."""
+    from tests.test_v0310_ufw_broad_rules import _I, _R10W2
+    rules = {"I": _I, "W2": _R10W2}[name]
+    assert not _ufw.rules_leave_rest_open(rules, 8099, "tcp", v6=False)
+    assert not _ufw.rules_leave_rest_open(rules, 8099, "tcp", v6=True)
+    assert not _ports(rules, "allow").deductions and not _ipv6(rules, "allow").deductions
