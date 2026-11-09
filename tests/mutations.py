@@ -14620,4 +14620,12 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         kills=('tests/test_v0313_k3s_apiserver.py::TestAStoppedMicroK8s::test_the_detail_says_microk8s_is_read_while_it_runs[en]', ),
         reason='the detail says when MicroK8s is read: a stopped one is not',
     ),
+    Mutation(
+        id='forward-k8s/drop-safety-unsaid',
+        file='bob/locales/en.json',
+        old='\\n   A Kubernetes node is not such a case: measured on MicroK8s 1.35.6 (calico) and on k3s, pod to pod, DNS through the service IP, pod to the API service and pod to the internet all still answered with FORWARD at DROP — each accepts its pod traffic in its own FORWARD rules.',
+        new='',
+        kills=('tests/test_v0313_forward_drop_k8s.py::test_the_explanation_says_a_kubernetes_node_keeps_its_pods_at_drop[en]', ),
+        reason='a Kubernetes node owner would read the routing-host advice and keep FORWARD at ACCEPT',
+    ),
 )

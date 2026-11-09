@@ -1012,7 +1012,7 @@ full: the kubelet's eviction thresholds were lowered to 1 % for the pass.*
 | `kube-apiserver-arg: authorization-mode=AlwaysAllow` (in `config.yaml.d`) | not read | ALERT −2; the entry removed and k3s restarted → Node,RBAC, the alert gone |
 | `anonymous-auth=true`, the anonymous user allowed to list namespaces, cluster-admin bound to `system:authenticated` | not read | WARN −1 (200) and ALERT −3; the entry removed, k3s restarted, the binding deleted → 401, OK |
 | k3s started by hand (its output not in the journal) | not read | not read (said, the score a ceiling); its pods read |
-| the arguments file of an installed, stopped MicroK8s left beside k3s (`AlwaysAllow`, `--secure-port=16443`, no `kubelite` process) | ALERT −2 "authorization-mode is AlwaysAllow" for an API server that does not run — also measured on Ubuntu Server 26.04 on 2026-11-06, MicroK8s 1.35.6 stopped | the file not read; k3s's API server read: Node,RBAC, 401, OK |
+| the arguments file of an installed, stopped MicroK8s left beside k3s (`AlwaysAllow`, `--secure-port=16443`, no `kubelite` process) | ALERT −2 "authorization-mode is AlwaysAllow" for an API server that does not run — also measured on Ubuntu Server 26.04 on 2026-11-06, MicroK8s 1.35.6 stopped | the file not read; k3s's API server read: Node,RBAC, 401, OK — confirmed on that Ubuntu Server on 2026-11-08, MicroK8s stopped (no `kubelite`) and k3s under systemd |
 
 Measured along the way: k3s blanks its command line (`/proc/<pid>/cmdline` reads
 `k3s server` whatever its flags or `config.yaml` set); `--advertise-port` in the API
@@ -1022,6 +1022,28 @@ listened); under AlwaysAllow the API server turns anonymous authentication off
 AnonymousAuth to false."), so an anonymous read answers 401 whatever
 `--anonymous-auth` says; changing `https-listen-port` after a first start leaves
 k3s's own kubeconfigs on the old internal port, and k3s exits.
+
+### 0.31.3 field pass — FORWARD at DROP on a MicroK8s node
+
+*Ubuntu Server 26.04.1 (4 CPUs, 3 GB, ufw inactive, the host's application snaps
+stopped for the pass), real, 2026-11-08. MicroK8s 1.35.6 (calico, its rules in
+the legacy iptables tables; the `iptables` command is the nf_tables one). The
+tests ran inside a test pod's network namespace (`nsenter`); the four tables were
+saved and a rollback armed before any change.*
+
+| FORWARD policy | pod → a pod's DNS | pod → DNS service | pod → API service | pod → internet | BOB |
+|---|---|---|---|---|---|
+| ACCEPT (nft and legacy), as found | answers | answers | answers | answers | WARN −1, `sudo iptables -P FORWARD DROP` |
+| DROP in the nft table (BOB's command, as printed) | answers | answers | answers | answers | OK "DROP (recommended)" |
+| DROP in the legacy table too | answers | answers | answers | answers | OK |
+| the same, 60 s later | answers | answers | answers | answers | — |
+
+The answer the 0.31.0 pass could not give (the node's pod network was broken
+before any change): BOB's advice does not cut a MicroK8s node's pods off, as it
+did not cut a k3s node's (0.25.1). Restoring a copy of the tables taken before a
+pod existed cut that pod off — the copy lacked the chains calico had added for it;
+a pod created afterwards answered at once. `kubectl exec` failed on this node: the
+kubelet's certificate still named the address it had before the router changed.
 
 ### 0.25.1 field pass — doas on Alpine
 
