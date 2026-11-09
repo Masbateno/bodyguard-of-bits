@@ -308,7 +308,8 @@ class ServiceSnapshot:
             Non-installed services are excluded.
         """
         if ufw_rules is None:
-            ufw_rules = _run("ufw", "status", "numbered")
+            # v0.31.3 — the rules as the network meets them (_ufw.network_rules).
+            ufw_rules = _ufw.network_rules(_run("ufw", "status", "numbered"), _ufw.read_outward_interfaces())
         # `ufw allow OpenSSH` prints the profile name, not a port, in
         # non-verbose output — the form Ubuntu's own documentation recommends.
         app_profiles = _ufw.read_app_profiles()
@@ -348,7 +349,8 @@ class ServiceSnapshot:
             List of ServiceSnapshot for every service in the registry.
         """
         if ufw_rules is None:
-            ufw_rules = _run("ufw", "status", "numbered")
+            # v0.31.3 — the rules as the network meets them (_ufw.network_rules).
+            ufw_rules = _ufw.network_rules(_run("ufw", "status", "numbered"), _ufw.read_outward_interfaces())
         # `ufw allow OpenSSH` prints the profile name, not a port, in
         # non-verbose output — the form Ubuntu's own documentation recommends.
         app_profiles = _ufw.read_app_profiles()

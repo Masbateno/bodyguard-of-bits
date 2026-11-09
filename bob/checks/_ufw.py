@@ -22,6 +22,7 @@ One parser now, so the knowledge lives in one place.
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from pathlib import Path
 from bob._atomic import read_text_capped
@@ -409,6 +410,85 @@ def is_rule_line(line: str) -> bool:
     """True if *line* is a numbered rule row rather than a header or blank."""
     return _NUMBERED_RE.match(line) is not None
 
+
+
+def iface_matches(pattern: str, names: "frozenset[str]") -> bool:
+    """An ``on <iface>`` pattern as iptables reads it: a trailing ``+`` is a
+    prefix (``cali+``), anything else the whole name."""
+    if pattern.endswith("+"):
+        return any(n.startswith(pattern[:-1]) for n in names)
+    return pattern in names
+
+
+def outward_interfaces(addr_output: str, default_v4: str, default_v6: "str | None") -> "dict[bool, frozenset[str] | None]":
+    """v0.31.3 — per family (False: IPv4, True: IPv6), the interfaces a client
+    from the network can arrive on: those holding an address on a network
+    (not loopback, not link-local, a prefix shorter than /32 or /128) or a
+    default route. *default_v6* None: the IPv6 routes were not read, that
+    family's interfaces are not known (None).
+
+    Measured on Ubuntu Server 26.04 with MicroK8s 1.35.6 (8 November 2026):
+    enp3s0 holds 192.168.1.0/24, a /64 and both default routes; calico's
+    ``cali*`` hold only link-local addresses (a /32 route to one pod each) and
+    ``vxlan.calico`` a /32 — no client from the network arrives on them.
+    """
+    found: "dict[bool, set[str]]" = {False: set(), True: set()}
+    for line in addr_output.splitlines():
+        parts = line.split()
+        if len(parts) < 4 or parts[2] not in ("inet", "inet6"):
+            continue
+        name = parts[1].split("@", 1)[0]
+        try:
+            iface = ipaddress.ip_interface(parts[3])
+        except ValueError:
+            continue
+        if iface.ip.is_loopback or iface.ip.is_link_local:
+            continue
+        if iface.network.prefixlen < iface.max_prefixlen:
+            found[parts[2] == "inet6"].add(name)
+    for v6, routes in ((False, default_v4), (True, default_v6 or "")):
+        for m in re.finditer(r"\bdev\s+(\S+)", routes):
+            found[v6].add(m.group(1))
+    return {False: frozenset(found[False]), True: frozenset(found[True]) if default_v6 is not None else None}
+
+
+def read_outward_interfaces() -> "dict[bool, frozenset[str] | None] | None":
+    """:func:`outward_interfaces` of this host; None when the addresses or the
+    IPv4 default routes could not be read."""
+    from bob.checks._run import run_result
+    addrs = run_result("ip", "-o", "addr", "show")
+    v4 = run_result("ip", "route", "show", "default")
+    if not (addrs.ok and v4.ok):
+        return None
+    v6 = run_result("ip", "-6", "route", "show", "default")
+    return outward_interfaces(addrs.stdout, v4.stdout, v6.stdout if v6.ok else None)
+
+
+def network_rules(ufw_numbered: str, outward: "dict[bool, frozenset[str] | None] | None") -> str:
+    """v0.31.3 — *ufw_numbered* without the incoming ALLOW/LIMIT rules limited
+    to an interface (``on <iface>``) no client from the network arrives on
+    (:func:`outward_interfaces`): they admit the pods, containers or VMs behind
+    it, not the network the services, ports and IPv6 sections weigh. Rules of a
+    family whose interfaces are not known (None, or *outward* None) are kept:
+    BOB can overstate, never understate.
+
+    Measured on Ubuntu Server 26.04, MicroK8s 1.35.6, UFW at default deny with
+    the rules MicroK8s documents (``allow in on cali+``, ``allow in on
+    vxlan.calico``): from the LAN only 22 answered, while the services section
+    read Samba (445, 139) and Nextcloud (80, 443) "open to the internet — UFW
+    rule allows from any address (Anywhere)", ALERT −2 each.
+    """
+    if not outward:
+        return ufw_numbered
+    kept = []
+    for line in ufw_numbered.splitlines():
+        rule = parse_rule(line)
+        if rule is not None and rule.iface and rule.action in ("ALLOW", "LIMIT"):
+            names = outward.get(is_v6_rule(line, rule))
+            if names is not None and not iface_matches(rule.iface, names):
+                continue
+        kept.append(line)
+    return "\n".join(kept)
 
 
 #: The sed that turns ufw's IPv6 on, as `firewall._ipv6_enable_cmd` writes it

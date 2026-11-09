@@ -1045,6 +1045,30 @@ pod existed cut that pod off — the copy lacked the chains calico had added for
 a pod created afterwards answered at once. `kubectl exec` failed on this node: the
 kubelet's certificate still named the address it had before the router changed.
 
+### 0.31.3 field pass — UFW rules on pod interfaces, and fixes applied as printed, on a MicroK8s node
+
+*Ubuntu Server 26.04.1 (MicroK8s 1.35.6, calico), real, 2026-11-08. Each fix BOB
+printed was run as printed, then the service's own tool and BOB were asked again;
+the state was restored afterwards. UFW was enabled for the pass with a rollback
+armed first; ports were probed from another host of the LAN, over IPv4.*
+
+| Section | Finding | Fix as printed | After |
+|---|---|---|---|
+| auditd | no rules loaded, −1 | the rules file + `augenrules --load` | `auditctl -l`: 5 rules; finding gone |
+| sysctl | `send_redirects` on, −1 (and log_martians, suid_dumpable, swappiness, INFO) | `sysctl -w` + `99-hardening.conf` | `sysctl` confirms; a new pod's interface came up at 0 |
+| fail2ban | service stopped, −1 | `systemctl enable --now fail2ban` | active, sshd jail; finding gone |
+| fail2ban | no jail active, −1 | a check, not a fix (`fail2ban-client status sshd`) and a text: enable the sshd jail in jail.local | the edit alone left 0 jails; `fail2ban-client reload` started it — the text now says to reload |
+
+| UFW at default deny, rules as MicroK8s documents them (`allow in on cali+`, `allow in on vxlan.calico`) and `allow 22/tcp` | 0.31.2 | 0.31.3 | from the LAN |
+|---|---|---|---|
+| 22 (SSH) | ALERT −2 | ALERT −2 | answers |
+| 445, 139 (Samba), 80 (Nextcloud) | ALERT −2 each, "UFW rule allows from any address (Anywhere)" | covered by the default deny | refused |
+| 443 (Nextcloud, not listening) | ALERT −2 | not listening | — |
+| ports and IPv6 sections | "a UFW rule that names no port admits it" | covered by the default deny | refused |
+
+calico's `cali*` interfaces hold link-local addresses only and `vxlan.calico` a /32;
+the LAN interface holds the /24, a /64 and both default routes.
+
 ### 0.25.1 field pass — doas on Alpine
 
 *Alpine 3.24 (OpenRC, BusyBox, doas, Python 3.14.7), real, 2026-10-17. The 0.25.1

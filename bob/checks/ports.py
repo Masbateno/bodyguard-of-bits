@@ -214,7 +214,8 @@ class PortsSnapshot:
         """
         from bob.checks.iptables_nftables import _route_localnet
         ss         = run_result("ss", "-tulnp")
-        ufw_rules  = _run("ufw", "status", "numbered")
+        # v0.31.3 — the rules as the network meets them (_ufw.network_rules).
+        ufw_rules  = _ufw.network_rules(_run("ufw", "status", "numbered"), _ufw.read_outward_interfaces())
         ports      = _parse_ss_output(ss.stdout)
 
         return cls(ports=ports, ufw_rules=ufw_rules, ss_output=ss.stdout,

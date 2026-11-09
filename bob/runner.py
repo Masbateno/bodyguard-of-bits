@@ -768,6 +768,11 @@ def run_checks(
     # ---- CHECK 2 — UFW rules ----
     ufw_numbered = fw_status.numbered_output
     ufw_verbose  = fw_status.ufw_output
+    # v0.31.3 — what services and DDNS weigh is what the network meets: an
+    # `on <iface>` admission limited to an interface no network client arrives
+    # on is left out of their exposure (_ufw.network_rules). The rules analysis
+    # (duplicates, IPv6 coherence) still reads every rule.
+    ufw_network = _ufw.network_rules(ufw_numbered or "", _ufw.read_outward_interfaces())
 
     # Ports were collected before the firewall check; orphan-rule detection
     # cross-references the same snapshot.
@@ -889,7 +894,7 @@ def run_checks(
         ddns_snapshot = DdnsSnapshot.from_system()
         if network_context == "local":
             network_context = ddns_effective_context(
-                ddns_snapshot, ufw_numbered, loopback_only_ports, active_external_ports,
+                ddns_snapshot, ufw_network, loopback_only_ports, active_external_ports,
             )
 
     # SSH exposure known here: used both in services loop (risk context note)
@@ -902,7 +907,7 @@ def run_checks(
     emit_section("services")
 
     snapshots     = ServiceSnapshot.collect(
-        registry, ufw_rules=ufw_numbered, loopback_ports=loopback_only_ports,
+        registry, ufw_rules=ufw_network, loopback_ports=loopback_only_ports,
         all_listening_ports=all_listening_ports,
     )
     audited_ports: set[str] = set()
@@ -981,7 +986,7 @@ def run_checks(
             audited_ports.update(snap.ports)
 
     if not config.quiet:
-        display_services_panorama(registry, ufw_numbered, loopback_only_ports,
+        display_services_panorama(registry, ufw_network, loopback_only_ports,
                                    all_listening_ports, config, t)
 
     # ---- CHECK 4 — Listening ports ----
@@ -1053,7 +1058,7 @@ def run_checks(
         if ddns_snapshot is None:
             raise RuntimeError("DDNS snapshot unavailable")
         ddns_result   = check_ddns(
-            ddns_snapshot, ufw_rules=ufw_numbered, t=t,
+            ddns_snapshot, ufw_rules=ufw_network, t=t,
             loopback_ports=loopback_only_ports,
             active_ports=active_external_ports,
         )

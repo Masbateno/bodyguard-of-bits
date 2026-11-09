@@ -126,7 +126,8 @@ class IPv6Snapshot:
         ss = run_result("ss", "-tulnp")
         ipv6_listeners = sorted(_extract_ipv6_listeners(ss.stdout))
 
-        ufw_out = _run("ufw", "status", "numbered") or ""
+        # v0.31.3 — the rules as the network meets them (_ufw.network_rules).
+        ufw_out = _ufw.network_rules(_run("ufw", "status", "numbered") or "", _ufw.read_outward_interfaces())
         ufw_v6_covered = sorted(
             _extract_ufw_v6_covered(ufw_out, _ufw.read_app_profiles())
         )
