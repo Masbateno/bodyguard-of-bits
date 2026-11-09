@@ -180,7 +180,7 @@ Every WARN/ALERT shows a CIS reference (when applicable), a copy-paste remediati
 | **SSH** | sshd_config hardening — PermitRootLogin, key strength, timeouts, forwarding |
 | **Kernel hardening** | sysctl parameters (incl. `fs.protected_*`), kernel attack surface (unprivileged eBPF, perf events, user namespaces), kernel-reported CPU vulnerabilities and IOMMU, kernel modules, Secure Boot, firmware/microcode |
 | **Boot & storage** | GRUB password/config permissions, mount options (nodev/nosuid/noexec), LUKS disk encryption, core-dump policy, kexec/kernel lockdown, `/proc` hidepid |
-| **Services** | 38 known services with risk classification; Docker firewall bypass detection; CUPS print-service network exposure |
+| **Services** | 39 known services with risk classification; Docker firewall bypass detection; CUPS print-service network exposure |
 | **File permissions** | SUID/SGID audit, file capabilities, sensitive files, sudoers, polkit rule permissions; world-writable and unowned files (`--exhaustive`) |
 | **User accounts** | Expired accounts, password policy and hashing algorithm, login.defs, PAM, account lockout (pam_faillock), su restriction (pam_wheel / su mode / BusyBox su), home and `.netrc` permissions, duplicate UIDs |
 | **System updates & detection** | pending updates (apt, dnf, zypper, pacman, apk), package authenticity (signature / repository checks), system crypto policy, package-file integrity (`--exhaustive`), auditd rules, Fail2ban, ClamAV, AppArmor/SELinux, AIDE/Tripwire integrity, rkhunter, SMART, firmware/microcode |

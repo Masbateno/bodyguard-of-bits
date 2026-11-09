@@ -210,7 +210,7 @@ class TestInactiveDisabled:
 
         v0.8.0 made this a WARN with a point, reasoning that a dormant critical
         *security service* is a real defensive gap. No such service is in this
-        registry: all 38 entries listen on the network, and fail2ban, clamav and
+        registry: all the entries listen on the network, and fail2ban, clamav and
         auditd carry their own inactive findings. v0.17.1 reports the three
         measured facts and stops there — calling a stopped service an attack
         vector needs a path BOB cannot see.

@@ -38,6 +38,8 @@ Usage:
 
 from __future__ import annotations
 
+import json
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -64,6 +66,16 @@ _BORG_KEYS_DIR = Path("/root/.config/borg/keys")
 
 # timeshift
 _TIMESHIFT_CONFIG = Path("/etc/timeshift/timeshift.json")
+#: v0.31.4 — what Timeshift's own files say, read without running or mounting
+#: anything: its schedules (timeshift.json), and, in rsync mode, the snapshot
+#: directories at <backup device>/timeshift/snapshots when that device is
+#: mounted. Measured on Linux Mint 22.3 (timeshift 25.12.4, 9 November 2026):
+#: weekly schedule, device mounted at /home, /home/timeshift/snapshots holding
+#: 2026-11-01_19-00-01 and 2026-11-08_19-00-02.
+_TIMESHIFT_SCHEDULES = ("hourly", "daily", "weekly", "monthly", "boot")
+_TIMESHIFT_SNAPSHOT_RE = re.compile(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}")
+_DISK_BY_UUID = Path("/dev/disk/by-uuid")
+_MOUNTINFO = Path("/proc/self/mountinfo")
 
 # rclone
 _RCLONE_CONFIGS: tuple[Path, ...] = (
@@ -151,6 +163,15 @@ class BackupSnapshot:
     # a configuration artefact, or a scheduled job invoking a backup tool.
     # Each entry is human-readable and names its own source.
     evidence_without_tool: list[str] = field(default_factory=list)
+    #: v0.31.4 — Timeshift as its files describe it (``_read_timeshift``).
+    #: schedules: the schedule_* keys set to true, None when timeshift.json
+    #: could not be read as JSON. snapshots: the snapshot directory names, None
+    #: when they were not read — ``timeshift_unread`` says why. dir: where
+    #: they were read.
+    timeshift_schedules: "list[str] | None" = None
+    timeshift_snapshots: "list[str] | None" = None
+    timeshift_unread:    str = ""
+    timeshift_dir:       str = ""
 
     @classmethod
     def from_system(cls) -> "BackupSnapshot":
@@ -195,8 +216,13 @@ class BackupSnapshot:
             snap.installed_tools.append("restic")
 
         # --- timeshift --------------------------------------------------------
+        # v0.31.4 — the config file alone said "active". It now takes a
+        # schedule that is on, and no readable snapshot directory that is empty.
         if _command_exists("timeshift"):
             if _TIMESHIFT_CONFIG.is_file():
+                (snap.timeshift_schedules, snap.timeshift_snapshots,
+                 snap.timeshift_unread, snap.timeshift_dir) = _read_timeshift()
+            if snap.timeshift_schedules and snap.timeshift_snapshots != []:
                 snap.active_tools.append("timeshift")
             else:
                 snap.installed_tools.append("timeshift")
@@ -246,6 +272,71 @@ class BackupSnapshot:
             ))
 
         return snap
+
+# ---------------------------------------------------------------------------
+# Timeshift
+# ---------------------------------------------------------------------------
+
+def _read_timeshift() -> "tuple[list[str] | None, list[str] | None, str, str]":
+    """v0.31.4 — (schedules, snapshots, why unread, directory) from Timeshift's
+    files. Nothing is run and nothing is mounted: a backup device that is not
+    mounted leaves the snapshots unread, and says so."""
+    try:
+        cfg = json.loads(read_text_capped(_TIMESHIFT_CONFIG, encoding="utf-8", errors="replace"))
+    except (OSError, ValueError):
+        return None, None, "config", ""
+    if not isinstance(cfg, dict):
+        return None, None, "config", ""
+    schedules = [name for name in _TIMESHIFT_SCHEDULES
+                 if str(cfg.get(f"schedule_{name}", "")).lower() == "true"]
+    if str(cfg.get("btrfs_mode", "")).lower() == "true":
+        return schedules, None, "btrfs", ""
+    uuid = str(cfg.get("backup_device_uuid", "") or "")
+    if not uuid or "/" in uuid:
+        return schedules, None, "no_device", ""
+    try:
+        device = os.path.realpath(_DISK_BY_UUID / uuid, strict=True)
+    except OSError:
+        return schedules, None, "device_absent", uuid
+    mountpoint = _mounted_at(device)
+    if mountpoint is None:
+        return schedules, None, "not_mounted", device
+    directory = os.path.join(mountpoint, "timeshift", "snapshots")
+    try:
+        with os.scandir(directory) as entries:
+            names = sorted(e.name for e in entries
+                           if _TIMESHIFT_SNAPSHOT_RE.fullmatch(e.name) and e.is_dir(follow_symlinks=False))
+    except FileNotFoundError:
+        # Timeshift creates the directory with its first snapshot (measured on
+        # Ubuntu 26.04: absent on a fresh device, present after --create).
+        return schedules, [], "", directory
+    except OSError:
+        return schedules, None, "unreadable", directory
+    return schedules, names, "", directory
+
+
+def _mounted_at(device: str) -> "str | None":
+    """Where *device* is mounted with its own root, from /proc/self/mountinfo;
+    None when it is not, or when mountinfo cannot be read."""
+    try:
+        lines = _MOUNTINFO.read_text(errors="replace").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        head, sep, tail = line.partition(" - ")
+        fields, post = head.split(), tail.split()
+        if not sep or len(fields) < 5 or len(post) < 2:
+            continue
+        if fields[3] != "/":
+            continue
+        try:
+            source = os.path.realpath(post[1])
+        except (OSError, ValueError):
+            continue
+        if source == device:
+            return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), fields[4])
+    return None
+
 
 # ---------------------------------------------------------------------------
 # Evidence collectors
@@ -371,6 +462,7 @@ def check_backup(
                 message=_t("backup.also_installed", tools=", ".join(also)),
                 key="backup.also_installed",
             )
+        _timeshift_finding(snapshot, result, _t)
         return result
 
     # --- Tool(s) installed but not confirmed active -------------------------
@@ -381,6 +473,7 @@ def check_backup(
             detail=_t("backup.installed_only_detail"),
             key="backup.installed_only",
         )
+        _timeshift_finding(snapshot, result, _t)
         return result
 
     # --- No known tool, but the host says otherwise --------------------------
@@ -427,6 +520,35 @@ def check_backup(
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+def _timeshift_finding(snapshot: BackupSnapshot, result: CheckResult, _t) -> None:
+    """v0.31.4 — what Timeshift's files said: its schedules, and its snapshots
+    or why they were not read. Nothing when its config was not read."""
+    schedules = snapshot.timeshift_schedules
+    if schedules is None:
+        return
+    when = (", ".join(_t(f"backup.timeshift_every.{name}") for name in schedules)
+            if schedules else _t("backup.timeshift_no_schedule"))
+    snaps = snapshot.timeshift_snapshots
+    if snaps:
+        result.info(
+            key="backup.timeshift_snapshots",
+            message=_t("backup.timeshift_snapshots", count=len(snaps), newest=snaps[-1],
+                       path=snapshot.timeshift_dir, schedules=when),
+        )
+    elif snaps == []:
+        result.info(
+            key="backup.timeshift_none",
+            message=_t("backup.timeshift_none", path=snapshot.timeshift_dir, schedules=when),
+        )
+    else:
+        result.info(
+            key="backup.timeshift_unread",
+            message=_t("backup.timeshift_unread", schedules=when,
+                       why=_t(f"backup.timeshift_why.{snapshot.timeshift_unread or 'not_read'}",
+                              where=snapshot.timeshift_dir)),
+        )
+
 
 def _borgmatic_config_exists(path: Path) -> bool:
     """Return True if path is a non-empty directory or an existing file.

@@ -415,9 +415,15 @@ def _check_authorized_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> No
         return
 
     if not snapshot.authorized_keys_exists:
+        # v0.31.4 — the file of one account, said as such: the text read as if
+        # public-key login were off for the whole server (critique of a real
+        # audit, 9 November 2026). Other accounts, and an AuthorizedKeysFile
+        # set elsewhere, are not read here.
+        where = str((snapshot.user_home or Path("~")) / ".ssh")
         result.info(
-            message=_t("ssh.authorized_keys_not_found"),
+            message=_t("ssh.authorized_keys_not_found", path=where),
             key="ssh.authorized_keys_not_found",
+            template_vars={"path": where},
         )
         return
 

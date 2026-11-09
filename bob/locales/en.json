@@ -370,7 +370,7 @@
       "unparsed": "{count} without a source, a protocol or a valid port"
     },
     "total_blocks": "blocked attempt(s) with a destination port",
-    "verdict_ok": "Normal activity — {total} blocked attempt(s) with a destination port over {days} day(s), no recognised attack pattern in the analysed events",
+    "verdict_ok": "No public source charged and no recognised attack pattern in the analysed events — {total} blocked attempt(s) with a destination port over {days} day(s)",
     "verdict_warn": "Suspicious activity — {total} blocked attempt(s) with a destination port over {days} day(s)",
     "top_ips": "Top source IPs",
     "top_ports": "Top targeted ports",
@@ -787,6 +787,11 @@
       "exposure": "Designed exclusively for local networks — inherently dangerous if exposed to the internet",
       "threat": "File access and encryption (ransomware), lateral movement (EternalBlue/WannaCry), data exfiltration"
     },
+    "samba_netbios_nmbd": {
+      "level": "MEDIUM",
+      "exposure": "NetBIOS name service and browsing — built for the local network; it answers names, it serves no files",
+      "threat": "Gives the host name, workgroup and browse list to whoever asks; a name service reachable from the internet can be used to reflect traffic at a third party — file access goes through 445/139, not through nmbd"
+    },
     "mysql___mariadb": {
       "level": "CRITICAL",
       "exposure": "Password-based authentication, history of unauthenticated access CVEs",
@@ -958,8 +963,10 @@
     "accept_redirects_v6_ok": "IPv6 ICMP redirects disabled (net.ipv6.conf.all.accept_redirects=0)",
     "accept_redirects_v6_enabled": "IPv6 ICMP redirects accepted — router impersonation attack possible on the local network",
     "send_redirects_ok": "ICMP redirect sending disabled (send_redirects=0)",
-    "send_redirects_enabled": "System is sending ICMP redirects (send_redirects=1) — unnecessary on a non-router, can be abused for MITM",
-    "send_redirects_detail": "ICMP redirects tell a host to use a different gateway. A non-router should never send them; an attacker can exploit this to reroute traffic (man-in-the-middle).",
+    "send_redirects_enabled": "ICMP redirect sending is on (send_redirects=1)",
+    "send_redirects_detail": "An ICMP redirect tells the host that sent a packet to use another gateway on the same network. The kernel sends one only for a packet it forwards back out the interface it came in on; at 0 that packet is still forwarded, without the redirect.",
+    "send_redirects_forwarding": "Interfaces that forward, where a redirect can leave from: {where}. Measured on Linux 7.0 in network namespaces: a packet forwarded back out its own interface drew 4 redirects for 5 pings at 1 and none at 0, and the 5 pings went through both times; traffic leaving by another interface — a NAT for VMs or containers — drew none either way.",
+    "send_redirects_idle": "No interface forwards, so the kernel sends none today — measured on Linux 7.0: forwarding off and send_redirects at 1, no redirect. The setting starts to count once forwarding is turned on (a VM network, a container runtime, a VPN).",
     "where_default": "default (interfaces created from now on)",
     "where_or": "In effect on: {where}. The kernel applies it when conf/all or the interface's own value is 1, so every interface counts, not conf/all alone.",
     "where_and": "In effect on: {where}. The kernel applies it only when conf/all and the interface's own value are both 1.",
@@ -1398,7 +1405,7 @@
     "rsa_ok": "RSA key {name}: {bits} bits",
     "no_passphrase": "Private key {name} has no passphrase — unprotected if the file is stolen",
     "key_ok": "Private key {name}: type and permissions OK",
-    "authorized_keys_not_found": "No authorized_keys file — public-key authentication not configured",
+    "authorized_keys_not_found": "No authorized_keys file in {path} — public-key login is not set up for this account; other accounts, and an AuthorizedKeysFile set elsewhere, are not read",
     "authorized_keys_perms": "authorized_keys permissions are {perms} — expected 600",
     "authorized_keys_weak_key": "Weak key in authorized_keys line {line}: {type} ({bits} bits)",
     "authorized_keys_dsa": "DSA key in authorized_keys line {line} — DSA is deprecated",
@@ -2223,13 +2230,13 @@
       },
       "send_redirects_enabled": {
         "title": "ICMP redirects sent by the host (send_redirects = 1)",
-        "why": "Only routers should send ICMP redirects (to tell hosts about a better gateway). A non-router host that sends them gives a local-segment attacker primitive material to inject forged redirects and reroute traffic from neighbouring hosts through itself or a controlled gateway — a man-in-the-middle setup. Disabling send_redirects on non-router systems closes this vector.",
-        "how": "1. Disable immediately:\n   sudo sysctl -w net.ipv4.conf.all.send_redirects=0\n   sudo sysctl -w net.ipv4.conf.default.send_redirects=0\n2. Make permanent:\n   grep -qxF 'net.ipv4.conf.all.send_redirects=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.all.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   grep -qxF 'net.ipv4.conf.default.send_redirects=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.default.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Apply:\n   sudo sysctl --system\nNote: if this machine actually is a router (multi-homed, performs IP forwarding), keep send_redirects=1 — disabling it would prevent legitimate routing optimization.",
+        "why": "An ICMP redirect is how a router tells the host that sent it a packet that another gateway on the same network is the better path; a host that accepts redirects changes its route. The kernel sends one only when it forwards a packet back out the interface the packet came in on, and only from an interface whose own forwarding value is 1 (measured on Linux 7.0). A machine that does not forward sends none; a NAT host for VMs or containers forwards between different interfaces and sends none either. Setting 0 removes the redirect, never the forwarding: the packet still goes through, one hop longer. The CIS benchmarks set it to 0.",
+        "how": "1. Disable immediately:\n   sudo sysctl -w net.ipv4.conf.all.send_redirects=0\n   sudo sysctl -w net.ipv4.conf.default.send_redirects=0\n2. Make permanent:\n   grep -qxF 'net.ipv4.conf.all.send_redirects=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.all.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   grep -qxF 'net.ipv4.conf.default.send_redirects=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.default.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Apply:\n   sudo sysctl --system\nNote: at 0 the kernel still forwards everything it forwarded; only the redirect is gone. Hosts that use this machine as their gateway while a better gateway sits on their own network keep going through this machine (one hop more) instead of learning the other gateway.",
         "server": {
-          "why": "A standard server is not a router. Sending ICMP redirects from it is unnecessary and gives an attacker on the same LAN a foothold for routing manipulation. Disable unless this machine genuinely performs routing duties."
+          "why": "A server forwards only when it was made a gateway, or when a VM network, a container runtime or a VPN turned forwarding on. Even then it sends redirects only for traffic it returns to the network that traffic came from, and at 0 that traffic still goes through."
         },
         "desktop": {
-          "why": "A desktop is never a router. Sending ICMP redirects has no use case and exposes the local network to redirect-based MITM attacks. Disable safely."
+          "why": "A desktop forwards when a VM network (libvirt, measured on Linux Mint), a container runtime or a VPN turns forwarding on; that traffic leaves by another interface and draws no redirect. At 0, nothing it forwards stops."
         },
         "container": {
           "why": "Host kernel setting — not configurable from inside a standard container.",
@@ -2289,7 +2296,7 @@
       "apparmor_complain_profiles": {
         "title": "AppArmor profiles loaded in complain mode",
         "why": "A profile in complain (learning) mode logs policy violations but does not block them — it gives visibility, not enforcement. Profiles left in complain mode after tuning present the appearance of MAC coverage while allowing the very actions they describe. BOB reports this as informational: complain mode is a legitimate, temporary state while a profile is being developed.",
-        "how": "Review which profiles are in complain mode:\n   sudo aa-status\nOnce a profile is tuned and no longer logging false positives, switch it to enforce:\n   sudo aa-enforce /etc/apparmor.d/<profile>\nKeep a profile in complain mode only while you are actively developing or debugging it."
+        "how": "Review which profiles are in complain mode:\n   sudo aa-status\nOnce a profile is tuned and no longer logging false positives, switch it to enforce:\n   sudo aa-enforce /etc/apparmor.d/<profile>\nOne at a time, not /etc/apparmor.d/*: measured on Ubuntu Server 26.04, that set 97 files to enforce, 74 of them shipped unconfined on purpose (flags=(unconfined)). Profiles of snaps (snap.*) are kept by snapd, not changed this way.\nKeep a profile in complain mode only while you are actively developing or debugging it."
       },
       "apparmor_off_in_kernel": {
         "title": "AppArmor built into the kernel but disabled at boot",
@@ -3672,7 +3679,7 @@
     "pam_stack_unknown": "Password quality could not be checked: no PAM stack file was readable",
     "pam_stack_unknown_detail": "BOB looks for a password-quality module (pam_pwquality, pam_cracklib) in the PAM password stack, which is named differently on each distribution: {paths}. None of them could be read here — either this host does not use PAM at all (Alpine does not), or the files are off-limits to the auditor. Nothing is claimed about the host's password policy either way: the setting was not established.",
     "no_quality_module": "No PAM password quality module configured (pam_pwquality/pam_cracklib absent)",
-    "no_quality_module_detail": "Without pam_pwquality or pam_cracklib, users can set trivially weak passwords. Any string is accepted regardless of length or complexity.",
+    "no_quality_module_detail": "Without pam_pwquality or pam_cracklib, pam_unix checks only a minimum length — 6 characters unless its minlen= says otherwise — so users can set trivially weak passwords. Measured on Ubuntu Server 26.04 with the pam_unix options it ships (obscure): aaaaaaaa, abcdefgh and qwerty12 were accepted; abc12 was refused as too short.",
     "no_quality_module_reason": "No PAM password quality module configured",
     "weak_minlen": "Password minimum length too low (minlen = {minlen})",
     "weak_minlen_detail": "Passwords shorter than 8 characters are easily brute-forced. Increase minlen to at least 8 in /etc/security/pwquality.conf.",
@@ -4144,7 +4151,8 @@
     "apparmor_off_in_kernel_detail_pi": "The kernel reports AppArmor as built in but not enabled (/sys/module/apparmor/parameters/enabled is N, and /sys/kernel/security/apparmor does not exist), so no profile is enforced — this is how the stock Raspberry Pi kernel ships it. apparmor.service carries ConditionSecurity=apparmor, so systemd skips it: enabling or starting it changes nothing. Adding apparmor=1 security=apparmor to cmdline.txt and rebooting enables it. Measured on a Pi Zero W: 121 profiles loaded, 22 in enforce mode. The first boot afterwards took about a minute and a half longer while AppArmor compiled and cached its profiles; the boots after it took the same time as before, about 3 min 15 s from shutdown to SSH. The command keeps cmdline.txt on one line and does nothing if the parameter is already there.",
     "apparmor_ok": "AppArmor enforcing — {enforcing} profile(s) enforce, {complain} complain",
     "apparmor_complain_profiles": "{complain} AppArmor profile(s) in complain mode — violations are logged but not blocked",
-    "apparmor_complain_detail": "In complain mode, AppArmor logs policy violations but does not block them. Switch profiles to enforce mode to actively prevent unauthorized access.",
+    "apparmor_complain_detail": "In complain mode, AppArmor logs policy violations but does not block them. To enforce a profile, run sudo aa-enforce on its own file in /etc/apparmor.d (apparmor-utils) — one at a time, not /etc/apparmor.d/*: measured on Ubuntu Server 26.04, that set 97 files to enforce, 74 of them shipped unconfined on purpose (flags=(unconfined)), and left the snap profiles as they were.",
+    "apparmor_complain_split": "{snap} of them are snap profiles, kept by snapd (on the host measured, all of classic snaps) — aa-enforce on /etc/apparmor.d does not change them; the others: {others}.",
     "apparmor_no_enforce": "AppArmor active but no profiles in enforce mode ({complain} in complain)",
     "apparmor_no_enforce_detail": "All profiles are in complain mode — violations are logged but not blocked. Switch to enforce mode to actively prevent attacks.",
     "apparmor_no_enforce_reason": "AppArmor active but no profiles enforcing",
@@ -4174,7 +4182,26 @@
     "active": "Backup solution active: {tools}",
     "also_installed": "Also installed (not confirmed active): {tools}",
     "installed_only": "Backup tool(s) found but not confirmed active: {tools}",
-    "installed_only_detail": "The tool is installed but no configuration artefact was detected. Verify that backups are actually scheduled and running.",
+    "installed_only_detail": "Nothing BOB reads confirms that it runs: no configuration found, or, for Timeshift, no schedule on or no snapshot. Verify that backups are actually scheduled and running.",
+    "timeshift_snapshots": "Timeshift: {count} snapshot(s) in {path}, the newest {newest} — schedule: {schedules}",
+    "timeshift_none": "Timeshift: no snapshot in {path} — schedule: {schedules}",
+    "timeshift_unread": "Timeshift: schedule: {schedules}; its snapshots were not read — {why}",
+    "timeshift_no_schedule": "none (snapshots only by hand)",
+    "timeshift_every": {
+      "hourly": "hourly",
+      "daily": "daily",
+      "weekly": "weekly",
+      "monthly": "monthly",
+      "boot": "at boot"
+    },
+    "timeshift_why": {
+      "btrfs": "BTRFS mode: they are subvolumes of the volume's top level, which BOB does not mount",
+      "no_device": "no backup device is set in timeshift.json",
+      "device_absent": "no device carries the UUID {where} (a disk that is unplugged?)",
+      "not_mounted": "the backup device {where} is not mounted, and BOB mounts nothing",
+      "unreadable": "{where} could not be listed",
+      "not_read": "BOB did not read them"
+    },
     "no_backup": "No known backup solution detected",
     "evidence_without_tool": "No backup tool is installed, but {count} sign(s) of backup activity were found — BOB cannot confirm backups are running",
     "evidence_without_tool_detail": "None of the backup tools BOB can recognise is on PATH, yet the host carries evidence pointing at one: {evidence}. That is not a confirmation — the artefact may be stale, or the tool may have been removed — so no conclusion is drawn either way, and no point is deducted for a backup that may well exist. Check it yourself and, if the tool is gone, remove the leftover job or configuration.",

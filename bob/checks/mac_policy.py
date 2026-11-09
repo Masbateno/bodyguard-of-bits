@@ -83,6 +83,9 @@ class MacPolicySnapshot:
     # that were already there.
     apparmor_profiles_on_disk: int = 0
     apparmor_service_state: "str | None" = None
+    #: v0.31.4 — the names of the profiles in complain mode (the kernel's list,
+    #: root only); None when it could not be read.
+    apparmor_complain_names: "list[str] | None" = None
     selinux_installed:  bool = False
     selinux_mode:       str  = ""
 
@@ -163,6 +166,9 @@ class MacPolicySnapshot:
             snap.apparmor_profiles_readable = counts is not None
             if counts is not None:
                 _, snap.apparmor_enforcing, snap.apparmor_complain = counts
+
+        if snap.apparmor_complain > 0:
+            snap.apparmor_complain_names = _apparmor_complain_names()
 
         if snap.apparmor_active and snap.apparmor_enforcing == 0 and snap.apparmor_complain == 0:
             try:
@@ -264,14 +270,29 @@ def check_mac_policy(
             key="mac_policy.apparmor_ok",
         )
         if snapshot.apparmor_complain > 0:
+            # v0.31.4 — the command was `sudo aa-enforce /etc/apparmor.d/*`.
+            # Measured on Ubuntu Server 26.04 (AppArmor 5.0.2): aa-enforce was
+            # not installed (command not found); with apparmor-utils, on a copy,
+            # it set 97 files to enforce, 74 of them shipped flags=(unconfined)
+            # on purpose, and left alone the 78 snap profiles that made 78 of
+            # the 80 counted (snapd keeps them). Now a check that lists them,
+            # and the detail says which are snapd's.
+            detail = _t("mac_policy.apparmor_complain_detail")
+            names = snapshot.apparmor_complain_names
+            if names:
+                snaps = [n for n in names if n.startswith("snap.")]
+                others = [n for n in names if not n.startswith("snap.")]
+                shown = ", ".join(others[:10]) + (" …" if len(others) > 10 else "")
+                detail = _t("mac_policy.apparmor_complain_split", snap=len(snaps),
+                            others=shown or "—") + " " + detail
             result.info(
                 message=_t(
                     "mac_policy.apparmor_complain_profiles",
                     complain=snapshot.apparmor_complain,
                 ),
-                detail=_t("mac_policy.apparmor_complain_detail"),
-                cmd="sudo aa-enforce /etc/apparmor.d/*",
-                cmd_type="fix",
+                detail=detail,
+                cmd="sudo aa-status",
+                cmd_type="check",
                 key="mac_policy.apparmor_complain_profiles",
             )
         if se_mode == "permissive":
@@ -508,6 +529,21 @@ def _apparmor_profiles_from_kernel() -> "tuple[int, int, int] | None":
         elif mode == "complain":
             complain += 1
     return loaded, enforce, complain
+
+
+def _apparmor_complain_names() -> "list[str] | None":
+    """v0.31.4 — the names of the loaded profiles in complain mode, from the
+    kernel's list (``name (mode)`` per line); None when it cannot be read."""
+    try:
+        raw = _KERNEL_PROFILES.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+    names = []
+    for line in raw.splitlines():
+        m = _KERNEL_PROFILE_RE.search(line)
+        if m and m.group(1) == "complain":
+            names.append(line[:m.start()].strip())
+    return sorted(set(names))
 
 
 def _apparmor_live_in_kernel() -> bool:

@@ -303,7 +303,7 @@ bob/
 │   ├── crypto_policy.py        # CryptoPolicySnapshot + check_crypto_policy() — crypto-policies (v0.24.0)
 │   └── world_writable.py       # WorldWritableSnapshot + check_world_writable() — --exhaustive (v0.24.0)
 ├── data/
-│   ├── services.json            # Registre déclaratif des 38 services
+│   ├── services.json            # Registre déclaratif des 39 services
 │   ├── cis_refs.json            # Références CIS — 236 entrées {ref, code}
 │   ├── profiles/                # Profils d'audit livrés : server, desktop, workstation, container (.conf)
 │   ├── schemas/                 # Schémas JSON : entrée de service, liste de services, fichier plugin

@@ -439,7 +439,7 @@ def _check_single_service(
             # v0.8.0 attached a point here, reasoning that a "dormant critical
             # security service = no actual defence". That reasoning describes
             # fail2ban, clamav and auditd — and none of them is in this
-            # registry. All 38 entries are network-listening services, and the
+            # registry. All the entries are network-listening services, and the
             # three defensive tools have their own inactive findings
             # (fail2ban.service_inactive, clamav.clamd_inactive,
             # auditd.service_inactive). The justification had no instance in

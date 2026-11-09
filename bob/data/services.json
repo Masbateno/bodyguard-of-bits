@@ -54,8 +54,7 @@
     ],
     "services": [
       "smbd",
-      "smb",
-      "nmb"
+      "smb"
     ],
     "ports": [
       "445/tcp",
@@ -68,6 +67,27 @@
       "config_files": [
         "/etc/samba/smb.conf"
       ]
+    }
+  },
+  {
+    "id": "samba_netbios",
+    "label": "Samba NetBIOS (nmbd)",
+    "packages": [
+      "samba"
+    ],
+    "services": [
+      "nmbd",
+      "nmb"
+    ],
+    "ports": [
+      "137/udp",
+      "138/udp"
+    ],
+    "risk": "medium",
+    "detection": {
+      "binary": [],
+      "snap": [],
+      "config_files": []
     }
   },
   {

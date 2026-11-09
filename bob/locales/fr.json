@@ -370,7 +370,7 @@
       "unparsed": "{count} sans source, sans protocole ou sans port valide"
     },
     "total_blocks": "tentative(s) bloquée(s) avec port de destination",
-    "verdict_ok": "Activité normale — {total} tentative(s) bloquée(s) avec port de destination sur {days} jour(s), aucun motif d'attaque reconnu dans les événements analysés",
+    "verdict_ok": "Aucune source publique retenue et aucun motif d'attaque reconnu dans les événements analysés — {total} tentative(s) bloquée(s) avec port de destination sur {days} jour(s)",
     "verdict_warn": "Activité suspecte — {total} tentative(s) bloquée(s) avec port de destination sur {days} jour(s)",
     "top_ips": "Top IPs sources",
     "top_ports": "Top ports ciblés",
@@ -787,6 +787,11 @@
       "exposure": "Conçu exclusivement pour les réseaux locaux — dangereux par nature si exposé sur internet",
       "threat": "Accès et chiffrement de fichiers (ransomware), mouvement latéral (EternalBlue/WannaCry), exfiltration de données"
     },
+    "samba_netbios_nmbd": {
+      "level": "MOYEN",
+      "exposure": "Service de noms et d'exploration NetBIOS — conçu pour le réseau local ; il répond sur des noms, il ne sert aucun fichier",
+      "threat": "Donne le nom de l'hôte, le groupe de travail et la liste d'exploration à qui le demande ; un service de noms joignable depuis internet peut servir à renvoyer du trafic vers un tiers — l'accès aux fichiers passe par 445/139, pas par nmbd"
+    },
     "mysql___mariadb": {
       "level": "CRITIQUE",
       "exposure": "Authentification par mot de passe, nombreuses CVE historiques d'accès non authentifié",
@@ -958,8 +963,10 @@
     "accept_redirects_v6_ok": "Redirections ICMP IPv6 désactivées (net.ipv6.conf.all.accept_redirects=0)",
     "accept_redirects_v6_enabled": "Redirections ICMP IPv6 acceptées — usurpation de routeur possible sur le réseau local",
     "send_redirects_ok": "Envoi de redirections ICMP désactivé (send_redirects=0)",
-    "send_redirects_enabled": "Le système envoie des redirections ICMP (send_redirects=1) — inutile sur un non-routeur, exploitable pour du MITM",
-    "send_redirects_detail": "Les redirections ICMP indiquent à un hôte d'utiliser une passerelle différente. Une machine non-routeur ne devrait jamais en envoyer ; un attaquant peut s'en servir pour dérouter le trafic (man-in-the-middle).",
+    "send_redirects_enabled": "Envoi de redirections ICMP activé (send_redirects=1)",
+    "send_redirects_detail": "Une redirection ICMP dit à l'hôte qui a envoyé un paquet d'utiliser une autre passerelle du même réseau. Le noyau n'en envoie que pour un paquet qu'il transfère et qui ressort par l'interface par laquelle il est entré ; à 0, ce paquet est quand même transféré, sans la redirection.",
+    "send_redirects_forwarding": "Interfaces qui font du transfert, d'où une redirection peut partir : {where}. Mesuré sous Linux 7.0 en espaces de noms réseau : un paquet transféré qui ressort par sa propre interface a provoqué 4 redirections pour 5 pings à 1, aucune à 0, et les 5 pings sont passés les deux fois ; le trafic qui sort par une autre interface — un NAT pour des VM ou des conteneurs — n'en a provoqué aucune dans les deux cas.",
+    "send_redirects_idle": "Aucune interface ne fait de transfert : le noyau n'en envoie donc aucune aujourd'hui — mesuré sous Linux 7.0 : transfert coupé et send_redirects à 1, aucune redirection. Le réglage se met à compter dès que le transfert est activé (un réseau de VM, un moteur de conteneurs, un VPN).",
     "where_default": "default (interfaces créées à partir de maintenant)",
     "where_or": "Actif sur : {where}. Le noyau l'applique quand conf/all ou la valeur propre de l'interface vaut 1 : chaque interface compte, pas conf/all seul.",
     "where_and": "Actif sur : {where}. Le noyau ne l'applique que quand conf/all et la valeur propre de l'interface valent 1 toutes les deux.",
@@ -1398,7 +1405,7 @@
     "rsa_ok": "Clé RSA {name} : {bits} bits",
     "no_passphrase": "La clé privée {name} n'a pas de phrase de passe — non protégée si le fichier est volé",
     "key_ok": "Clé privée {name} : type et permissions corrects",
-    "authorized_keys_not_found": "Aucun fichier authorized_keys — authentification par clé publique non configurée",
+    "authorized_keys_not_found": "Aucun fichier authorized_keys dans {path} — la connexion par clé publique n'est pas configurée pour ce compte ; les autres comptes, et un AuthorizedKeysFile défini ailleurs, ne sont pas lus",
     "authorized_keys_perms": "Les permissions de authorized_keys sont {perms} — attendu 600",
     "authorized_keys_weak_key": "Clé faible dans authorized_keys ligne {line} : {type} ({bits} bits)",
     "authorized_keys_dsa": "Clé DSA dans authorized_keys ligne {line} — DSA est déprécié",
@@ -2223,13 +2230,13 @@
       },
       "send_redirects_enabled": {
         "title": "Redirections ICMP envoyées par l'hôte (send_redirects = 1)",
-        "why": "Seuls les routeurs devraient envoyer des redirections ICMP (pour signaler aux hôtes une meilleure passerelle). Un hôte non-routeur qui en envoie fournit à un attaquant du segment local du matériel pour injecter des redirections forgées et dérouter le trafic des hôtes voisins via lui-même ou une passerelle contrôlée — un montage MITM. Désactiver send_redirects sur les systèmes non-routeurs ferme ce vecteur.",
-        "how": "1. Désactiver immédiatement :\n   sudo sysctl -w net.ipv4.conf.all.send_redirects=0\n   sudo sysctl -w net.ipv4.conf.default.send_redirects=0\n2. Rendre permanent :\n   grep -qxF 'net.ipv4.conf.all.send_redirects=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.all.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   grep -qxF 'net.ipv4.conf.default.send_redirects=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.default.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system\nNote : si cette machine est réellement un routeur (multi-interface, fait de l'IP forwarding), conservez send_redirects=1 — le désactiver empêcherait l'optimisation de routage légitime.",
+        "why": "Une redirection ICMP est la façon dont un routeur dit à l'hôte qui lui a envoyé un paquet qu'une autre passerelle du même réseau est le meilleur chemin ; un hôte qui accepte les redirections change sa route. Le noyau n'en envoie que lorsqu'il transfère un paquet qui ressort par l'interface par laquelle il est entré, et seulement depuis une interface dont la propre valeur forwarding vaut 1 (mesuré sous Linux 7.0). Une machine qui ne fait pas de transfert n'en envoie aucune ; un hôte NAT pour des VM ou des conteneurs transfère entre des interfaces différentes et n'en envoie pas non plus. Mettre 0 retire la redirection, jamais le transfert : le paquet passe quand même, avec un saut de plus. Les référentiels CIS le mettent à 0.",
+        "how": "1. Désactiver immédiatement :\n   sudo sysctl -w net.ipv4.conf.all.send_redirects=0\n   sudo sysctl -w net.ipv4.conf.default.send_redirects=0\n2. Rendre permanent :\n   grep -qxF 'net.ipv4.conf.all.send_redirects=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.all.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n   grep -qxF 'net.ipv4.conf.default.send_redirects=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.conf.default.send_redirects=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf\n3. Appliquer :\n   sudo sysctl --system\nNote : à 0, le noyau transfère toujours tout ce qu'il transférait ; seule la redirection disparaît. Les hôtes qui passent par cette machine alors qu'une meilleure passerelle se trouve sur leur propre réseau continuent de passer par elle (un saut de plus) au lieu d'apprendre l'autre passerelle.",
         "server": {
-          "why": "Un serveur standard n'est pas un routeur. Envoyer des redirections ICMP depuis celui-ci est inutile et offre à un attaquant du même LAN un pied dans la porte pour manipuler le routage. Désactivez sauf si la machine assure réellement des fonctions de routage."
+          "why": "Un serveur ne fait du transfert que si on en a fait une passerelle, ou si un réseau de VM, un moteur de conteneurs ou un VPN a activé le transfert. Même alors, il n'envoie de redirections que pour le trafic qu'il renvoie vers le réseau d'où ce trafic venait, et à 0 ce trafic passe quand même."
         },
         "desktop": {
-          "why": "Un desktop n'est jamais un routeur. Envoyer des redirections ICMP n'a aucun cas d'usage et expose le réseau local à des attaques MITM basées sur les redirections. Désactivez en toute sécurité."
+          "why": "Un poste de travail fait du transfert quand un réseau de VM (libvirt, mesuré sur Linux Mint), un moteur de conteneurs ou un VPN l'active ; ce trafic sort par une autre interface et ne provoque aucune redirection. À 0, rien de ce qu'il transfère ne s'arrête."
         },
         "container": {
           "why": "Paramètre du noyau hôte — non configurable depuis un container standard.",
@@ -2289,7 +2296,7 @@
       "apparmor_complain_profiles": {
         "title": "Profils AppArmor chargés en mode complain",
         "why": "Un profil en mode complain (apprentissage) journalise les violations de politique mais ne les bloque pas — il apporte de la visibilité, pas de l'enforcement. Des profils laissés en complain après réglage donnent l'apparence d'une couverture MAC tout en autorisant les actions mêmes qu'ils décrivent. BOB le signale en informatif : le mode complain est un état légitime et temporaire pendant le développement d'un profil.",
-        "how": "Vérifier quels profils sont en mode complain :\n   sudo aa-status\nUne fois un profil réglé et sans faux positifs, le passer en enforce :\n   sudo aa-enforce /etc/apparmor.d/<profil>\nNe garder un profil en complain que pendant que tu le développes ou le débogues activement."
+        "how": "Vérifier quels profils sont en mode complain :\n   sudo aa-status\nUne fois un profil réglé et sans faux positifs, le passer en enforce :\n   sudo aa-enforce /etc/apparmor.d/<profil>\nUn à la fois, pas /etc/apparmor.d/* : mesuré sur Ubuntu Server 26.04, cela a passé 97 fichiers en enforce, dont 74 livrés non confinés exprès (flags=(unconfined)). Les profils des snaps (snap.*) sont gérés par snapd et ne changent pas ainsi.\nNe garder un profil en complain que pendant que tu le développes ou le débogues activement."
       },
       "apparmor_off_in_kernel": {
         "title": "AppArmor compilé dans le noyau mais désactivé au démarrage",
@@ -3672,7 +3679,7 @@
     "pam_stack_unknown": "Qualité des mots de passe non vérifiable : aucun fichier de pile PAM lisible",
     "pam_stack_unknown_detail": "BOB cherche un module de qualité de mot de passe (pam_pwquality, pam_cracklib) dans la pile PAM « password », dont le nom diffère selon la distribution : {paths}. Aucun n'a pu être lu ici — soit cet hôte n'utilise pas PAM du tout (c'est le cas d'Alpine), soit les fichiers sont hors de portée de l'auditeur. Rien n'est affirmé sur la politique de mots de passe de l'hôte dans un sens ou dans l'autre : le réglage n'a pas été établi.",
     "no_quality_module": "Aucun module PAM de qualité des mots de passe configuré (pam_pwquality/pam_cracklib absent)",
-    "no_quality_module_detail": "Sans pam_pwquality ou pam_cracklib, les utilisateurs peuvent définir des mots de passe trivialement faibles. N'importe quelle chaîne est acceptée quelle que soit sa longueur ou complexité.",
+    "no_quality_module_detail": "Sans pam_pwquality ou pam_cracklib, pam_unix ne vérifie qu'une longueur minimale — 6 caractères, sauf si son minlen= dit autre chose — et les utilisateurs peuvent donc définir des mots de passe trivialement faibles. Mesuré sur Ubuntu Server 26.04 avec les options de pam_unix livrées (obscure) : aaaaaaaa, abcdefgh et qwerty12 ont été acceptés ; abc12 a été refusé, trop court.",
     "no_quality_module_reason": "Aucun module PAM de qualité des mots de passe configuré",
     "weak_minlen": "Longueur minimale des mots de passe trop courte (minlen = {minlen})",
     "weak_minlen_detail": "Les mots de passe de moins de 8 caractères sont facilement attaquables par force brute. Augmentez minlen à au moins 8 dans /etc/security/pwquality.conf.",
@@ -4144,7 +4151,8 @@
     "apparmor_off_in_kernel_detail_pi": "Le noyau déclare AppArmor compilé mais non activé (/sys/module/apparmor/parameters/enabled vaut N et /sys/kernel/security/apparmor n'existe pas) : aucun profil n'est appliqué — c'est ainsi que le noyau Raspberry Pi d'origine le livre. apparmor.service porte ConditionSecurity=apparmor, donc systemd le saute : l'activer ou le démarrer ne change rien. Ajouter apparmor=1 security=apparmor à cmdline.txt puis redémarrer l'active. Mesuré sur un Pi Zero W : 121 profils chargés, 22 en mode enforce. Le premier démarrage suivant a pris environ une minute et demie de plus, le temps pour AppArmor de compiler et de mettre en cache ses profils ; les démarrages d'après ont duré autant qu'avant, environ 3 min 15 de l'arrêt au SSH. La commande garde cmdline.txt sur une ligne et ne fait rien si le paramètre y est déjà.",
     "apparmor_ok": "AppArmor en mode enforce — {enforcing} profil(s) actif(s), {complain} en plainte",
     "apparmor_complain_profiles": "{complain} profil(s) AppArmor en mode plainte — les violations sont journalisées mais non bloquées",
-    "apparmor_complain_detail": "En mode plainte, AppArmor enregistre les violations de politique sans les bloquer. Passez les profils en mode enforce pour bloquer activement les accès non autorisés.",
+    "apparmor_complain_detail": "En mode plainte, AppArmor enregistre les violations de politique sans les bloquer. Pour passer un profil en enforce, lancez sudo aa-enforce sur son propre fichier dans /etc/apparmor.d (apparmor-utils) — un à la fois, pas /etc/apparmor.d/* : mesuré sur Ubuntu Server 26.04, cela a passé 97 fichiers en enforce, dont 74 livrés non confinés exprès (flags=(unconfined)), et laissé les profils des snaps tels quels.",
+    "apparmor_complain_split": "{snap} d'entre eux sont des profils de snaps, gérés par snapd (sur l'hôte mesuré, tous de snaps classic) — aa-enforce sur /etc/apparmor.d ne les change pas ; les autres : {others}.",
     "apparmor_no_enforce": "AppArmor actif mais aucun profil en mode enforce ({complain} en plainte)",
     "apparmor_no_enforce_detail": "Tous les profils sont en mode plainte — les violations sont journalisées mais non bloquées. Passez en mode enforce pour bloquer activement les attaques.",
     "apparmor_no_enforce_reason": "AppArmor actif mais aucun profil en enforce",
@@ -4174,7 +4182,26 @@
     "active": "Solution de sauvegarde active : {tools}",
     "also_installed": "Également installé (actif non confirmé) : {tools}",
     "installed_only": "Outil(s) de sauvegarde trouvé(s) mais actif non confirmé : {tools}",
-    "installed_only_detail": "L'outil est installé mais aucun artefact de configuration n'a été détecté. Vérifiez que les sauvegardes sont bien planifiées et s'exécutent.",
+    "installed_only_detail": "Rien de ce que BOB lit ne confirme qu'il tourne : aucune configuration trouvée ou, pour Timeshift, aucune planification active ou aucun instantané. Vérifiez que les sauvegardes sont réellement planifiées et exécutées.",
+    "timeshift_snapshots": "Timeshift : {count} instantané(s) dans {path}, le plus récent {newest} — planification : {schedules}",
+    "timeshift_none": "Timeshift : aucun instantané dans {path} — planification : {schedules}",
+    "timeshift_unread": "Timeshift : planification : {schedules} ; ses instantanés n'ont pas été lus — {why}",
+    "timeshift_no_schedule": "aucune (instantanés seulement à la main)",
+    "timeshift_every": {
+      "hourly": "toutes les heures",
+      "daily": "quotidienne",
+      "weekly": "hebdomadaire",
+      "monthly": "mensuelle",
+      "boot": "au démarrage"
+    },
+    "timeshift_why": {
+      "btrfs": "mode BTRFS : ce sont des sous-volumes du niveau supérieur du volume, que BOB ne monte pas",
+      "no_device": "aucun périphérique de sauvegarde n'est défini dans timeshift.json",
+      "device_absent": "aucun périphérique ne porte l'UUID {where} (un disque débranché ?)",
+      "not_mounted": "le périphérique de sauvegarde {where} n'est pas monté, et BOB ne monte rien",
+      "unreadable": "{where} n'a pas pu être listé",
+      "not_read": "BOB ne les a pas lus"
+    },
     "no_backup": "Aucune solution de sauvegarde connue détectée",
     "evidence_without_tool": "Aucun outil de sauvegarde installé, mais {count} indice(s) d'activité de sauvegarde trouvé(s) — BOB ne peut pas confirmer que des sauvegardes tournent",
     "evidence_without_tool_detail": "Aucun des outils de sauvegarde que BOB sait reconnaître n'est sur le PATH, pourtant l'hôte porte des traces qui en désignent un : {evidence}. Ce n'est pas une confirmation — l'artefact peut être périmé, ou l'outil avoir été retiré — donc aucune conclusion n'est tirée dans un sens ou dans l'autre, et aucun point n'est déduit pour une sauvegarde qui existe peut-être. Vérifie-le et, si l'outil a disparu, retire le job ou la configuration résiduelle.",

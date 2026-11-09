@@ -124,4 +124,4 @@ class TestRemovalWasBehaviourPreserving:
             Service.from_dict(base_entry(ports=[], detection={}))
 
     def test_the_bundled_registry_still_loads(self):
-        assert len(ServiceRegistry.load().all()) == len(bundled()) == 38
+        assert len(ServiceRegistry.load().all()) == len(bundled()) == 39

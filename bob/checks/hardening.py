@@ -74,6 +74,10 @@ class HardeningSnapshot:
     accept_source_route_where:   list = field(default_factory=list)
     accept_redirects_v6_where:   list = field(default_factory=list)
     send_redirects_where:        list = field(default_factory=list)
+    #: v0.31.4 — among send_redirects_where, the interfaces whose own
+    #: ``forwarding`` is 1: the only ones a redirect can leave from
+    #: (``_forwarding_among``). [] = none forwards; None = not read.
+    send_redirects_forwarding:   "list | None" = None
     icmp_echo_ignore_broadcasts: "bool | None" = None
     tcp_syncookies:              "int | None"  = None
     accept_source_route:         "bool | None" = None
@@ -130,6 +134,8 @@ class HardeningSnapshot:
             accept_source_route_where=_on(accept_source_route_by),
             accept_redirects_v6_where=_on(accept_redirects_v6_by),
             send_redirects_where=_on(send_redirects_by),
+            send_redirects_forwarding=(None if send_redirects_by is None
+                                       else _forwarding_among(_on(send_redirects_by))),
             icmp_echo_ignore_broadcasts=icmp_echo_ignore_broadcasts,
             tcp_syncookies=tcp_syncookies,
             accept_source_route=accept_source_route,
@@ -297,6 +303,7 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             message=_t("hardening.send_redirects_enabled"),
             points=1,
             detail=" ".join(x for x in (_t("hardening.send_redirects_detail"),
+                                        _send_redirects_case(_t, snapshot.send_redirects_forwarding),
                                         _where(_t, "hardening.where_or", snapshot.send_redirects_where)) if x),
             **sysctl_fix_ifaces("net.ipv4.conf", "send_redirects", "0", snapshot.send_redirects_where,
                                 boot=snapshot.boot_sysctl),
@@ -461,6 +468,16 @@ def _where(_t, key: str, names: list) -> str:
     return _t(key, where=", ".join(label if n == "default" else n for n in names))
 
 
+def _send_redirects_case(_t, forwarding: "list | None") -> str:
+    """v0.31.4 — whether a redirect can leave this host today: the interfaces
+    that forward, or none. Empty when forwarding was not read."""
+    if forwarding:
+        return _where(_t, "hardening.send_redirects_forwarding", forwarding)
+    if forwarding == []:
+        return _t("hardening.send_redirects_idle")
+    return ""
+
+
 def _rp_filter_context(snapshot: "HardeningSnapshot", _t) -> str:
     """One line saying what was read where, so conf/all = 0 is not mistaken
     for the verdict. Empty when there is nothing to disambiguate."""
@@ -578,6 +595,28 @@ def _effective_by_iface(knob: str, rule: str, family: str = "ipv4") -> "dict[str
             else:
                 effective[name] = own and not forwards
     return effective
+
+
+def _forwarding_among(names: list) -> "list | None":
+    """v0.31.4 — the interfaces among *names* whose own ``forwarding`` is 1;
+    "default" stands for interfaces created from now on.
+
+    The kernel sends an ICMP redirect only for a packet it forwards back out
+    the interface it came in on, and forwards only when that interface's own
+    value is 1 — conf/all does not decide. Measured on Linux 7.0 in network
+    namespaces (9 November 2026): all 0 and eth0 1 sent 4 redirects for 5
+    pings; all 1 and eth0 0 forwarded nothing and sent none.
+
+    None when one of the values cannot be read: the case is then not stated.
+    """
+    out = []
+    for name in names:
+        forwards = _read_sysctl_bool(sysctl_iface_key("net.ipv4.conf", name, "forwarding"))
+        if forwards is None:
+            return None
+        if forwards:
+            out.append(name)
+    return out
 
 
 def _on(by: "dict[str, bool] | None") -> list:
