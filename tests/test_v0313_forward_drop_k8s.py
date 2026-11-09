@@ -9,7 +9,8 @@ in the legacy tables), 8 November 2026 (~/.cache/bob-fieldtest/netnsbench/fwd031
 with the policy at ACCEPT, at DROP as BOB prints it (the nft table), at DROP in
 the legacy table too, and 60 s later, a pod reached a pod's DNS, the DNS
 service, the API service and the internet; BOB went from WARN −1 to OK. k3s was
-measured the same way on the same host in 0.25.1. The explanation says so.
+measured the same way on the same host in 0.25.1. The explanation says so —
+for those two, not for every CNI (third review of the 0.31.3 changelog).
 """
 
 from __future__ import annotations
@@ -25,8 +26,8 @@ def _how(lang):
 
 
 @pytest.mark.parametrize("lang, words", [
-    ("en", "A Kubernetes node is not such a case: measured on MicroK8s 1.35.6 (calico) and on k3s"),
-    ("fr", "Un nœud Kubernetes n'est pas dans ce cas : mesuré sur MicroK8s 1.35.6 (calico) et sur k3s")],
+    ("en", "Being a Kubernetes node is not on its own a reason to keep ACCEPT: measured on MicroK8s 1.35.6 (calico) and on k3s"),
+    ("fr", "Être un nœud Kubernetes ne suffit pas à justifier ACCEPT : mesuré sur MicroK8s 1.35.6 (calico) et sur k3s")],
     ids=["en", "fr"])
 def test_the_explanation_says_a_kubernetes_node_keeps_its_pods_at_drop(lang, words):
     how = _how(lang)

@@ -14623,7 +14623,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id='forward-k8s/drop-safety-unsaid',
         file='bob/locales/en.json',
-        old='\\n   A Kubernetes node is not such a case: measured on MicroK8s 1.35.6 (calico) and on k3s, pod to pod, DNS through the service IP, pod to the API service and pod to the internet all still answered with FORWARD at DROP — each accepts its pod traffic in its own FORWARD rules.',
+        old='\\n   Being a Kubernetes node is not on its own a reason to keep ACCEPT: measured on MicroK8s 1.35.6 (calico) and on k3s, pod to pod, DNS through the service IP, pod to the API service and pod to the internet all still answered with FORWARD at DROP — each accepts its pod traffic in its own FORWARD rules. Other CNIs are not measured: check what yours needs before setting DROP.',
         new='',
         kills=('tests/test_v0313_forward_drop_k8s.py::test_the_explanation_says_a_kubernetes_node_keeps_its_pods_at_drop[en]', ),
         reason='a Kubernetes node owner would read the routing-host advice and keep FORWARD at ACCEPT',
