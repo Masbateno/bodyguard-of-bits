@@ -21,7 +21,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, kubelet_running, sysctl_fix
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, kubelet_running, path_exists, sysctl_fix
 from bob.scoring import CheckResult
 
 
@@ -32,6 +32,18 @@ from bob.scoring import CheckResult
 # `iptables -L` opens every chain with this header under LC_ALL=C, rules or no
 # rules. Its absence means the listing did not come from iptables.
 _IPTABLES_CHAIN_RE = re.compile(r"^Chain\s+\S+", re.MULTILINE)
+
+#: v0.31.3 — where the system libvirt keeps the state of its active networks,
+#: and the forward modes that route through the host (a ``<forward>`` with no
+#: mode is NAT). Measured on Ubuntu Server 26.04, libvirt 12.0.0: the network
+#: ``default`` active wrote ``default.xml`` there (``<forward mode='nat'>``,
+#: bridge virbr0) and set ip_forward; ``virsh net-destroy default`` removed it
+#: and the bridge (a ``default.pid`` stayed); an isolated network wrote one
+#: with no ``<forward>``; stopping every libvirt daemon left the network, its
+#: file, its bridge and its dnsmasq in place.
+_LIBVIRT_NETWORK_STATE = Path("/run/libvirt/network")
+_SYS_CLASS_NET = Path("/sys/class/net")
+_LIBVIRT_ROUTING_MODES = frozenset({"nat", "route", "open"})
 
 
 @dataclass
@@ -49,7 +61,8 @@ class FirewallStackSnapshot:
         ip_forward:          True if /proc/sys/net/ipv4/ip_forward == "1".
         docker_present:      True if Docker is installed/running.
         wireguard_present:   True if WireGuard is configured.
-        libvirt_present:     True if libvirt/KVM is installed.
+        libvirt_present:     True while a libvirt network routes through the host
+                             (v0.31.3; it was: libvirt installed). See _libvirt_routing.
         kubernetes_running:  True if a kubelet runs (kubelet, MicroK8s'
                              kubelite, k3s) — pod networking needs forwarding.
     """
@@ -138,12 +151,9 @@ class FirewallStackSnapshot:
             or (wg_dir.is_dir() and any(wg_dir.glob("*.conf")))
         )
 
-        # libvirt/KVM also requires ip_forward and manages FORWARD rules
-        libvirt_present = (
-            _command_exists("libvirtd")
-            or _command_exists("virtqemud")
-            or Path("/var/lib/libvirt").is_dir()
-        )
+        # libvirt/KVM also requires ip_forward and manages FORWARD rules —
+        # v0.31.3: while one of its networks routes, not because it is installed.
+        libvirt_present = _libvirt_routing()
 
         return cls(
             input_raw_accepts=input_raw,
@@ -158,6 +168,45 @@ class FirewallStackSnapshot:
             libvirt_present=libvirt_present,
             kubernetes_running=kubelet_running(),
         )
+
+
+def _libvirt_routing(modes: frozenset = _LIBVIRT_ROUTING_MODES) -> bool:
+    """v0.31.3 — a libvirt network that routes through the host is active: its
+    state file names a NAT, route or open forward and its bridge exists.
+
+    0.31.2 counted libvirt as a routing daemon as soon as ``libvirtd``,
+    ``virtqemud`` or /var/lib/libvirt existed: installed, not routing. With
+    ip_forward on, that turned `firewall_drivers.ip_forward_enabled` (WARN −1)
+    into "IP forwarding enabled — routing daemon detected" (OK). Measured on
+    Ubuntu Server 26.04 (libvirt 12.0.0, the network destroyed, ip_forward 1).
+    A state file BOB cannot read is an active network of unknown mode: counted
+    (most are NAT). A directory BOB cannot list: what 0.31.2 read. *modes*: the
+    forward modes that count (the virtualisation section asks for the two
+    libvirt writes firewall rules for).
+    """
+    try:
+        states = [p for p in _LIBVIRT_NETWORK_STATE.iterdir() if p.name.endswith(".xml")]
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return (_command_exists("libvirtd") or _command_exists("virtqemud")
+                or Path("/var/lib/libvirt").is_dir())
+    import xml.etree.ElementTree as ET
+    for state in states:
+        try:
+            root = ET.fromstring(state.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            return True
+        except ET.ParseError:
+            continue
+        forward = root.find(".//forward")
+        bridge = root.find(".//bridge")
+        if forward is None or bridge is None:
+            continue
+        name = bridge.get("name") or ""
+        if (forward.get("mode") or "nat") in modes and name and path_exists(_SYS_CLASS_NET / name):
+            return True
+    return False
 
 
 def _routing_daemon(snapshot: "FirewallStackSnapshot") -> bool:

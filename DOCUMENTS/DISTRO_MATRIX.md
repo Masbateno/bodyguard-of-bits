@@ -1069,6 +1069,25 @@ armed first; ports were probed from another host of the LAN, over IPv4.*
 calico's `cali*` interfaces hold link-local addresses only and `vxlan.calico` a /32;
 the LAN interface holds the /24, a /64 and both default routes.
 
+### 0.31.3 field pass — libvirt counted while its network routes
+
+*Ubuntu Server 26.04.1, libvirt 12.0.0 installed for the pass and purged
+afterwards, MicroK8s stopped so that libvirt was the only routing candidate;
+real, 2026-11-09.*
+
+| libvirt state | /run/libvirt/network | 0.31.2 | 0.31.3 |
+|---|---|---|---|
+| network `default` active (`<forward mode='nat'>`, virbr0) | `default.xml` | ip_forward 1: OK, routing daemon | the same |
+| `default` destroyed, libvirt installed, ip_forward still 1 | no `default.xml` (a `default.pid` stays) | OK, routing daemon | `firewall_drivers.ip_forward_enabled` WARN −1 |
+| an isolated network (no `<forward>`) | `bobiso.xml` | — | not routing |
+| every libvirt daemon stopped, `default` active | `default.xml`, virbr0 and dnsmasq still there | — | routing: the network outlives its daemons |
+| `virt.bypass_risk` ("libvirt/KVM detected — virbr0 bridge interface may insert iptables rules", WARN, no points), libvirt installed, `default` destroyed | no `default.xml` | said | not said (said while `default` is active, in both versions) |
+
+BOB's fix for the second row, applied as printed (`sysctl -w net.ipv4.ip_forward=0`
+and `99-hardening.conf`), cleared the finding; restarting the network set
+ip_forward back to 1 on its own, and BOB read it as routing again. On this host
+the firewall was inactive: its score ceiling absorbed the −1.
+
 ### 0.25.1 field pass — doas on Alpine
 
 *Alpine 3.24 (OpenRC, BusyBox, doas, Python 3.14.7), real, 2026-10-17. The 0.25.1

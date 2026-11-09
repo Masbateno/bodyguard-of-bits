@@ -29,7 +29,11 @@ import subprocess
 from dataclasses import dataclass, field
 
 from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t
+from bob.checks.firewall_stack import _libvirt_routing
 from bob.scoring import CheckResult
+
+#: v0.31.3 — the libvirt forward modes that write firewall rules (NAT, routed).
+_LIBVIRT_RULE_MODES = frozenset({"nat", "route"})
 
 logger = logging.getLogger(__name__)
 
@@ -73,9 +77,14 @@ class VirtSnapshot:
         snap = cls()
         ifaces = _get_network_interfaces()
 
-        # libvirt/KVM
+        # libvirt/KVM — v0.31.3: while one of its networks is NAT or routed, the
+        # two modes libvirt writes firewall rules for (libvirt's documentation:
+        # "open" adds none), not because virsh, libvirtd or a virbr* interface
+        # exists. Measured on Ubuntu Server 26.04 (libvirt 12.0.0): installed,
+        # its network destroyed, nothing was inserted and the section still
+        # warned; see firewall_stack._libvirt_routing.
         virbr = [i for i in ifaces if i.startswith("virbr")]
-        if _command_exists("virsh") or _command_exists("libvirtd") or virbr:
+        if _libvirt_routing(modes=_LIBVIRT_RULE_MODES):
             snap.technologies.append(VirtTechnology(
                 name="libvirt/KVM",
                 iface=virbr[0] if virbr else "virbr0",
