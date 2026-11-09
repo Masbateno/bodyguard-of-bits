@@ -4102,7 +4102,7 @@
     "service_inactive_detail": "Fail2ban is installed but inactive — IP banning is not in effect. Enable it to protect exposed services against brute-force attacks.",
     "service_inactive_reason": "Fail2ban inactive — no brute-force protection",
     "no_jails": "Fail2ban is running but no jails are active",
-    "no_jails_detail": "Fail2ban is running but has no active jails configured. At minimum, enable the sshd jail in /etc/fail2ban/jail.local to protect SSH from brute-force attacks.",
+    "no_jails_detail": "Fail2ban is running but has no active jails configured. At minimum, enable the sshd jail in /etc/fail2ban/jail.local to protect SSH from brute-force attacks, then reload fail2ban (sudo fail2ban-client reload): the edit alone starts no jail. A jail enabled in the configuration but stopped comes back with the reload alone.",
     "no_jails_reason": "Fail2ban running with no active jails",
     "ssh_jail_source_unverified": "Fail2ban's SSH jail '{jail}' reads {files}; whether a syslog daemon writes it could not be established, so its protection is not verified",
     "ssh_jail_source_unverified_no_journal": "Fail2ban's SSH jail '{jail}' reads {files}; a syslog daemon runs, but with no systemd journal to compare that file against and no failed login counted by the jail since fail2ban started, whether sshd's messages reach it is not verified",

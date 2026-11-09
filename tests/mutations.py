@@ -14628,4 +14628,12 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         kills=('tests/test_v0313_forward_drop_k8s.py::test_the_explanation_says_a_kubernetes_node_keeps_its_pods_at_drop[en]', ),
         reason='a Kubernetes node owner would read the routing-host advice and keep FORWARD at ACCEPT',
     ),
+    Mutation(
+        id='fail2ban-text/reload-unsaid',
+        file='bob/locales/en.json',
+        old=', then reload fail2ban (sudo fail2ban-client reload): the edit alone starts no jail. A jail enabled in the configuration but stopped comes back with the reload alone.',
+        new='.',
+        kills=('tests/test_v0313_fail2ban_no_jails.py::test_the_detail_says_to_reload[en]', ),
+        reason='measured: the jail.local edit alone left fail2ban with no jail and the finding in place',
+    ),
 )
