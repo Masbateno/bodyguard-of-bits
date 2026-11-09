@@ -420,17 +420,28 @@ def iface_matches(pattern: str, names: "frozenset[str]") -> bool:
     return pattern in names
 
 
-def outward_interfaces(addr_output: str, default_v4: str, default_v6: "str | None") -> "dict[bool, frozenset[str] | None]":
+def outward_interfaces(addr_output: str, routes_v4: str, routes_v6: "str | None") -> "dict[bool, frozenset[str] | None]":
     """v0.31.3 — per family (False: IPv4, True: IPv6), the interfaces a client
     from the network can arrive on: those holding an address on a network
-    (not loopback, not link-local, a prefix shorter than /32 or /128) or a
-    default route. *default_v6* None: the IPv6 routes were not read, that
-    family's interfaces are not known (None).
+    (not loopback, not link-local, a prefix shorter than /32 or /128), or a
+    route to one — a default route, or any route shorter than /32 or /128 —
+    in any routing table (``ip route show table all``, ``ip -6 route show table
+    all``; a route to a single peer is a /32 or /128 and does not count).
+    *routes_v6* None: the IPv6 routes were not read, that family's interfaces
+    are not known (None). The fifth review of the changelog: wg-quick puts a
+    client's default route in a table of its own (51820), not main; reading
+    every table gave the same interfaces on the Mint and the Ubuntu node
+    (measured), the ``local`` table's routes being types, not addresses.
 
     Measured on Ubuntu Server 26.04 with MicroK8s 1.35.6 (8 November 2026):
     enp3s0 holds 192.168.1.0/24, a /64 and both default routes; calico's
     ``cali*`` hold only link-local addresses (a /32 route to one pod each) and
-    ``vxlan.calico`` a /32 — no client from the network arrives on them.
+    ``vxlan.calico`` a /32 — no client from the network arrives on them. Second
+    review of the 0.31.3 changelog: an interface holding a /32 with a route to
+    a network through it (a WireGuard peer network, a point-to-point link)
+    brings clients too; only a default route was read. Every IPv6 interface
+    has an ``fe80::/64`` route (measured on Mint): link-local networks are not
+    a network of clients.
     """
     found: "dict[bool, set[str]]" = {False: set(), True: set()}
     for line in addr_output.splitlines():
@@ -446,21 +457,36 @@ def outward_interfaces(addr_output: str, default_v4: str, default_v6: "str | Non
             continue
         if iface.network.prefixlen < iface.max_prefixlen:
             found[parts[2] == "inet6"].add(name)
-    for v6, routes in ((False, default_v4), (True, default_v6 or "")):
-        for m in re.finditer(r"\bdev\s+(\S+)", routes):
-            found[v6].add(m.group(1))
-    return {False: frozenset(found[False]), True: frozenset(found[True]) if default_v6 is not None else None}
+    for v6, routes in ((False, routes_v4), (True, routes_v6 or "")):
+        for entry in re.split(r"\n(?=\S)", routes):
+            words = entry.split()
+            if words[:1] == ["unicast"]:
+                words = words[1:]
+            if not words:
+                continue
+            if words[0] != "default":
+                # A route type (blackhole, unreachable, local…) is not an
+                # address; a route to one address reads as a /32 or /128.
+                try:
+                    net = ipaddress.ip_network(words[0], strict=False)
+                except ValueError:
+                    continue
+                if net.prefixlen >= net.max_prefixlen or net.is_link_local or net.is_loopback or net.is_multicast:
+                    continue
+            for m in re.finditer(r"\bdev\s+(\S+)", entry):
+                found[v6].add(m.group(1))
+    return {False: frozenset(found[False]), True: frozenset(found[True]) if routes_v6 is not None else None}
 
 
 def read_outward_interfaces() -> "dict[bool, frozenset[str] | None] | None":
     """:func:`outward_interfaces` of this host; None when the addresses or the
-    IPv4 default routes could not be read."""
+    IPv4 routes could not be read."""
     from bob.checks._run import run_result
     addrs = run_result("ip", "-o", "addr", "show")
-    v4 = run_result("ip", "route", "show", "default")
+    v4 = run_result("ip", "route", "show", "table", "all")
     if not (addrs.ok and v4.ok):
         return None
-    v6 = run_result("ip", "-6", "route", "show", "default")
+    v6 = run_result("ip", "-6", "route", "show", "table", "all")
     return outward_interfaces(addrs.stdout, v4.stdout, v6.stdout if v6.ok else None)
 
 

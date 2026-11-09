@@ -92,10 +92,83 @@ class TestWhereTheNetworkArrives:
 
     def test_the_host_is_read_with_ip(self, monkeypatch):
         import bob.checks._run as run_mod
-        out = {("ip", "-o", "addr", "show"): _ADDR, ("ip", "route", "show", "default"): _DEF4,
-               ("ip", "-6", "route", "show", "default"): _DEF6}
+        out = {("ip", "-o", "addr", "show"): _ADDR, ("ip", "route", "show", "table", "all"): _DEF4,
+               ("ip", "-6", "route", "show", "table", "all"): _DEF6}
         monkeypatch.setattr(run_mod, "run_result", lambda *a, **k: CommandResult(out[a], True))
         assert _ufw.read_outward_interfaces() == _OUTWARD
+
+
+#: `ip route show` on the Ubuntu node, as measured (calico routes each pod as a /32).
+_ROUTES4 = """\
+default via 192.168.1.254 dev enp3s0 proto dhcp src 192.168.1.12 metric 100 
+blackhole 10.1.144.128/26 proto 80 
+10.1.144.141 dev calic83105ccb66 scope link 
+10.1.144.145 dev calid90c19d66fa scope link 
+192.168.1.0/24 dev enp3s0 proto kernel scope link src 192.168.1.12 metric 100 
+192.168.1.254 dev enp3s0 proto dhcp scope link src 192.168.1.12 metric 100 
+"""
+#: Every IPv6 interface carries an fe80::/64 route (measured on Mint and Ubuntu).
+_ROUTES6 = """\
+2001:db8:7c60::/64 dev enp3s0 proto ra metric 100 expires 86367sec pref medium
+fe80::/64 dev enp3s0 proto kernel metric 256 pref medium
+fe80::/64 dev calic83105ccb66 proto kernel metric 256 pref medium
+fe80::/64 dev vxlan.calico proto kernel metric 256 pref medium
+default nhid 2403510314 via fe80::1 dev enp3s0 proto ra metric 100 expires 1591sec pref medium
+"""
+
+
+class TestEveryRouteToANetwork:
+    """Second review of the 0.31.3 changelog: an interface with a /32 and a
+    route to a network through it brings clients; only a default route was read."""
+
+    def test_the_measured_node_with_its_whole_tables(self):
+        assert _ufw.outward_interfaces(_ADDR, _ROUTES4, _ROUTES6) == {False: frozenset({"enp3s0"}),
+                                                                     True: frozenset({"enp3s0"})}
+
+    def test_a_wireguard_peer_network_on_a_32(self):
+        addr = "5: wg0    inet 10.0.0.2/32 scope global wg0\n"
+        assert "wg0" in _ufw.outward_interfaces(addr, "10.0.0.0/24 dev wg0 scope link \n", "")[False]
+
+    def test_an_ipv6_peer_network(self):
+        assert "wg0" in _ufw.outward_interfaces("", "", "fd00:77::/64 dev wg0 metric 1024 pref medium\n")[True]
+
+    @pytest.mark.parametrize("route", [
+        "fe80::/64 dev cali9 proto kernel metric 256 pref medium",
+        "10.1.144.141 dev cali9 scope link",
+        "10.1.144.141/32 dev cali9 scope link",
+        "fd00:5::7/128 dev cali9 metric 1024 pref medium",
+        "blackhole 10.1.144.128/26 proto 80",
+        "unreachable 10.9.0.0/16 dev cali9",
+        "local 10.9.0.1 dev cali9 table local proto kernel scope host src 10.9.0.1"])
+    def test_routes_that_bring_no_network_of_clients(self, route):
+        v6 = ":" in route.split()[0]
+        found = _ufw.outward_interfaces("", "" if v6 else route + "\n", route + "\n" if v6 else "")
+        assert "cali9" not in found[v6]
+
+    def test_every_routing_table_is_read(self, monkeypatch):
+        """wg-quick (Table=auto) puts a client's default route in table 51820,
+        not main (its documentation; not measured): wg0 holds a /32 and that route."""
+        import bob.checks._run as run_mod
+        addr = "5: wg0    inet 10.66.0.2/32 scope global wg0\n"
+
+        def ip(*args, **kw):
+            if args == ("ip", "-o", "addr", "show"):
+                return CommandResult(addr, True)
+            every = args[-2:] == ("table", "all")
+            v6 = "-6" in args
+            text = "" if v6 else ("default dev wg0 table 51820 scope link \n" if every else "")
+            return CommandResult(text, True)
+        monkeypatch.setattr(run_mod, "run_result", ip)
+        assert "wg0" in _ufw.read_outward_interfaces()[False]
+
+    @pytest.mark.parametrize("route", [
+        "local 192.168.1.12 dev enp9 table local proto kernel scope host src 192.168.1.12",
+        "broadcast 192.168.1.255 dev enp9 table local proto kernel scope link src 192.168.1.12"])
+    def test_the_local_tables_routes_are_types_not_networks(self, route):
+        assert "enp9" not in _ufw.outward_interfaces("", route + "\n", "")[False]
+
+    def test_unicast_is_read_through(self):
+        assert "eth9" in _ufw.outward_interfaces("", "unicast 10.8.0.0/24 dev eth9\n", "")[False]
 
 
 class TestInterfacePatterns:
