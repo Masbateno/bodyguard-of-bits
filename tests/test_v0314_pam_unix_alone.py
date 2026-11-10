@@ -7,7 +7,8 @@ unprivileged user through a terminal, 9 November 2026
 (~/.cache/bob-fieldtest/netnsbench/pam0314/pam-survey-ubuntu.txt): with the
 shipped `pam_unix.so obscure yescrypt`, ab1 and abc12 were refused ("You must
 choose a longer password."), abcdef, aaaaaaaa, abcdefgh and qwerty12 accepted;
-the same without `obscure`; with `minlen=1`, a single character was accepted.
+without `obscure`, ab1 and abc12 refused, abcdef and aaaaaaaa accepted (the
+others not tried); with `minlen=1`, a single character was accepted.
 Length is checked (6 by default), complexity is not: the detail says so.
 """
 

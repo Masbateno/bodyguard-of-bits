@@ -790,7 +790,7 @@
     "samba_netbios_nmbd": {
       "level": "MEDIUM",
       "exposure": "NetBIOS name service and browsing — built for the local network; it answers names, it serves no files",
-      "threat": "Gives the host name, workgroup and browse list to whoever asks; a name service reachable from the internet can be used to reflect traffic at a third party — file access goes through 445/139, not through nmbd"
+      "threat": "Gives the host name, workgroup and browse list to whoever asks; a name service reachable from the internet can be used to reflect traffic at a third party (CISA alert TA14-017A: an amplification factor of about 3.8) — file access goes through 445/139, not through nmbd"
     },
     "mysql___mariadb": {
       "level": "CRITICAL",
@@ -4152,7 +4152,7 @@
     "apparmor_ok": "AppArmor enforcing — {enforcing} profile(s) enforce, {complain} complain",
     "apparmor_complain_profiles": "{complain} AppArmor profile(s) in complain mode — violations are logged but not blocked",
     "apparmor_complain_detail": "In complain mode, AppArmor logs policy violations but does not block them. To enforce a profile, run sudo aa-enforce on its own file in /etc/apparmor.d (apparmor-utils) — one at a time, not /etc/apparmor.d/*: measured on Ubuntu Server 26.04, that set 97 files to enforce, 74 of them shipped unconfined on purpose (flags=(unconfined)), and left the snap profiles as they were.",
-    "apparmor_complain_split": "{snap} of them are snap profiles, kept by snapd (on the host measured, all of classic snaps) — aa-enforce on /etc/apparmor.d does not change them; the others: {others}.",
+    "apparmor_complain_split": "{snap} of them are snap profiles, kept by snapd — aa-enforce on /etc/apparmor.d does not change them; the others: {others}.",
     "apparmor_no_enforce": "AppArmor active but no profiles in enforce mode ({complain} in complain)",
     "apparmor_no_enforce_detail": "All profiles are in complain mode — violations are logged but not blocked. Switch to enforce mode to actively prevent attacks.",
     "apparmor_no_enforce_reason": "AppArmor active but no profiles enforcing",

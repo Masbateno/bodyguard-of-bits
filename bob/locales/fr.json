@@ -790,7 +790,7 @@
     "samba_netbios_nmbd": {
       "level": "MOYEN",
       "exposure": "Service de noms et d'exploration NetBIOS — conçu pour le réseau local ; il répond sur des noms, il ne sert aucun fichier",
-      "threat": "Donne le nom de l'hôte, le groupe de travail et la liste d'exploration à qui le demande ; un service de noms joignable depuis internet peut servir à renvoyer du trafic vers un tiers — l'accès aux fichiers passe par 445/139, pas par nmbd"
+      "threat": "Donne le nom de l'hôte, le groupe de travail et la liste d'exploration à qui le demande ; un service de noms joignable depuis internet peut servir à renvoyer du trafic vers un tiers (alerte CISA TA14-017A : un facteur d'amplification d'environ 3,8) — l'accès aux fichiers passe par 445/139, pas par nmbd"
     },
     "mysql___mariadb": {
       "level": "CRITIQUE",
@@ -4152,7 +4152,7 @@
     "apparmor_ok": "AppArmor en mode enforce — {enforcing} profil(s) actif(s), {complain} en plainte",
     "apparmor_complain_profiles": "{complain} profil(s) AppArmor en mode plainte — les violations sont journalisées mais non bloquées",
     "apparmor_complain_detail": "En mode plainte, AppArmor enregistre les violations de politique sans les bloquer. Pour passer un profil en enforce, lancez sudo aa-enforce sur son propre fichier dans /etc/apparmor.d (apparmor-utils) — un à la fois, pas /etc/apparmor.d/* : mesuré sur Ubuntu Server 26.04, cela a passé 97 fichiers en enforce, dont 74 livrés non confinés exprès (flags=(unconfined)), et laissé les profils des snaps tels quels.",
-    "apparmor_complain_split": "{snap} d'entre eux sont des profils de snaps, gérés par snapd (sur l'hôte mesuré, tous de snaps classic) — aa-enforce sur /etc/apparmor.d ne les change pas ; les autres : {others}.",
+    "apparmor_complain_split": "{snap} d'entre eux sont des profils de snaps, gérés par snapd — aa-enforce sur /etc/apparmor.d ne les change pas ; les autres : {others}.",
     "apparmor_no_enforce": "AppArmor actif mais aucun profil en mode enforce ({complain} en plainte)",
     "apparmor_no_enforce_detail": "Tous les profils sont en mode plainte — les violations sont journalisées mais non bloquées. Passez en mode enforce pour bloquer activement les attaques.",
     "apparmor_no_enforce_reason": "AppArmor actif mais aucun profil en enforce",
