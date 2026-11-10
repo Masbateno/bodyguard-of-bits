@@ -6,6 +6,264 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.31.3] — 10-11-2026
+
+**Un correctif, BREAKING (scores et sens d'un champ JSON) : BOB lit désormais
+Kubernetes depuis le cluster en marche — serveur d'API et pods d'un serveur k3s
+compris — au lieu de prendre les arguments qu'un MicroK8s arrêté a laissés sur
+le disque pour la preuve d'un serveur d'API en marche ; une règle UFW limitée à
+une interface par laquelle aucun client du réseau ne peut arriver n'ouvre plus
+un service au réseau ; et libvirt ne compte comme routant que lorsqu'un de ses
+réseaux est identifié comme routant.**
+
+BREAKING (scores) signifie : le même hôte peut obtenir des scores différents
+en 0.31.2 et en 0.31.3 — global, par domaine, et la tendance `--history` à
+travers la mise à jour — parce que des constats qui alimentent la formule ont
+changé. La formule de score est inchangée ; aucun changement de schéma de la
+sortie JSON ni de colonne CSV ; aucune section ajoutée ni retirée ; aucune clé
+de constat renommée ni retirée ; le sens d'un champ JSON change
+(`firewall_drivers.libvirt_present`, §5).
+
+Scores qui bougent :
+
+| Où | 0.31.2 | 0.31.3 | § |
+|---|---|---|---|
+| un serveur k3s sous systemd, son serveur d'API en `AlwaysAllow` | « le serveur d'API n'est pas lu » (INFO, le score est un plafond) | `kubernetes.apiserver_always_allow` ALERT −2 (**baisse**) | 1 |
+| le même, requêtes anonymes autorisées à lister les namespaces | non lu | `kubernetes.apiserver_anonymous` WARN −1 (**baisse**) | 1 |
+| le même, sous RBAC, `cluster-admin` lié à `system:authenticated` (ou `system:unauthenticated`, `system:serviceaccounts`, `system:anonymous`) | non lu | `kubernetes.cluster_admin_broad` ALERT −3 (**baisse**) | 1 |
+| le même, k3s d'origine (Node,RBAC, anonyme coupé) | non lu (plafond) | lu : lecture anonyme refusée (OK), cluster-admin lié à `system:masters` seul (OK) — sans point, le plafond levé | 1 |
+| un serveur k3s à côté du containerd de Docker, `k3s` hors du PATH de sudo, un pod privilégié dans `default` | « 0 pod(s) hors kube-system — aucun conteneur avec toutes les capabilities Linux … » (OK) | `kubernetes.privileged_pod` WARN −1 (et de même les autres constats de pods de la 0.25.0) (**baisse**) | 2 |
+| MicroK8s installé et arrêté, son fichier d'arguments en `AlwaysAllow`, un autre cluster (k3s) en marche | `kubernetes.apiserver_always_allow` ALERT −2 pour un serveur d'API qui ne tourne pas | fichier de MicroK8s écarté ; le cluster en marche lu à la place quand BOB sait le lire — ici un serveur k3s sous systemd (**hausse**) | 3 |
+| UFW en deny par défaut, un port de service admis seulement par une règle sur une interface par laquelle aucun client du réseau ne peut arriver (`cali+`, `vxlan.calico`) | `services.exposed.<service>`, « exposé sur internet — règle UFW autorise depuis toutes les adresses (Anywhere) » : ALERT −2 pour un service à haut risque (−3 à la place sur un hôte public ou DDNS), WARN −1 sinon — mesuré : Samba et Nextcloud, ALERT −2 chacun | « couvert par la politique deny par défaut (aucune règle UFW explicite nécessaire) » (**hausse**) | 4 |
+| transfert IP actif, libvirt installé, aucun de ses réseaux ne route (réseau détruit, réseau isolé), aucun autre pilote de routage détecté (Docker, WireGuard, Kubernetes) | « Transfert IP activé — démon de routage détecté (Docker, VPN, KVM ou Kubernetes) » (OK) | `firewall_drivers.ip_forward_enabled` WARN −1 (**baisse**) ; le champ JSON `firewall_drivers.libvirt_present` y vaut false (il valait true : libvirt installé) | 5 |
+
+### 1. Le serveur d'API d'un serveur k3s est lu
+
+La 0.29.0 disait, sur un nœud k3s, que le serveur d'API n'était pas lu : BOB ne
+le lisait que là où MicroK8s range ses arguments. Mesuré sur Kali (k3s
+v1.37.2+k3s1) : le processus `k3s server` efface sa propre ligne de commande —
+`/proc/<pid>/cmdline` donne `k3s server` quels que soient les options,
+`config.yaml` ou `config.yaml.d` — et les arguments avec lesquels tourne le
+serveur d'API sont dans la ligne que k3s journalise en le démarrant,
+`Running kube-apiserver --…`, qui sous systemd arrive dans le journal, rattachée
+à ce processus.
+
+Le processus s'appelait `k3s-server` dans les deux mesures, sous systemd et
+lancé à la main. BOB lit la ligne de démarrage dans le journal, pour le seul
+processus de ce nom : son PID et son nom, ce démarrage du système, depuis le
+lancement du processus — pas une ligne laissée par un k3s précédent. Un serveur
+lancé à la main journalise dans sa propre sortie, pas dans le journal, et n'est
+pas lu ; un serveur sous un autre nom n'est pas lu non plus.
+
+Trois ports sont en jeu, mesurés : `--advertise-port` dans cette ligne, le port
+annoncé aux autres membres du cluster (réglé à 7000, rien n'y répondait) ; le
+port de `/etc/rancher/k3s/k3s.yaml`, le kubeconfig que k3s écrit pour son propre
+kubectl — 6443, servi par le processus `k3s-server` et qui répond (401 à une
+requête anonyme) ; et le `--secure-port` propre au serveur d'API, 6444, lié à
+127.0.0.1 derrière lui. BOB sonde le point d'accès du kubeconfig, 6443, et
+seulement quand le processus qui le tient est un processus de serveur d'API
+reconnu exécuté par root (comme sur MicroK8s) — pas le socket interne du
+serveur d'API. Les liaisons cluster-admin sont lues, sous RBAC, par le
+`kubectl` placé à côté du binaire que le serveur exécute, ce kubeconfig nommé
+(un `KUBECONFIG` dans l'environnement de BOB le dirigerait vers un autre
+cluster).
+
+Mesuré sur Kali, k3s sous systemd : réglages d'origine — Node,RBAC lu, lecture
+anonyme refusée (401), cluster-admin lié à `system:masters` seul ;
+`authorization-mode=AlwaysAllow` → ALERT −2 ; `anonymous-auth=true` avec
+l'utilisateur anonyme autorisé à lister les namespaces → 200, WARN −1 ;
+cluster-admin lié à `system:authenticated` → ALERT −3. Chaque correction que
+donne BOB a été appliquée comme le ferait un administrateur (l'entrée retirée,
+`systemctl restart k3s`, la liaison supprimée) et le constat a disparu.
+
+Sous `AlwaysAllow`, le serveur d'API coupe l'authentification anonyme — k3s
+journalise « AnonymousAuth is not allowed with the AlwaysAllow authorizer.
+Resetting AnonymousAuth to false. » et répond 401 quoi que dise
+`--anonymous-auth` (MicroK8s 1.35.6 y répondait 401 aussi en 0.28.0).
+L'explication de `kubernetes.apiserver_anonymous` disait que sous AlwaysAllow
+l'accès anonyme était « tout » et s'additionnait à
+`kubernetes.apiserver_always_allow` ; elle dit désormais ce qui a été mesuré.
+Les deux explications donnent la correction pour k3s.
+
+### 2. Les pods d'un nœud k3s sont lus par le containerd de k3s
+
+Depuis la 0.25.0, BOB lisait les pods d'un nœud k3s par `k3s ctr` trouvé dans
+le PATH, puis par `ctr` sur le premier socket containerd présent. k3s s'installe
+dans `/usr/local/bin`, que le `secure_path` de sudo laisse de côté sur Kali
+(mesuré) : `sudo bob` ne trouvait pas `k3s`, passait à `/usr/bin/ctr` sur
+`/run/containerd/containerd.sock` — le containerd de Docker —, listait 0
+conteneur et disait « 0 pod(s) hors kube-system — aucun conteneur avec toutes
+les capabilities Linux … », alors que le containerd de k3s faisait tourner un
+pod privilégié. Un serveur k3s en marche est désormais interrogé par le `ctr`
+placé à côté du binaire qu'il exécute (le même fichier, vérifié), sur le socket
+propre à k3s ; sans lui, rien d'autre n'est interrogé, et les pods sont dits non
+lus. Le socket de runtime que la section signale est celui de k3s (elle
+signalait celui de Docker).
+
+### 3. Un MicroK8s arrêté n'est pas lu
+
+Le fichier d'arguments de MicroK8s reste sur le disque quand MicroK8s est
+arrêté. Mesuré sur Ubuntu Server 26.04 (MicroK8s 1.35.6 installé et arrêté,
+k3s en marche) : BOB le lisait — `AlwaysAllow`, port 16443 — et levait
+ALERT −2 pour un serveur d'API qui ne tournait pas, alors que celui de k3s
+tournait en Node,RBAC. Les arguments de MicroK8s et son `microk8s.ctr` ne sont
+désormais lus que tant qu'un processus `kubelite` tourne — sur MicroK8s 1.35.6,
+le processus dans lequel tournent ses composants Kubernetes (mesuré) ; sinon le
+cluster en marche est lu quand BOB sait le lire. Un MicroK8s qui ne fait tourner
+aucun `kubelite` ne serait pas lu, et BOB le dit (INFO, le score est un plafond).
+
+### 4. Une règle UFW sur une interface de pod, de conteneur ou de VM n'ouvre pas un service au réseau
+
+Mesuré sur Ubuntu Server 26.04 avec MicroK8s 1.35.6 et les règles UFW que
+MicroK8s documente (`ufw allow in on cali+`, `ufw allow in on vxlan.calico`),
+UFW en deny par défaut avec `allow 22/tcp` : depuis un autre hôte du LAN, seul
+SSH répondait ; Samba (445, 139) et Nextcloud (80) étaient refusés, et 443
+n'écoutait pas. La section services donnait quatre constats de port pour ces
+deux services — 445 et 139 (Samba), 80 et 443 (Nextcloud) —, chacun « exposé
+sur internet — règle UFW autorise depuis toutes les adresses (Anywhere) »,
+ALERT −2 ; les sections ports et IPv6 disaient qu'une règle UFW ne nommant aucun
+port admettait les écouteurs Kubernetes. (443 n'avait pas d'écouteur : un port
+que la section services lit ouvert est signalé, que quelque chose y écoute ou
+non — une limite de cette section, inchangée ici ; la 0.31.3 signale 443
+« n'écoute pas activement » parce que plus aucune règle ne l'ouvre.)
+
+Un client du réseau, ici, est un client hors de l'hôte — sur le LAN ou sur
+Internet : l'exposition que pèse la section services (« exposé sur internet »,
+« réseau local »). Une règle `allow in on <iface>` (ou `limit`) ne compte
+désormais comme ouvrant un port à ces clients que s'ils peuvent arriver par
+cette interface, estimé d'après l'interface elle-même : elle porte une adresse
+sur un réseau (ni boucle locale, ni link-local, un préfixe plus court que /32 ou
+/128), ou une route vers un réseau passe par elle — une route par défaut, ou
+toute route plus courte que /32 ou /128 (une route de réseau WireGuard ou point
+à point comprise ; une route vers un seul pair, un /32 ou un /128, ne compte
+pas) — dans n'importe quelle table de routage, lues avec `ip -o addr`,
+`ip route show table all` et `ip -6 route show table all`. Un `+` final est un
+préfixe, comme iptables le lit. C'est une estimation de l'endroit où un client
+peut arriver, pas une preuve qu'il atteint le service (une route est un chemin
+de sortie, pas la preuve d'un chemin d'entrée) ; elle est volontairement
+prudente, peut surestimer une exposition, et n'est pas une analyse complète de
+la joignabilité.
+
+Sur ce nœud, `enp3s0` porte le /24, un /64 et les deux routes par défaut ; les
+`cali*` de calico ne portent que des adresses link-local (calico route chaque
+pod en /32) et `vxlan.calico` un /32. Une règle sur `cali+` admet toujours les
+pods qui sont derrière — ils atteignent ces ports ; BOB ne pèse pas
+l'exposition aux pods, conteneurs ou VM de l'hôte. Des interfaces illisibles
+gardent toutes les règles (routes IPv6 non lues : les règles IPv6 sont
+gardées). La section services (y compris le contexte DDNS que l'audit en
+déduit), la section ports et la section IPv6 utilisent toutes les règles
+filtrées ; l'analyse des règles UFW (doublons, cohérence IPv6) lit toujours
+toutes les règles. Rejoué sur ce nœud : 21 points de déduction ramenés à 13 ;
+SSH a gardé son ALERT −2.
+
+Limites : un refus limité à une interface et les contraintes de destination ne
+sont pas modélisés ; la politique de routage non plus — une route dans une table
+secondaire compte même si `ip rule` ne la choisit jamais pour un paquet donné.
+Une interface qui porte un réseau de conteneurs ou de VM (`docker0`, `cni0`,
+`virbr0` — un /16 ou un /24) compte comme une interface par laquelle des
+clients arrivent : une règle limitée à elle se lit toujours « exposé sur
+internet » — le chemin existe ; ce qui est faux, c'est la provenance attribuée
+à ses clients, les conteneurs ou les VM, pas Internet (déduit de la règle, non
+mesuré).
+
+### 5. libvirt ne compte comme routant que lorsqu'un de ses réseaux est identifié comme routant
+
+La 0.31.2 comptait libvirt comme routant légitimement dès que `libvirtd` ou
+`virtqemud` existait, ou /var/lib/libvirt : installé, pas routant. Avec le
+transfert IP actif, cela changeait `firewall_drivers.ip_forward_enabled` (WARN
+−1) en « Transfert IP activé — démon de routage détecté (Docker, VPN, KVM ou
+Kubernetes) » (OK), et les règles ACCEPT de FORWARD se lisaient comme celles de
+libvirt. Mesuré sur Ubuntu Server 26.04 avec libvirt 12.0.0 : un réseau actif
+écrit son état dans `/run/libvirt/network/<nom>.xml` (`<forward mode='nat'>`,
+pont `virbr0`) ; `virsh net-destroy` le retire, et le pont (un `.pid` reste),
+tandis qu'ip_forward reste à 1 ; un réseau isolé en écrit un sans `<forward>` ;
+arrêter tous les démons libvirt laisse en place le réseau, son fichier d'état,
+son pont et son dnsmasq — le démon ne prouve rien, dans un sens comme dans
+l'autre.
+
+BOB compte désormais libvirt comme routant quand un réseau actif est identifié
+comme routant : son fichier d'état nomme un forward NAT, route ou open et son
+pont existe ; un `<forward>` sans mode est lu comme NAT, la valeur par défaut
+documentée de libvirt (appliquée, non mesurée). Si BOB ne peut pas lire un
+fichier d'état, il compte ce réseau actif par prudence, sans vérifier son pont :
+son mode et son pont restent inconnus — ce n'est pas l'observation que le réseau
+route. Un répertoire que BOB ne peut pas lister retombe sur ce que lisait la
+0.31.2 ; pas de répertoire, pas de réseau libvirt.
+
+Rejoué : le réseau détruit, la 0.31.2 disait OK et la 0.31.3 dit WARN −1 ; la
+correction de BOB appliquée telle qu'imprimée (`sysctl -w net.ipv4.ip_forward=0`
+et `99-hardening.conf`) l'a fait disparaître, et redémarrer le réseau a remis
+ip_forward à 1 de lui-même (relu comme routant). Le champ JSON
+`firewall_drivers.libvirt_present` signifie désormais qu'un réseau libvirt est
+compté comme routant ; il signifiait que libvirt était installé. Son nom est
+gardé pour la compatibilité — le format est inchangé, la valeur peut différer.
+
+La section virtualisation lisait libvirt de la même façon : « libvirt/KVM
+détecté — l'interface bridge virbr0 peut insérer des règles iptables,
+contournant la politique FORWARD du pare-feu » (`virt.bypass_risk`, WARN sans
+point) dès que `virsh`, `libvirtd` ou une interface `virbr*` existait. Elle lit
+désormais les mêmes fichiers d'état, pour les deux modes pour lesquels libvirt
+écrit des règles de pare-feu — NAT et routé (un réseau open n'en reçoit aucune,
+selon la documentation de libvirt ; appliqué, non mesuré). Rejoué sur cet Ubuntu
+Server : le réseau actif, les deux versions le disent ; le réseau détruit avec
+libvirt installé, la 0.31.2 le disait et la 0.31.3 non.
+
+Inchangé (non mesuré) : Docker et WireGuard comptent toujours comme routant dès
+qu'ils sont installés (`docker` ou /var/lib/docker ; `wg` ou un fichier de
+configuration).
+
+### 6. Textes, mesurés
+
+- `firewall_iptables.forward_accept` : l'explication disait aux hôtes qui routent
+  (libvirt, Docker, KVM) de garder FORWARD en ACCEPT. Mesuré sur le nœud
+  MicroK8s (calico) : avec FORWARD à DROP tel que BOB l'imprime, à DROP aussi
+  dans la table legacy, et une minute plus tard, un pod atteignait encore le DNS
+  d'un pod, le service DNS, le service d'API et Internet (k3s répondait de même
+  en 0.25.1). Elle dit désormais qu'être un nœud Kubernetes ne suffit pas, à lui
+  seul, à justifier FORWARD en ACCEPT, et que les autres CNI ne sont pas mesurés.
+- `fail2ban.no_jails` : le détail disait d'activer le jail sshd dans jail.local.
+  Mesuré sur Ubuntu Server (fail2ban 1.1.0) : sans aucun jail configuré, cette
+  modification seule laissait fail2ban sans jail et le constat en place ;
+  `fail2ban-client reload` l'a démarré. Il dit désormais de recharger. La
+  commande reste une vérification (`fail2ban-client status sshd`).
+
+Corrections appliquées telles qu'imprimées sur cet Ubuntu Server, l'outil du
+service interrogé avant et après (aucun changement nécessaire) : auditd (fichier
+de règles + `augenrules --load` : `auditctl -l` les liste, le constat disparaît),
+sysctl (`send_redirects`, `log_martians`, `suid_dumpable`, `swappiness` :
+`sysctl` le confirme ; un pod créé ensuite est apparu avec `send_redirects=0`),
+fail2ban arrêté (`systemctl enable --now fail2ban`).
+
+Limites : un nœud **agent** k3s (sans serveur d'API) n'est pas mesuré — ses pods
+sont lus comme avant la 0.31.3 ; un serveur k3s lancé hors de systemd n'est pas
+lu. La persistance que BOB écrit pour `send_redirects` nomme les interfaces
+présentes, éphémères comprises (`cali*`, `veth*`) : sans effet néfaste, la clé
+`default` couvre les nouvelles interfaces (mesuré).
+
+Nouvelles clés de locale : aucune. Reformulées : `kubernetes.apiserver_unread`,
+`kubernetes.apiserver_unread_detail`, `kubernetes.apiserver_always_allow_detail`,
+`fail2ban.no_jails_detail` ; explications de `kubernetes.apiserver_anonymous`,
+`kubernetes.apiserver_always_allow`, `kubernetes.cluster_admin_broad`,
+`firewall_iptables.forward_accept`.
+
+### Compteurs
+
+Tests collectés 20003 → **20373**, fichiers de test 458 → **463**, mutations
+1673 → **1735** ; clés de locale 3175 (inchangé).
+
+### Gardes
+
+`test_v0313_k3s_apiserver.py`, `test_v0313_ufw_interface_rules.py`,
+`test_v0313_libvirt_routing.py`, `test_v0313_forward_drop_k8s.py`,
+`test_v0313_fail2ban_no_jails.py` (`k3s-*`, `microk8s-*`, `ufw-iface/*`,
+`libvirt/*`, `virt/libvirt-installed-said`, `virt/open-writes-rules`,
+`forward-k8s/*`, `fail2ban-text/*`). Réancrée sans changer son sens :
+`k8s-apiserver/absent-mode-assumed`. Les tests MicroK8s antérieurs (0.25.0,
+0.28.0, 0.31.0) disent désormais que MicroK8s tourne ; le test de la 0.29.0 suit
+la reformulation de `kubernetes.apiserver_unread`.
+
+---
+
 ## [0.31.2] — 09-11-2026
 
 **Un correctif, BREAKING (scores) : les sections ports et IPv6 lisent les règles UFW comme la section services les lit depuis la 0.31.0, et un service ouvert nomme les sources depuis lesquelles ses règles l'admettent.**

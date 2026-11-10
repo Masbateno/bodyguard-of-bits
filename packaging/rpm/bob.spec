@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.31.2
+Version:        0.31.3
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,14 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Tue Nov 10 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.31.3-1
+- Patch, BREAKING for scores and for the meaning of one JSON field
+  (firewall_drivers.libvirt_present): a k3s server's API server and pods are
+  read (its own containerd, not Docker's); a stopped MicroK8s no longer stands
+  for a running cluster; a UFW rule limited to an interface no network client
+  can arrive on no longer opens a service; libvirt counts as routing only
+  while one of its networks routes.
+
 * Mon Nov 09 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.31.2-1
 - Patch, BREAKING for scores: at UFW's default allow, the ports and IPv6
   sections no longer read a port as covered when its own rules admit it from

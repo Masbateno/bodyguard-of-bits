@@ -1,3 +1,20 @@
+bodyguard-of-bits (0.31.3-1) unstable; urgency=medium
+
+  * Patch, BREAKING for scores and for the meaning of one JSON field
+    (firewall_drivers.libvirt_present); the structured outputs keep their
+    formats.
+  * A k3s server's API server is read from its journal, its pods through
+    its own containerd (not Docker's when k3s is outside sudo's PATH).
+  * A stopped MicroK8s' arguments no longer stand for a running cluster.
+  * A UFW rule limited to an interface no network client can arrive on no
+    longer opens a service to the network.
+  * libvirt counts as routing while one of its networks is identified as
+    routing, no longer because it is installed.
+  * Texts: AlwaysAllow turns anonymous access off; FORWARD at DROP and a
+    Kubernetes node; fail2ban says to reload.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Tue, 10 Nov 2026 15:28:50 +0000
+
 bodyguard-of-bits (0.31.2-1) unstable; urgency=medium
 
   * Patch, BREAKING for scores: a 0.31.1 and a 0.31.2 score of the same host
