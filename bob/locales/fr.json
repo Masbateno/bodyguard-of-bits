@@ -370,7 +370,7 @@
       "unparsed": "{count} sans source, sans protocole ou sans port valide"
     },
     "total_blocks": "tentative(s) bloquée(s) avec port de destination",
-    "verdict_ok": "Aucune source publique retenue et aucun motif d'attaque reconnu dans les événements analysés — {total} tentative(s) bloquée(s) avec port de destination sur {days} jour(s)",
+    "verdict_ok": "Aucune source publique n'a déclenché de constat et aucun motif d'attaque reconnu n'a été trouvé dans les événements analysés — {total} tentative(s) bloquée(s) avec port de destination sur {days} jour(s)",
     "verdict_warn": "Activité suspecte — {total} tentative(s) bloquée(s) avec port de destination sur {days} jour(s)",
     "top_ips": "Top IPs sources",
     "top_ports": "Top ports ciblés",
@@ -381,7 +381,7 @@
     "blocked_repeat_udp": "{attempts} paquet(s) UDP bloqué(s) depuis {ip} vers {port} — UDP n'a ni poignée de main ni identifiant à deviner",
     "port_scan_public": "{ip} a envoyé des paquets bloqués vers {ports} port(s) distinct(s) en {seconds} s — un balayage de ports, entièrement rejeté",
     "port_scan_local": "{ip}, un appareil du réseau local, a envoyé des paquets bloqués vers {ports} port(s) distinct(s) en {seconds} s — un motif de balayage de ports : vérifiez de quel appareil il s'agit",
-    "verdict_ok_local_scan": "Aucune source publique retenue — {total} tentative(s) bloquée(s) avec port de destination sur {days} jour(s) ; un balayage de ports depuis le réseau local est signalé ci-dessous",
+    "verdict_ok_local_scan": "Aucune source publique n'a déclenché de constat — {total} tentative(s) bloquée(s) avec port de destination sur {days} jour(s) ; un balayage de ports depuis le réseau local est signalé ci-dessous",
     "svc_hits": "Tentatives sur services installés",
     "svc_hits_none": "Aucune tentative sur les ports des services installés",
     "svc_hits_detail": "{count} tentative(s) sur {port}",
@@ -1405,7 +1405,7 @@
     "rsa_ok": "Clé RSA {name} : {bits} bits",
     "no_passphrase": "La clé privée {name} n'a pas de phrase de passe — non protégée si le fichier est volé",
     "key_ok": "Clé privée {name} : type et permissions corrects",
-    "authorized_keys_not_found": "Aucun fichier authorized_keys dans {path} — la connexion par clé publique n'est pas configurée pour ce compte ; les autres comptes, et un AuthorizedKeysFile défini ailleurs, ne sont pas lus",
+    "authorized_keys_not_found": "Aucun fichier authorized_keys dans {path} — les autres comptes, un AuthorizedKeysFile défini ailleurs, un AuthorizedKeysCommand et les certificats SSH (TrustedUserCAKeys) ne sont pas lus",
     "authorized_keys_perms": "Les permissions de authorized_keys sont {perms} — attendu 600",
     "authorized_keys_weak_key": "Clé faible dans authorized_keys ligne {line} : {type} ({bits} bits)",
     "authorized_keys_dsa": "Clé DSA dans authorized_keys ligne {line} — DSA est déprécié",
@@ -3148,8 +3148,8 @@
     "virt": {
       "bypass_risk": {
         "title": "L'interface bridge de virtualisation peut contourner la politique FORWARD d'UFW",
-        "why": "Les hyperviseurs tels que libvirt/KVM, VirtualBox et VMware créent des interfaces bridge Linux (virbr0, vboxnet*, etc.) et injectent leurs propres règles iptables directement dans la chaîne FORWARD. Ces règles peuvent autoriser le trafic entre les VMs et l'hôte — ou entre les VMs et internet — indépendamment de la politique FORWARD d'UFW. UFW ne gère que ses propres règles et ne peut pas empêcher ces règles de pont d'autoriser le trafic transféré.",
-        "how": "Auditer les règles FORWARD insérées par le pont :\n  sudo iptables -L FORWARD -v --line-numbers | grep virbr0\n\nC'est un comportement attendu sur un hôte de virtualisation — vérifier que seul le trafic VM légitime est transféré.\n\nPour isoler les VMs d'internet tout en conservant l'accès hôte, configurer le réseau libvirt en mode isolé :\n  virsh net-edit default  # définir <forward mode='none'/> pour les réseaux isolés\n\nSi vous n'utilisez plus de machines virtuelles :\n  sudo systemctl disable --now libvirtd"
+        "why": "Les hyperviseurs tels que libvirt/KVM, VirtualBox et VMware créent des interfaces bridge Linux (virbr0, vboxnet*, etc.) et ajoutent leurs propres règles de transfert : libvirt les range dans ses propres chaînes, vers lesquelles FORWARD saute (LIBVIRT_FWX, LIBVIRT_FWI, LIBVIRT_FWO avec son pare-feu iptables), ou dans sa propre table nftables (libvirt_network). Ces règles peuvent autoriser le trafic entre les VMs et l'hôte — ou entre les VMs et internet — indépendamment de la politique FORWARD d'UFW. UFW ne gère que ses propres règles et ne peut pas empêcher ces règles de pont d'autoriser le trafic transféré.",
+        "how": "Lister toutes les règles qui nomment le pont, dans toutes les chaînes et tables :\n  sudo nft list ruleset | grep -w virbr0\n  sudo iptables -S | grep -w virbr0   # un hôte dont iptables est la version legacy\niptables -L FORWARD ne trouve rien : il n'affiche aucune interface sans -v, et les règles de libvirt ne sont pas dans FORWARD même (mesuré sur Fedora 44, libvirt 12.0, avec ses deux pare-feux).\n\nC'est un comportement attendu sur un hôte de virtualisation — vérifier que seul le trafic VM légitime est transféré.\n\nPour isoler les VMs d'internet tout en conservant l'accès hôte, configurer le réseau libvirt en mode isolé :\n  virsh net-edit default  # définir <forward mode='none'/> pour les réseaux isolés\n\nSi vous n'utilisez plus de machines virtuelles :\n  sudo systemctl disable --now libvirtd"
       },
       "snap_network": {
         "title": "Outil de virtualisation snap détecté (multipass, lxd-snap) — revue de surface réseau nécessaire",
@@ -3679,7 +3679,7 @@
     "pam_stack_unknown": "Qualité des mots de passe non vérifiable : aucun fichier de pile PAM lisible",
     "pam_stack_unknown_detail": "BOB cherche un module de qualité de mot de passe (pam_pwquality, pam_cracklib) dans la pile PAM « password », dont le nom diffère selon la distribution : {paths}. Aucun n'a pu être lu ici — soit cet hôte n'utilise pas PAM du tout (c'est le cas d'Alpine), soit les fichiers sont hors de portée de l'auditeur. Rien n'est affirmé sur la politique de mots de passe de l'hôte dans un sens ou dans l'autre : le réglage n'a pas été établi.",
     "no_quality_module": "Aucun module PAM de qualité des mots de passe configuré (pam_pwquality/pam_cracklib absent)",
-    "no_quality_module_detail": "Sans pam_pwquality ou pam_cracklib, pam_unix ne vérifie qu'une longueur minimale — 6 caractères, sauf si son minlen= dit autre chose — et les utilisateurs peuvent donc définir des mots de passe trivialement faibles. Mesuré sur Ubuntu Server 26.04 avec les options de pam_unix livrées (obscure) : aaaaaaaa, abcdefgh et qwerty12 ont été acceptés ; abc12 a été refusé, trop court.",
+    "no_quality_module_detail": "Sans pam_pwquality ou pam_cracklib, pam_unix vérifie une longueur minimale — 6 caractères, sauf si son minlen= dit autre chose — et, avec son option obscure, quelques heuristiques (un palindrome ou un simple changement de casse de l'ancien mot de passe, un mot de passe trop proche de lui ou décalé, ou trop simple pour sa longueur et ses types de caractères) ; il n'impose aucune règle de classes de caractères, et les utilisateurs peuvent donc définir des mots de passe trivialement faibles. Mesuré sur Ubuntu Server 26.04 avec les options de pam_unix livrées (obscure) : aaaaaaaa, abcdefgh et qwerty12 ont été acceptés ; abc12 a été refusé, trop court.",
     "no_quality_module_reason": "Aucun module PAM de qualité des mots de passe configuré",
     "weak_minlen": "Longueur minimale des mots de passe trop courte (minlen = {minlen})",
     "weak_minlen_detail": "Les mots de passe de moins de 8 caractères sont facilement attaquables par force brute. Augmentez minlen à au moins 8 dans /etc/security/pwquality.conf.",

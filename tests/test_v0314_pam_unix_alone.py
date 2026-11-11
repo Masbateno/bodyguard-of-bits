@@ -9,7 +9,10 @@ shipped `pam_unix.so obscure yescrypt`, ab1 and abc12 were refused ("You must
 choose a longer password."), abcdef, aaaaaaaa, abcdefgh and qwerty12 accepted;
 without `obscure`, ab1 and abc12 refused, abcdef and aaaaaaaa accepted (the
 others not tried); with `minlen=1`, a single character was accepted.
-Length is checked (6 by default), complexity is not: the detail says so.
+Length is checked (6 by default, the pam_unix manual), and obscure adds a few
+heuristics (palindrome, case change, similar, rotated, too simple); no
+character-class rule is imposed: the detail says so (second review of the
+0.31.4 changelog: the first rewrite said "only a minimum length").
 """
 
 from __future__ import annotations
@@ -20,9 +23,9 @@ from bob import i18n
 
 
 @pytest.mark.parametrize("lang, words, gone", [
-    ("en", "pam_unix checks only a minimum length — 6 characters unless its minlen= says otherwise",
+    ("en", "pam_unix checks a minimum length — 6 characters unless its minlen= says otherwise — and, with its obscure option, a few heuristics",
      "Any string is accepted regardless of length"),
-    ("fr", "pam_unix ne vérifie qu'une longueur minimale — 6 caractères, sauf si son minlen= dit autre chose",
+    ("fr", "pam_unix vérifie une longueur minimale — 6 caractères, sauf si son minlen= dit autre chose — et, avec son option obscure, quelques heuristiques",
      "N'importe quelle chaîne est acceptée quelle que soit sa longueur")],
     ids=["en", "fr"])
 def test_the_detail_says_what_pam_unix_checks(lang, words, gone):

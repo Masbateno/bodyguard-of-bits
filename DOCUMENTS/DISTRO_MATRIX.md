@@ -997,6 +997,76 @@ The real ufw 0.36.2 at `IPV6=no` in the same namespace bench left exactly `-P IN
 `-P FORWARD DROP`, `-P OUTPUT DROP`, `-A INPUT -i lo -j ACCEPT`, `-A OUTPUT -o lo -j ACCEPT`:
 the one table for which BOB says "IPv6 is unusable on this host".
 
+### 0.31.4 field pass — Samba's NetBIOS daemon, and Fedora's `smb` / `nmb` units
+
+*Ubuntu Server 26.04.1 (samba 4.23.6), real, 2026-11-09, firewall rollback armed
+before UFW was enabled, everything restored after; Fedora 44 (samba 4.24.0,
+firewalld, the `samba` service added to the default zone at runtime and removed
+after), real, 2026-11-10, 0.31.3 and 0.31.4 side by side.*
+
+| Host, state | 0.31.3 | 0.31.4 |
+|---|---|---|
+| Ubuntu, `disable netbios = yes` (systemd skips nmbd) | — | `services.state.condition_unmet` (INFO) |
+| Ubuntu, nmbd running, UFW `Samba` allowed from 192.168.1.0/24 | 137/138 not weighed | `services.exposure.open_local` for both, no point |
+| Ubuntu, `Samba` also allowed from anywhere | 137/138 not weighed | `services.exposed.samba_netbios` WARN −1 each; Samba's ALERT −2 for 445 and 139 unchanged |
+| Fedora, `smb` stopped and disabled, `nmb` running | Samba read as running | Samba installed and stopped (INFO); nmbd on 137/138 (firewalld, INFO); score unchanged |
+| Fedora, both stopped | Samba INFO | the same, nmbd INFO beside it |
+| Fedora, `smb` running, `nmb` stopped | Samba OK | Samba OK |
+| Fedora, `smb` enabled and stopped, `nmb` running | Samba OK | `services.state.inactive_enabled` WARN −1 (10 → 9) |
+
+Under firewalld the services section weighs no port, in either version. With
+nmbd running, the ports section no longer lists 137/138: they belong to a
+running registry service.
+
+### 0.31.4 field pass — Timeshift read from its schedule and snapshots
+
+*Linux Mint 22.3 (timeshift 25.12.4), read without root, real, 2026-11-09;
+Ubuntu Server 26.04.1 with Timeshift installed for the pass (a 400 MB loop
+device as backup device) and purged after, real, 2026-11-10.*
+
+| State | 0.31.3 | 0.31.4 |
+|---|---|---|
+| Mint: weekly schedule, backup device mounted, 2 snapshots | active | active, "2 snapshot(s) …, the newest …" |
+| Ubuntu: no timeshift.json | installed only | installed only |
+| every schedule off, device not mounted | active | installed only, not read: not mounted |
+| device mounted, never written to | active | installed only, no snapshot |
+| daily schedule, device not mounted (also after `timeshift --create`, which unmounts it) | active | active, not read: not mounted |
+| daily schedule, device mounted, one snapshot | active | active, "1 snapshot(s) …" |
+| daily schedule, device mounted, snapshot directory emptied | active | installed only, no snapshot |
+
+### 0.31.4 field pass — the libvirt check command
+
+*Fedora 44, libvirt 12.0 (network `default` active), real, 2026-11-10; the
+firewall backend switched to iptables in /etc/libvirt/network.conf for the
+second row and restored after.*
+
+| libvirt firewall backend | `iptables -L FORWARD \| grep virbr0` (0.31.3) | `… -v --line-numbers` (0.31.3 explanation) | `iptables -S \| grep -w virbr0` | `nft list ruleset \| grep -w virbr0` |
+|---|---|---|---|---|
+| nftables (as shipped) | 0 | 0 | 0 | 38 |
+| iptables (through iptables-nft 1.8.11) | 0 | 0 | 13 | 47 |
+
+0.31.4 prints both of the last two; run as printed it found 38 lines. No VM
+ran (`virbr0` down): the rules come with the network; no traffic was measured.
+`<forward mode='none'/>` (the explanation's isolated network) was accepted by
+`virsh net-define`.
+
+### 0.31.4 field pass — send_redirects in network namespaces
+
+*Ubuntu Server 26.04.1 (Linux 7.0), real, 2026-11-09: a segment with a host,
+the host under test as its gateway and a second gateway, five pings per case.*
+
+| forwarding | send_redirects | packet leaves by | redirects | pings |
+|---|---|---|---|---|
+| off | 0 or 1 | either interface | 0 | 0/5 |
+| on | 0 | the same / another interface | 0 / 0 | 5/5 / 5/5 |
+| on | 1 | the interface it came in on | 4 | 5/5 |
+| on | 1 | another interface (a NAT) | 0 | 5/5 |
+
+The interface's own `forwarding` value decides (conf/all 0, the interface 1: 4
+redirects; conf/all 1, the interface 0: nothing forwarded). BOB then named the
+calico interfaces, the uplink and `default` on the MicroK8s node, and said "No
+interface forwards" in a namespace with forwarding off.
+
 ### 0.31.3 field pass — a k3s server on Kali, beside Docker
 
 *Kali Rolling (kernel 6.19.14, systemd 260, Docker and its containerd running,

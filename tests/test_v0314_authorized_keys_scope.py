@@ -4,8 +4,10 @@ The SSH section reads ~/.ssh of the user who ran sudo (SUDO_USER), or of root.
 Its text said "No authorized_keys file — public-key authentication not
 configured", as if key logins were off for the whole server; a critique of a
 real audit (the Mint desktop, 9 November 2026) pointed it out. The text now
-names the directory read and says what is not read: other accounts, and an
-AuthorizedKeysFile set elsewhere in sshd's configuration.
+names the directory read and says what is not read: other accounts, an
+AuthorizedKeysFile set elsewhere in sshd's configuration, an AuthorizedKeysCommand
+and SSH certificates. It no longer says key login is not set up for the account:
+those two can provide keys without any file (review of the 0.31.4 changelog).
 """
 
 from __future__ import annotations
@@ -20,8 +22,8 @@ from tests.test_ssh import base_snapshot
 
 
 @pytest.mark.parametrize("lang, words", [
-    ("en", "No authorized_keys file in /home/alice/.ssh — public-key login is not set up for this account; other accounts"),
-    ("fr", "Aucun fichier authorized_keys dans /home/alice/.ssh — la connexion par clé publique n'est pas configurée pour ce compte")],
+    ("en", "No authorized_keys file in /home/alice/.ssh — other accounts, an AuthorizedKeysFile set elsewhere, an AuthorizedKeysCommand and SSH certificates (TrustedUserCAKeys) are not read"),
+    ("fr", "Aucun fichier authorized_keys dans /home/alice/.ssh — les autres comptes, un AuthorizedKeysFile défini ailleurs, un AuthorizedKeysCommand et les certificats SSH (TrustedUserCAKeys) ne sont pas lus")],
     ids=["en", "fr"])
 def test_it_names_the_account_read(lang, words):
     snap = base_snapshot(ssh_dir_exists=True, ssh_dir_perms=0o700, authorized_keys_exists=False,

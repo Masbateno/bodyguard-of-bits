@@ -1,3 +1,19 @@
+bodyguard-of-bits (0.31.4-1) unstable; urgency=medium
+
+  * Patch, BREAKING for scores through a new registry entry and Samba's
+    state now read from smbd alone; no JSON-schema or CSV-column change.
+  * Samba's NetBIOS daemon (nmbd) gets its own entry, medium risk, for
+    137/udp and 138/udp; the Fedora unit nmb leaves the Samba entry.
+  * Timeshift counts as active on an enabled schedule, and on at least one
+    snapshot when its directory can be read; BOB says what it read.
+  * send_redirects names the interfaces that forward, or says none does.
+  * The libvirt check lists the ruleset (nft, iptables -S): iptables -L
+    FORWARD could find nothing.
+  * Texts held to what was measured: pam_unix alone, the UFW log verdict,
+    authorized_keys (one account), AppArmor complain mode (a check).
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Wed, 11 Nov 2026 13:25:56 +0000
+
 bodyguard-of-bits (0.31.3-1) unstable; urgency=medium
 
   * Patch, BREAKING for scores and for the meaning of one JSON field

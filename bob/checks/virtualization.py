@@ -146,13 +146,23 @@ def check_virtualization(snapshot: VirtSnapshot, t: TranslationFunc | None = Non
         return result
 
     for tech in snapshot.technologies:
+        # v0.31.4 — the check was `iptables -L FORWARD | grep <iface>`, which
+        # can find nothing: without -v, iptables -L prints no interface, and
+        # libvirt keeps its rules in its own chains (LIBVIRT_FWI/FWO/FWX, that
+        # FORWARD jumps to) or in its own nftables table (libvirt_network).
+        # Measured on Fedora 44, libvirt 12.0: 0 lines for that command and for
+        # `-L FORWARD -v` under both backends; `nft list ruleset` found 38
+        # (nftables backend) and 47 (iptables backend), `iptables -S` 0 and 13.
+        # `iptables -S` stays for hosts whose iptables is the legacy one, which
+        # nft does not list.
+        iface = shlex.quote(tech.iface)
         result.warn(
             t("virt.bypass_risk",
               name=tech.name,
               iface=tech.iface,
               note=tech.risk_note),
             nature="improvement",
-            cmd=f"sudo iptables -L FORWARD | grep {shlex.quote(tech.iface)}",
+            cmd=f"sudo nft list ruleset | grep -w {iface}; sudo iptables -S | grep -w {iface}",
             cmd_type="check",
             key="virt.bypass_risk",
         )

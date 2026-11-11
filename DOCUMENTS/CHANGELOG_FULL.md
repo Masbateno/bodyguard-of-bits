@@ -6,6 +6,296 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.31.4] — 2026-11-11
+
+**A patch, BREAKING for scores: a new Samba NetBIOS registry entry weighs
+nmbd's ports separately, while Samba's state now follows smbd alone; Timeshift
+activity is checked against its schedule and snapshots rather than the presence
+of its configuration file; five findings are corrected where their wording went
+beyond what BOB had inspected or established; and the libvirt verification
+command is replaced, because the previous one could not find the rules it was
+meant to inspect.**
+
+BREAKING for scores means: the same host can score differently under 0.31.3
+and 0.31.4 — global, per domain (Exposure & Services), and the `--history`
+trend across the upgrade — because the services section weighs one more
+registry entry and reads Samba's state from smbd's units alone. The scoring formula is unchanged; no JSON-output-schema or
+CSV-column change (the JSON finding of `ssh.authorized_keys_not_found` gains
+one additive field, `template_vars.path`, §4); no section added or removed; no finding key renamed or
+removed. The services panorama and the JSON `services` list gain one entry; the
+profile files accept one more per-service key (`services.exposed.samba_netbios`).
+
+Scores that move:
+
+| Where | 0.31.3 | 0.31.4 | § |
+|---|---|---|---|
+| nmbd listening, UFW admitting 137/udp and 138/udp from any address (`ufw allow Samba`) | not weighed: no registry entry named these ports | `services.exposed.samba_netbios` WARN −1 per port (**drops**) — measured | 1 |
+| nmbd listening, other cases in which the services section determines that the port is open to the internet (UFW at default allow incoming with no rule for the port; a ruleset whose permissive default reaches it) | not weighed | the same, WARN −1 per port (**drops**) — the rule every medium-risk service follows; not measured for nmbd | 1 |
+| nmbd enabled and not running (not skipped by its own start condition), or running and not enabled | nothing | `services.state.inactive_enabled` / `services.state.active_disabled` WARN −1 (**drops**) — not measured for nmbd | 1 |
+| units `smb` and `nmb` (Fedora's names), `smb` enabled and stopped, `nmb` running | Samba read as running (the best state of its units, `nmb` included) | `services.state.inactive_enabled` WARN −1 for Samba (**drops**) — measured on Fedora 44: 10 → 9 in the services domain | 1 |
+| the same, `smb` stopped and disabled, a UFW rule (or a ruleset the services section weighs) reading 445/tcp or 139/tcp as open to the internet | Samba read as running, its TCP ports weighed: ALERT −2 each (−3 on a public or DDNS host) | "Samba (Windows file sharing) is installed but not running and not enabled" (`services.state.installed_inactive_critical`, INFO); its TCP ports 445/tcp and 139/tcp no longer weighed (137/udp and 138/udp now belong to the NetBIOS entry) (**rises**) — deduced from the code, not measured: no Fedora host under UFW or a weighed ruleset was tried. Measured: under firewalld, Fedora's default, these ports are weighed in neither version and nothing moves | 1 |
+
+Output that changes without moving a score:
+
+| Where | 0.31.3 | 0.31.4 | § |
+|---|---|---|---|
+| nmbd listening, UFW admitting 137/138 from a private range only | nothing | `services.exposure.open_local` (WARN, no point) — measured | 1 |
+| nmbd enabled, skipped by its start condition (`disable netbios = yes`) | nothing | `services.state.condition_unmet` (INFO) — measured | 1 |
+| nmbd installed and stopped | nothing | `services.state.inactive_disabled` (INFO) — measured | 1 |
+| nmbd running, the ports section | 137/udp and 138/udp listed as listening ports (`ports.uncovered`, INFO) | not listed there: the ports of a running registry service are reported by the services section — measured | 1 |
+| nmbd running, the UFW log section | — | the list of blocked attempts on the ports of running services (display only, no finding) can include 137/udp and 138/udp — deduced from the code, never observed (on the Mint, UFW admits these ports: 0 blocks on them out of 4 296, so nothing to show) | 1 |
+| `smb` and `nmb` units (Fedora), `smb` stopped and disabled, `nmb` running, firewalld | Samba read as running (OK) | "Samba (Windows file sharing) is installed but not running and not enabled" (`services.state.installed_inactive_critical`, INFO); score unchanged — measured | 1 |
+| `smb` running, `nmb` stopped (Fedora) | Samba OK | Samba OK, unchanged — measured | 1 |
+| Timeshift installed, timeshift.json present, every schedule off — or a schedule on and a snapshot directory BOB read empty | `backup.active` (OK) | `backup.installed_only` (INFO, 0 points as before) + what BOB read — measured | 2 |
+| Timeshift active | `backup.active` alone | + one INFO line: the snapshots read (count, newest) or why they were not read — measured | 2 |
+| `send_redirects` in effect | "System is sending ICMP redirects … unnecessary on a non-router, can be abused for MITM" | "ICMP redirect sending is on (send_redirects=1)" + the interfaces that forward, or "no interface forwards" — WARN −1 unchanged | 3 |
+| `password_policy.no_quality_module` | "Any string is accepted regardless of length or complexity" | a minimum length (6 by default) and, with `obscure`, a few heuristics; no character-class rule | 4 |
+| UFW log verdict | "Normal activity — …" | "No public source triggered a finding and no recognised attack pattern was found in the analysed events — …" | 4 |
+| `ssh.authorized_keys_not_found` | "No authorized_keys file — public-key authentication not configured" | names the directory read; other accounts, an `AuthorizedKeysFile` set elsewhere, an `AuthorizedKeysCommand` and SSH certificates are said to be unread | 4 |
+| `mac_policy.apparmor_complain_profiles` | command `sudo aa-enforce /etc/apparmor.d/*` (shown as a fix) | command `sudo aa-status` (a check); the detail counts snap profiles apart and names the others | 4 |
+| `virt.bypass_risk` (libvirt) | check `sudo iptables -L FORWARD \| grep virbr0` — finds nothing | `sudo nft list ruleset \| grep -w virbr0; sudo iptables -S \| grep -w virbr0` — measured: 38 lines on Fedora 44 | 5 |
+
+### 1. Samba's NetBIOS daemon has its own registry entry
+
+The Samba entry declared 445/tcp and 139/tcp, the ports smbd serves. nmbd, the
+NetBIOS name and browsing daemon shipped in the same package, listens on
+137/udp and 138/udp — measured on the Mint, bound to 0.0.0.0, to its LAN
+address and to the subnet broadcast — and no entry named those ports, so the
+services section never weighed them. UFW's own `Samba` application profile opens
+all four (`137,138/udp|139,445/tcp`).
+
+New entry `samba_netbios`, "Samba NetBIOS (nmbd)": package `samba`, units
+`nmbd` and `nmb`, ports 137/udp and 138/udp, **medium** risk — it answers names
+and carries browse datagrams; it serves no file. Open to the internet it is a
+WARN worth one point per port; admitted from a private range only, a WARN
+with no point — what every medium-risk service gets. Its risk text names what
+it gives away (host name, workgroup, browse list) and that a reachable NetBIOS
+name service can reflect traffic at a third party: CISA reports an
+amplification factor of about 3.8 for NetBIOS name resolution (alert
+TA14-017A, https://www.cisa.gov/ncas/alerts/TA14-017A) — a documented general
+risk, not a measurement of ours nor a property of every deployment. It reads
+no configuration file for its ports: smb.conf's `smb ports` are smbd's.
+
+The Fedora unit `nmb` leaves the Samba entry, where 0.17.1 had added it beside
+`smb` (Fedora names smbd's unit `smb` and nmbd's `nmb`). A unit's state counted
+for Samba as the best state of its units, so a running `nmb` beside a stopped
+`smb` read as Samba running. Samba's state is now smbd's alone; nmbd's is its
+entry's. On Debian and Ubuntu, where the units are `smbd` and `nmbd`, Samba
+never listed `nmbd` and reads as before.
+
+Measured on the Ubuntu Server (samba 4.23.6, firewall rollback armed before UFW
+was enabled, everything restored after): with `disable netbios = yes`, systemd
+skipped nmbd at start and BOB said `services.state.condition_unmet`; with the
+line commented out and nmbd running, UFW inactive: INFO for both ports; UFW on,
+`Samba` allowed from 192.168.1.0/24: `services.exposure.open_local` for both,
+no point; `Samba` also allowed from anywhere: `services.exposed.samba_netbios`
+WARN −1 for each of 137 and 138, beside Samba's own ALERT −2 for 445 and 139
+(unchanged).
+
+Measured on a real Fedora 44 (samba 4.24.0, firewalld with the `samba` service
+added to the default zone at runtime, removed after), 0.31.3 and 0.31.4 side by
+side, four states of the units `smb` and `nmb`: `smb` stopped and disabled with
+`nmb` running — 0.31.3 read Samba as running, 0.31.4 says "Samba (Windows file
+sharing) is installed but not running and not enabled" and reports nmbd on 137/138 (firewalld: "reachable only if its zone
+permits", INFO); both stopped — Samba unchanged, "Samba NetBIOS (nmbd) is installed but stopped
+and disabled"
+(INFO); `smb` running with `nmb` stopped — Samba unchanged; `smb` enabled and
+stopped with `nmb` running — 0.31.3 said OK, 0.31.4 says
+`services.state.inactive_enabled` WARN −1 (10 → 9). With firewalld the services
+section weighs no port, so the case where 445/139 stop being weighed changes no
+score there; it can only where UFW or a weighed ruleset reads them as open.
+
+The registry now holds 39 services, up from 38.
+
+### 2. Timeshift counts as active on its schedule and its snapshots
+
+`backup.active` named Timeshift as soon as the binary and
+/etc/timeshift/timeshift.json both existed. That file holds the schedules and
+the backup device; it exists with every schedule off, and with a device that
+holds no snapshot.
+
+Timeshift is now counted as active when timeshift.json reads as JSON and
+enables at least one schedule (hourly, daily, weekly, monthly, at boot). When
+BOB can identify and list the snapshot directory, it must contain at least one
+snapshot; otherwise Timeshift is counted as installed only. When BOB cannot
+identify or list it — the backup device is not mounted, absent, or in BTRFS
+mode, or the directory cannot be listed — it says the snapshots were not checked, and why, rather than treating them as
+absent: Timeshift stays active on its schedule. BOB runs nothing and mounts nothing: in rsync mode it finds the
+backup device by its UUID (/dev/disk/by-uuid), looks for a mount of that
+device's own root in /proc/self/mountinfo (a bind mount of a subdirectory does
+not count), and lists `<mount>/timeshift/snapshots`, counting directories named
+like a snapshot and not links. An absent directory is no snapshot (Timeshift
+creates it with its first one, measured); a directory BOB may not list is
+unread. One INFO line says what was read — the count and the newest snapshot —
+or why not: the device is not mounted, no device carries the UUID, no device is
+set, BTRFS mode (the snapshots are subvolumes of the volume's top level, which
+BOB does not mount), or the directory could not be listed. No score moves:
+"active" is OK and "installed only" is INFO, both 0 points.
+
+Measured on the Mint, read without root (timeshift 25.12.4): a weekly
+schedule, the backup device mounted at /home, two snapshots of 1 and
+8 November 2026 — active, "2 snapshot(s) …, the newest 2026-11-08_19-00-02 —
+schedule: weekly". Measured on the Ubuntu Server with Timeshift installed and a
+400 MB loop device as backup device, one state at a time: no timeshift.json
+(installed only); every schedule off, device not mounted (installed only, not
+read: not mounted); device mounted, never written to (installed only, no
+snapshot — said "could not be listed" in the first pass, corrected); a daily
+schedule, device not mounted (active, not read); after `timeshift --create`,
+which unmounts the device behind it (active, not read: not mounted); the device
+mounted (active, "1 snapshot(s) …"); the snapshot directory emptied (installed
+only, "no snapshot"). Timeshift was purged after.
+
+`backup.installed_only_detail` no longer says "no configuration artefact was
+detected", which was false for Timeshift with a configuration and no schedule.
+
+### 3. `send_redirects` said as the kernel acts
+
+`hardening.send_redirects_enabled` said "unnecessary on a non-router, can be
+abused for MITM", and its explanation "a desktop is never a router" and "if
+this machine is a router, keep send_redirects=1". On the Mint, libvirt's
+network had turned forwarding on for every interface, and send_redirects was 1.
+
+Measured on Linux 7.0 in network namespaces (a segment with a host, the host
+under test as its gateway and a second gateway; packets sent through the host
+under test five times per case). On the host under test, each case set
+`net.ipv4.conf.all.forwarding`, `net.ipv4.conf.eth0.forwarding` and
+`net.ipv4.conf.eth1.forwarding`, then `net.ipv4.conf.all.send_redirects`,
+`net.ipv4.conf.eth0.send_redirects` and `net.ipv4.conf.eth1.send_redirects`, to
+the values in the table; the counts are those of that sequence:
+
+| forwarding | send_redirects | packet leaves by | redirects sent | pings |
+|---|---|---|---|---|
+| off | 0 or 1 | either interface | 0 | 0/5 (not forwarded) |
+| on | 0 | the same / another interface | 0 / 0 | 5/5 / 5/5 |
+| on | 1 | the interface it came in on | 4 | 5/5 |
+| on | 1 | another interface (a NAT, as for VMs or containers) | 0 | 5/5 |
+
+The interface's own `forwarding` value decides, not conf/all (setting
+`net.ipv4.conf.all.forwarding` first, then `net.ipv4.conf.eth0.forwarding`:
+conf/all 0 with the interface at 1, 4 redirects; conf/all 1 with the interface
+at 0, nothing forwarded and none sent); `send_redirects` is conf/all OR the interface, as BOB
+already read it. Setting 0 never stopped forwarding.
+
+The detail now says what a redirect is and when the kernel sends one, then
+either names the interfaces among those where send_redirects is in effect whose
+own `forwarding` is 1, or says that none forwards, so none is sent today. When
+forwarding cannot be read, neither is said. The explanation drops "never a
+router", "MITM" and "keep it at 1": at 0 the kernel still forwards everything,
+and hosts that used this one as their gateway keep going through it, one hop
+longer. The point is unchanged (WARN −1). Replayed on the Ubuntu Server: on the
+MicroK8s node, the calico interfaces, the uplink and `default` named; in a
+network namespace with forwarding off, "No interface forwards".
+
+### 4. Findings and wording checked against code and measurements
+
+- `password_policy.no_quality_module_detail` said, with neither pam_pwquality
+  nor pam_cracklib, "any string is accepted regardless of length or
+  complexity". Measured on the Ubuntu Server (libpam-modules 1.7.0), `passwd`
+  run by an unprivileged user through a terminal: with the shipped
+  `pam_unix.so obscure yescrypt`, `abc12` was refused as too short, while
+  `aaaaaaaa`, `abcdefgh` and `qwerty12` were accepted; without `obscure`,
+  `abc12` was refused and `abcdef` and `aaaaaaaa` were accepted (the others not
+  tried). It now says pam_unix checks a minimum length — 6 unless its
+  `minlen=` says otherwise, the default its manual gives — and, with its
+  `obscure` option, a few heuristics its manual lists (palindrome, change of
+  case, too similar to or rotated from the old password, too simple for its
+  length and character types), and imposes no character-class rule. A first
+  rewrite said "only a minimum length"; the manual's list of `obscure` checks
+  made that wrong too.
+- `logs.verdict_ok` opened with "Normal activity". The verdict prints when no
+  public source triggers a finding and no scan is recognised; an absence of recognised
+  patterns does not establish that the activity is normal (on the Mint, 4 243
+  of 10 160 blocks in 7 days came from one LAN host). It now states its
+  condition: "No public source triggered a finding and no recognised attack
+  pattern was found in the analysed events", and keeps its count. The
+  local-scan variant, `logs.verdict_ok_local_scan`, said "No public source
+  charged" since 0.27.0; it now says "No public source triggered a finding"
+  too ("charged" read as an accusation or a bill).
+- `ssh.authorized_keys_not_found` read as if public-key login were off for the
+  whole server. It names the directory read (the audited account's `.ssh`) and
+  says that other accounts, an `AuthorizedKeysFile` set elsewhere, an
+  `AuthorizedKeysCommand` and SSH certificates (`TrustedUserCAKeys`) are not
+  read; BOB reads none of them, and the last two can provide keys with no file,
+  so the text no longer says key login is not set up for the account. In JSON
+  the finding carries that directory as `template_vars.path`.
+- `mac_policy.apparmor_complain_profiles` printed `sudo aa-enforce
+  /etc/apparmor.d/*` as its fix. Measured on the Ubuntu Server (AppArmor 5.0.2):
+  `aa-enforce` was not installed (apparmor-utils); with it, on a copy of
+  /etc/apparmor.d, the glob set 97 files to enforce, 74 of them shipped
+  `flags=(unconfined)` on purpose; of the 80 profiles in complain mode, 78 were
+  snap profiles (of classic snaps), which snapd keeps under
+  /var/lib/snapd/apparmor and the glob did not touch. The command is now the
+  check `sudo aa-status`; the detail counts the snap profiles apart and names
+  the others (read from the kernel's list of loaded profiles), and the
+  explanation says to enforce one profile at a time. The finding stays INFO;
+  `--fix` never included it (it takes action findings only).
+
+### 5. The libvirt check now searches the rulesets that hold its rules
+
+`virt.bypass_risk` printed `sudo iptables -L FORWARD | grep virbr0` as its
+check, and its explanation `sudo iptables -L FORWARD -v --line-numbers | grep
+virbr0`. Two defects: without `-v`, `iptables -L` prints no interface, so the
+first cannot match `virbr0`; with `-v` it does, but libvirt does not write into
+FORWARD itself — it keeps its rules in its own chains that FORWARD jumps to
+(`LIBVIRT_FWX`, `LIBVIRT_FWI`, `LIBVIRT_FWO`, iptables backend) or in its own
+nftables table (`libvirt_network`). Measured on Fedora 44 with libvirt 12.0,
+the `default` network active (no VM running, `virbr0` down: the rules are
+installed with the network; no traffic was measured), under both of libvirt's
+firewall backends, iptables being iptables-nft 1.8.11:
+
+| backend | `-L FORWARD` | `-L FORWARD -v` | `iptables -S` | `nft list ruleset` |
+|---|---|---|---|---|
+| nftables (as shipped) | 0 | 0 | 0 | 38 |
+| iptables (through iptables-nft) | 0 | 0 | 13 | 47 |
+
+The command is now `sudo nft list ruleset | grep -w virbr0; sudo iptables -S |
+grep -w virbr0` — the second also covers a host whose iptables is the legacy
+one, whose rules nft does not list (not measured here). It searches the rules
+for the interface's name: it shows the rules that name the bridge, not every
+rule that bears on its traffic. Run as printed on that Fedora, it found 38
+lines. The
+explanation gives both commands and says why `iptables -L FORWARD` finds
+nothing; it no longer says the rules go "directly into the FORWARD chain". Its
+advice for an isolated network, `<forward mode='none'/>`, was accepted by
+`virsh net-define` there and stays. The finding is unchanged (WARN, no point);
+only its command and explanation change. Found by a review of a real 0.31.3
+audit of the Mint (libvirt 10.0, iptables backend).
+
+New locale keys: 21 (`backup.timeshift_*`, `hardening.send_redirects_forwarding`,
+`hardening.send_redirects_idle`, `mac_policy.apparmor_complain_split`,
+`service_risk.samba_netbios_nmbd.*`). Reworded: `backup.installed_only_detail`,
+`hardening.send_redirects_enabled`, `hardening.send_redirects_detail`,
+`logs.verdict_ok`, `logs.verdict_ok_local_scan`, `mac_policy.apparmor_complain_detail`,
+`password_policy.no_quality_module_detail`, `ssh.authorized_keys_not_found`;
+explanations of `hardening.send_redirects_enabled` and
+`mac_policy.apparmor_complain_profiles`.
+
+Limits: the Fedora measurement ran under firewalld only; a Fedora host under UFW
+or with a weighed ruleset is not measured (§1). A
+dedicated Timeshift backup disk is mounted only while Timeshift runs: BOB then
+says the snapshots were not read; it does not judge whether the newest
+snapshot is recent enough for its schedule. Timeshift in BTRFS mode is not
+read. The `send_redirects` point is kept where no interface forwards and the
+setting is inert today.
+
+### Counters
+
+Tests collected 20373 → **20565**, test files 463 → **471**, mutations 1735 →
+**1766**; locale keys 3175 → **3196**; registry 38 → **39** services.
+
+### Guards
+
+`test_v0314_samba_netbios.py`, `test_v0314_timeshift_measured.py`,
+`test_v0314_send_redirects_forwarding.py`, `test_v0314_pam_unix_alone.py`,
+`test_v0314_logs_verdict_measured.py`, `test_v0314_authorized_keys_scope.py`,
+`test_v0314_apparmor_complain.py` (`samba-netbios/*`, `timeshift/*`,
+`send-redirects/*`, `pam-text/*`, `logs/normal-activity-said`,
+`ssh-text/authorized-keys-account-unsaid`, `mac-complain/*`), and
+`test_v0314_libvirt_check_command.py` (`virt-cmd/*`), `logs/local-scan-charged`. Re-anchored
+without changing its meaning: `logs/count-basis-unsaid`.
+
+---
+
 ## [0.31.3] — 2026-11-10
 
 **A patch, BREAKING for scores and for the meaning of one JSON field: BOB now

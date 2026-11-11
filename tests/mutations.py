@@ -896,7 +896,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id="docs/locale-key-total-stale",
         file="DOCUMENTS/SNAPSHOT.md",
-        old="locale auto-detect (POSIX), 3175 keys EN/FR",
+        old="locale auto-detect (POSIX), 3196 keys EN/FR",
         new="locale auto-detect (POSIX), 3123 keys EN/FR",
         kills=(f"{_LIVECOUNT}::test_no_document_misstates_the_locale_key_total",),
         reason="the locale total sat at '2014 keys' against files holding 2595 "
@@ -14919,7 +14919,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id='pam-text/any-string-said',
         file='bob/locales/en.json',
-        old='Without pam_pwquality or pam_cracklib, pam_unix checks only a minimum length — 6 characters unless its minlen= says otherwise — so users can set trivially weak passwords. Measured on Ubuntu Server 26.04 with the pam_unix options it ships (obscure): aaaaaaaa, abcdefgh and qwerty12 were accepted; abc12 was refused as too short.',
+        old='Without pam_pwquality or pam_cracklib, pam_unix checks a minimum length — 6 characters unless its minlen= says otherwise — and, with its obscure option, a few heuristics (a palindrome or a change of case of the old password, one too similar to it or rotated, one too simple for its length and character types); it imposes no character-class rule, so users can set trivially weak passwords. Measured on Ubuntu Server 26.04 with the pam_unix options it ships (obscure): aaaaaaaa, abcdefgh and qwerty12 were accepted; abc12 was refused as too short.',
         new='Without pam_pwquality or pam_cracklib, users can set trivially weak passwords. Any string is accepted regardless of length or complexity.',
         kills=('tests/test_v0314_pam_unix_alone.py::test_the_detail_says_what_pam_unix_checks[en]', ),
         reason='measured: pam_unix alone refused abc12 as too short; the old text said any string',
@@ -14927,7 +14927,7 @@ MUTATIONS: "tuple[Mutation, ...]" = (
     Mutation(
         id='logs/normal-activity-said',
         file='bob/locales/en.json',
-        old='No public source charged and no recognised attack pattern in the analysed events — {total}',
+        old='No public source triggered a finding and no recognised attack pattern was found in the analysed events — {total}',
         new='Normal activity — {total}',
         kills=('tests/test_v0314_logs_verdict_measured.py::test_the_verdict_says_what_was_measured[en]', ),
         reason='an absence of recognised patterns does not establish that activity is normal',
@@ -15131,5 +15131,37 @@ MUTATIONS: "tuple[Mutation, ...]" = (
         new='    except OSError:\n        return schedules, [], "", directory\n',
         kills=('tests/test_v0314_timeshift_measured.py::TestWhatItReads::test_a_directory_that_cannot_be_listed_is_unread', ),
         reason='a directory BOB may not list is not one that holds no snapshot',
+    ),
+    Mutation(
+        id='virt-cmd/forward-list-again',
+        file='bob/checks/virtualization.py',
+        old='            cmd=f"sudo nft list ruleset | grep -w {iface}; sudo iptables -S | grep -w {iface}",\n',
+        new='            cmd=f"sudo iptables -L FORWARD | grep {iface}",\n',
+        kills=('tests/test_v0314_libvirt_check_command.py::TestTheCommand::test_it_lists_the_whole_ruleset', ),
+        reason='iptables -L FORWARD prints no interface without -v and libvirt rules are not in FORWARD',
+    ),
+    Mutation(
+        id='virt-cmd/legacy-iptables-dropped',
+        file='bob/checks/virtualization.py',
+        old='            cmd=f"sudo nft list ruleset | grep -w {iface}; sudo iptables -S | grep -w {iface}",\n',
+        new='            cmd=f"sudo nft list ruleset | grep -w {iface}",\n',
+        kills=('tests/test_v0314_libvirt_check_command.py::TestTheCommand::test_it_keeps_iptables_s_for_legacy_hosts', ),
+        reason='nft does not list the rules of a host whose iptables is the legacy one',
+    ),
+    Mutation(
+        id='virt-cmd/explain-forward-list',
+        file='bob/locales/en.json',
+        old='List every rule that names the bridge, in every chain and table:\\n  sudo nft list ruleset | grep -w virbr0\\n',
+        new='Audit the FORWARD rules inserted by the bridge:\\n  sudo iptables -L FORWARD -v --line-numbers | grep virbr0\\n',
+        kills=('tests/test_v0314_libvirt_check_command.py::test_the_explanation_says_how_to_find_them[en]', ),
+        reason='the explanation must give a command that finds libvirt rules in their own chains',
+    ),
+    Mutation(
+        id='logs/local-scan-charged',
+        file='bob/locales/en.json',
+        old='"verdict_ok_local_scan": "No public source triggered a finding — {total}',
+        new='"verdict_ok_local_scan": "No public source charged — {total}',
+        kills=('tests/test_v0314_logs_verdict_measured.py::test_no_verdict_says_charged[logs.verdict_ok_local_scan]', ),
+        reason='charged reads as an accusation or a bill and not as a finding raised',
     ),
 )

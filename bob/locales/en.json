@@ -370,7 +370,7 @@
       "unparsed": "{count} without a source, a protocol or a valid port"
     },
     "total_blocks": "blocked attempt(s) with a destination port",
-    "verdict_ok": "No public source charged and no recognised attack pattern in the analysed events — {total} blocked attempt(s) with a destination port over {days} day(s)",
+    "verdict_ok": "No public source triggered a finding and no recognised attack pattern was found in the analysed events — {total} blocked attempt(s) with a destination port over {days} day(s)",
     "verdict_warn": "Suspicious activity — {total} blocked attempt(s) with a destination port over {days} day(s)",
     "top_ips": "Top source IPs",
     "top_ports": "Top targeted ports",
@@ -381,7 +381,7 @@
     "blocked_repeat_udp": "{attempts} blocked UDP packet(s) from {ip} to {port} — UDP has no handshake and no credential to guess",
     "port_scan_public": "{ip} sent blocked packets to {ports} distinct port(s) within {seconds} s — a port scan, all of it dropped",
     "port_scan_local": "{ip}, a device on the local network, sent blocked packets to {ports} distinct port(s) within {seconds} s — a port scan pattern: check which device it is",
-    "verdict_ok_local_scan": "No public source charged — {total} blocked attempt(s) with a destination port over {days} day(s); a port scan from the local network is reported below",
+    "verdict_ok_local_scan": "No public source triggered a finding — {total} blocked attempt(s) with a destination port over {days} day(s); a port scan from the local network is reported below",
     "svc_hits": "Attempts on installed service ports",
     "svc_hits_none": "No attempts on installed service ports",
     "svc_hits_detail": "{count} attempt(s) on {port}",
@@ -1405,7 +1405,7 @@
     "rsa_ok": "RSA key {name}: {bits} bits",
     "no_passphrase": "Private key {name} has no passphrase — unprotected if the file is stolen",
     "key_ok": "Private key {name}: type and permissions OK",
-    "authorized_keys_not_found": "No authorized_keys file in {path} — public-key login is not set up for this account; other accounts, and an AuthorizedKeysFile set elsewhere, are not read",
+    "authorized_keys_not_found": "No authorized_keys file in {path} — other accounts, an AuthorizedKeysFile set elsewhere, an AuthorizedKeysCommand and SSH certificates (TrustedUserCAKeys) are not read",
     "authorized_keys_perms": "authorized_keys permissions are {perms} — expected 600",
     "authorized_keys_weak_key": "Weak key in authorized_keys line {line}: {type} ({bits} bits)",
     "authorized_keys_dsa": "DSA key in authorized_keys line {line} — DSA is deprecated",
@@ -3148,8 +3148,8 @@
     "virt": {
       "bypass_risk": {
         "title": "Virtualisation bridge may bypass UFW FORWARD policy",
-        "why": "Hypervisors such as libvirt/KVM, VirtualBox, and VMware create Linux bridge interfaces (virbr0, vboxnet*, etc.) and inject their own iptables rules directly into the FORWARD chain. These rules can allow traffic between VMs and the host — or between VMs and the internet — independently of UFW's FORWARD policy. UFW manages only its own ruleset and cannot prevent bridge-injected rules from permitting forwarded traffic.",
-        "how": "Audit the FORWARD rules inserted by the bridge:\n  sudo iptables -L FORWARD -v --line-numbers | grep virbr0\n\nThis is expected behaviour for a VM host — review the output to confirm only legitimate VM traffic is forwarded.\n\nTo isolate VMs from the internet while keeping local host access, configure libvirt's network in isolated mode:\n  virsh net-edit default  # set <forward mode='none'/> for isolated networks\n\nIf you no longer use virtual machines:\n  sudo systemctl disable --now libvirtd"
+        "why": "Hypervisors such as libvirt/KVM, VirtualBox, and VMware create Linux bridge interfaces (virbr0, vboxnet*, etc.) and add their own forwarding rules: libvirt keeps them in its own chains, which FORWARD jumps to (LIBVIRT_FWX, LIBVIRT_FWI, LIBVIRT_FWO with its iptables backend), or in its own nftables table (libvirt_network). These rules can allow traffic between VMs and the host — or between VMs and the internet — independently of UFW's FORWARD policy. UFW manages only its own ruleset and cannot prevent bridge-injected rules from permitting forwarded traffic.",
+        "how": "List every rule that names the bridge, in every chain and table:\n  sudo nft list ruleset | grep -w virbr0\n  sudo iptables -S | grep -w virbr0   # a host whose iptables is the legacy one\niptables -L FORWARD finds nothing: it prints no interface without -v, and libvirt's rules are not in FORWARD itself (measured on Fedora 44, libvirt 12.0, with both of its firewall backends).\n\nThis is expected behaviour for a VM host — review the output to confirm only legitimate VM traffic is forwarded.\n\nTo isolate VMs from the internet while keeping local host access, configure libvirt's network in isolated mode:\n  virsh net-edit default  # set <forward mode='none'/> for isolated networks\n\nIf you no longer use virtual machines:\n  sudo systemctl disable --now libvirtd"
       },
       "snap_network": {
         "title": "Snap-based virtualisation tool detected (multipass, lxd-snap) — network surface review needed",
@@ -3679,7 +3679,7 @@
     "pam_stack_unknown": "Password quality could not be checked: no PAM stack file was readable",
     "pam_stack_unknown_detail": "BOB looks for a password-quality module (pam_pwquality, pam_cracklib) in the PAM password stack, which is named differently on each distribution: {paths}. None of them could be read here — either this host does not use PAM at all (Alpine does not), or the files are off-limits to the auditor. Nothing is claimed about the host's password policy either way: the setting was not established.",
     "no_quality_module": "No PAM password quality module configured (pam_pwquality/pam_cracklib absent)",
-    "no_quality_module_detail": "Without pam_pwquality or pam_cracklib, pam_unix checks only a minimum length — 6 characters unless its minlen= says otherwise — so users can set trivially weak passwords. Measured on Ubuntu Server 26.04 with the pam_unix options it ships (obscure): aaaaaaaa, abcdefgh and qwerty12 were accepted; abc12 was refused as too short.",
+    "no_quality_module_detail": "Without pam_pwquality or pam_cracklib, pam_unix checks a minimum length — 6 characters unless its minlen= says otherwise — and, with its obscure option, a few heuristics (a palindrome or a change of case of the old password, one too similar to it or rotated, one too simple for its length and character types); it imposes no character-class rule, so users can set trivially weak passwords. Measured on Ubuntu Server 26.04 with the pam_unix options it ships (obscure): aaaaaaaa, abcdefgh and qwerty12 were accepted; abc12 was refused as too short.",
     "no_quality_module_reason": "No PAM password quality module configured",
     "weak_minlen": "Password minimum length too low (minlen = {minlen})",
     "weak_minlen_detail": "Passwords shorter than 8 characters are easily brute-forced. Increase minlen to at least 8 in /etc/security/pwquality.conf.",

@@ -6,6 +6,320 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.31.4] — 11-11-2026
+
+**Un correctif, BREAKING pour les scores : une nouvelle entrée du registre,
+Samba NetBIOS, pèse à part les ports de nmbd, tandis que l'état de Samba suit
+désormais smbd seul ; l'activité de Timeshift est vérifiée sur sa planification
+et ses instantanés plutôt que sur la présence de son fichier de configuration ;
+cinq constats sont corrigés là où leur formulation allait au-delà de ce que BOB
+avait inspecté ou établi ; et la commande de vérification de libvirt est
+remplacée, parce que la précédente ne pouvait pas trouver les règles qu'elle
+devait inspecter.**
+
+BREAKING pour les scores signifie : un même hôte peut obtenir un score différent
+sous 0.31.3 et sous 0.31.4 — global, par domaine (Exposition et services), et la
+tendance `--history` à travers la mise à jour — parce que la section services
+pèse une entrée de plus du registre et lit l'état de Samba dans les seules unités
+de smbd. La formule de score est inchangée ; aucun changement de schéma de la
+sortie JSON ni de colonne CSV (le constat JSON de `ssh.authorized_keys_not_found`
+gagne un champ additif, `template_vars.path`, §4) ; aucune section ajoutée ni
+retirée ; aucune clé de constat renommée ni retirée. Le panorama des services et
+la liste JSON `services` gagnent une entrée ; les fichiers de profil acceptent une
+clé par service de plus (`services.exposed.samba_netbios`).
+
+Scores qui bougent :
+
+| Où | 0.31.3 | 0.31.4 | § |
+|---|---|---|---|
+| nmbd à l'écoute, UFW admettant 137/udp et 138/udp depuis n'importe quelle adresse (`ufw allow Samba`) | non pesés : aucune entrée du registre ne nommait ces ports | `services.exposed.samba_netbios` WARN −1 par port (**baisse**) — mesuré | 1 |
+| nmbd à l'écoute, les autres cas où la section services établit que le port est ouvert à Internet (UFW à « allow » par défaut en entrée sans règle pour le port ; un ruleset dont la politique permissive par défaut l'atteint) | non pesés | idem, WARN −1 par port (**baisse**) — la règle que suit tout service à risque moyen ; non mesuré pour nmbd | 1 |
+| nmbd activé et arrêté (sans être sauté par sa propre condition de démarrage), ou en marche et non activé | rien | `services.state.inactive_enabled` / `services.state.active_disabled` WARN −1 (**baisse**) — non mesuré pour nmbd | 1 |
+| unités `smb` et `nmb` (les noms de Fedora), `smb` activé et arrêté, `nmb` en marche | Samba lu comme en marche (le meilleur état de ses unités, `nmb` compris) | `services.state.inactive_enabled` WARN −1 pour Samba (**baisse**) — mesuré sur Fedora 44 : 10 → 9 dans le domaine services | 1 |
+| idem, `smb` arrêté et désactivé, une règle UFW (ou un ruleset que la section services pèse) lisant 445/tcp ou 139/tcp comme ouverts à Internet | Samba lu comme en marche, ses ports TCP pesés : ALERT −2 chacun (−3 sur un hôte public ou DDNS) | « Samba (Windows file sharing) is installed but not running and not enabled » (`services.state.installed_inactive_critical`, INFO) ; ses ports TCP 445/tcp et 139/tcp ne sont plus pesés (137/udp et 138/udp relèvent désormais de l'entrée NetBIOS) (**hausse**) — déduit du code, non mesuré : aucun hôte Fedora sous UFW ou avec un ruleset pesé n'a été essayé. Mesuré : sous firewalld, celui de Fedora par défaut, ces ports ne sont pesés dans aucune des deux versions et rien ne bouge | 1 |
+
+Sorties qui changent sans faire bouger un score :
+
+| Où | 0.31.3 | 0.31.4 | § |
+|---|---|---|---|
+| nmbd à l'écoute, UFW admettant 137/138 depuis une plage privée seulement | rien | `services.exposure.open_local` (WARN, sans point) — mesuré | 1 |
+| nmbd activé, sauté par sa condition de démarrage (`disable netbios = yes`) | rien | `services.state.condition_unmet` (INFO) — mesuré | 1 |
+| nmbd installé et arrêté | rien | `services.state.inactive_disabled` (INFO) — mesuré | 1 |
+| nmbd en marche, la section ports | 137/udp et 138/udp listés comme ports à l'écoute (`ports.uncovered`, INFO) | non listés là : les ports d'un service du registre en marche sont rapportés par la section services — mesuré | 1 |
+| nmbd en marche, la section du journal UFW | — | la liste des tentatives bloquées sur les ports des services en marche (affichage seul, aucun constat) peut inclure 137/udp et 138/udp — déduit du code, jamais observé (sur la Mint, UFW admet ces ports : 0 blocage sur eux sur 4 296, donc rien à afficher) | 1 |
+| unités `smb` et `nmb` (Fedora), `smb` arrêté et désactivé, `nmb` en marche, firewalld | Samba lu comme en marche (OK) | « Samba (Windows file sharing) is installed but not running and not enabled » (`services.state.installed_inactive_critical`, INFO) ; score inchangé — mesuré | 1 |
+| `smb` en marche, `nmb` arrêté (Fedora) | Samba OK | Samba OK, inchangé — mesuré | 1 |
+| Timeshift installé, timeshift.json présent, toutes les planifications désactivées — ou une planification active et un répertoire d'instantanés lu vide | `backup.active` (OK) | `backup.installed_only` (INFO, 0 point comme avant) + ce que BOB a lu — mesuré | 2 |
+| Timeshift actif | `backup.active` seul | + une ligne INFO : les instantanés lus (nombre, le plus récent) ou pourquoi ils n'ont pas été lus — mesuré | 2 |
+| `send_redirects` en vigueur | « Le système envoie des redirections ICMP … inutile sur un non-routeur, exploitable pour du MITM » | « Envoi de redirections ICMP activé (send_redirects=1) » + les interfaces qui font du transfert, ou « aucune interface ne fait de transfert » — WARN −1 inchangé | 3 |
+| `password_policy.no_quality_module` | « N'importe quelle chaîne est acceptée quelle que soit sa longueur ou complexité » | une longueur minimale (6 par défaut) et, avec `obscure`, quelques heuristiques ; aucune règle de classes de caractères | 4 |
+| verdict du journal UFW | « Activité normale — … » | « Aucune source publique n'a déclenché de constat et aucun motif d'attaque reconnu n'a été trouvé dans les événements analysés — … » | 4 |
+| `ssh.authorized_keys_not_found` | « Aucun fichier authorized_keys — authentification par clé publique non configurée » | nomme le répertoire lu ; les autres comptes, un `AuthorizedKeysFile` défini ailleurs, un `AuthorizedKeysCommand` et les certificats SSH sont dits non lus | 4 |
+| `mac_policy.apparmor_complain_profiles` | commande `sudo aa-enforce /etc/apparmor.d/*` (affichée comme correctif) | commande `sudo aa-status` (une vérification) ; le détail compte les profils de snaps à part et nomme les autres | 4 |
+| `virt.bypass_risk` (libvirt) | vérification `sudo iptables -L FORWARD \| grep virbr0` — ne trouve rien | `sudo nft list ruleset \| grep -w virbr0; sudo iptables -S \| grep -w virbr0` — mesuré : 38 lignes sur Fedora 44 | 5 |
+
+### 1. Le démon NetBIOS de Samba a sa propre entrée du registre
+
+L'entrée Samba déclarait 445/tcp et 139/tcp, les ports que sert smbd. nmbd, le
+démon de noms et d'exploration NetBIOS livré dans le même paquet, écoute sur
+137/udp et 138/udp — mesuré sur la Mint, lié à 0.0.0.0, à son adresse de réseau
+local et à la diffusion du sous-réseau — et aucune entrée ne nommait ces ports :
+la section services ne les pesait jamais. Le profil d'application `Samba` d'UFW
+lui-même ouvre les quatre (`137,138/udp|139,445/tcp`).
+
+Nouvelle entrée `samba_netbios`, « Samba NetBIOS (nmbd) » : paquet `samba`,
+unités `nmbd` et `nmb`, ports 137/udp et 138/udp, risque **moyen** — il répond sur
+des noms et transporte des datagrammes d'exploration ; il ne sert aucun fichier.
+Ouvert à Internet, c'est un WARN qui vaut un point par port ; admis depuis une
+plage privée seulement, un WARN sans point — ce que reçoit tout service à risque
+moyen. Son texte de risque nomme ce qu'il livre (nom de l'hôte, groupe de
+travail, liste d'exploration) et qu'un service de noms NetBIOS joignable peut
+renvoyer du trafic vers un tiers : la CISA rapporte un facteur d'amplification
+d'environ 3,8 pour la résolution de noms NetBIOS (alerte TA14-017A,
+https://www.cisa.gov/ncas/alerts/TA14-017A) — un risque général documenté, ni
+une mesure de notre part ni une propriété de chaque déploiement. Il ne lit aucun
+fichier de
+configuration pour ses ports : les `smb ports` de smb.conf sont ceux de smbd.
+
+L'unité Fedora `nmb` quitte l'entrée Samba, où la 0.17.1 l'avait ajoutée à côté
+de `smb` (Fedora nomme l'unité de smbd `smb` et celle de nmbd `nmb`). L'état d'un
+service valait pour Samba le meilleur état de ses unités : un `nmb` en marche à
+côté d'un `smb` arrêté se lisait comme Samba en marche. L'état de Samba est
+désormais celui de smbd seul ; celui de nmbd est celui de son entrée. Sous Debian
+et Ubuntu, où les unités sont `smbd` et `nmbd`, Samba n'a jamais listé `nmbd` et
+se lit comme avant.
+
+Mesuré sur l'Ubuntu Server (samba 4.23.6, retour arrière du pare-feu armé avant
+l'activation d'UFW, tout restauré ensuite) : avec `disable netbios = yes`,
+systemd a sauté nmbd au démarrage et BOB a dit `services.state.condition_unmet` ;
+la ligne mise en commentaire et nmbd en marche, UFW inactif : INFO pour les deux
+ports ; UFW actif, `Samba` admis depuis 192.168.1.0/24 :
+`services.exposure.open_local` pour les deux, sans point ; `Samba` admis aussi
+depuis n'importe où : `services.exposed.samba_netbios` WARN −1 pour 137 et pour
+138, à côté de l'ALERT −2 de Samba lui-même pour 445 et 139 (inchangée).
+
+Mesuré sur une Fedora 44 réelle (samba 4.24.0, firewalld avec le service `samba`
+ajouté à la zone par défaut à l'exécution, retiré ensuite), 0.31.3 et 0.31.4 côte
+à côte, quatre états des unités `smb` et `nmb` : `smb` arrêté et désactivé avec
+`nmb` en marche — la 0.31.3 lisait Samba comme en marche, la 0.31.4 dit « Samba
+(Windows file sharing) is installed but not running and not enabled » et rapporte
+nmbd sur 137/138 (firewalld : « joignable seulement si sa zone le permet »,
+INFO) ; les deux arrêtés — Samba inchangé, « Samba NetBIOS (nmbd) is installed
+but stopped and disabled » (INFO) ; `smb` en marche avec `nmb` arrêté — Samba
+inchangé ; `smb` activé et arrêté avec `nmb` en marche — la 0.31.3 disait OK, la
+0.31.4 dit `services.state.inactive_enabled` WARN −1 (10 → 9). Sous firewalld, la
+section services ne pèse aucun port : le cas où 445/139 cessent d'être pesés n'y
+change aucun score ; il ne le peut que là où UFW ou un ruleset pesé les lit comme
+ouverts.
+
+Le registre compte désormais 39 services, contre 38.
+
+### 2. Timeshift compte comme actif sur sa planification et ses instantanés
+
+`backup.active` nommait Timeshift dès que le binaire et
+/etc/timeshift/timeshift.json existaient tous deux. Ce fichier contient les
+planifications et le périphérique de sauvegarde ; il existe avec toutes les
+planifications désactivées, et avec un périphérique qui ne contient aucun
+instantané.
+
+Timeshift compte désormais comme actif quand timeshift.json se lit comme du JSON
+et active au moins une planification (toutes les heures, quotidienne,
+hebdomadaire, mensuelle, au démarrage). Quand BOB peut identifier et lister le
+répertoire d'instantanés, celui-ci doit en contenir au moins un, sinon Timeshift
+compte comme installé seulement. Quand il ne peut pas l'identifier ou le lister
+— le périphérique de sauvegarde n'est
+pas monté, est absent, ou en mode BTRFS, ou le répertoire ne peut pas être
+listé —, BOB dit que les instantanés n'ont pas été vérifiés, et pourquoi, plutôt
+que de les tenir pour absents : Timeshift reste actif sur sa planification. BOB
+n'exécute rien et ne monte rien : en mode rsync, il trouve le périphérique de
+sauvegarde par son UUID (/dev/disk/by-uuid), cherche un montage de la racine même
+de ce périphérique dans /proc/self/mountinfo (un montage lié d'un sous-répertoire
+ne compte pas), et liste `<montage>/timeshift/snapshots`, en comptant les
+répertoires nommés comme un instantané et pas les liens. Un répertoire absent,
+c'est aucun instantané (Timeshift le crée avec le premier, mesuré) ; un répertoire
+que BOB ne peut pas lister n'est pas lu. Une ligne INFO dit ce qui a été lu — le
+nombre et l'instantané le plus récent — ou pourquoi rien ne l'a été : le
+périphérique n'est pas monté, aucun périphérique ne porte l'UUID, aucun
+périphérique n'est défini, mode BTRFS (les instantanés sont des sous-volumes du
+niveau supérieur du volume, que BOB ne monte pas), ou le répertoire n'a pas pu
+être listé. Aucun score ne bouge : « actif » vaut OK et « installé seulement »
+vaut INFO, tous deux 0 point.
+
+Mesuré sur la Mint, lu sans root (timeshift 25.12.4) : une planification
+hebdomadaire, le périphérique de sauvegarde monté sur /home, deux instantanés du
+1er et du 8 novembre 2026 — actif, « 2 instantané(s) …, le plus récent
+2026-11-08_19-00-02 — planification : hebdomadaire ». Mesuré sur l'Ubuntu Server
+avec Timeshift installé et un périphérique loop de 400 Mo comme périphérique de
+sauvegarde, un état à la fois : pas de timeshift.json (installé seulement) ;
+toutes les planifications désactivées, périphérique non monté (installé
+seulement, non lu : non monté) ; périphérique monté, jamais écrit (installé
+seulement, aucun instantané — dit « n'a pas pu être listé » au premier passage,
+corrigé) ; une planification quotidienne, périphérique non monté (actif, non
+lu) ; après `timeshift --create`, qui démonte le périphérique derrière lui
+(actif, non lu : non monté) ; le périphérique monté (actif, « 1 instantané(s)
+… ») ; le répertoire d'instantanés vidé (installé seulement, « aucun
+instantané »). Timeshift a été purgé ensuite.
+
+`backup.installed_only_detail` ne dit plus « aucun artefact de configuration n'a
+été détecté », ce qui était faux pour un Timeshift configuré sans planification.
+
+### 3. `send_redirects` dit comme le noyau agit
+
+`hardening.send_redirects_enabled` disait « inutile sur un non-routeur,
+exploitable pour du MITM », et son explication « un desktop n'est jamais un
+routeur » et « si cette machine est un routeur, conservez send_redirects=1 ». Sur
+la Mint, le réseau de libvirt avait activé le transfert sur toutes les
+interfaces, et send_redirects valait 1.
+
+Mesuré sous Linux 7.0 en espaces de noms réseau (un segment avec un hôte, l'hôte
+testé comme passerelle et une seconde passerelle ; des paquets envoyés à travers
+l'hôte testé cinq fois par cas). Sur l'hôte testé, chaque cas réglait
+`net.ipv4.conf.all.forwarding`, `net.ipv4.conf.eth0.forwarding` et
+`net.ipv4.conf.eth1.forwarding`, puis `net.ipv4.conf.all.send_redirects`,
+`net.ipv4.conf.eth0.send_redirects` et `net.ipv4.conf.eth1.send_redirects`, aux
+valeurs du tableau ; les comptes sont ceux de cette séquence :
+
+| transfert | send_redirects | le paquet sort par | redirections envoyées | pings |
+|---|---|---|---|---|
+| coupé | 0 ou 1 | l'une ou l'autre interface | 0 | 0/5 (non transférés) |
+| actif | 0 | la même / une autre interface | 0 / 0 | 5/5 / 5/5 |
+| actif | 1 | l'interface par laquelle il est entré | 4 | 5/5 |
+| actif | 1 | une autre interface (un NAT, comme pour des VM ou des conteneurs) | 0 | 5/5 |
+
+C'est la valeur `forwarding` propre à l'interface qui décide, pas conf/all
+(conf/all à 0 avec l'interface à 1 : 4 redirections ; conf/all à 1 avec
+l'interface à 0 : rien de transféré, aucune envoyée) ; `send_redirects` vaut
+conf/all OU l'interface, comme BOB le lisait déjà. Mettre 0 n'a jamais arrêté le
+transfert.
+
+Le détail dit maintenant ce qu'est une redirection et quand le noyau en envoie
+une, puis soit nomme, parmi les interfaces où send_redirects est en vigueur,
+celles dont la propre valeur `forwarding` vaut 1, soit dit qu'aucune ne fait de
+transfert, donc qu'aucune n'est envoyée aujourd'hui. Quand le transfert ne peut
+pas être lu, aucun des deux n'est dit. L'explication abandonne « jamais un
+routeur », « MITM » et « conservez 1 » : à 0, le noyau transfère toujours tout, et
+les hôtes qui passaient par cette machine comme passerelle continuent de passer
+par elle, avec un saut de plus. Le point est inchangé (WARN −1). Rejoué sur
+l'Ubuntu Server : sur le nœud MicroK8s, les interfaces calico, la liaison montante
+et `default` nommées ; dans un espace de noms réseau au transfert coupé, « Aucune
+interface ne fait de transfert ».
+
+### 4. Constats et formulations confrontés au code et à des mesures
+
+- `password_policy.no_quality_module_detail` disait, sans pam_pwquality ni
+  pam_cracklib, « n'importe quelle chaîne est acceptée quelle que soit sa longueur
+  ou complexité ». Mesuré sur l'Ubuntu Server (libpam-modules 1.7.0), `passwd`
+  lancé par un utilisateur non privilégié à travers un terminal : avec le
+  `pam_unix.so obscure yescrypt` livré, `abc12` a été refusé comme trop court,
+  tandis que `aaaaaaaa`, `abcdefgh` et `qwerty12` étaient acceptés ; sans
+  `obscure`, `abc12` a été refusé et `abcdef` et `aaaaaaaa` acceptés (les autres
+  non essayés). Il dit maintenant que pam_unix vérifie une longueur minimale — 6,
+  sauf si son `minlen=` dit autre chose, la valeur par défaut que donne son
+  manuel — et, avec son option `obscure`, quelques heuristiques que son manuel
+  énumère (palindrome, simple changement de casse, mot de passe trop proche de
+  l'ancien ou décalé, trop simple pour sa longueur et ses types de caractères),
+  et n'impose aucune règle de classes de caractères. Une première réécriture
+  disait « seulement une longueur minimale » ; la liste des vérifications
+  d'`obscure` dans le manuel rendait cela faux aussi.
+- `logs.verdict_ok` commençait par « Activité normale ». Le verdict s'affiche
+  quand aucune source publique ne déclenche de constat et qu'aucun balayage n'est reconnu ;
+  l'absence de motif reconnu n'établit pas que l'activité est normale (sur la
+  Mint, 4 243 des 10 160 blocages en 7 jours venaient d'un seul hôte du réseau
+  local). Il énonce maintenant sa condition : « Aucune source publique n'a
+  déclenché de constat et aucun motif d'attaque reconnu n'a été trouvé dans les
+  événements analysés », et garde son compte. La variante du balayage local,
+  `logs.verdict_ok_local_scan`, disait « Aucune source publique retenue » depuis
+  la 0.27.0 ; elle dit désormais aussi « Aucune source publique n'a déclenché de
+  constat ».
+- `ssh.authorized_keys_not_found` se lisait comme si la connexion par clé
+  publique était coupée pour tout le serveur. Il nomme le répertoire lu (le `.ssh`
+  du compte audité) et dit que les autres comptes, un `AuthorizedKeysFile`
+  défini ailleurs, un `AuthorizedKeysCommand` et les certificats SSH
+  (`TrustedUserCAKeys`) ne sont pas lus ; BOB n'en lit aucun, et les deux
+  derniers peuvent fournir des clés sans aucun fichier : le texte ne dit donc
+  plus que la connexion par clé n'est pas configurée pour ce compte. En JSON, le
+  constat porte ce répertoire dans `template_vars.path`.
+- `mac_policy.apparmor_complain_profiles` affichait `sudo aa-enforce
+  /etc/apparmor.d/*` comme correctif. Mesuré sur l'Ubuntu Server (AppArmor 5.0.2) :
+  `aa-enforce` n'était pas installé (apparmor-utils) ; avec lui, sur une copie de
+  /etc/apparmor.d, le motif a passé 97 fichiers en enforce, dont 74 livrés
+  `flags=(unconfined)` exprès ; des 80 profils en mode complain, 78 étaient des
+  profils de snaps (de snaps classic), que snapd garde sous
+  /var/lib/snapd/apparmor et que le motif n'a pas touchés. La commande est
+  désormais la vérification `sudo aa-status` ; le détail compte les profils de
+  snaps à part et nomme les autres (lus dans la liste des profils chargés par le
+  noyau), et l'explication dit d'appliquer enforce à un profil à la fois. Le
+  constat reste INFO ; `--fix` ne l'a jamais inclus (il ne prend que les constats
+  d'action).
+
+### 5. La vérification de libvirt cherche désormais dans les rulesets qui portent ses règles
+
+`virt.bypass_risk` affichait `sudo iptables -L FORWARD | grep virbr0` comme
+vérification, et son explication `sudo iptables -L FORWARD -v --line-numbers |
+grep virbr0`. Deux défauts : sans `-v`, `iptables -L` n'affiche aucune
+interface, la première ne peut donc pas trouver `virbr0` ; avec `-v` il les
+affiche, mais libvirt n'écrit pas dans FORWARD même — il range ses règles dans
+ses propres chaînes, vers lesquelles FORWARD saute (`LIBVIRT_FWX`,
+`LIBVIRT_FWI`, `LIBVIRT_FWO`, pare-feu iptables), ou dans sa propre table
+nftables (`libvirt_network`). Mesuré sur Fedora 44 avec libvirt 12.0, le réseau
+`default` actif (aucune VM en marche, `virbr0` inactif : les règles sont posées
+avec le réseau ; aucun trafic n'a été mesuré), sous ses deux pare-feux, iptables
+étant iptables-nft 1.8.11 :
+
+| pare-feu de libvirt | `-L FORWARD` | `-L FORWARD -v` | `iptables -S` | `nft list ruleset` |
+|---|---|---|---|---|
+| nftables (tel que livré) | 0 | 0 | 0 | 38 |
+| iptables (via iptables-nft) | 0 | 0 | 13 | 47 |
+
+La commande est désormais `sudo nft list ruleset | grep -w virbr0; sudo
+iptables -S | grep -w virbr0` — la seconde couvre aussi un hôte dont iptables est
+la version legacy, dont nft ne liste pas les règles (non mesuré ici). Elle cherche
+le nom de l'interface dans les règles : elle montre les règles qui nomment le
+pont, pas toutes celles qui jouent sur son trafic. Lancée telle qu'affichée sur
+cette Fedora, elle a trouvé 38 lignes. L'explication donne les deux commandes et dit pourquoi
+`iptables -L FORWARD` ne trouve rien ; elle ne dit plus que les règles vont
+« directement dans la chaîne FORWARD ». Son conseil pour un réseau isolé,
+`<forward mode='none'/>`, a été accepté par `virsh net-define` sur cet hôte et
+reste. Le constat est inchangé (WARN, sans point) ; seuls sa commande et son
+explication changent. Trouvé par une revue d'un audit réel 0.31.3 de la Mint
+(libvirt 10.0, pare-feu iptables).
+
+Nouvelles clés de traduction : 21 (`backup.timeshift_*`,
+`hardening.send_redirects_forwarding`, `hardening.send_redirects_idle`,
+`mac_policy.apparmor_complain_split`, `service_risk.samba_netbios_nmbd.*`).
+Reformulées : `backup.installed_only_detail`, `hardening.send_redirects_enabled`,
+`hardening.send_redirects_detail`, `logs.verdict_ok`, `logs.verdict_ok_local_scan`,
+`mac_policy.apparmor_complain_detail`, `password_policy.no_quality_module_detail`,
+`ssh.authorized_keys_not_found` ; explications de
+`hardening.send_redirects_enabled` et de `mac_policy.apparmor_complain_profiles`.
+
+Limites : la mesure Fedora a tourné sous firewalld seulement ; un hôte Fedora
+sous UFW ou avec un ruleset pesé n'est pas mesuré (§1). Un disque de sauvegarde
+Timeshift dédié n'est monté que pendant que Timeshift tourne : BOB dit alors que
+les instantanés n'ont pas été lus ; il ne juge pas si l'instantané le plus récent
+est assez récent pour sa planification. Timeshift en mode BTRFS n'est pas lu. Le
+point de `send_redirects` est gardé là où aucune interface ne fait de transfert
+et où le réglage est inerte aujourd'hui.
+
+### Compteurs
+
+Tests collectés 20373 → **20565**, fichiers de tests 463 → **471**, mutations
+1735 → **1766** ; clés de traduction 3175 → **3196** ; registre 38 → **39**
+services.
+
+### Gardes
+
+`test_v0314_samba_netbios.py`, `test_v0314_timeshift_measured.py`,
+`test_v0314_send_redirects_forwarding.py`, `test_v0314_pam_unix_alone.py`,
+`test_v0314_logs_verdict_measured.py`, `test_v0314_authorized_keys_scope.py`,
+`test_v0314_apparmor_complain.py` (`samba-netbios/*`, `timeshift/*`,
+`send-redirects/*`, `pam-text/*`, `logs/normal-activity-said`,
+`ssh-text/authorized-keys-account-unsaid`, `mac-complain/*`), et
+`test_v0314_libvirt_check_command.py` (`virt-cmd/*`), `logs/local-scan-charged`. Réancrée sans
+changer son sens : `logs/count-basis-unsaid`.
+
+---
+
 ## [0.31.3] — 10-11-2026
 
 **Un correctif, BREAKING (scores et sens d'un champ JSON) : BOB lit désormais

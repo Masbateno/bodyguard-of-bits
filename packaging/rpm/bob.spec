@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.31.3
+Version:        0.31.4
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,14 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Wed Nov 11 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.31.4-1
+- Patch, BREAKING for scores through a new registry entry (Samba NetBIOS,
+  137/udp and 138/udp) and Samba's state read from smbd alone; Timeshift
+  active on an enabled schedule and, when readable, at least one snapshot;
+  send_redirects names the interfaces that forward; the libvirt check lists
+  the ruleset (nft, iptables -S); texts held to what was measured (pam_unix,
+  UFW log verdict, authorized_keys, AppArmor complain).
+
 * Tue Nov 10 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.31.3-1
 - Patch, BREAKING for scores and for the meaning of one JSON field
   (firewall_drivers.libvirt_present): a k3s server's API server and pods are

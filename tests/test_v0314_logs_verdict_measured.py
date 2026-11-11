@@ -17,8 +17,8 @@ from bob import i18n
 
 
 @pytest.mark.parametrize("lang, words, gone", [
-    ("en", "No public source charged and no recognised attack pattern in the analysed events", "Normal activity"),
-    ("fr", "Aucune source publique retenue et aucun motif d'attaque reconnu dans les événements analysés", "Activité normale")],
+    ("en", "No public source triggered a finding and no recognised attack pattern was found in the analysed events", "Normal activity"),
+    ("fr", "Aucune source publique n'a déclenché de constat et aucun motif d'attaque reconnu n'a été trouvé dans les événements analysés", "Activité normale")],
     ids=["en", "fr"])
 def test_the_verdict_says_what_was_measured(lang, words, gone):
     i18n.init(lang)
@@ -27,3 +27,15 @@ def test_the_verdict_says_what_was_measured(lang, words, gone):
     finally:
         i18n.init(lang="en")
     assert words in text and gone not in text and "10160" in text
+
+
+@pytest.mark.parametrize("key", ["logs.verdict_ok", "logs.verdict_ok_local_scan"])
+def test_no_verdict_says_charged(key):
+    """Seventh review of the 0.31.4 changelog: "charged" reads as an accusation
+    or a bill in English; both verdicts say a source "triggered a finding"."""
+    i18n.init("en")
+    try:
+        text = i18n.t(key, total=3, days=7)
+    finally:
+        i18n.init(lang="en")
+    assert "charged" not in text and "triggered a finding" in text
