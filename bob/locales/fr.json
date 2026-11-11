@@ -914,7 +914,7 @@
     },
     "smtp_server_postfix_exim": {
       "level": "ÉLEVÉ",
-      "exposure": "Listener TCP/25 acceptant les soumissions de mail. Un SMTP exposé sur internet attire des tentatives constantes de relais spam, du bruteforce de credentials SASL, et du scanning par réputation. Les configs postfix par défaut sur Debian/Ubuntu bindent typiquement sur 127.0.0.1 uniquement — le verdict de port ci-dessous dit si ce défaut tient encore sur cet hôte.",
+      "exposure": "TCP/25 porte le transfert de courrier entre serveurs ; la soumission par les clients passe par 587 (ou 465 en TLS implicite — RFC 6409, RFC 8314). Un SMTP exposé sur internet attire des tentatives constantes de relais spam, du bruteforce de credentials SASL, et du scanning par réputation. Les configs postfix par défaut sur Debian/Ubuntu bindent typiquement sur 127.0.0.1 uniquement — le verdict de port ci-dessous dit si ce défaut tient encore sur cet hôte.",
       "threat": "L'abus en relais ouvert blocklist votre IP en quelques heures, cassant le mail sortant pour les utilisateurs légitimes. L'auth SASL sans rate limiting est une cible de spray de credentials au ralenti. Les MTA mal configurés ont historiquement été utilisés pour des campagnes de spam à grande échelle et des canaux d'exfiltration."
     },
     "nfs_server": {
@@ -1428,6 +1428,7 @@
     "host_key_dsa": "Clé hôte serveur DSA trouvée : {name} — DSA est cryptographiquement cassé",
     "host_key_dsa_detail": "Les clés hôte DSA utilisent un algorithme cassé et peuvent être forgées par un attaquant disposant de ressources suffisantes. Supprimez la clé DSA et régénérez-la en ed25519. Tous les clients ayant mis en cache cette clé hôte devront accepter la nouvelle.",
     "host_key_dsa_reason": "Clé hôte serveur DSA en service : {name}",
+    "host_key_rsa_weak": "Clé hôte serveur RSA {name} : {bits} bits — sous le plancher de 2048 bits que le NIST fixe pour générer des signatures ; elle signe à chaque connexion",
     "host_key_rsa_short": "Clé hôte serveur RSA {name} : {bits} bits — RSA 4096 bits offre une marge de sécurité plus élevée ; ed25519 est une alternative moderne",
     "host_key_rsa_short_detail": "Le NIST évalue RSA 2048 bits à une sécurité de 112 bits, acceptable jusqu'en 2030, et RSA 3072 bits à 128 bits, acceptable au-delà (SP 800-57 partie 1) ; le NIST interdit de générer des signatures RSA avec des clés de moins de 2048 bits ; vérifier des signatures faites avec des clés de 1024 à 2047 bits reste un usage hérité (SP 800-131A). Régénérer une clé hôte change l'empreinte que chaque client a enregistrée : chacun signalera que l'identité de l'hôte a changé tant que son known_hosts n'est pas mis à jour — le planifier, et donner la nouvelle empreinte aux utilisateurs (ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub).",
     "host_key_ok": "Clé hôte serveur {name} ({type}) : algorithme fort",
@@ -1882,6 +1883,11 @@
         "title": "Entrées en double dans known_hosts",
         "why": "Plusieurs entrées pour le même hôte avec des clés différentes peuvent créer de la confusion et permettre à SSH d'accepter silencieusement une clé obsolète ou compromise. Cela indique également que le fichier n'a pas été maintenu.",
         "how": "1. Supprimez toutes les entrées pour l'hôte concerné :\n   ssh-keygen -R <nom_hôte>\n2. Reconnectez-vous pour ajouter une entrée propre\n3. Nettoyez périodiquement known_hosts des entrées obsolètes"
+      },
+      "host_key_rsa_weak": {
+        "title": "Clé hôte SSH : RSA sous 2048 bits",
+        "why": "Le serveur signe avec sa clé hôte à chaque connexion, et c'est cette signature qui permet à un client de distinguer ce serveur d'un imposteur. Le NIST interdit de générer des signatures RSA avec des clés de moins de 2048 bits (SP 800-131A) ; RSA 2048 bits vaut une sécurité de 112 bits, acceptable jusqu'en 2030 (SP 800-57 partie 1). Le même plancher pénalise une clé RSA d'utilisateur sous 2048 bits (ssh.rsa_weak).",
+        "how": "1. Générez une nouvelle clé hôte RSA de 4096 bits (ou appuyez-vous sur une clé hôte ed25519, que la plupart des distributions génèrent déjà) :\n   sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N ''\n2. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service\n3. Chaque client qui a enregistré l'ancienne empreinte signalera que l'identité de l'hôte a changé : donnez d'abord la nouvelle aux utilisateurs :\n   ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub"
       },
       "host_key_dsa": {
         "title": "Clé hôte SSH utilise DSA (obsolète et considérée comme non sûre)",
@@ -3741,6 +3747,7 @@
     "clamd_inactive": "Le démon ClamAV ({unit}) n'est pas en cours d'exécution",
     "clamd_inactive_detail": "Le service clamav-daemon permet la surveillance en temps réel et est requis pour l’intégration aux serveurs mail (Postfix, Amavis, etc.). Sans le démon, seules les analyses manuelles à la demande sont possibles.",
     "socket_open_to_all": "Les permissions du socket du démon ClamAV ({path}) laissent tout utilisateur local lui envoyer des commandes, SHUTDOWN compris",
+    "socket_open_perms": "Mesuré : {perms}.",
     "socket_open_to_all_detail": "Ses permissions Unix — écriture sur le socket, traversée de chaque répertoire au-dessus — admettent une connexion de n'importe quel compte de cet hôte (une politique MAC comme SELinux ou AppArmor peut encore en refuser une) : chacun peut donc arrêter le démon, mesuré sur Debian et Alpine tels que livrés. C'est ainsi que le paquet le livre (Debian, Ubuntu, Arch, openSUSE et Alpine). Le restreindre — LocalSocketGroup et LocalSocketMode 660 dans la configuration de clamd, puis un redémarrage — le garde pour le propriétaire, le groupe et root, et coupe tout autre client : vérifiez d'abord sous quels utilisateurs tournent votre filtre de messagerie ou vos analyseurs, et ajoutez-les à ce groupe.",
     "socket_open_to_all_reason": "Socket du démon ClamAV ouvert à tout utilisateur local (peut être arrêté)",
     "no_scan_log": "Aucun journal d'analyse ClamAV trouvé — date de dernière analyse inconnue",
@@ -4011,7 +4018,8 @@
     "timed_out": "La vérification d'intégrité des paquets a dépassé le délai et a été arrêtée — résultat non établi",
     "changed": "{count} fichier(s) de paquet diffèrent de l'empreinte enregistrée par le gestionnaire : {files}",
     "changed_detail": "Ces fichiers ont été installés par un paquet mais leur contenu ne correspond plus à l'empreinte enregistrée par le gestionnaire. Cela peut être bénin — une recompilation locale, un correctif éditeur appliqué à la main, un fichier patché par un autre outil — ou la trace d'un intrus remplaçant un binaire ou une bibliothèque système. BOB ne peut pas trancher, donc c'est signalé, pas scoré : vérifiez chaque chemin par rapport à ce que vous attendez (réinstaller le paquet propriétaire pour comparer, p. ex. apt reinstall / dnf reinstall, ou inspecter le fichier). Les fichiers de configuration, censés être édités, sont déjà exclus.",
-    "clean": "Aucun fichier de paquet ne diffère de l'empreinte enregistrée par le gestionnaire ({tool} vérifié)"
+    "clean": "Aucun fichier de paquet ne diffère de l'empreinte enregistrée par le gestionnaire ({tool} vérifié)",
+    "clean_detail": "Les empreintes de référence vivent dans la base locale du gestionnaire de paquets : un root compromis peut les réécrire avec les fichiers. Ce contrôle atteste la cohérence avec cette base, pas une chaîne de confiance externe — les signatures des dépôts relèvent du contrôle d'authenticité des paquets."
   },
   "kexec_lockdown": {
     "kexec_disabled": "kexec est verrouillé (kernel.kexec_load_disabled=1) — aucun nouveau noyau ne peut être chargé jusqu'au reboot",
@@ -4186,6 +4194,7 @@
     "timeshift_snapshots": "Timeshift : {count} instantané(s) dans {path}, le plus récent {newest} — planification : {schedules}",
     "timeshift_none": "Timeshift : aucun instantané dans {path} — planification : {schedules}",
     "timeshift_unread": "Timeshift : planification : {schedules} ; ses instantanés n'ont pas été lus — {why}",
+    "timeshift_excludes": "Exclu de chaque instantané (timeshift.json) : {paths}. Ce que ces motifs couvrent n'est pas sauvegardé par Timeshift.",
     "timeshift_no_schedule": "aucune (instantanés seulement à la main)",
     "timeshift_every": {
       "hourly": "toutes les heures",
@@ -4473,6 +4482,14 @@
     "kubelet_auth_ok": "Le kubelet refuse les requêtes anonymes sur le port 10250 (401)",
     "kubelet_unprobed": "Le kubelet n'a pas répondu sur 127.0.0.1:10250 dans les 15 secondes — son accès anonyme n'a pas été évalué",
     "kubelet_listener_foreign": "127.0.0.1:10250 appartient à {process}, qui n'est pas un processus kubelet reconnu exécuté par root. L'accès anonyme au kubelet n'a pas pu être établi.",
+    "kubelet_tls_unchecked": "Le kubelet sur 127.0.0.1:10250 n'a pas été interrogé : {why}. L'accès anonyme au kubelet n'a pas pu être établi.",
+    "kubelet_tls_mismatch": "Le service sur 127.0.0.1:10250 ne présente pas un certificat signé par {ca} : il n'a donc pas été interrogé. L'accès anonyme au kubelet n'a pas pu être établi.",
+    "apiserver_tls_unchecked": "Le serveur d'API sur 127.0.0.1:{port} n'a pas été interrogé : {why}. L'accès anonyme au serveur d'API n'a pas pu être établi.",
+    "apiserver_tls_mismatch": "Le service sur 127.0.0.1:{port} ne présente pas un certificat signé par {ca} : il n'a donc pas été interrogé. L'accès anonyme au serveur d'API n'a pas pu être établi.",
+    "tls_why": {
+      "not_measured": "BOB ne connaît aucune autorité de certification contre laquelle vérifier son certificat sur cette distribution (non mesuré)",
+      "unreadable": "{ca} n'a pas pu être lu pour vérifier son certificat"
+    },
     "kubelet_listener_unknown": "BOB n'a pas pu identifier le processus propriétaire de 127.0.0.1:10250. L'accès anonyme au kubelet n'a pas pu être établi.",
     "kubelet_listener_unverified": "BOB n'a pas pu vérifier que le processus propriétaire de 127.0.0.1:10250 ({process}) s'exécute en root. L'accès anonyme au kubelet n'a pas pu être établi.",
     "apiserver_listener_foreign": "127.0.0.1:{port} appartient à {process}, qui n'est pas un processus de serveur d'API reconnu exécuté par root. L'accès anonyme au serveur d'API n'a pas pu être établi.",

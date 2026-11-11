@@ -53,6 +53,7 @@ import json
 import os
 import re
 import secrets
+import socket
 import ssl
 import urllib.error
 import urllib.request
@@ -68,6 +69,7 @@ from bob.checks._run import (
     path_exists,
     run_result,
 )
+from bob._atomic import read_text_capped
 from bob.checks.mount_hardening import _hidepid_level
 from bob.scoring import CheckResult
 
@@ -157,6 +159,16 @@ class KubernetesSnapshot:
     #: sent the anonymous probes.
     kubelet_listener:           "str | None" = "kubelet"
     apiserver_listener:         "str | None" = "kube-apiserver"
+    #: v0.32.0 — the certificate the kubelet (the API server) presented,
+    #: checked against the authority its distribution uses (``_tls_state``):
+    #: "" checked, or not asked for another reason; TLS_UNCHECKED when no
+    #: authority is known (not measured) or its file could not be read;
+    #: TLS_MISMATCH when the certificate is not signed by it. Only a checked
+    #: server is sent the anonymous probes. ``*_ca``: the authority's file.
+    kubelet_tls:                str = ""
+    kubelet_ca:                 str = ""
+    apiserver_tls:              str = ""
+    apiserver_ca:               str = ""
 
     @classmethod
     def from_system(cls) -> "KubernetesSnapshot":
@@ -178,17 +190,23 @@ class KubernetesSnapshot:
         # v0.31.0 — the probes go to whatever holds the port; only the
         # kubelet's answer says anything about the kubelet (`_loopback_listener`).
         snap.kubelet_listener = _deciding(_loopback_listener(10250), _KUBELET_NAMES)
+        kubelet_ca = None
         if snap.kubelet_listener in _KUBELET_NAMES:
-            snap.anonymous_status = _probe("https://127.0.0.1:10250/pods")
+            kubelet_ca = _kubelet_ca(snap.kubelet_listener)
+            snap.kubelet_ca = str(kubelet_ca or "")
+            snap.kubelet_tls = _tls_state(10250, kubelet_ca)
+        kubelet_asked = snap.kubelet_listener in _KUBELET_NAMES and snap.kubelet_tls == ""
+        if kubelet_asked:
+            snap.anonymous_status = _probe("https://127.0.0.1:10250/pods", kubelet_ca)
         if _deciding(_loopback_listener(10255), _KUBELET_NAMES) in _KUBELET_NAMES:
             snap.readonly_status = _probe("http://127.0.0.1:10255/pods")
         # Asked whatever GET /pods answered: a refused read says nothing about a
         # command, the kubelet checks them as different permissions (nodes/pods,
         # nodes/proxy). A 401 closes the question: the request is not authenticated.
-        if snap.kubelet_listener in _KUBELET_NAMES and snap.anonymous_status != 401:
+        if kubelet_asked and snap.anonymous_status != 401:
             snap.run_probed = True
-            snap.anonymous_run_status, snap.anonymous_run_text = _probe_run()
-            snap.anonymous_exec_status, snap.anonymous_exec_text = _probe_exec()
+            snap.anonymous_run_status, snap.anonymous_run_text = _probe_run(kubelet_ca)
+            snap.anonymous_exec_status, snap.anonymous_exec_text = _probe_exec(kubelet_ca)
         _read_apiserver(snap)
         snap.runtime_socket = _runtime_socket()
         return snap
@@ -219,6 +237,21 @@ _K3S_KUBECONFIG = Path("/etc/rancher/k3s/k3s.yaml")
 _K3S_APISERVER_LINE = "Running kube-apiserver "
 _K3S_CONTAINERD_SOCKET = "/run/k3s/containerd/containerd.sock"
 _PROC = Path("/proc")
+
+#: v0.32.0 — the authority each distribution signs its kubelet's and its API
+#: server's certificates with, as measured (~/.cache/bob-fieldtest/netnsbench/
+#: tls0320): MicroK8s 1.35.6, certs/ca.crt for 10250 and 16443; k3s
+#: v1.37.2+k3s1 (a server), server-ca.crt for 10250 and 6443; kubeadm 1.37.2,
+#: the kubelet self-signed by its own authority, kept beside its certificate in
+#: <cert-dir>/kubelet.crt (pki/ca.crt did not verify it). The name 127.0.0.1 is
+#: not checked: it was missing from the kubelet's certificate on MicroK8s and
+#: from both on kubeadm. A k3s agent and a kubelet with its own tlsCertFile or
+#: serverTLSBootstrap were not measured: not checked, so not asked.
+_MICROK8S_CA = Path("/var/snap/microk8s/current/certs/ca.crt")
+_K3S_SERVER_CA = Path("/var/lib/rancher/k3s/server/tls/server-ca.crt")
+_KUBELET_CERT_DIR = "/var/lib/kubelet/pki"
+TLS_UNCHECKED = "unchecked"
+TLS_MISMATCH = "mismatch"
 
 
 def _parse_args(text: str) -> "dict[str, str]":
@@ -259,19 +292,24 @@ def _read_apiserver(snap: "KubernetesSnapshot") -> None:
     port = args.get("--secure-port", "6443")
     snap.apiserver_port = int(port) if port.isdigit() else None
     snap.authorization_modes = _modes(args)
-    _probe_apiserver(snap)
+    _probe_apiserver(snap, _MICROK8S_CA)
     if "RBAC" in snap.authorization_modes and _command_exists("microk8s"):
         res = run_result("microk8s", "kubectl", "get", "clusterrolebindings", "-o", "json", timeout=_CTR_TIMEOUT)
         if res.ok:
             snap.broad_admin_bindings = _broad_admin_bindings(res.stdout)
 
 
-def _probe_apiserver(snap: "KubernetesSnapshot") -> None:
-    """The anonymous read, sent only to an API server run by root on the port."""
+def _probe_apiserver(snap: "KubernetesSnapshot", ca: "Path | None") -> None:
+    """The anonymous read, sent only to an API server run by root on the port
+    whose certificate *ca* signs (v0.32.0)."""
     if snap.apiserver_port:
         snap.apiserver_listener = _deciding(_loopback_listener(snap.apiserver_port), _APISERVER_NAMES)
         if snap.apiserver_listener in _APISERVER_NAMES:
-            snap.apiserver_anonymous_status = _probe(f"https://127.0.0.1:{snap.apiserver_port}/api/v1/namespaces")
+            snap.apiserver_ca = str(ca or "")
+            snap.apiserver_tls = _tls_state(snap.apiserver_port, ca)
+            if snap.apiserver_tls == "":
+                snap.apiserver_anonymous_status = _probe(
+                    f"https://127.0.0.1:{snap.apiserver_port}/api/v1/namespaces", ca)
 
 
 def _read_k3s_apiserver(snap: "KubernetesSnapshot") -> None:
@@ -285,7 +323,7 @@ def _read_k3s_apiserver(snap: "KubernetesSnapshot") -> None:
     args = _parse_args(line.split(_K3S_APISERVER_LINE, 1)[1].split('"', 1)[0].replace(" --", "\n--"))
     snap.authorization_modes = _modes(args)
     snap.apiserver_port = _k3s_port()
-    _probe_apiserver(snap)
+    _probe_apiserver(snap, _K3S_SERVER_CA)
     kubectl = _k3s_tool(pid, "kubectl") if "RBAC" in snap.authorization_modes else None
     if kubectl:
         # The kubeconfig is named: a KUBECONFIG in BOB's environment would
@@ -591,8 +629,9 @@ def _loopback_listener(port: int) -> "list[str] | None":
     by root, and was asked. The holders are found in /proc/<pid>/fd instead;
     the cgroup path ss writes after the inode is not read.
 
-    The probes below do not verify the server's certificate — the kubelet's
-    own is self-signed — so whatever holds the port is answered: measured in a
+    Up to 0.31.4 the probes did not verify the server's certificate, so
+    whatever held the port was answered (v0.32.0: checked against the
+    distribution's authority, ``_tls_state``): measured in a
     network namespace (4 November 2026, `kspoof.sh`), a python3 process on
     127.0.0.1:10250 with a self-signed certificate answering 401 made 0.30.0
     read "the kubelet requires authentication". Only a kubelet (or an API
@@ -809,16 +848,95 @@ def _deciding(owners: "list[str] | None", names: frozenset) -> "str | None":
     return next((o for o in owners if o not in names), owners[0])
 
 
-def _request(url: str, method: str = "GET") -> "tuple[int | None, str]":
-    """HTTP status and the start of the body of an anonymous request, or
-    ``(None, "")`` when nothing answered."""
-    ctx = ssl.create_default_context()
+def _kubelet_ca(owner: str) -> "Path | None":
+    """v0.32.0 — the authority to check the kubelet on 10250 against, by the
+    process that holds the port (``_deciding``); None when not measured."""
+    if owner == _MICROK8S_PROCESS:
+        return _MICROK8S_CA
+    if owner == _K3S_SERVER:
+        return _K3S_SERVER_CA
+    if owner == "kubelet":
+        return _upstream_kubelet_ca()
+    return None
+
+
+def _upstream_kubelet_ca() -> "Path | None":
+    """The kubelet's own certificate file, which carries the authority it is
+    self-signed by (kubeadm 1.37.2, measured): ``<cert-dir>/kubelet.crt``, the
+    directory from ``--cert-dir`` (default /var/lib/kubelet/pki). None when the
+    one kubelet process or its configuration cannot be read, or when it serves
+    another certificate (``--tls-cert-file``, ``tlsCertFile``,
+    ``serverTLSBootstrap``) — not measured."""
+    pids = _pids_named("kubelet")
+    if len(pids) != 1:
+        return None
+    try:
+        raw = (_PROC / pids[0] / "cmdline").read_bytes()
+    except OSError:
+        return None
+    args: "dict[str, str]" = {}
+    words = [w.decode("utf-8", "replace") for w in raw.split(b"\0") if w]
+    for i, word in enumerate(words):
+        if word.startswith("--"):
+            name, eq, value = word.partition("=")
+            if not eq and i + 1 < len(words) and not words[i + 1].startswith("--"):
+                value = words[i + 1]
+            args[name] = value
+    if "--tls-cert-file" in args or not args.get("--config"):
+        return None
+    try:
+        config = read_text_capped(Path(args["--config"]), encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    if re.search(r"^\s*(tlsCertFile|serverTLSBootstrap)\s*:", config, re.MULTILINE):
+        return None
+    return Path(args.get("--cert-dir") or _KUBELET_CERT_DIR) / "kubelet.crt"
+
+
+def _tls_context(ca: "Path | None") -> "ssl.SSLContext | None":
+    """A context that checks the server's certificate chain against *ca*, not
+    its name (absent from the measured certificates); None when *ca* is not
+    given or cannot be loaded."""
+    if ca is None:
+        return None
+    try:
+        ctx = ssl.create_default_context(cafile=str(ca))
+    except (OSError, ssl.SSLError, ValueError):
+        return None
     ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE                # the kubelet's own certificate
+    return ctx
+
+
+def _tls_state(port: int, ca: "Path | None") -> str:
+    """v0.32.0 — "" when the server on 127.0.0.1:*port* presents a certificate
+    *ca* signs (or did not answer: the probe then reads as unanswered),
+    TLS_UNCHECKED when there is no authority to check it against, TLS_MISMATCH
+    when it presents another."""
+    ctx = _tls_context(ca)
+    if ctx is None:
+        return TLS_UNCHECKED
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=_PROBE_TIMEOUT) as sock:
+            with ctx.wrap_socket(sock, server_hostname="127.0.0.1"):
+                return ""
+    except ssl.SSLCertVerificationError:
+        return TLS_MISMATCH
+    except (OSError, ValueError):
+        return ""
+
+
+def _request(url: str, method: str = "GET", ca: "Path | None" = None) -> "tuple[int | None, str]":
+    """HTTP status and the start of the body of an anonymous request, or
+    ``(None, "")`` when nothing answered. v0.32.0 — over https, only to a
+    server whose certificate *ca* signs: without *ca*, nothing is sent."""
+    ctx = None
+    if url.startswith("https"):
+        ctx = _tls_context(ca)
+        if ctx is None:
+            return None, ""
     request = urllib.request.Request(url, data=b"" if method == "POST" else None, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=_PROBE_TIMEOUT,
-                                    context=ctx if url.startswith("https") else None) as resp:
+        with urllib.request.urlopen(request, timeout=_PROBE_TIMEOUT, context=ctx) as resp:
             return resp.status, _body(resp)
     except urllib.error.HTTPError as exc:
         return exc.code, _body(exc)
@@ -834,12 +952,12 @@ def _body(response) -> str:
         return ""
 
 
-def _probe(url: str) -> "int | None":
+def _probe(url: str, ca: "Path | None" = None) -> "int | None":
     """HTTP status of an anonymous GET, None when nothing answered."""
-    return _request(url)[0]
+    return _request(url, ca=ca)[0]
 
 
-def _probe_exec() -> "tuple[int | None, str]":
+def _probe_exec(ca: "Path | None" = None) -> "tuple[int | None, str]":
     """``GET /exec`` for an upper-case pod name, with the stream parameters: the
     kubelet's sentence is then the pod lookup's, after the access check, so
     nothing can run. Pod, namespace and container names must use lowercase DNS-compatible
@@ -849,10 +967,10 @@ def _probe_exec() -> "tuple[int | None, str]":
     """
     name = "BOB-PROBE-" + secrets.token_hex(8).upper()
     return _request(f"https://127.0.0.1:10250/exec/{name}/{name}/probe"
-                    "?command=true&input=0&output=1&tty=0&stdout=1")
+                    "?command=true&input=0&output=1&tty=0&stdout=1", ca=ca)
 
 
-def _probe_run() -> "tuple[int | None, str]":
+def _probe_run(ca: "Path | None" = None) -> "tuple[int | None, str]":
     """``POST /run`` for an upper-case pod name: no pod can carry it, since
     pod names must use lowercase DNS-compatible syntax.
 
@@ -860,7 +978,7 @@ def _probe_run() -> "tuple[int | None, str]":
     answer shows whether anonymous commands are allowed, and nothing can run.
     """
     name = "BOB-PROBE-" + secrets.token_hex(8).upper()
-    return _request(f"https://127.0.0.1:10250/run/{name}/{name}/probe", method="POST")
+    return _request(f"https://127.0.0.1:10250/run/{name}/{name}/probe", method="POST", ca=ca)
 
 
 #: What the answer to a command request shows (see ``_run_verdict``).
@@ -1006,6 +1124,10 @@ def check_kubernetes(snapshot: KubernetesSnapshot, t: "TranslationFunc | None" =
         else:
             result.info(message=_t("kubernetes.kubelet_listener_foreign", process=listener),
                         key="kubernetes.kubelet_listener_foreign", template_vars={"process": listener})
+    elif snapshot.kubelet_tls:
+        # v0.32.0 — not asked: its certificate could not be checked, or is not
+        # signed by the authority this distribution uses (`_tls_state`).
+        _say_tls(result, _t, "kubelet", snapshot.kubelet_tls, snapshot.kubelet_ca)
     elif run == RUN_AUTHORISED:
         # One exposure, one level: anonymous commands are the −3, and the reads
         # they come with are not counted again. A refused read does not hide it.
@@ -1062,6 +1184,30 @@ def check_kubernetes(snapshot: KubernetesSnapshot, t: "TranslationFunc | None" =
     return result
 
 
+def _say_tls(result: CheckResult, _t, who: str, state: str, ca: str, port: "int | None" = None) -> None:
+    """v0.32.0 — why the kubelet (``who`` = "kubelet") or the API server
+    ("apiserver", on ``port``) was not asked: no authority to check its
+    certificate against (TLS_UNCHECKED: none measured for this distribution, or
+    its file unread), or a certificate that authority does not sign
+    (TLS_MISMATCH). Keys and arguments are spelled out: visibility.py and the
+    placeholder guard read them so."""
+    if state == TLS_MISMATCH:
+        if who == "kubelet":
+            result.info(message=_t("kubernetes.kubelet_tls_mismatch", ca=ca),
+                        key="kubernetes.kubelet_tls_mismatch", template_vars={"ca": ca})
+        else:
+            result.info(message=_t("kubernetes.apiserver_tls_mismatch", ca=ca, port=port),
+                        key="kubernetes.apiserver_tls_mismatch", template_vars={"ca": ca, "port": port})
+        return
+    why = _t("kubernetes.tls_why.unreadable", ca=ca) if ca else _t("kubernetes.tls_why.not_measured")
+    if who == "kubelet":
+        result.info(message=_t("kubernetes.kubelet_tls_unchecked", why=why),
+                    key="kubernetes.kubelet_tls_unchecked", template_vars={"why": why})
+    else:
+        result.info(message=_t("kubernetes.apiserver_tls_unchecked", why=why, port=port),
+                    key="kubernetes.apiserver_tls_unchecked", template_vars={"why": why, "port": port})
+
+
 def _check_apiserver(snapshot: "KubernetesSnapshot", result: CheckResult, _t) -> None:
     """v0.28.0 — the cluster beyond the node, as far as this node reads it."""
     if snapshot.authorization_modes is None:
@@ -1091,6 +1237,9 @@ def _check_apiserver(snapshot: "KubernetesSnapshot", result: CheckResult, _t) ->
                                    process=owner),
                         key="kubernetes.apiserver_listener_foreign",
                         template_vars={"port": snapshot.apiserver_port, "process": owner})
+    elif snapshot.apiserver_tls:
+        _say_tls(result, _t, "apiserver", snapshot.apiserver_tls, snapshot.apiserver_ca,
+                 snapshot.apiserver_port)
     elif anon is not None and 200 <= anon < 300:
         # After review: a 2xx here establishes that anonymous requests may list
         # namespaces, not what else they may do — WARN −1, as the kubelet's

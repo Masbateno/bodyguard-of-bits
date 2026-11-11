@@ -270,6 +270,10 @@ def check_package_integrity(snapshot: PackageIntegritySnapshot,
         )
     else:
         result.ok(message=_t("package_integrity.clean", tool=snapshot.tool),
+                  # v0.32.0 — the digests live in the local package database; a
+                  # compromised root can rewrite them with the files. Said, so
+                  # "clean" is not read as an external chain of trust.
+                  detail=_t("package_integrity.clean_detail"),
                   key="package_integrity.clean")
 
     return result

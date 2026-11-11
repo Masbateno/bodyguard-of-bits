@@ -472,7 +472,10 @@ class TestOnlyTheKubeletIsAsked:
         monkeypatch.setattr(k, "_read_apiserver", lambda snap: None)
         monkeypatch.setattr(k, "_runtime_socket", lambda: None)
         monkeypatch.setattr(k, "_loopback_listener", lambda port: held.get(port, []))
-        monkeypatch.setattr(k, "_probe", lambda url: asked.append(url) or 401)
+        monkeypatch.setattr(k, "_probe", lambda url, ca=None: asked.append(url) or 401)
+        # v0.32.0 — the certificate checked (`_tls_state`); the owner is what is tested here.
+        monkeypatch.setattr(k, "_kubelet_ca", lambda owner: k.Path("/ca.crt"))
+        monkeypatch.setattr(k, "_tls_state", lambda port, ca: "")
         return k.KubernetesSnapshot.from_system(), asked
 
     def test_the_kubelet(self, monkeypatch):
@@ -497,7 +500,8 @@ class TestOnlyTheKubeletIsAsked:
         monkeypatch.setattr(k, "_microk8s_runs", lambda: True)        # v0.31.3: read while it runs
         monkeypatch.setattr(k, "_command_exists", lambda n: False)
         asked = []
-        monkeypatch.setattr(k, "_probe", lambda url: asked.append(url) or 401)
+        monkeypatch.setattr(k, "_probe", lambda url, ca=None: asked.append(url) or 401)
+        monkeypatch.setattr(k, "_tls_state", lambda port, ca: "")          # v0.32.0 — checked
         for owners, said, probed in ((["kubelite"], "kubelite", True), (["python3"], "python3", False),
                                      (None, None, False), ([], "", False),
                                      (["kubelite", "kubelite (uid 1000)"], "kubelite (uid 1000)", False)):

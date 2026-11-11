@@ -129,6 +129,22 @@ def _check_host_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                 template_vars={"name": name},  # pilot v0.4.1 — exposes vars for locale-independent rebuild
             )
 
+        elif hk.key_type == "rsa" and hk.rsa_bits is not None and hk.rsa_bits < 2048:
+            # v0.32.0 — below the floor NIST sets for generating signatures
+            # (SP 800-131A, already cited in the detail): the host key signs at
+            # every connection. WARN -1, as the user identity keys below 2048
+            # have been since 0.4.x (ssh.rsa_weak).
+            result.warn_with_deduction(
+                key="ssh.host_key_rsa_weak",
+                message=_t("ssh.host_key_rsa_weak", name=name, bits=hk.rsa_bits),
+                points=1,
+                nature="action",
+                detail=_t("ssh.host_key_rsa_short_detail"),
+                cmd=f"sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N '' && {service_restart_cmd(ssh_unit())}",
+                cmd_type="fix",
+                template_vars={"name": name, "bits": hk.rsa_bits},
+            )
+
         elif hk.key_type == "rsa" and hk.rsa_bits is not None and hk.rsa_bits < 4096:
             result.info(
                 message=_t("ssh.host_key_rsa_short", name=name, bits=hk.rsa_bits),

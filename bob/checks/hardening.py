@@ -298,17 +298,34 @@ def check_hardening(snapshot: HardeningSnapshot, t: TranslationFunc | None = Non
             key="hardening.send_redirects_ok",
         )
     else:
-        result.warn_with_deduction(
-            key="hardening.send_redirects_enabled",
-            message=_t("hardening.send_redirects_enabled"),
-            points=1,
-            detail=" ".join(x for x in (_t("hardening.send_redirects_detail"),
-                                        _send_redirects_case(_t, snapshot.send_redirects_forwarding),
-                                        _where(_t, "hardening.where_or", snapshot.send_redirects_where)) if x),
-            **sysctl_fix_ifaces("net.ipv4.conf", "send_redirects", "0", snapshot.send_redirects_where,
-                                boot=snapshot.boot_sysctl),
-            nature="action",
-        )
+        detail = " ".join(x for x in (_t("hardening.send_redirects_detail"),
+                                      _send_redirects_case(_t, snapshot.send_redirects_forwarding),
+                                      _where(_t, "hardening.where_or", snapshot.send_redirects_where)) if x)
+        fix = sysctl_fix_ifaces("net.ipv4.conf", "send_redirects", "0", snapshot.send_redirects_where,
+                                boot=snapshot.boot_sysctl)
+        if snapshot.send_redirects_forwarding == []:
+            # v0.32.0 — no interface forwards (by its own forwarding value,
+            # and "default" for interfaces created from now on): the kernel
+            # sends no redirect today. Measured on Linux 7.0 in network
+            # namespaces (0.31.4): forwarding off and send_redirects at 1, 0
+            # redirects. Said, not scored — the point stays where an interface
+            # forwards, or where forwarding could not be read (None). The fix
+            # is still shown.
+            result.info(
+                key="hardening.send_redirects_enabled",
+                message=_t("hardening.send_redirects_enabled"),
+                detail=detail,
+                **fix,
+            )
+        else:
+            result.warn_with_deduction(
+                key="hardening.send_redirects_enabled",
+                message=_t("hardening.send_redirects_enabled"),
+                points=1,
+                detail=detail,
+                **fix,
+                nature="action",
+            )
     # --- fs.protected_hardlinks ---
     if snapshot.protected_hardlinks is None:
         _missing.append(_SYSCTL_NAMES["protected_hardlinks"])

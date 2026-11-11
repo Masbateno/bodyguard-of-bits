@@ -68,7 +68,9 @@ def _detail(forwarding):
                                send_redirects_forwarding=forwarding)
     result = h.check_hardening(snap, t=_t)
     f = next(f for f in result.findings if f.key == "hardening.send_redirects_enabled")
-    assert [d.points for d in result.deductions if d.key == "hardening.send_redirects_enabled"] == [1]
+    # v0.32.0 — the point is gone where no interface forwards (test_v0320_send_redirects_inert).
+    expected = [] if forwarding == [] else [1]
+    assert [d.points for d in result.deductions if d.key == "hardening.send_redirects_enabled"] == expected
     return f.detail
 
 

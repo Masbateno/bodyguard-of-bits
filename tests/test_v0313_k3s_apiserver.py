@@ -89,7 +89,8 @@ def node(tmp_path, monkeypatch):
     monkeypatch.setattr(k, "_k3s_apiserver_line", lambda pid: _LINE)
     monkeypatch.setattr(k, "_k3s_tool", lambda pid, name: f"/data/bin/{name}")
     monkeypatch.setattr(k, "_loopback_listener", lambda port: ["k3s-server"])
-    monkeypatch.setattr(k, "_probe", lambda url: calls["probe"].append(url) or 401)
+    monkeypatch.setattr(k, "_probe", lambda url, ca=None: calls["probe"].append(url) or 401)
+    monkeypatch.setattr(k, "_tls_state", lambda port, ca: "")          # v0.32.0 — the certificate checked
 
     def run(*args, **kw):
         calls["run"].append(args)

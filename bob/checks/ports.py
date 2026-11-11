@@ -396,13 +396,19 @@ def check_ports(
             )
             continue
 
+        if category == PortCategory.NETBIOS and not ufw_active:
+            # v0.32.0 — the dedicated NetBIOS path printed "without explicit
+            # UFW rule" whatever governed the port: measured on Fedora 44
+            # (firewalld, nmbd of a stopped smb), 137/udp and 138/udp got the
+            # UFW wording while every other port got the firewalld one. With
+            # UFW inactive they now take the general path below, which knows
+            # firewalld and a weighed netfilter ruleset.
+            category = PortCategory.UNCOVERED_PUBLIC
+
         if category == PortCategory.NETBIOS:
             if pp in reported_warn_ports:
                 continue
             reported_warn_ports.add(pp)
-            if not ufw_active:
-                result.info(message=_t("ports.uncovered", port=pp), key="ports.uncovered")
-                continue
             result.warn_with_deduction(
                 key="ports.uncovered_netbios",
                 message=_t("ports.uncovered", port=pp),

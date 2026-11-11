@@ -59,8 +59,10 @@ class FirewallStackSnapshot:
         nftables_active:     True if nftables has non-UFW, non-iptables-compat tables.
         rules_readable:      False when the ruleset could not be listed.
         ip_forward:          True if /proc/sys/net/ipv4/ip_forward == "1".
-        docker_present:      True if Docker is installed/running.
-        wireguard_present:   True if WireGuard is configured.
+        docker_present:      True while a dockerd process runs (v0.32.0;
+                             it was: docker or /var/lib/docker present).
+        wireguard_present:   True while a WireGuard interface exists (v0.32.0;
+                             it was: wg or /etc/wireguard/*.conf present).
         libvirt_present:     True while a libvirt network routes through the host
                              (v0.31.3; it was: libvirt installed). See _libvirt_routing.
         kubernetes_running:  True if a kubelet runs (kubelet, MicroK8s'
@@ -140,16 +142,14 @@ class FirewallStackSnapshot:
 
         ip_forward = _read_ip_forward()
 
-        docker_present = (
-            _command_exists("docker")
-            or Path("/var/lib/docker").is_dir()
-        )
-
-        wg_dir = Path("/etc/wireguard")
-        wireguard_present = (
-            _command_exists("wg")
-            or (wg_dir.is_dir() and any(wg_dir.glob("*.conf")))
-        )
+        # v0.32.0 — Docker and WireGuard while they run, not because they are
+        # installed (libvirt went the same way in v0.31.3). Measured on Ubuntu
+        # Server 26.04 (11 November 2026, route0320): with Docker stopped,
+        # docker0, its 15 DOCKER rules and /var/lib/docker stayed, and only the
+        # dockerd process was gone; WireGuard configured (wg, /etc/wireguard/
+        # *.conf) had no interface until wg-quick brought one up.
+        docker_present = _dockerd_runs()
+        wireguard_present = _wireguard_interface()
 
         # libvirt/KVM also requires ip_forward and manages FORWARD rules —
         # v0.31.3: while one of its networks routes, not because it is installed.
@@ -206,6 +206,43 @@ def _libvirt_routing(modes: frozenset = _LIBVIRT_ROUTING_MODES) -> bool:
         name = bridge.get("name") or ""
         if (forward.get("mode") or "nat") in modes and name and path_exists(_SYS_CLASS_NET / name):
             return True
+    return False
+
+
+_PROC = Path("/proc")
+_SYS_NET = Path("/sys/class/net")
+
+
+def _dockerd_runs() -> bool:
+    """v0.32.0 — a process named ``dockerd`` runs (measured: Docker 29.1.3's
+    daemon; none once the docker service and socket are stopped)."""
+    try:
+        pids = [d for d in _PROC.iterdir() if d.name.isdigit()]
+    except OSError:
+        return False
+    for pid in pids:
+        try:
+            if (pid / "comm").read_text(errors="replace").strip() == "dockerd":
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _wireguard_interface() -> bool:
+    """v0.32.0 — an interface the kernel calls a WireGuard device: its
+    ``uevent`` says ``DEVTYPE=wireguard`` (measured, wg-quick on Ubuntu 26.04;
+    a tun device has no DEVTYPE, and both have type 65534)."""
+    try:
+        ifaces = list(_SYS_NET.iterdir())
+    except OSError:
+        return False
+    for iface in ifaces:
+        try:
+            if "DEVTYPE=wireguard" in (iface / "uevent").read_text(errors="replace").split():
+                return True
+        except OSError:
+            continue
     return False
 
 

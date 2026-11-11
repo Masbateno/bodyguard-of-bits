@@ -122,6 +122,9 @@ class ClamAVSnapshot:
     #: v0.24.4 — clamd's local socket when every local user can connect to it
     #: ("" when not, or when that could not be established).
     clamd_socket_open:    str            = ""
+    #: v0.32.0 — the measured permissions behind it ("srw-rw-rw- clamav:clamav
+    #: — /run/clamav: drwxr-xr-x"): what grounds the verdict, shown.
+    clamd_socket_perms:   str            = ""
 
     @classmethod
     def from_system(cls) -> "ClamAVSnapshot":
@@ -163,6 +166,8 @@ class ClamAVSnapshot:
 
         if snap.clamd_active:
             snap.clamd_socket_open = _socket_open_to_all()
+            if snap.clamd_socket_open:
+                snap.clamd_socket_perms = _socket_perms(snap.clamd_socket_open)
 
         # --- virus database freshness ---
         for db_path in _DB_CANDIDATES:
@@ -282,7 +287,10 @@ def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> 
             message=_t("clamav.socket_open_to_all", path=snapshot.clamd_socket_open),
             reason=_t("clamav.socket_open_to_all_reason"),
             points=1,
-            detail=_t("clamav.socket_open_to_all_detail"),
+            detail=" ".join(x for x in (
+                (_t("clamav.socket_open_perms", perms=snapshot.clamd_socket_perms)
+                 if snapshot.clamd_socket_perms else ""),
+                _t("clamav.socket_open_to_all_detail")) if x),
             nature="action",
             template_vars={"path": snapshot.clamd_socket_open},
         )
@@ -453,6 +461,26 @@ def _open_to_others(path: str) -> "bool | None":
             parent = os.path.dirname(parent)
     except OSError:
         return None
+
+
+def _socket_perms(path: str) -> str:
+    """v0.32.0 — the measured permissions the verdict rests on: the socket's
+    mode and owner, and its directory's mode ("srw-rw-rw- clamav:clamav —
+    /run/clamav: drwxr-xr-x"), wordless so both locales can carry it; "" when
+    they cannot be read back."""
+    try:
+        st = os.stat(path)
+        parent = os.path.dirname(os.path.abspath(path))
+        pst = os.stat(parent)
+    except OSError:
+        return ""
+    try:
+        import grp
+        import pwd
+        owner = f"{pwd.getpwuid(st.st_uid).pw_name}:{grp.getgrgid(st.st_gid).gr_name}"
+    except (ImportError, KeyError, OSError):
+        owner = f"{st.st_uid}:{st.st_gid}"
+    return f"{stat.filemode(st.st_mode)} {owner} — {parent}: {stat.filemode(pst.st_mode)}"
 
 
 def _configured_sockets() -> "list[str]":

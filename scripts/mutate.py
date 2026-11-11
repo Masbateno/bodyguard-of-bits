@@ -119,7 +119,11 @@ def _apply(mut: Mutation) -> bytes:
 
     backup = _STASH / mut.file
     backup.parent.mkdir(parents=True, exist_ok=True)
-    backup.write_bytes(original)
+    # v0.32.0 — copy2, not write_bytes: the stash must carry the file's mode.
+    # Measured (11 November 2026): a run killed mid-mutation left ci/
+    # arm64_smoke.sh to be recovered from a 0644 stash, and the recovery
+    # dropped its executable bit.
+    shutil.copy2(target, backup)
     target.write_bytes(mutated)
 
     if target.read_bytes() != mutated:

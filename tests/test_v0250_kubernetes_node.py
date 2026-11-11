@@ -205,21 +205,24 @@ class TestTheCommandProbe:
         monkeypatch.setattr(k8s, "_command_exists", lambda c: False)
         # v0.31.0 — the kubelet holds the port (`_loopback_listener`).
         monkeypatch.setattr(k8s, "_loopback_listener", lambda port: ["kubelet"])
+        # v0.32.0 — and presents a certificate its authority signs (`_tls_state`).
+        monkeypatch.setattr(k8s, "_kubelet_ca", lambda owner: k8s.Path("/ca.crt"))
+        monkeypatch.setattr(k8s, "_tls_state", lambda port, ca: "")
 
     def test_it_is_sent_whatever_the_read_answered(self, monkeypatch):
         """A refused read says nothing about a command: the probe is still sent."""
         self._offline(monkeypatch)
-        monkeypatch.setattr(k8s, "_probe", lambda url: 403)
-        monkeypatch.setattr(k8s, "_probe_run", lambda: (404, "pod does not exist"))
-        monkeypatch.setattr(k8s, "_probe_exec", lambda: (403, "Forbidden"))
+        monkeypatch.setattr(k8s, "_probe", lambda url, ca=None: 403)
+        monkeypatch.setattr(k8s, "_probe_run", lambda ca=None: (404, "pod does not exist"))
+        monkeypatch.setattr(k8s, "_probe_exec", lambda ca=None: (403, "Forbidden"))
         snap = KubernetesSnapshot.from_system()
         assert snap.run_probed and snap.anonymous_run_status == 404
 
     def test_not_sent_when_the_request_is_not_authenticated(self, monkeypatch):
         self._offline(monkeypatch)
         sent = []
-        monkeypatch.setattr(k8s, "_probe", lambda url: 401)
-        monkeypatch.setattr(k8s, "_probe_run", lambda: sent.append("run") or (None, ""))
+        monkeypatch.setattr(k8s, "_probe", lambda url, ca=None: 401)
+        monkeypatch.setattr(k8s, "_probe_run", lambda ca=None: sent.append("run") or (None, ""))
         snap = KubernetesSnapshot.from_system()
         assert not snap.run_probed and not sent
 
@@ -227,7 +230,7 @@ class TestTheCommandProbe:
         import re
         urls = []
         monkeypatch.setattr(k8s, "_request",
-                            lambda url, method="GET": urls.append((method, url)) or (404, ""))
+                            lambda url, method="GET", ca=None: urls.append((method, url)) or (404, ""))
         k8s._probe_run()
         k8s._probe_run()
         assert all(method == "POST" for method, _ in urls)
@@ -243,9 +246,9 @@ class TestTheCommandProbe:
     def test_both_command_requests_are_sent_whatever_the_read_answered(self, monkeypatch):
         """POST /run (create) and GET /exec (get) are different verbs: both are asked."""
         self._offline(monkeypatch)
-        monkeypatch.setattr(k8s, "_probe", lambda url: 403)
-        monkeypatch.setattr(k8s, "_probe_run", lambda: (403, "Forbidden"))
-        monkeypatch.setattr(k8s, "_probe_exec", lambda: (404, "pod does not exist"))
+        monkeypatch.setattr(k8s, "_probe", lambda url, ca=None: 403)
+        monkeypatch.setattr(k8s, "_probe_run", lambda ca=None: (403, "Forbidden"))
+        monkeypatch.setattr(k8s, "_probe_exec", lambda ca=None: (404, "pod does not exist"))
         snap = KubernetesSnapshot.from_system()
         assert snap.run_probed
         assert snap.anonymous_run_status == 403 and snap.anonymous_exec_status == 404
@@ -254,7 +257,7 @@ class TestTheCommandProbe:
         import re
         urls = []
         monkeypatch.setattr(k8s, "_request",
-                            lambda url, method="GET": urls.append((method, url)) or (404, ""))
+                            lambda url, method="GET", ca=None: urls.append((method, url)) or (404, ""))
         k8s._probe_exec()
         k8s._probe_exec()
         assert all(method == "GET" for method, _ in urls)
@@ -490,7 +493,8 @@ class TestTheProbe:
         def deny(*a, **k):
             raise urllib.error.HTTPError("u", 401, "Unauthorized", {}, None)
         monkeypatch.setattr(k8s.urllib.request, "urlopen", deny)
-        assert k8s._probe("https://127.0.0.1:10250/pods") == 401
+        monkeypatch.setattr(k8s, "_tls_context", lambda ca: object())      # v0.32.0 — a checked server
+        assert k8s._probe("https://127.0.0.1:10250/pods", k8s.Path("/ca.crt")) == 401
 
     def test_a_refused_connection_is_no_answer(self, monkeypatch):
         import urllib.error

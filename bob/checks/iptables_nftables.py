@@ -95,6 +95,10 @@ class IptablesNftSnapshot:
     #: mangle and security tables held beside nft (:func:`_legacy_tables`):
     #: {} for none, None when they could not be read.
     legacy_tables: "dict | None" = field(default_factory=dict, repr=False)
+    #: v0.32.0 — the same for IPv6 (``/proc/net/ip6_tables_names`` +
+    #: ``ip6tables-legacy``): the v6 port verdicts met them nowhere, so a
+    #: legacy refusal closed a port the shown verdict called reachable.
+    legacy_tables6: "dict | None" = field(default_factory=dict, repr=False)
 
     def _nat(self, families: tuple, legacy: bool) -> bool:
         return legacy or bool(self.nft_pre_input and _nft_nat_priority(self.nft_pre_input, families) is not None)
@@ -138,14 +142,20 @@ class IptablesNftSnapshot:
         legacy filter INPUT or raw PREROUTING at policy drop, closed 8099 while
         nft accepted it, and BOB read it accepted (−1); a legacy accept left
         nft's drop closing it. Tables BOB could not read: not established."""
-        if verdict[0] != "ACCEPT" or self.legacy_tables == {}:
-            return verdict
-        if self.legacy_tables is None:
-            return "UNKNOWN", ""
-        tables = self.legacy_tables
         nat = (self.nat_prerouting or _nft_nat_priority(self.raw_output) is not None) and not plain
+        return self._legacy_met(verdict, port, proto, self.legacy_tables, self.host_addresses, nat)
+
+    @staticmethod
+    def _legacy_met(verdict: "tuple[str, str]", port: int, proto: str, tables: "dict | None",
+                    hosts: "frozenset | None", nat: bool) -> "tuple[str, str]":
+        """The verdict met by one family's legacy tables (:meth:`_with_legacy`;
+        v0.32.0 — the IPv6 ones through :meth:`port_verdict_v6` too)."""
+        if verdict[0] != "ACCEPT" or tables == {}:
+            return verdict
+        if tables is None:
+            return "UNKNOWN", ""
         legacy = ipt_port_verdict(tables.get("filter") or "-P INPUT ACCEPT\n", port, proto,
-                                  {t: x for t, x in tables.items() if t != "filter"}, self.host_addresses, nat)
+                                  {t: x for t, x in tables.items() if t != "filter"}, hosts, nat)
         if legacy[0] != "ACCEPT":
             return legacy
         return ("ACCEPT", "rule") if "rule" in (verdict[1], legacy[1]) else verdict
@@ -154,8 +164,14 @@ class IptablesNftSnapshot:
         """v0.30.0 — the IPv6 verdict, read as :meth:`port_verdict` reads the
         IPv4 one; shown with each IPv6 listener, not scored."""
         if self.backend == "nftables":
-            return nft_port_verdict_v6(self.raw_output, port, proto, self.host_addresses,
-                                       nat_floor=_DSTNAT if self.nat_prerouting6 else None)
+            # v0.32.0 — met by the legacy v6 tables beside nft, as the IPv4
+            # verdict meets the v4 ones (measured, b3bench.sh: a legacy drop
+            # closed 8099 over IPv6 while the shown verdict said ACCEPT).
+            nat6 = self.nat_prerouting6 or _nft_nat_priority(self.raw_output, _IPV6_FAMILIES) is not None
+            return self._legacy_met(
+                nft_port_verdict_v6(self.raw_output, port, proto, self.host_addresses,
+                                    nat_floor=_DSTNAT if self.nat_prerouting6 else None),
+                port, proto, self.legacy_tables6, _hosts_v6(self.host_addresses), nat6)
         if self.backend == "iptables" and re.search(r"^-P INPUT ", self.raw_output6 or "", re.MULTILINE):
             hosts6 = _hosts_v6(self.host_addresses)
             got = ipt_port_verdict(self.raw_output6, port, proto, self.other_tables6, hosts6,
@@ -202,6 +218,7 @@ class IptablesNftSnapshot:
                         raw, _nft_all_chains(raw), None, None, hosts=hosts), _legacy_refused(legacy, hosts))),
                     host_addresses=hosts,
                     legacy_tables=legacy,
+                    legacy_tables6=_legacy_tables(v6=True),
                     default_drop_before_input=_nft_default_drop_before_input(raw) + _legacy_default_drop(legacy),
                     # v0.30.0 — a legacy nat table nft does not show.
                     nat_prerouting=_legacy_nat_rewrites(),

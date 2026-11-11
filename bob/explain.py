@@ -207,6 +207,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("SSH (additional)", [
         "ssh.host_key_dsa",
+        "ssh.host_key_rsa_weak",
         "ssh.not_active",
     ]),
     ("Updates (additional)", [

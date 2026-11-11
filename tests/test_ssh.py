@@ -970,7 +970,9 @@ class TestHostKeyDsa:
 
 
 class TestHostKeyRsaShort:
-    @pytest.mark.parametrize("bits", [1024, 2048, 3072, 3999])
+    # v0.32.0 — below 2048 the key is ssh.host_key_rsa_weak, WARN -1
+    # (test_v0320_rsa_host_key.py); 2048 and above stay INFO.
+    @pytest.mark.parametrize("bits", [2048, 3072, 3999])
     def test_rsa_short_is_info(self, bits):
         snap = base_snapshot(host_keys=[_make_host_key("rsa", rsa_bits=bits)])
         result = check_ssh(snap)

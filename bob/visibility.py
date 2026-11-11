@@ -174,6 +174,12 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "kubernetes.apiserver_listener_unknown",
     "kubernetes.kubelet_listener_unverified",
     "kubernetes.apiserver_listener_unverified",
+    # v0.32.0 — not asked: the certificate could not be checked against the
+    # distribution's authority, or that authority does not sign it.
+    "kubernetes.kubelet_tls_unchecked",
+    "kubernetes.kubelet_tls_mismatch",
+    "kubernetes.apiserver_tls_unchecked",
+    "kubernetes.apiserver_tls_mismatch",
     "kubernetes.kubelet_run_indeterminate",
     "kubernetes.kubelet_anonymous_inconclusive",
     # v0.29.0 — the API server is read on MicroK8s only.

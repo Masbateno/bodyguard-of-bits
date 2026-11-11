@@ -162,7 +162,12 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 | 0.6.x          | ❌ fin de vie       |
 | ≤ 0.5.x        | ❌ fin de vie       |
 
-Les correctifs sortent en `0.31.x+1`. Un changement cassant incrémente la version mineure (`0.32.0`).
+Les correctifs sortent en `0.31.x+1`. Un changement du contrat stable — codes de
+sortie, schéma JSON, noms d'options, clés de constat ([CONVENTIONS](DOCUMENTS/CONVENTIONS_FR.md#8-versionnage))
+— incrémente la version mineure (`0.32.0`). Un correctif peut tout de même faire
+bouger les scores, quand un constat est corrigé d'après une mesure : son entrée de
+changelog dit alors *BREAKING pour les scores* et liste chaque pénalité qu'il
+déclenche nouvellement (de 0.31.1 à 0.31.4, c'était le cas).
 
 **v0.30.x est en fin de vie le jour où 0.31.0 sort**, selon la politique
 « ligne minor la plus récente uniquement » ci-dessus. Aucun correctif de

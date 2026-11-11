@@ -172,6 +172,10 @@ class BackupSnapshot:
     timeshift_snapshots: "list[str] | None" = None
     timeshift_unread:    str = ""
     timeshift_dir:       str = ""
+    #: v0.32.0 — timeshift.json's `exclude` patterns: paths no snapshot holds
+    #: (on a desktop, often the home). Shown so "active" is not read as "my
+    #: files are backed up". [] when none or unread.
+    timeshift_excludes:  list = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "BackupSnapshot":
@@ -222,6 +226,7 @@ class BackupSnapshot:
             if _TIMESHIFT_CONFIG.is_file():
                 (snap.timeshift_schedules, snap.timeshift_snapshots,
                  snap.timeshift_unread, snap.timeshift_dir) = _read_timeshift()
+                snap.timeshift_excludes = _timeshift_excludes()
             if snap.timeshift_schedules and snap.timeshift_snapshots != []:
                 snap.active_tools.append("timeshift")
             else:
@@ -313,6 +318,21 @@ def _read_timeshift() -> "tuple[list[str] | None, list[str] | None, str, str]":
     except OSError:
         return schedules, None, "unreadable", directory
     return schedules, names, "", directory
+
+
+def _timeshift_excludes() -> list:
+    """v0.32.0 — the `exclude` patterns of timeshift.json: every path they
+    match is in no snapshot (measured on Linux Mint 22.3: the home excluded
+    while backup.active said "solution active"). [] when unread or not a
+    list of strings."""
+    try:
+        cfg = json.loads(read_text_capped(_TIMESHIFT_CONFIG, encoding="utf-8", errors="replace"))
+    except (OSError, ValueError):
+        return []
+    excludes = cfg.get("exclude") if isinstance(cfg, dict) else None
+    if not isinstance(excludes, list):
+        return []
+    return [x for x in excludes if isinstance(x, str) and x]
 
 
 def _mounted_at(device: str) -> "str | None":
@@ -530,16 +550,22 @@ def _timeshift_finding(snapshot: BackupSnapshot, result: CheckResult, _t) -> Non
     when = (", ".join(_t(f"backup.timeshift_every.{name}") for name in schedules)
             if schedules else _t("backup.timeshift_no_schedule"))
     snaps = snapshot.timeshift_snapshots
+    # v0.32.0 — what no snapshot holds, beside the count: "active" must not
+    # read as "my files are backed up" when the home is excluded.
+    excl = (_t("backup.timeshift_excludes", paths=", ".join(snapshot.timeshift_excludes))
+            if snapshot.timeshift_excludes else "")
     if snaps:
         result.info(
             key="backup.timeshift_snapshots",
             message=_t("backup.timeshift_snapshots", count=len(snaps), newest=snaps[-1],
                        path=snapshot.timeshift_dir, schedules=when),
+            detail=excl,
         )
     elif snaps == []:
         result.info(
             key="backup.timeshift_none",
             message=_t("backup.timeshift_none", path=snapshot.timeshift_dir, schedules=when),
+            detail=excl,
         )
     else:
         result.info(
@@ -547,6 +573,7 @@ def _timeshift_finding(snapshot: BackupSnapshot, result: CheckResult, _t) -> Non
             message=_t("backup.timeshift_unread", schedules=when,
                        why=_t(f"backup.timeshift_why.{snapshot.timeshift_unread or 'not_read'}",
                               where=snapshot.timeshift_dir)),
+            detail=excl,
         )
 
 

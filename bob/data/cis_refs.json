@@ -1284,6 +1284,11 @@
       }
     }
   },
+  "ssh.host_key_rsa_weak": {
+    "ref": "Best practice — NIST SP 800-131A: generating RSA signatures with keys below 2048 bits is disallowed; an SSH host key signs at every connection (ssh-keygen -t rsa -b 4096, or an ed25519 host key)",
+    "ref_fr": "Bonne pratique — NIST SP 800-131A : générer des signatures RSA avec des clés de moins de 2048 bits est interdit ; une clé hôte SSH signe à chaque connexion (ssh-keygen -t rsa -b 4096, ou une clé hôte ed25519)",
+    "code": null
+  },
   "ssh.host_key_dsa": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.2.13 — Ensure only strong key exchange algorithms are used (no DSA host keys)",
     "code": "CIS:5.2.13"

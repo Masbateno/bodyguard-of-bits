@@ -594,15 +594,19 @@ class TestExposureOverrides:
         )
         assert snap.exposures["8883/tcp"] == Exposure.NOT_LISTENING
 
-    def test_open_world_not_in_listeners_stays_open_world(self):
-        """Port with ALLOW rule but not listening — rule exists, stays OPEN_WORLD (orphan UFW rule)."""
-        snap = self._make_snap_with_overrides(
-            "22/tcp", self.UFW_OPEN,
-            loopback_ports=set(),
-            all_listening_ports=set(),
-        )
-        # NOT_LISTENING only overrides NO_RULE — OPEN_WORLD stays as-is
-        assert snap.exposures["22/tcp"] == Exposure.OPEN_WORLD
+    def test_open_world_not_in_listeners_is_not_listening(self):
+        """Port with ALLOW rule but not listening — v0.32.0: nothing listens, so
+        nothing is exposed today; the firewall section reports the orphan rule.
+        (Up to 0.31.4 the rule kept it OPEN_WORLD and scored it.)"""
+        # Through the real snapshot builder: the helper above copies the old rule.
+        from bob.checks import services as svc
+        from unittest import mock
+        with mock.patch.object(svc, "_detect_installation", return_value=(True, "dpkg")), \
+             mock.patch.object(svc, "_detect_state", return_value=ServiceState.ACTIVE_ENABLED), \
+             mock.patch.object(svc, "_resolve_ports", return_value=["22/tcp"]):
+            snap = ServiceSnapshot._build_snapshot(make_service(ports=("22/tcp",)), self.UFW_OPEN,
+                                                   set(), set(), {})
+        assert snap.exposures["22/tcp"] == Exposure.NOT_LISTENING
 
     def test_no_rule_not_loopback_but_listening_stays_no_rule(self):
         """Port on 0.0.0.0 with no UFW rule, actively listening → stays NO_RULE."""

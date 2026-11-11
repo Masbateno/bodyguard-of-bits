@@ -108,6 +108,9 @@ MAP = {
  # ---- file permissions ----
  "file_perms.world_writable": ["file_permissions_unauthorized_world_writable"],
  "file_perms.sudoers_nopasswd_all": ["sudo_require_authentication"],
+ # v0.32.0 — its references were typed by hand in 0.27.0 (copied from the key
+ # above); anchored on the same rule so a regeneration keeps them sourced.
+ "file_perms.nopass_root_equivalent": ["sudo_require_authentication"],
  # ---- firewall / UFW ----
  "prerequisites.firewall_missing": ["package_ufw_installed"],
  "firewall.inactive": ["service_ufw_enabled"],

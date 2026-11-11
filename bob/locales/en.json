@@ -914,7 +914,7 @@
     },
     "smtp_server_postfix_exim": {
       "level": "HIGH",
-      "exposure": "TCP/25 listener accepts mail submissions. Internet-exposed SMTP attracts constant spam relay attempts, SASL credential brute force, and reputation-based scanning. Default postfix configs on Debian/Ubuntu typically bind to 127.0.0.1 only — the port verdict below says whether that default still holds on this host.",
+      "exposure": "TCP/25 carries mail transfer between servers; client submission uses 587 (or 465 over implicit TLS — RFC 6409, RFC 8314). Internet-exposed SMTP attracts constant spam relay attempts, SASL credential brute force, and reputation-based scanning. Default postfix configs on Debian/Ubuntu typically bind to 127.0.0.1 only — the port verdict below says whether that default still holds on this host.",
       "threat": "Open relay abuse blocklists your IP within hours, breaking outbound mail for legitimate users. SASL auth without rate limiting is a slow-motion credential spray target. Misconfigured MTAs have historically been used for spam campaigns at scale and exfiltration channels."
     },
     "nfs_server": {
@@ -1428,6 +1428,7 @@
     "host_key_dsa": "DSA server host key found: {name} — DSA is cryptographically broken",
     "host_key_dsa_detail": "DSA host keys use a broken algorithm and can be forged by an attacker with sufficient resources. Remove the DSA host key and regenerate as ed25519. All clients that have cached this host key will need to accept the new one.",
     "host_key_dsa_reason": "DSA server host key in use: {name}",
+    "host_key_rsa_weak": "RSA server host key {name}: {bits} bits — below the 2048-bit floor NIST sets for generating signatures; it signs at every connection",
     "host_key_rsa_short": "RSA server host key {name}: {bits} bits — 4096-bit RSA gives a higher security margin; ed25519 is a modern alternative",
     "host_key_rsa_short_detail": "NIST rates 2048-bit RSA at 112-bit security, acceptable through 2030, and 3072-bit RSA at 128-bit, acceptable beyond (SP 800-57 Part 1); NIST disallows generating RSA signatures with keys below 2048 bits; verifying signatures made with 1024- to 2047-bit keys remains a legacy use (SP 800-131A). Regenerating a host key changes the fingerprint every client has recorded: each will warn that the host identification has changed until its known_hosts is updated — plan it, and give users the new fingerprint (ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub).",
     "host_key_ok": "Server host key {name} ({type}): strong algorithm",
@@ -1882,6 +1883,11 @@
         "title": "Duplicate entries in known_hosts",
         "why": "Multiple entries for the same host with different keys can cause confusion and may allow SSH to silently accept a stale or compromised key. It also indicates the file has not been maintained.",
         "how": "1. Remove all entries for the affected host:\n   ssh-keygen -R <hostname>\n2. Reconnect to add a single clean entry\n3. Periodically clean known_hosts of stale entries for decommissioned hosts"
+      },
+      "host_key_rsa_weak": {
+        "title": "SSH host key: RSA below 2048 bits",
+        "why": "The server signs with its host key at every connection, and that signature is what lets a client tell this server from an impostor. NIST disallows generating RSA signatures with keys below 2048 bits (SP 800-131A); 2048-bit RSA rates 112-bit security, acceptable through 2030 (SP 800-57 Part 1). The same floor scores a user's RSA key below 2048 bits (ssh.rsa_weak).",
+        "how": "1. Generate a new RSA host key of 4096 bits (or rely on an ed25519 host key, which most distributions already generate):\n   sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N ''\n2. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch/Fedora/RHEL/openSUSE; on Alpine/OpenRC use rc-service\n3. Every client that recorded the old fingerprint will warn that the host identification changed: give users the new one first:\n   ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub"
       },
       "host_key_dsa": {
         "title": "SSH host key uses DSA (deprecated and considered insecure)",
@@ -3741,6 +3747,7 @@
     "clamd_inactive": "ClamAV daemon ({unit}) is not running",
     "clamd_inactive_detail": "The clamav-daemon service enables on-access scanning and is required for integration with mail servers (Postfix, Amavis, etc.). Without the daemon, only manual on-demand scans are possible.",
     "socket_open_to_all": "The permissions on the ClamAV daemon's socket ({path}) let every local user send it commands, SHUTDOWN included",
+    "socket_open_perms": "Measured: {perms}.",
     "socket_open_to_all_detail": "Its Unix permissions — write on the socket, search on every directory above it — admit a connection from any account on this host (a MAC policy such as SELinux or AppArmor may still refuse one), so any of them can stop the daemon: measured on Debian and Alpine as packaged. This is how the package ships it (Debian, Ubuntu, Arch, openSUSE and Alpine). Restricting it — LocalSocketGroup and LocalSocketMode 660 in clamd's configuration, then a restart — keeps it working for the owner, the group and root, and cuts every other client: first check which users your mail filter or scanners run as, and add them to that group.",
     "socket_open_to_all_reason": "ClamAV daemon socket open to every local user (can be stopped)",
     "no_scan_log": "No ClamAV scan log found — last scan date unknown",
@@ -4011,7 +4018,8 @@
     "timed_out": "Package integrity verification timed out and was stopped — result not established",
     "changed": "{count} packaged file(s) differ from the manager's recorded digest: {files}",
     "changed_detail": "These files were installed by a package but their content no longer matches the digest the package manager recorded. That can be benign — a local recompile, a vendor hotfix applied by hand, a file patched by another tool — or it can be the trace of an intruder replacing a system binary or library. BOB cannot tell which, so this is reported, not scored: verify each path against what you expect (reinstall the owning package to compare, e.g. apt reinstall / dnf reinstall, or inspect the file). Configuration files, which are expected to be edited, are already excluded.",
-    "clean": "No packaged file differs from the manager's recorded digest ({tool} verified)"
+    "clean": "No packaged file differs from the manager's recorded digest ({tool} verified)",
+    "clean_detail": "The reference digests live in the local package database: a compromised root can rewrite them together with the files. This check attests consistency with that database, not an external chain of trust — repository signatures are the package-authenticity check's."
   },
   "kexec_lockdown": {
     "kexec_disabled": "kexec is locked (kernel.kexec_load_disabled=1) — no new kernel can be loaded until reboot",
@@ -4186,6 +4194,7 @@
     "timeshift_snapshots": "Timeshift: {count} snapshot(s) in {path}, the newest {newest} — schedule: {schedules}",
     "timeshift_none": "Timeshift: no snapshot in {path} — schedule: {schedules}",
     "timeshift_unread": "Timeshift: schedule: {schedules}; its snapshots were not read — {why}",
+    "timeshift_excludes": "Excluded from every snapshot (timeshift.json): {paths}. What these patterns match is not backed up by Timeshift.",
     "timeshift_no_schedule": "none (snapshots only by hand)",
     "timeshift_every": {
       "hourly": "hourly",
@@ -4473,6 +4482,14 @@
     "kubelet_auth_ok": "The kubelet refuses anonymous requests on port 10250 (401)",
     "kubelet_unprobed": "The kubelet did not answer on 127.0.0.1:10250 within 15 seconds — its anonymous access was not assessed",
     "kubelet_listener_foreign": "127.0.0.1:10250 is owned by {process}, not a recognised kubelet process run by root. Anonymous kubelet access could not be established.",
+    "kubelet_tls_unchecked": "The kubelet on 127.0.0.1:10250 was not asked: {why}. Anonymous kubelet access could not be established.",
+    "kubelet_tls_mismatch": "The service on 127.0.0.1:10250 does not present a certificate signed by {ca}, so it was not asked. Anonymous kubelet access could not be established.",
+    "apiserver_tls_unchecked": "The API server on 127.0.0.1:{port} was not asked: {why}. Anonymous API server access could not be established.",
+    "apiserver_tls_mismatch": "The service on 127.0.0.1:{port} does not present a certificate signed by {ca}, so it was not asked. Anonymous API server access could not be established.",
+    "tls_why": {
+      "not_measured": "BOB knows no certificate authority to check its certificate against on this distribution (not measured)",
+      "unreadable": "{ca} could not be read to check its certificate"
+    },
     "kubelet_listener_unknown": "BOB could not identify the process owning 127.0.0.1:10250. Anonymous kubelet access could not be established.",
     "kubelet_listener_unverified": "BOB could not verify that the process owning 127.0.0.1:10250 ({process}) runs as root. Anonymous kubelet access could not be established.",
     "apiserver_listener_foreign": "127.0.0.1:{port} is owned by {process}, not a recognised API server process run by root. Anonymous API server access could not be established.",

@@ -121,6 +121,11 @@ class Exposure(Enum):
     LOOPBACK_NO_RULE = "loopback_no_rule"  # loopback-only, no UFW rule — covered by default deny
     NOT_LISTENING    = "not_listening"     # port in registry but not actively listening
 
+#: v0.32.0 — the exposures a port nothing listens on is read as NOT_LISTENING
+#: from: no rule, or a rule that admits it (to everyone or to the LAN). A
+#: refusing rule (DENY) is left as said.
+_RULE_OR_NO_RULE = frozenset({Exposure.NO_RULE, Exposure.OPEN_WORLD, Exposure.OPEN_LOCAL})
+
 # Resolved after ServiceState is defined
 _STATE_PRIORITY = {
     ServiceState.ACTIVE_ENABLED:    6,
@@ -241,10 +246,17 @@ class ServiceSnapshot:
                         elif exposures[port] == Exposure.NO_RULE:
                             exposures[port] = Exposure.LOOPBACK_NO_RULE
 
-            # Override exposure for registry ports not actively listening
+            # Override exposure for registry ports not actively listening.
+            # v0.32.0 — whatever the UFW rule says: a port nothing listens on
+            # exposes nothing today. Since v0.1.0 an ALLOW rule kept it "open
+            # to internet", scored −1 to −3, while the firewall section already
+            # reported the same rule as open with no listening service
+            # (firewall_rules.orphan_rule). Measured on Ubuntu Server 26.04
+            # (8 November 2026, rt0313): Nextcloud's 443/tcp scored −2 with
+            # nothing listening on it. Unknown listeners (None) change nothing.
             if all_listening_ports is not None:
                 for port in ports:
-                    if port not in all_listening_ports and exposures.get(port) == Exposure.NO_RULE:
+                    if port not in all_listening_ports and exposures.get(port) in _RULE_OR_NO_RULE:
                         exposures[port] = Exposure.NOT_LISTENING
 
             def _left_to_default(kind: Exposure) -> frozenset:

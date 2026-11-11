@@ -156,7 +156,11 @@ are not backported.
 | 0.6.x          | ❌ end of life      |
 | ≤ 0.5.x        | ❌ end of life      |
 
-Patches release as `0.31.x+1`. A breaking change bumps the minor (`0.32.0`).
+Patches release as `0.31.x+1`. A change to the stable contract — exit codes, the
+JSON schema, option names, finding keys ([CONVENTIONS](DOCUMENTS/CONVENTIONS.md#8-versioning))
+— bumps the minor (`0.32.0`). A patch can still move scores, when a finding is
+corrected against a measurement: its changelog entry then says *BREAKING for
+scores* and lists every penalty it newly triggers (0.31.1 to 0.31.4 did).
 
 **v0.30.x is end-of-life as of the day 0.31.0 ships**, per the "latest minor
 line only" policy above. No security fixes will be backported. Users on v0.30.x
