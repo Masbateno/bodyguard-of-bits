@@ -265,7 +265,11 @@ def check_package_integrity(snapshot: PackageIntegritySnapshot,
         result.info(
             message=_t("package_integrity.changed",
                        count=len(snapshot.changed_files), files=listing),
-            detail=_t("package_integrity.changed_detail"),
+            # v0.32.0 — the same limit: a file changed with its recorded digest
+            # is not in this list (measured on Linux Mint 22.3, 11 November
+            # 2026: 21 files listed, the shape real hosts show, not "clean").
+            detail=" ".join((_t("package_integrity.changed_detail"),
+                             _t("package_integrity.local_digests_limit"))),
             key="package_integrity.changed",
         )
     else:
@@ -273,7 +277,7 @@ def check_package_integrity(snapshot: PackageIntegritySnapshot,
                   # v0.32.0 — the digests live in the local package database; a
                   # compromised root can rewrite them with the files. Said, so
                   # "clean" is not read as an external chain of trust.
-                  detail=_t("package_integrity.clean_detail"),
+                  detail=_t("package_integrity.local_digests_limit"),
                   key="package_integrity.clean")
 
     return result

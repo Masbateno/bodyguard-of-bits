@@ -618,7 +618,9 @@ class TestCISReferences:
 
     def test_explain_cis_key_exists_for_ssh_password_auth(self):
         from bob.cis_refs import get_cis_ref
-        val = get_cis_ref("ssh.password_auth")
+        # v0.32.0 — ssh.password_auth's hand-typed "5.2.8" matched no CIS
+        # Ubuntu 22.04 control (now a best practice): a generated key instead.
+        val = get_cis_ref("ssh.permit_root_login")
         assert val is not None
         assert "CIS" in val and "." in val
 

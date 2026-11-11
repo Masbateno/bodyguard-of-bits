@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.31.4
+Version:        0.32.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,17 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Thu Nov 12 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.32.0-1
+- Minor, BREAKING for scores; no JSON-schema or CSV-column change, two JSON
+  fields change meaning (docker_present, wireguard_present). Kubernetes
+  certificates verified with the distribution's authority before any HTTP
+  request; ports nothing listens on no longer scored as exposed; Docker and
+  WireGuard count as routing only while dockerd runs or an interface exists;
+  send_redirects free where nothing forwards; an RSA host key below 2048
+  bits that sshd serves costs one point; legacy IPv6 tables in the IPv6 port
+  verdict (display only); five findings say what they measured; the
+  --manage-logs preview moves between reports with the arrow keys.
+
 * Wed Nov 11 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.31.4-1
 - Patch, BREAKING for scores through a new registry entry (Samba NetBIOS,
   137/udp and 138/udp) and Samba's state read from smbd alone; Timeshift

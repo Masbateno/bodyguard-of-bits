@@ -1,3 +1,22 @@
+bodyguard-of-bits (0.32.0-1) unstable; urgency=medium
+
+  * Minor, BREAKING for scores; no JSON-schema or CSV-column change; the
+    JSON fields docker_present and wireguard_present change meaning.
+  * Kubernetes: the kubelet and API server certificates are verified with
+    the distribution's authority; no HTTP request unless that succeeds,
+    and the score is an upper bound when it cannot.
+  * A port a UFW rule admits but nothing listens on is not exposed.
+  * Docker and WireGuard count as routing only while dockerd runs or a
+    WireGuard interface exists.
+  * send_redirects costs nothing where no interface forwards.
+  * An RSA SSH host key below 2048 bits costs one point when sshd serves it.
+  * The legacy IPv6 tables enter the IPv6 port verdict (display only).
+  * Texts: SMTP port 25, ClamAV socket permissions, Timeshift exclusions,
+    NetBIOS without UFW, package-integrity limit.
+  * --manage-logs: the preview moves to the older/newer report with arrows.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 12 Nov 2026 05:05:06 +0000
+
 bodyguard-of-bits (0.31.4-1) unstable; urgency=medium
 
   * Patch, BREAKING for scores through a new registry entry and Samba's

@@ -130,6 +130,35 @@ MAP = {
  "user_accounts.netrc_exposed": ["no_netrc_files"],
  # ---- package signing (v0.24.0) — a Manual control, title-anchored ----
  "package_authenticity.disabled": ["title:Ensure GPG keys are configured (Manual)"],
+ # ---- v0.32.0 — 24 keys whose references were typed by hand under the
+ #      "CIS Ubuntu 22.04" label: none matched CAC's v2.0.0 control (about a
+ #      dozen were v1.0.0 numbers, others section numbers or other controls).
+ #      Anchored here on the rule the finding fails; the 30 with no such rule
+ #      became best-practice references in cis_refs.json. ----
+ "cron.world_writable": ["file_permissions_unauthorized_world_writable"],
+ "systemd_timers.world_writable": ["file_permissions_unauthorized_world_writable"],
+ "firewall.policy_unknown": ["set_ufw_default_rule"],
+ "firewall_iptables.input_accept": ["set_iptables_default_rule"],
+ "firewall_iptables.forward_accept": ["set_iptables_default_rule"],
+ "firewall_iptables.nft_no_input_filter": ["set_nftables_base_chain"],
+ "firewall_iptables.no_backend": ["service_ufw_enabled"],
+ "firewall_iptables.no_conntrack":
+     ["title:Ensure iptables outbound and established connections are configured (Manual)"],
+ "firewall_rules.ipv6_missing": ["ufw_rules_for_open_ports"],
+ "ipv6.port_no_v6_rule": ["ufw_rules_for_open_ports"],
+ "ipv6.ufw_disabled_listeners_present": ["ufw_rules_for_open_ports"],
+ "ipv6.netfilter_v6_open": ["set_ip6tables_default_rule"],
+ "ports.uncovered": ["ufw_rules_for_open_ports"],
+ "ports.uncovered_netfilter_open": ["iptables_rules_for_open_ports"],
+ **dict.fromkeys(("firmware.fwupd_updates", "firmware.microcode_missing",
+                  "kernel_modules.kernels_obsolete", "kernel_modules.kernels_reboot_pending",
+                  "kernel_modules.kernels_update_available", "updates.security_pending",
+                  "updates.unattended_not_configured"),
+                 ["title:Ensure updates, patches, and additional security software are installed (Manual)"]),
+ "log_rotation.journald_volatile": ["journald_storage"],
+ "ntp.not_enabled": ["title:Ensure a single time synchronization daemon is in use (Automated)"],
+ "grub.cfg_perms": ["file_permissions_grub2_cfg"],
+ "faillock.not_configured": ["accounts_passwords_pam_faillock_enabled"],
  # ---- SUID/SGID review — a Manual control with no CAC rule: anchored on
  #      its exact title (see _index) ----
  **dict.fromkeys(("suid_audit.unexpected_suid", "suid_audit.unexpected_sgid",

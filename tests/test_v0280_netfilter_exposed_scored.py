@@ -149,6 +149,8 @@ def test_the_new_key_is_fully_contracted():
     root = Path(__file__).resolve().parent.parent
     assert "ports.uncovered_netfilter_open" in EXPLAIN_KEYS
     refs = json.loads((root / "bob" / "data" / "cis_refs.json").read_text())
-    assert refs["ports.uncovered_netfilter_open"]["code"] == "CIS:3.5.1.7"
+    # v0.32.0 — generated from iptables_rules_for_open_ports (CAC v2.0.0);
+    # the hand-typed 3.5.1.7 was v1.0.0's numbering.
+    assert refs["ports.uncovered_netfilter_open"]["code"] == "CIS:4.3.2.4"
     en = json.loads((root / "bob" / "locales" / "en.json").read_text())
     assert set(en["explain"]["ports"]["uncovered_netfilter_open"]) >= {"title", "why", "how"}

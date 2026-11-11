@@ -27,7 +27,9 @@ _CODE_RE = re.compile(r"^CIS( Docker| Kubernetes)?:\d+(\.\d+)*$")
 
 class TestGetCisRef:
     def test_known_key_returns_string(self):
-        ref = get_cis_ref("ssh.password_auth")
+        # v0.32.0 — ssh.password_auth's "5.2.8" matched no CIS Ubuntu 22.04
+        # control in CAC (now a best practice); a generated key instead.
+        ref = get_cis_ref("ssh.permit_root_login")
         assert isinstance(ref, str)
         assert ref.startswith("CIS")
 
@@ -37,7 +39,9 @@ class TestGetCisRef:
         assert ref.startswith("CIS")
 
     def test_known_kernel_modules_key(self):
-        ref = get_cis_ref("kernel_modules.risky_fs")
+        # v0.32.0 — risky_fs covers several modules, each its own CIS control
+        # (1.1.1.x): a best practice; usb_storage has one rule.
+        ref = get_cis_ref("kernel_modules.usb_storage")
         assert ref is not None
         assert ref.startswith("CIS")
 
@@ -90,7 +94,9 @@ class TestGetCisCode:
         # v0.10.1 D-4 Rank 1: ssh.x11_forwarding was split into
         # ssh.x11.forwarding.server (keeps the CIS reference) +
         # ssh.x11.forwarding.client (Best practice — no CIS code).
-        code = get_cis_code("ssh.x11.forwarding.server")
+        # v0.32.0 — the server key's "5.2.6" was sudo's timeout in CAC v2.0.0
+        # and BOB does not read DisableForwarding (5.1.8): a best practice now.
+        code = get_cis_code("ssh.permit_root_login")
         assert code is not None
         assert _CODE_RE.match(code), f"Unexpected code format: {code!r}"
 
@@ -117,12 +123,15 @@ class TestGetCisCode:
         assert not _CODE_RE.match("CIS:foo")
 
     def test_auditd_code(self):
-        code = get_cis_code("auditd.no_rules")
-        assert code == "CIS:4.1.4"
+        # v0.32.0 — "4.1.4" was ufw loopback in CAC v2.0.0; auditd.no_rules is
+        # a best practice, auditd.not_installed is generated.
+        assert get_cis_code("auditd.no_rules") is None
+        assert get_cis_code("auditd.not_installed") == "CIS:6.3.1.1"
 
     def test_iptables_nft_forward_accept_code(self):
+        # v0.32.0 — generated from set_iptables_default_rule (CAC v2.0.0).
         code = get_cis_code("firewall_iptables.forward_accept")
-        assert code == "CIS:3.5.1.1"
+        assert code == "CIS:4.3.2.1"
 
 
 class TestLoadCache:

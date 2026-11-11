@@ -186,6 +186,7 @@ class TestAnAdvertisedKeyDoesSomething:
         _keys.LANG:    ("ord('l')", 'ord("l")', "_keys.LANG"),
         _keys.TOGGLE:  ("ord(' ')", 'ord(" ")', "_keys.TOGGLE"),
         _keys.DELETE:  ("ord('d')", 'ord("d")', "_keys.DELETE"),
+        _keys.PEER:    ("KEY_LEFT", "_keys.PEER"),
     }
 
     def test_each_declared_navigation_key_is_dispatched(self):

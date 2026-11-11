@@ -577,7 +577,8 @@
       "submit": "valider",
       "confirm": "confirmer",
       "new": "nouveau",
-      "create": "créer"
+      "create": "créer",
+      "peer": "plus ancien/récent"
     }
   },
   "install_cron": {
@@ -1428,7 +1429,9 @@
     "host_key_dsa": "Clé hôte serveur DSA trouvée : {name} — DSA est cryptographiquement cassé",
     "host_key_dsa_detail": "Les clés hôte DSA utilisent un algorithme cassé et peuvent être forgées par un attaquant disposant de ressources suffisantes. Supprimez la clé DSA et régénérez-la en ed25519. Tous les clients ayant mis en cache cette clé hôte devront accepter la nouvelle.",
     "host_key_dsa_reason": "Clé hôte serveur DSA en service : {name}",
-    "host_key_rsa_weak": "Clé hôte serveur RSA {name} : {bits} bits — sous le plancher de 2048 bits que le NIST fixe pour générer des signatures ; elle signe à chaque connexion",
+    "host_key_rsa_weak": "Clé hôte serveur RSA {name} : {bits} bits — sous le plancher de 2048 bits que le NIST fixe pour générer des signatures ; sshd la sert d'après sshd_config, elle signe chaque connexion qui négocie RSA",
+    "host_key_rsa_weak_unused": "Clé hôte serveur RSA {name} : {bits} bits — sous le plancher de 2048 bits que le NIST fixe pour générer des signatures ; sshd ne la sert pas d'après sshd_config (absente des lignes HostKey, ou RSA retiré de HostKeyAlgorithms) : non comptée",
+    "host_key_rsa_weak_unknown": "Clé hôte serveur RSA {name} : {bits} bits — sous le plancher de 2048 bits que le NIST fixe pour générer des signatures ; inconnu si sshd la sert (sshd_config illisible) : non comptée, le score est un plafond",
     "host_key_rsa_short": "Clé hôte serveur RSA {name} : {bits} bits — RSA 4096 bits offre une marge de sécurité plus élevée ; ed25519 est une alternative moderne",
     "host_key_rsa_short_detail": "Le NIST évalue RSA 2048 bits à une sécurité de 112 bits, acceptable jusqu'en 2030, et RSA 3072 bits à 128 bits, acceptable au-delà (SP 800-57 partie 1) ; le NIST interdit de générer des signatures RSA avec des clés de moins de 2048 bits ; vérifier des signatures faites avec des clés de 1024 à 2047 bits reste un usage hérité (SP 800-131A). Régénérer une clé hôte change l'empreinte que chaque client a enregistrée : chacun signalera que l'identité de l'hôte a changé tant que son known_hosts n'est pas mis à jour — le planifier, et donner la nouvelle empreinte aux utilisateurs (ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub).",
     "host_key_ok": "Clé hôte serveur {name} ({type}) : algorithme fort",
@@ -1886,7 +1889,7 @@
       },
       "host_key_rsa_weak": {
         "title": "Clé hôte SSH : RSA sous 2048 bits",
-        "why": "Le serveur signe avec sa clé hôte à chaque connexion, et c'est cette signature qui permet à un client de distinguer ce serveur d'un imposteur. Le NIST interdit de générer des signatures RSA avec des clés de moins de 2048 bits (SP 800-131A) ; RSA 2048 bits vaut une sécurité de 112 bits, acceptable jusqu'en 2030 (SP 800-57 partie 1). Le même plancher pénalise une clé RSA d'utilisateur sous 2048 bits (ssh.rsa_weak).",
+        "why": "Le serveur signe avec sa clé hôte chaque connexion qui négocie l'algorithme de cette clé — BOB ne compte cette clé que si sshd_config la charge (HostKey, ou les fichiers par défaut quand aucun n'est nommé) et propose RSA (HostKeyAlgorithms) — et c'est cette signature qui permet à un client de distinguer ce serveur d'un imposteur. Le NIST interdit de générer des signatures RSA avec des clés de moins de 2048 bits (SP 800-131A) ; RSA 2048 bits vaut une sécurité de 112 bits, acceptable jusqu'en 2030 (SP 800-57 partie 1). Le même plancher pénalise une clé RSA d'utilisateur sous 2048 bits (ssh.rsa_weak).",
         "how": "1. Générez une nouvelle clé hôte RSA de 4096 bits (ou appuyez-vous sur une clé hôte ed25519, que la plupart des distributions génèrent déjà) :\n   sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N ''\n2. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service\n3. Chaque client qui a enregistré l'ancienne empreinte signalera que l'identité de l'hôte a changé : donnez d'abord la nouvelle aux utilisateurs :\n   ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub"
       },
       "host_key_dsa": {
@@ -3086,7 +3089,7 @@
       "cfg_perms": {
         "title": "La config GRUB (grub.cfg) n'est pas réservée au propriétaire",
         "why": "grub.cfg contient la ligne de commande de boot complète et, quand un mot de passe GRUB est configuré, son hash password_pbkdf2. Si le fichier est lisible par le groupe ou tous, ce hash peut être copié et cracké hors-ligne, et les paramètres de boot sont divulgués. S'il est inscriptible par le groupe ou tous, la ligne de commande de boot elle-même peut être altérée — p. ex. pour ajouter init=/bin/bash — ce qui est un chemin direct d'élévation de privilèges locale.",
-        "how": "Réserver grub.cfg à root :\n  sudo chmod 600 /boot/grub/grub.cfg   # ou /boot/grub2/grub.cfg sur Fedora/RHEL/openSUSE\n\nC'est préservé à la régénération sur la plupart des distributions ; si update-grub/grub2-mkconfig le réinitialise, ajouter un chmod au hook de mise à jour. CIS §1.4.1."
+        "how": "Réserver grub.cfg à root :\n  sudo chmod 600 /boot/grub/grub.cfg   # ou /boot/grub2/grub.cfg sur Fedora/RHEL/openSUSE\n\nC'est préservé à la régénération sur la plupart des distributions ; si update-grub/grub2-mkconfig le réinitialise, ajouter un chmod au hook de mise à jour. CIS Ubuntu 22.04 §1.4.2."
       }
     },
     "cups": {
@@ -3919,7 +3922,7 @@
   "module_blacklist": {
     "unreadable": "Répertoires modprobe.d illisibles — état de la blacklist des modules inconnu",
     "candidates": "Défense en profondeur : {count} module(s) rarement utile(s) ne sont ni chargés ni blacklistés ({modules})",
-    "candidates_detail": "Ces modules ne sont pas chargés actuellement, mais rien ne les empêche de charger plus tard (aucune ligne `blacklist` ou `install ... /bin/true` sous /etc/modprobe.d). Ils sont rarement utiles sur un serveur (systèmes de fichiers exotiques, protocoles réseau anciens, stockage USB). Blacklister ceux que tu n'utilises pas est de la pure défense en profondeur — CIS §3.4. C'est signalé, pas pénalisé : un module non blacklisté est une opportunité de durcissement, pas une vulnérabilité, et certains sont légitimement utilisés (ex. udf pour les médias optiques). Un module actuellement chargé est signalé par l'audit des modules noyau à la place.",
+    "candidates_detail": "Ces modules ne sont pas chargés actuellement, mais rien ne les empêche de charger plus tard (aucune ligne `blacklist` ou `install ... /bin/true` sous /etc/modprobe.d). Ils sont rarement utiles sur un serveur (systèmes de fichiers exotiques, protocoles réseau anciens, stockage USB). Blacklister ceux que tu n'utilises pas est de la pure défense en profondeur — CIS Ubuntu 22.04 §1.1.1 (systèmes de fichiers) et §3.2 (protocoles réseau). C'est signalé, pas pénalisé : un module non blacklisté est une opportunité de durcissement, pas une vulnérabilité, et certains sont légitimement utilisés (ex. udf pour les médias optiques). Un module actuellement chargé est signalé par l'audit des modules noyau à la place.",
     "all_handled": "Chaque module rarement utile est soit blacklisté, soit déjà traité par l'audit des modules noyau"
   },
   "dev_privileged": {
@@ -4019,7 +4022,7 @@
     "changed": "{count} fichier(s) de paquet diffèrent de l'empreinte enregistrée par le gestionnaire : {files}",
     "changed_detail": "Ces fichiers ont été installés par un paquet mais leur contenu ne correspond plus à l'empreinte enregistrée par le gestionnaire. Cela peut être bénin — une recompilation locale, un correctif éditeur appliqué à la main, un fichier patché par un autre outil — ou la trace d'un intrus remplaçant un binaire ou une bibliothèque système. BOB ne peut pas trancher, donc c'est signalé, pas scoré : vérifiez chaque chemin par rapport à ce que vous attendez (réinstaller le paquet propriétaire pour comparer, p. ex. apt reinstall / dnf reinstall, ou inspecter le fichier). Les fichiers de configuration, censés être édités, sont déjà exclus.",
     "clean": "Aucun fichier de paquet ne diffère de l'empreinte enregistrée par le gestionnaire ({tool} vérifié)",
-    "clean_detail": "Les empreintes de référence vivent dans la base locale du gestionnaire de paquets : un root compromis peut les réécrire avec les fichiers. Ce contrôle atteste la cohérence avec cette base, pas une chaîne de confiance externe — les signatures des dépôts relèvent du contrôle d'authenticité des paquets."
+    "local_digests_limit": "Les empreintes de référence vivent dans la base locale du gestionnaire de paquets : un root compromis peut les réécrire avec les fichiers. Ce contrôle atteste la cohérence avec cette base, pas une chaîne de confiance externe — les signatures des dépôts relèvent du contrôle d'authenticité des paquets."
   },
   "kexec_lockdown": {
     "kexec_disabled": "kexec est verrouillé (kernel.kexec_load_disabled=1) — aucun nouveau noyau ne peut être chargé jusqu'au reboot",

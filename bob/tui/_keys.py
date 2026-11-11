@@ -50,6 +50,12 @@ CREATE   = "create"     #: Enter, on a landing screen
 SUBMIT   = "submit"     #: Enter, on a text-input screen
 LANG     = "lang"       #: l — switch the interface language, landing screens only
 BOOK     = "book"       #: m — open the email address book
+#: ← → — the neighbouring entry of the list a nested view was opened from,
+#: without going back to it (v0.32.0, the --manage-logs preview: ← older log,
+#: → newer). Arrows only: h/l would pair with jk but ``l`` is LANG, ``n``/``p``
+#: collide with NEW, and ``[``/``]`` need AltGr on an AZERTY keyboard. PAGE is
+#: the precedent for an action bound to special keys alone.
+PEER     = "peer"
 
 #: Every screen that renders a list gets these three, in this order. A screen
 #: that scrolls but cannot page is a screen whose behaviour depends on which
@@ -106,18 +112,28 @@ _GLYPH = {
     SELECT: "⏎", CREATE: "⏎", SUBMIT: "⏎", BACK: "Esc", QUIT: "q",
     TOGGLE: "Spc", ALL: "a", UNMARK: "u", DELETE: "d",
     CHANGE: "c", SUMMARY: "s", FULL: "s", CONFIRM: "y", NEW: "n", LANG: "l", BOOK: "m",
+    PEER: "←/→",
+}
+
+
+#: The curses constants each action is bound to, by name.
+_SPECIAL = {
+    MOVE: ("KEY_UP", "KEY_DOWN"),
+    PAGE: ("KEY_PPAGE", "KEY_NPAGE"),
+    PEER: ("KEY_LEFT", "KEY_RIGHT"),
+    SELECT: ("KEY_ENTER",),
+    CREATE: ("KEY_ENTER",),
+    SUBMIT: ("KEY_ENTER",),
 }
 
 
 def _special(curses, action: str) -> "tuple[int, ...]":
-    """Curses key constants for *action*, resolved against a live module."""
-    return {
-        MOVE: (curses.KEY_UP, curses.KEY_DOWN),
-        PAGE: (curses.KEY_PPAGE, curses.KEY_NPAGE),
-        SELECT: (curses.KEY_ENTER,),
-        CREATE: (curses.KEY_ENTER,),
-        SUBMIT: (curses.KEY_ENTER,),
-    }.get(action, ())
+    """Curses key constants for *action*, resolved against a live module.
+
+    v0.32.0 — only *action*'s own names are looked up. The table used to be
+    built whole on every call, so resolving Enter read KEY_LEFT too.
+    """
+    return tuple(getattr(curses, name) for name in _SPECIAL.get(action, ()))
 
 
 def resolve(curses, ch: int, actions: "tuple[str, ...]") -> "str | None":
@@ -137,6 +153,15 @@ def direction(curses, ch: int) -> int:
     if ch in (curses.KEY_UP, curses.KEY_PPAGE, ord("k"), ord("K")):
         return -1
     if ch in (curses.KEY_DOWN, curses.KEY_NPAGE, ord("j"), ord("J")):
+        return 1
+    return 0
+
+
+def side(curses, ch: int) -> int:
+    """-1 for ←, +1 for →, 0 otherwise — for PEER."""
+    if ch == curses.KEY_LEFT:
+        return -1
+    if ch == curses.KEY_RIGHT:
         return 1
     return 0
 

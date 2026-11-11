@@ -141,6 +141,9 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "services.state.unknown",
     "ssh.active_unknown",
     "ssh.config_unreadable",
+    # v0.32.0 — an RSA host key below 2048 bits whose serving sshd_config
+    # could not tell: its −1 is unknown, not absent.
+    "ssh.host_key_rsa_weak_unknown",
     "ssl_certs.dir_unreadable",
     "suid_audit.ok_partial",
     # v0.31.0 — the find over the SUID roots timed out or failed: its −1 is

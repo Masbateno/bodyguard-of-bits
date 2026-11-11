@@ -6,6 +6,276 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.32.0] — 2026-11-12
+
+**A minor release, BREAKING for scores: BOB sends no HTTP request to a
+kubelet or an API server whose certificate it has not verified; it reads Docker,
+WireGuard and listening ports as they run rather than as they are installed or
+allowed; the legacy IPv6 tables enter the IPv6 port verdict it shows; an RSA SSH
+host key below 2048 bits that sshd serves is scored; five existing findings now say what they measured or
+what they cannot see, and a sixth is checked unchanged; every CIS Ubuntu
+reference it prints is now generated from ComplianceAsCode; and the `--manage-logs` preview moves
+between reports.**
+
+BREAKING for scores means: the same host can score differently under 0.31.4 and
+0.32.0 — global, per domain, and the `--history` trend across the upgrade. The
+scoring formula is unchanged; no section is added or removed; no option is added
+or removed; no finding key is renamed or removed — an RSA host key below 2048
+bits now reports the new `ssh.host_key_rsa_weak` instead of
+`ssh.host_key_rsa_short`, which stays for 2048 to 4095 bits. No JSON-output-schema or
+CSV-column change; two existing JSON fields change meaning (§3). New finding keys:
+`ssh.host_key_rsa_weak`, `ssh.host_key_rsa_weak_unused`,
+`ssh.host_key_rsa_weak_unknown`, `kubernetes.kubelet_tls_unchecked`,
+`kubernetes.kubelet_tls_mismatch`, `kubernetes.apiserver_tls_unchecked`,
+`kubernetes.apiserver_tls_mismatch`.
+
+Scores that move:
+
+| Where | 0.31.4 | 0.32.0 | § |
+|---|---|---|---|
+| `hardening.send_redirects_enabled`, no interface forwards | WARN −1 | INFO, 0 | 1 |
+| A port a UFW rule admits, no service listening (measured: Nextcloud's 443/tcp) | `services.exposed.nextcloud` ALERT −2 | `services.exposure.not_listening` INFO, 0 | 2 |
+| `ip_forward=1`, `docker` or `/var/lib/docker` present, `dockerd` not running, nothing else routing | OK | `firewall_drivers.ip_forward_enabled` WARN −1 | 3 |
+| `ip_forward=1`, `wg` or a WireGuard configuration present, no WireGuard interface, nothing else routing | OK | `firewall_drivers.ip_forward_enabled` WARN −1 | 3 |
+| UFW active, an ACCEPT rule left in FORWARD, no routing mechanism running — only a stopped Docker or a WireGuard with no interface, which 0.31.4 counted as routing (measured: MicroK8s's two rules) | `forward_routing_ok` INFO, no penalty | `firewall_drivers.iptables_forward_bypass` WARN −1 each | 3 |
+| RSA SSH host key below 2048 bits that sshd serves (measured: 1024) | `ssh.host_key_rsa_short` INFO (8/10) | `ssh.host_key_rsa_weak` WARN −1 (7/10) | 5 |
+| Kubernetes kubelet or API certificate not verified | probed, scored | not probed; INFO; score “≤” | 6 |
+
+### 1. `send_redirects` costs nothing where nothing forwards
+
+`hardening.send_redirects_enabled` was WARN −1 whenever
+`net.ipv4.conf.*.send_redirects` was 1. The kernel sends an ICMP redirect only
+while forwarding a packet back out of the interface it arrived on; measured in
+0.31.4 (a network namespace, kernel 7.0): no redirect without forwarding, and
+an interface's own `forwarding` decides. 0.31.4 already named the interfaces
+that forward. Now, when none does (the list is read and empty), the finding is
+INFO and costs nothing; its fix command stays shown. When an interface forwards,
+or forwarding could not be read, it stays WARN −1.
+
+### 2. A port nothing listens on is not exposed
+
+The services section scored a registry service's port as exposed as soon as a
+UFW rule admitted it (or, without UFW, when no rule named it), whether or not
+anything listened. Measured on Ubuntu
+Server 26.04.1 (Nextcloud snap, `ufw allow 443/tcp`, nothing on 443):
+`services.exposed.nextcloud` ALERT −2 under 0.31.4;
+`services.exposure.not_listening` INFO under 0.32.0. When BOB has the list of
+listening ports and the port is absent from it, the verdict is “not listening”,
+whatever the rule says. When it has no list (`ss` could not be run), nothing is
+concluded: the exposure stays what the rule says, as before. Port 80, on which Nextcloud's Apache listened during the
+same audit, stays ALERT −2. The firewall section still lists the rule
+(`firewall_rules.orphan_rule`).
+
+### 3. Docker and WireGuard count as routing while they run
+
+A host that forwards packets (`ip_forward=1`, `firewall_drivers.ip_forward_enabled`
+WARN −1) or holds ACCEPT rules in FORWARD beside an active UFW
+(`firewall_drivers.iptables_forward_bypass`, WARN −1 each) is not penalised
+while an active routing mechanism is detected. Docker counted
+as soon as `docker` or `/var/lib/docker` existed, WireGuard as soon as `wg` or a
+configuration file existed, even with nothing running — the same defect 0.31.3 removed for libvirt.
+Measured on Ubuntu Server 26.04.1 (docker.io 29.1.3, wireguard-tools):
+
+| State | 0.31.4 | 0.32.0 |
+|---|---|---|
+| Docker running | `ip_forward_ok` | `ip_forward_ok` |
+| Docker installed, stopped (docker0, its 15 rules and /var/lib/docker remain) | `ip_forward_ok` | `ip_forward_enabled` WARN −1 |
+| WireGuard configured, no interface | `ip_forward_ok` | `ip_forward_enabled` WARN −1 |
+| WireGuard interface up | `ip_forward_ok` | `ip_forward_ok` |
+
+Docker now counts while a process named `dockerd` runs; WireGuard while an
+interface reports `DEVTYPE=wireguard` (a `tun` interface does not). The JSON
+fields `firewall_drivers.docker_present` and `firewall_drivers.wireguard_present`
+follow (documented in README_TECH). The same detection decides the FORWARD
+ACCEPT rules beside an active UFW. Measured on the same host with UFW 0.36.2
+active and MicroK8s stopped, which leaves its two pod-network ACCEPT rules in
+FORWARD:
+
+| State | 0.31.4 | 0.32.0 |
+|---|---|---|
+| Docker running | `forward_routing_ok`, 0 | `forward_routing_ok`, 0 |
+| Docker installed, stopped | `forward_routing_ok`, 0 | `iptables_forward_bypass` ×2 and `ip_forward_enabled`, −3 |
+| + an ACCEPT rule for a WireGuard interface, WireGuard configured, no interface | `forward_routing_ok`, 0 | `iptables_forward_bypass` ×3 and `ip_forward_enabled`, −4 |
+| WireGuard interface up | `forward_routing_ok`, 0 | `forward_routing_ok`, 0 |
+
+The penalty itself is not new: with nothing routing installed, both versions
+charge it (measured, MicroK8s's two rules: −3 under both; the points add up,
+no cap applies to this domain). What changed is that an installed but stopped
+Docker, or a WireGuard with no interface, no longer excuses it.
+Docker 29 itself puts no ACCEPT rule in FORWARD, only jumps to its own chains:
+a stopped Docker never costs `iptables_forward_bypass` on its own; the rules
+counted are those another tool left. Limits: a rootless `dockerd` was not
+measured; a WireGuard client that does not forward still counts as routing, as
+before; and while something routes, every ACCEPT rule in FORWARD is excused,
+whoever wrote it — unchanged from 0.31.4.
+
+### 4. The legacy IPv6 tables enter the IPv6 port verdict
+
+0.31.0 weighed the legacy (x_tables) IPv4 tables beside nftables, and said
+IPv6 was unchanged. A packet crosses both nftables' chains and the legacy ones,
+so a legacy refusal closes the port. Measured on Ubuntu Server 26.04.1 in a
+network namespace (a listener on 8099 over IPv6):
+
+| Legacy IPv6 tables | Oracle | 0.31.4 (IPv6 verdict shown) | 0.32.0 |
+|---|---|---|---|
+| loaded, empty | open | ACCEPT | ACCEPT |
+| filter INPUT drops 8099 | closed | ACCEPT | DROP |
+| filter INPUT policy DROP | closed | ACCEPT | DROP |
+| raw PREROUTING drops 8099 | closed | ACCEPT | DROP |
+| nft drops 8099, legacy accepts it | closed | DROP | DROP |
+| loaded, `ip6tables-legacy` unreadable | closed | ACCEPT | UNKNOWN |
+
+The IPv6 verdict is shown in the ports section, not scored (as since 0.30.0);
+no score moves. The IPv4 and IPv6 tables stay apart: a refusal in one family
+does not close the other.
+
+### 5. An RSA SSH host key below 2048 bits that sshd serves is scored
+
+A server host key authenticates the server at every connection (it signs the key exchange). NIST disallows generating RSA
+signatures with keys below 2048 bits (SP 800-131A). 0.31.4 gave a 1024-bit host
+key the same INFO as a 3072-bit one. Now `ssh.host_key_rsa_weak`, WARN −1 — the
+level a user's RSA key below 2048 bits has had (`ssh.rsa_weak`). Measured on
+Linux Mint 22.3 (OpenSSH 9.6p1, the key loaded and served by sshd): 1024 bits,
+0.31.4 INFO 8/10, 0.32.0 WARN 7/10; 2048 bits, INFO 8/10 under both. From 2048
+to 4095 bits nothing changes: `ssh.host_key_rsa_short`, INFO, as before.
+BOB reads the key files in `/etc/ssh`, and a file there is not a key sshd
+serves: the point is counted only when sshd_config loads the file (a `HostKey`
+line names it, or none is written and it is one of sshd's default files) and
+`HostKeyAlgorithms` leaves RSA offered (`+`, `^`, `-` and patterns read as
+sshd reads them). Otherwise `ssh.host_key_rsa_weak_unused`, INFO, not counted;
+with sshd_config unreadable, `ssh.host_key_rsa_weak_unknown`, INFO, and the
+score is an upper bound. Neither of these two new keys carries a penalty. Measured on Ubuntu Server 26.04.1 (OpenSSH 10.2p1)
+against what sshd offers (`ssh-keyscan -t rsa`): served by default or by a
+`HostKey` line, WARN −1; left out of the `HostKey` lines, or RSA left out of
+`HostKeyAlgorithms` (a list, or `-rsa-sha2-*`), INFO — five cases, five
+matches. The fix command now regenerates the file sshd serves, which a
+`HostKey` line may name, as a 4096-bit key, and asks before overwriting the
+old one; its `--explain` entry says that every client which recorded the old
+fingerprint will warn until it is updated.
+
+### 6. Kubernetes: no request before the certificate is verified
+
+The kubelet (10250) and API server probes ran over TLS without verifying the
+certificate. BOB now verifies it with the distribution's authority during the
+TLS handshake, before any HTTP request — MicroK8s `certs/ca.crt` (kubelet and API server); k3s
+`server/tls/server-ca.crt` (kubelet and API server); a kubeadm kubelet, which
+serves a self-signed certificate, against that certificate's own file,
+`<cert-dir>/kubelet.crt` — the file on disk is the anchor, and the kubelet that
+answers must present the certificate it holds, or one its key signs (BOB does not probe a kubeadm API
+server). It verifies the chain, not the server name: a certificate the authority
+signs can be accepted even when its name does not match the address BOB
+connects to — MicroK8s's kubelet and kubeadm's
+issue certificates without 127.0.0.1 in their names. Measured on
+live nodes: MicroK8s 1.35.6 (Ubuntu), k3s v1.37.2 and kubeadm 1.37.2 (Fedora
+44) — all verified, findings unchanged. When the authority is unknown or unreadable
+(`kubernetes.*_tls_unchecked`), BOB skips the connection entirely. When it does not sign the
+certificate presented (`kubernetes.*_tls_mismatch`), the TLS handshake fails
+and BOB sends no HTTP request. Either way it says so, and the score is an
+upper bound. A kubeadm kubelet configured with its own certificate
+(`tlsCertFile`, `--tls-cert-file`) or `serverTLSBootstrap` has no known
+authority yet: unchecked.
+
+### 7. Findings that say what they measured, or what they cannot see — and one checked
+
+- **SMTP, port 25** — the risk text said TCP/25 accepts mail submissions. It
+  carries transfer between servers; submission uses 587, or 465 over implicit
+  TLS (RFC 6409, RFC 8314).
+- **ClamAV socket** — `clamav.socket_open_to_all` now shows the permissions it
+  rests on. Measured on Linux Mint 22.3 (the package's `LocalSocketMode 666`):
+  “Measured: srw-rw-rw- clamav:clamav — /var/run/clamav: drwxr-xr-x.”
+- **Timeshift** — in rsync mode, the Timeshift line now lists the exclusions
+  of `timeshift.json`: what they match is in no snapshot. In BTRFS mode
+  Timeshift does not apply the list (its source:
+  `create_snapshot_with_btrfs`; its settings hide the filters), so BOB lists
+  none — read from the source, not measured on a BTRFS host. Measured on a Linux Mint 22.3 desktop: the
+  home, `/var/lib/libvirt/**` and `/root/**` excluded, while the backup section
+  read “active”.
+- **NetBIOS on a host without UFW** — 137/udp and 138/udp read “listening on all
+  interfaces without explicit UFW rule” whatever governed them. With UFW
+  inactive they now take the general path (firewalld, the nftables or iptables
+  ruleset BOB reads, or neutral wording). Measured on Fedora 44 (firewalld): when `nmb` runs from its
+  unit, the NetBIOS registry entry added in 0.31.4 already handles the ports and
+  nothing changes; with `nmbd` started outside its unit, 0.31.4 printed the UFW
+  wording, 0.32.0 “governed by the firewalld zone of the interface it is reached
+  on, not a UFW rule”. No score moves.
+- **Package integrity** (`--exhaustive`) — the reference digests live in the
+  local package database, which a compromised root can rewrite together with
+  the files. Both the “no file differs” and the “N files differ” findings now
+  say so. Measured on Linux Mint 22.3: 21 files differ — the shape a real host
+  shows.
+- **Orphan UFW rule** — checked, unchanged: the finding is INFO and its
+  `ufw delete` command never enters `--fix`; its detail says to delete the rule
+  only if nothing uses it. A test now holds this.
+
+### 8. The log preview moves between reports
+
+In `--manage-logs`, the preview of a report (⏎) takes ← for the older report and
+→ for the newer one without going back to the list. It keeps the full or
+summary view, starts each report at its top, stops at the oldest and newest,
+shows the position (“2/3”), and on Esc the list's cursor sits on the report
+shown last. The keys follow the shared key contract: arrows only, since `h`/`l`
+would collide with the language switch (`l`), `n`/`p` with “new” (`n`), and
+`[`/`]` need AltGr on an AZERTY keyboard. Offered only when the folder holds
+another report. Measured in a real terminal on Linux Mint 22.3, with the arrow
+sequences curses asks the terminal for (keypad mode); a terminal that ignores
+that request is under Limits. The non-curses fallback is unchanged.
+
+### 9. Every CIS Ubuntu reference is now generated from ComplianceAsCode
+
+BOB prints a finding's CIS number in the summary box (`[CIS:x.y.z]`) and in
+`--explain`. The generator (`scripts/gen_cis_benchmarks.py`) writes it from
+ComplianceAsCode's CIS Ubuntu 22.04 v2.0.0 controls, through the rule the finding
+fails; 55 references outside the generator had been typed by hand under the same
+label. Read against ComplianceAsCode on 11 November 2026, none of these 55
+matched a CIS Ubuntu 22.04 v2.0.0 control: about a dozen were v1.0.0 numbers (ComplianceAsCode replaced v1.0.0
+with v2.0.0 in September 2025), some were section numbers (3.5, 1.1, 6.1), the
+rest other controls — `ssh.rsa_weak` cited 5.2.2, “Ensure sudo commands use pty”
+in v2.0.0, under a title no version has; `secure_boot.disabled` cited 1.4.1, the
+bootloader password. 25 are now anchored on their ComplianceAsCode rule and
+regenerated (for example `ports.uncovered` 4.1.6, `grub.cfg_perms` 1.4.2,
+`faillock.not_configured` 5.3.2.2, the update findings 1.2.2.1). The other 30 have
+no directly applicable ComplianceAsCode rule that BOB evaluates, and are
+best-practice references in English and French, with no code: the
+DSA ones cite OpenSSH's release notes (disabled by default in 7.0, removed in
+10.0), `ssh.rsa_weak` NIST SP 800-131A. `ssh.x11.forwarding.server` and
+`ssh.allow_tcp_forwarding` stay best practices: CIS v2.0.0 covers them through
+`DisableForwarding`, which BOB does not read. A test now refuses a CIS Ubuntu
+reference that does not come from the generator. Two texts that named a section
+by hand follow: GRUB's explanation (1.4.2) and the module blacklist (1.1.1 and
+3.2). The breakdown becomes 90 CIS Ubuntu 22.04 and 132 best-practice references
+(from 120 and 102), with 259 cross-benchmark citations on 94 keys (from 195 on
+69). No score moves; the JSON and CSV outputs carry no CIS code.
+
+### 10. Tooling and documentation
+
+- The mutation bench saves its backup with the file's mode: a run killed
+  mid-mutation and recovered had left a shell script without its executable bit.
+- SECURITY.md: a change to the stable contract (exit codes, JSON schema, option
+  names, finding keys) bumps the minor; a patch may still move scores, and then
+  says “BREAKING for scores” and lists the penalties (as 0.31.1–0.31.4 did).
+- `file_perms.nopass_root_equivalent`'s CIS references, written by hand in
+  0.27.0, are now produced by the ComplianceAsCode generator from the same rule
+  as `file_perms.sudoers_nopasswd_all`; no number changes.
+- `ssh.host_key_rsa_weak` has an `--explain` entry and a best-practice reference
+  (NIST SP 800-131A).
+
+### Limits
+
+- Docker: a rootless `dockerd` was not measured. WireGuard: a client that does
+  not forward still counts as routing. While something routes, every ACCEPT
+  rule in FORWARD is excused, whoever wrote it (unchanged).
+- Kubernetes: a k3s agent (second node) was not measured; a kubeadm kubelet
+  with `tlsCertFile` or `serverTLSBootstrap` is not asked.
+- The IPv4 port verdict answers “not established” when the nftables ruleset
+  holds a `meta nfproto ipv6` rule in input — prudent, unchanged, noted.
+- An arrow key sent in the normal-mode form (`ESC [ D`) by a terminal that
+  ignores keypad mode is read as Esc followed by a letter, in every BOB screen;
+  unchanged, noted.
+
+**Tests** 20565 → **20961**, mutations 1766 → **1825**.
+
+---
+
 ## [0.31.4] — 2026-11-11
 
 **A patch, BREAKING for scores: a new Samba NetBIOS registry entry weighs

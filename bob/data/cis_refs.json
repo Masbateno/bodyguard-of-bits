@@ -1,11 +1,13 @@
 {
   "auditd.missing_sensitive_rules": {
-    "ref": "CIS Ubuntu 22.04 L2 — 4.1.6 — Ensure events that modify user/group information are collected",
-    "code": "CIS:4.1.6"
+    "ref": "Best practice — Watch /etc/passwd, /etc/shadow and /etc/sudoers with audit rules, so their changes are recorded",
+    "ref_fr": "Bonne pratique — Surveiller /etc/passwd, /etc/shadow et /etc/sudoers par des règles d'audit, pour que leurs modifications soient enregistrées",
+    "code": null
   },
   "auditd.no_rules": {
-    "ref": "CIS Ubuntu 22.04 L2 — 4.1.4–4.1.17 — Configure system audit rules",
-    "code": "CIS:4.1.4"
+    "ref": "Best practice — Load audit rules: a running auditd with none records almost nothing",
+    "ref_fr": "Bonne pratique — Charger des règles d'audit : un auditd en marche sans règle n'enregistre presque rien",
+    "code": null
   },
   "auditd.not_installed": {
     "ref": "CIS Ubuntu 22.04 L2 — 6.3.1.1 — Ensure auditd packages are installed (Automated)",
@@ -44,12 +46,14 @@
     }
   },
   "auth_log.brute_force": {
-    "ref": "CIS Ubuntu 22.04 L1 — 5.2.7 — Ensure SSH MaxAuthTries / fail2ban configured (active brute-force detected)",
-    "code": "CIS:5.2.7"
+    "ref": "Best practice — Rate-limit or block repeated SSH authentication failures (fail2ban, MaxAuthTries)",
+    "ref_fr": "Bonne pratique — Limiter ou bloquer les échecs d'authentification SSH répétés (fail2ban, MaxAuthTries)",
+    "code": null
   },
   "auth_log.public_login": {
-    "ref": "CIS Ubuntu 22.04 L2 — 5.2.23 — Ensure SSH access is limited (AllowUsers/AllowGroups; review public login sources)",
-    "code": "CIS:5.2.23"
+    "ref": "Best practice — Review SSH logins from public addresses and restrict who may log in (AllowUsers, AllowGroups)",
+    "ref_fr": "Bonne pratique — Examiner les connexions SSH depuis des adresses publiques et restreindre qui peut se connecter (AllowUsers, AllowGroups)",
+    "code": null
   },
   "backup.no_backup": {
     "ref": "Best practice — Install a backup solution (timeshift / restic / borg) and verify restore quarterly",
@@ -87,12 +91,27 @@
     "code": null
   },
   "cron.pipe_to_shell": {
-    "ref": "CIS Ubuntu 22.04 L1 — 5.1 — Configure cron (script integrity: verify sources before execution)",
-    "code": "CIS:5.1"
+    "ref": "Best practice — Do not run remote content fetched by a scheduled job (curl/wget | sh): verify it before it runs",
+    "ref_fr": "Bonne pratique — Ne pas exécuter un contenu distant récupéré par une tâche planifiée (curl/wget | sh) : le vérifier avant qu'il ne s'exécute",
+    "code": null
   },
   "cron.world_writable": {
-    "ref": "CIS Ubuntu 22.04 L1 — 5.1.8 — Ensure cron is restricted to authorized users",
-    "code": "CIS:5.1.8"
+    "ref": "CIS Ubuntu 22.04 L1 — 7.1.11 — Ensure world writable files and directories are secured (Automated)",
+    "code": "CIS:7.1.11",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "7.1.11",
+        "title": "Ensure world writable files and directories are secured (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "7.1.11",
+        "title": "Ensure world writable files and directories are secured (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "7.1.11",
+        "title": "Ensure world writable files and directories are secured (Automated)"
+      }
+    }
   },
   "ddns.found": {
     "ref": "Best practice — A DDNS client publishes your public IP; harden every exposed port behind it",
@@ -335,8 +354,9 @@
     "code": null
   },
   "file_perms.too_permissive": {
-    "ref": "CIS Ubuntu 22.04 L1 — 6.1 — Ensure appropriate permissions on sensitive files",
-    "code": "CIS:6.1"
+    "ref": "Best practice — Keep sensitive system files at the permissions their package ships",
+    "ref_fr": "Bonne pratique — Garder les fichiers système sensibles aux permissions livrées par leur paquet",
+    "code": null
   },
   "file_perms.world_writable": {
     "ref": "CIS Ubuntu 22.04 L1 — 7.1.11 — Ensure world writable files and directories are secured (Automated)",
@@ -375,8 +395,9 @@
     }
   },
   "firewall.logging_off": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.7 — Ensure ufw firewall rules exist and logging is enabled",
-    "code": "CIS:3.5.1.7"
+    "ref": "Best practice — Enable firewall logging so refused connections are recorded (ufw logging on)",
+    "ref_fr": "Bonne pratique — Activer la journalisation du pare-feu pour que les connexions refusées soient enregistrées (ufw logging on)",
+    "code": null
   },
   "firewall.firewalld_policy_open": {
     "ref": "Best practice — Keep the firewalld default zone target at default/%%REJECT%% or DROP, never ACCEPT; allow services explicitly",
@@ -398,8 +419,18 @@
     }
   },
   "firewall.policy_unknown": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.7 — Ensure ufw default deny firewall policy",
-    "code": "CIS:3.5.1.7"
+    "ref": "CIS Ubuntu 22.04 L1 — 4.1.7 — Ensure ufw default deny firewall policy (Automated)",
+    "code": "CIS:4.1.7",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "4.2.7",
+        "title": "Ensure ufw default deny firewall policy (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "4.2.7",
+        "title": "Ensure ufw default deny firewall policy (Automated)"
+      }
+    }
   },
   "firewall_drivers.ip_forward_enabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.3.1 — Ensure ip forwarding is disabled (Automated)",
@@ -435,24 +466,78 @@
     "code": null
   },
   "firewall_iptables.forward_accept": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.1 — Ensure ufw default deny firewall policy (FORWARD chain ACCEPT)",
-    "code": "CIS:3.5.1.1"
+    "ref": "CIS Ubuntu 22.04 L1 — 4.3.2.1 — Ensure iptables default deny firewall policy (Automated)",
+    "code": "CIS:4.3.2.1",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "4.4.2.1",
+        "title": "Ensure iptables default deny firewall policy (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "4.4.2.1",
+        "title": "Ensure iptables default deny firewall policy (Automated)"
+      }
+    }
   },
   "firewall_iptables.input_accept": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.1 — Ensure ufw default deny firewall policy (INPUT chain ACCEPT)",
-    "code": "CIS:3.5.1.1"
+    "ref": "CIS Ubuntu 22.04 L1 — 4.3.2.1 — Ensure iptables default deny firewall policy (Automated)",
+    "code": "CIS:4.3.2.1",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "4.4.2.1",
+        "title": "Ensure iptables default deny firewall policy (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "4.4.2.1",
+        "title": "Ensure iptables default deny firewall policy (Automated)"
+      }
+    }
   },
   "firewall_iptables.nft_no_input_filter": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5 — Configure firewall (backend present, ruleset filters no inbound traffic)",
-    "code": "CIS:3.5"
+    "ref": "CIS Ubuntu 22.04 L1 — 4.2.5 — Ensure nftables base chains exist (Automated)",
+    "code": "CIS:4.2.5",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "4.3.5",
+        "title": "Ensure nftables base chains exist (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "4.3.5",
+        "title": "Ensure nftables base chains exist (Automated)"
+      }
+    }
   },
   "firewall_iptables.no_backend": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5 — Configure firewall (no active firewall layer detected)",
-    "code": "CIS:3.5"
+    "ref": "CIS Ubuntu 22.04 L1 — 4.1.3 — Ensure ufw service is enabled (Automated)",
+    "code": "CIS:4.1.3",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "4.2.3",
+        "title": "Ensure ufw service is enabled (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "4.2.3",
+        "title": "Ensure ufw service is enabled (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "4.1.2",
+        "title": "Ensure ufw service is configured (Automated)"
+      }
+    }
   },
   "firewall_iptables.no_conntrack": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1 — Configure firewall (no ESTABLISHED/RELATED conntrack rule detected)",
-    "code": "CIS:3.5.1"
+    "ref": "CIS Ubuntu 22.04 L1 — 4.3.2.3 — Ensure iptables outbound and established connections are configured (Manual)",
+    "code": "CIS:4.3.2.3",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "4.4.2.3",
+        "title": "Ensure iptables outbound and established connections are configured (Manual)"
+      },
+      "CIS Debian 12": {
+        "code": "4.4.2.3",
+        "title": "Ensure iptables outbound and established connections are configured (Manual)"
+      }
+    }
   },
   "firewall_iptables.no_loopback": {
     "ref": "CIS Ubuntu 22.04 L1 — 4.1.4 — Ensure ufw loopback traffic is configured (Automated)",
@@ -469,24 +554,64 @@
     }
   },
   "firewall_rules.duplicate_found": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5 — Configure firewall (rule hygiene and auditability)",
-    "code": "CIS:3.5"
+    "ref": "Best practice — Remove duplicate firewall rules: one rule per intent keeps the ruleset auditable",
+    "ref_fr": "Bonne pratique — Supprimer les règles de pare-feu en double : une règle par intention garde le ruleset vérifiable",
+    "code": null
   },
   "firewall_rules.ipv6_missing": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — Ensure ufw rules exist for all open ports (IPv4 and IPv6 parity)",
-    "code": "CIS:3.5.1.4"
+    "ref": "CIS Ubuntu 22.04 L1 — 4.1.6 — Ensure ufw firewall rules exist for all open ports (Automated)",
+    "code": "CIS:4.1.6",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "4.2.6",
+        "title": "Ensure ufw firewall rules exist for all open ports (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "4.2.6",
+        "title": "Ensure ufw firewall rules exist for all open ports (Automated)"
+      }
+    }
   },
   "firewall_rules.open_any_found": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1 — Ensure ufw is installed and configured with restrictive default policy",
-    "code": "CIS:3.5.1"
+    "ref": "Best practice — Admit inbound traffic per port and source, not to every port",
+    "ref_fr": "Bonne pratique — Admettre le trafic entrant par port et par source, pas sur tous les ports",
+    "code": null
   },
   "firmware.fwupd_updates": {
-    "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed (firmware)",
-    "code": "CIS:1.9"
+    "ref": "CIS Ubuntu 22.04 L1 — 1.2.2.1 — Ensure updates, patches, and additional security software are installed (Manual)",
+    "code": "CIS:1.2.2.1",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      },
+      "CIS Debian 12": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      },
+      "CIS Debian 13": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      }
+    }
   },
   "firmware.microcode_missing": {
-    "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed (CPU microcode)",
-    "code": "CIS:1.9"
+    "ref": "CIS Ubuntu 22.04 L1 — 1.2.2.1 — Ensure updates, patches, and additional security software are installed (Manual)",
+    "code": "CIS:1.2.2.1",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      },
+      "CIS Debian 12": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      },
+      "CIS Debian 13": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      }
+    }
   },
   "hardening.accept_redirects_v6_enabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 3.3.5 — Ensure icmp redirects are not accepted (Automated)",
@@ -683,20 +808,51 @@
     }
   },
   "ipv6.port_no_v6_rule": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — Ensure IPv6 firewall rules exist for all open ports",
-    "code": "CIS:3.5.1.4"
+    "ref": "CIS Ubuntu 22.04 L1 — 4.1.6 — Ensure ufw firewall rules exist for all open ports (Automated)",
+    "code": "CIS:4.1.6",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "4.2.6",
+        "title": "Ensure ufw firewall rules exist for all open ports (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "4.2.6",
+        "title": "Ensure ufw firewall rules exist for all open ports (Automated)"
+      }
+    }
   },
   "ipv6.netfilter_v6_open": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — Ensure IPv6 firewall rules exist for all open ports",
-    "code": "CIS:3.5.1.4"
+    "ref": "CIS Ubuntu 22.04 L1 — 4.3.3.1 — Ensure ip6tables default deny firewall policy (Automated)",
+    "code": "CIS:4.3.3.1",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "4.4.3.1",
+        "title": "Ensure ip6tables default deny firewall policy (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "4.4.3.1",
+        "title": "Ensure ip6tables default deny firewall policy (Automated)"
+      }
+    }
   },
   "ipv6.ufw_disabled_listeners_present": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — Ensure IPv6 firewall rules exist for all open ports",
-    "code": "CIS:3.5.1.4"
+    "ref": "CIS Ubuntu 22.04 L1 — 4.1.6 — Ensure ufw firewall rules exist for all open ports (Automated)",
+    "code": "CIS:4.1.6",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "4.2.6",
+        "title": "Ensure ufw firewall rules exist for all open ports (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "4.2.6",
+        "title": "Ensure ufw firewall rules exist for all open ports (Automated)"
+      }
+    }
   },
   "ipv6.ufw_enabled_kernel_disabled": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.4 — IPv6 firewall configuration consistency",
-    "code": "CIS:3.5.1.4"
+    "ref": "Best practice — Keep UFW's IPv6 setting consistent with the kernel's IPv6 state",
+    "ref_fr": "Bonne pratique — Garder le réglage IPv6 d'UFW cohérent avec l'état IPv6 du noyau",
+    "code": null
   },
   "kernel_hardening.aslr_conservative": {
     "ref": "CIS Ubuntu 22.04 L1 — 1.5.1 — Ensure address space layout randomization is enabled (Automated)",
@@ -793,20 +949,63 @@
     }
   },
   "kernel_modules.kernels_obsolete": {
-    "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed (obsolete kernel running)",
-    "code": "CIS:1.9"
+    "ref": "CIS Ubuntu 22.04 L1 — 1.2.2.1 — Ensure updates, patches, and additional security software are installed (Manual)",
+    "code": "CIS:1.2.2.1",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      },
+      "CIS Debian 12": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      },
+      "CIS Debian 13": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      }
+    }
   },
   "kernel_modules.kernels_reboot_pending": {
-    "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed (reboot required to activate new kernel)",
-    "code": "CIS:1.9"
+    "ref": "CIS Ubuntu 22.04 L1 — 1.2.2.1 — Ensure updates, patches, and additional security software are installed (Manual)",
+    "code": "CIS:1.2.2.1",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      },
+      "CIS Debian 12": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      },
+      "CIS Debian 13": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      }
+    }
   },
   "kernel_modules.kernels_update_available": {
-    "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed (kernel update available)",
-    "code": "CIS:1.9"
+    "ref": "CIS Ubuntu 22.04 L1 — 1.2.2.1 — Ensure updates, patches, and additional security software are installed (Manual)",
+    "code": "CIS:1.2.2.1",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      },
+      "CIS Debian 12": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      },
+      "CIS Debian 13": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      }
+    }
   },
   "kernel_modules.risky_fs": {
-    "ref": "CIS Ubuntu 22.04 L1 — 1.1.1.x — Ensure mounting of legacy/rare filesystems is disabled",
-    "code": "CIS:1.1.1"
+    "ref": "Best practice — Unload and blacklist rarely used filesystem modules (cramfs, freevxfs, hfs, hfsplus, jffs2, udf…)",
+    "ref_fr": "Bonne pratique — Décharger et mettre en liste noire les modules de systèmes de fichiers rarement utilisés (cramfs, freevxfs, hfs, hfsplus, jffs2, udf…)",
+    "code": null
   },
   "kernel_modules.usb_storage": {
     "ref": "CIS Ubuntu 22.04 L1 — 1.1.1.8 — Ensure usb-storage kernel module is not available (Automated)",
@@ -827,16 +1026,32 @@
     }
   },
   "kernel_modules.risky_net": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.4.x — Ensure DCCP/SCTP/RDS/TIPC is disabled",
-    "code": "CIS:3.4"
+    "ref": "Best practice — Unload and blacklist rarely used network protocol modules (dccp, sctp, rds, tipc)",
+    "ref_fr": "Bonne pratique — Décharger et mettre en liste noire les modules de protocoles réseau rarement utilisés (dccp, sctp, rds, tipc)",
+    "code": null
   },
   "log_rotation.journald_volatile": {
-    "ref": "CIS Ubuntu 22.04 L1 — 4.2.1.1 — Ensure systemd-journald is configured for persistent storage",
-    "code": "CIS:4.2.1.1"
+    "ref": "CIS Ubuntu 22.04 L1 — 6.2.1.1.5 — Ensure journald Storage is configured (Automated)",
+    "code": "CIS:6.2.1.1.5",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "6.1.2.4",
+        "title": "Ensure journald Storage is configured (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "6.1.2.4",
+        "title": "Ensure journald Storage is configured (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "6.1.1.1.5",
+        "title": "Ensure journald Storage is configured (Automated)"
+      }
+    }
   },
   "log_rotation.logrotate_missing": {
-    "ref": "CIS Ubuntu 22.04 L1 — 4.3 — Ensure logrotate is configured to rotate system logs",
-    "code": "CIS:4.3"
+    "ref": "Best practice — Rotate log files (logrotate) so they cannot fill the disk",
+    "ref_fr": "Bonne pratique — Faire tourner les fichiers journaux (logrotate) pour qu'ils ne remplissent pas le disque",
+    "code": null
   },
   "logs.blocked_repeat_public": {
     "ref": "Best practice — Brute-force activity detected; deploy fail2ban + key-only authentication",
@@ -990,8 +1205,22 @@
     "code": null
   },
   "ntp.not_enabled": {
-    "ref": "CIS Ubuntu 22.04 L1 — 2.2.1.1 — Ensure time synchronization is in use (chrony / systemd-timesyncd)",
-    "code": "CIS:2.2.1.1"
+    "ref": "CIS Ubuntu 22.04 L1 — 2.3.1.1 — Ensure a single time synchronization daemon is in use (Automated)",
+    "code": "CIS:2.3.1.1",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "2.3.1.1",
+        "title": "Ensure a single time synchronization daemon is in use (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "2.3.1.1",
+        "title": "Ensure a single time synchronization daemon is in use (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "2.3.1.1",
+        "title": "Ensure a single time synchronization daemon is in use (Automated)"
+      }
+    }
   },
   "ntp.not_synchronized": {
     "ref": "Best practice — NTP service active but not synchronised; verify UDP/123 egress and pool reachability",
@@ -1071,8 +1300,18 @@
     }
   },
   "ports.uncovered": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.7 — Ensure ufw default deny firewall policy, or add an explicit rule",
-    "code": "CIS:3.5.1.7"
+    "ref": "CIS Ubuntu 22.04 L1 — 4.1.6 — Ensure ufw firewall rules exist for all open ports (Automated)",
+    "code": "CIS:4.1.6",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "4.2.6",
+        "title": "Ensure ufw firewall rules exist for all open ports (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "4.2.6",
+        "title": "Ensure ufw firewall rules exist for all open ports (Automated)"
+      }
+    }
   },
   "ports.uncovered_netbios": {
     "ref": "Best practice — Restrict NetBIOS / Samba ports (137-139, 445) to the trusted LAN subnet only",
@@ -1148,16 +1387,32 @@
     "code": null
   },
   "secure_boot.disabled": {
-    "ref": "CIS Ubuntu 22.04 L2 — 1.4.1 — Ensure Secure Boot is enabled",
-    "code": "CIS:1.4.1"
+    "ref": "Best practice — Enable UEFI Secure Boot so only signed boot loaders and kernels start",
+    "ref_fr": "Bonne pratique — Activer UEFI Secure Boot pour que seuls des chargeurs et noyaux signés démarrent",
+    "code": null
   },
   "secure_boot.setup_mode": {
-    "ref": "CIS Ubuntu 22.04 L2 — 1.4.1 — Ensure Secure Boot is enabled",
-    "code": "CIS:1.4.1"
+    "ref": "Best practice — Leave UEFI Setup Mode by enrolling a Platform Key: in Setup Mode, Secure Boot enforces nothing",
+    "ref_fr": "Bonne pratique — Sortir du mode Setup UEFI en enrôlant une Platform Key : en mode Setup, Secure Boot n'impose rien",
+    "code": null
   },
   "grub.cfg_perms": {
-    "ref": "CIS Ubuntu 22.04 L1 — 1.4.1 — Ensure permissions on bootloader config are configured",
-    "code": "CIS:1.4.1"
+    "ref": "CIS Ubuntu 22.04 L1 — 1.4.2 — Ensure access to bootloader config is configured (Automated)",
+    "code": "CIS:1.4.2",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "1.4.2",
+        "title": "Ensure access to bootloader config is configured (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "1.4.2",
+        "title": "Ensure access to bootloader config is configured (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "1.4.2",
+        "title": "Ensure access to bootloader config is configured (Automated)"
+      }
+    }
   },
   "cups.listen_exposed": {
     "ref": "Best practice — Bind CUPS (cupsd) to localhost unless network printing is required",
@@ -1165,12 +1420,27 @@
     "code": null
   },
   "mount_hardening.options_missing": {
-    "ref": "CIS Ubuntu 22.04 L1 — 1.1 — Ensure nodev/nosuid/noexec options set on /tmp, /var/tmp and /dev/shm",
-    "code": "CIS:1.1"
+    "ref": "Best practice — Mount world-writable areas (/tmp, /var/tmp, /dev/shm) with nodev, nosuid and noexec",
+    "ref_fr": "Bonne pratique — Monter les zones accessibles en écriture à tous (/tmp, /var/tmp, /dev/shm) avec nodev, nosuid et noexec",
+    "code": null
   },
   "faillock.not_configured": {
-    "ref": "CIS Ubuntu 22.04 L1 — 5.3.2 — Ensure lockout for failed password attempts is configured",
-    "code": "CIS:5.3.2"
+    "ref": "CIS Ubuntu 22.04 L1 — 5.3.2.2 — Ensure pam_faillock module is enabled (Automated)",
+    "code": "CIS:5.3.2.2",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "5.3.2.2",
+        "title": "Ensure pam_faillock module is enabled (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "5.3.2.2",
+        "title": "Ensure pam_faillock module is enabled (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "5.3.2.2",
+        "title": "Ensure pam_faillock module is enabled (Automated)"
+      }
+    }
   },
   "disk_encryption.root_unencrypted": {
     "ref": "Best practice — Encrypt data at rest (LUKS full-disk encryption) on portable or physically exposed hosts",
@@ -1218,12 +1488,14 @@
     "code": null
   },
   "ssh.allow_tcp_forwarding": {
-    "ref": "CIS Ubuntu 22.04 L2 — 5.2.21 — Ensure SSH AllowTcpForwarding is disabled",
-    "code": "CIS:5.2.21"
+    "ref": "Best practice — Disable SSH TCP forwarding where it is not needed (AllowTcpForwarding no)",
+    "ref_fr": "Bonne pratique — Désactiver le transfert TCP de SSH là où il n'est pas nécessaire (AllowTcpForwarding no)",
+    "code": null
   },
   "ssh.authorized_keys_dsa": {
-    "ref": "CIS Ubuntu 22.04 L1 — 5.2.2 — Deprecated algorithm (DSA) in authorized_keys",
-    "code": "CIS:5.2.2"
+    "ref": "Best practice — Replace DSA keys: OpenSSH disabled them by default in 7.0 and removed DSA in 10.0 (release notes)",
+    "ref_fr": "Bonne pratique — Remplacer les clés DSA : OpenSSH les a désactivées par défaut en 7.0 et a retiré DSA en 10.0 (notes de version)",
+    "code": null
   },
   "ssh.authorized_keys_duplicate": {
     "ref": "Best practice — Remove stale or duplicate authorized_keys entries",
@@ -1231,12 +1503,14 @@
     "code": null
   },
   "ssh.authorized_keys_no_restrictions": {
-    "ref": "CIS Ubuntu 22.04 L2 — 5.2 — Least privilege for authorized_keys entries (service accounts)",
-    "code": "CIS:5.2"
+    "ref": "Best practice — Restrict authorized_keys entries used by services (command=, from=, no-pty)",
+    "ref_fr": "Bonne pratique — Restreindre les entrées authorized_keys utilisées par des services (command=, from=, no-pty)",
+    "code": null
   },
   "ssh.authorized_keys_perms": {
-    "ref": "CIS Ubuntu 22.04 L1 — 6.3.3 — Ensure permissions on SSH authorized_keys files are configured",
-    "code": "CIS:6.3.3"
+    "ref": "Best practice — Keep authorized_keys at 600: sshd's StrictModes refuses a file others can write",
+    "ref_fr": "Bonne pratique — Garder authorized_keys en 600 : le StrictModes de sshd refuse un fichier que d'autres peuvent écrire",
+    "code": null
   },
   "ssh.authorized_keys_weak_key": {
     "ref": "Best practice — Use strong key types in authorized_keys (NIST SP 800-57)",
@@ -1259,12 +1533,14 @@
     "code": null
   },
   "ssh.dir_perms": {
-    "ref": "CIS Ubuntu 22.04 L1 — 6.3.2 — Ensure permissions on SSH .ssh directory are configured",
-    "code": "CIS:6.3.2"
+    "ref": "Best practice — Keep ~/.ssh at 700: sshd's StrictModes refuses a directory others can write",
+    "ref_fr": "Bonne pratique — Garder ~/.ssh en 700 : le StrictModes de sshd refuse un répertoire que d'autres peuvent écrire",
+    "code": null
   },
   "ssh.dsa_key": {
-    "ref": "CIS Ubuntu 22.04 L1 — 5.2.2 — Ensure SSH private host key file permissions / deprecated algorithm",
-    "code": "CIS:5.2.2"
+    "ref": "Best practice — Replace DSA keys: OpenSSH disabled them by default in 7.0 and removed DSA in 10.0 (release notes)",
+    "ref_fr": "Bonne pratique — Remplacer les clés DSA : OpenSSH les a désactivées par défaut en 7.0 et a retiré DSA en 10.0 (notes de version)",
+    "code": null
   },
   "ssh.host_based_auth": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.1.10 — Ensure sshd HostbasedAuthentication is disabled (Automated)",
@@ -1285,13 +1561,14 @@
     }
   },
   "ssh.host_key_rsa_weak": {
-    "ref": "Best practice — NIST SP 800-131A: generating RSA signatures with keys below 2048 bits is disallowed; an SSH host key signs at every connection (ssh-keygen -t rsa -b 4096, or an ed25519 host key)",
-    "ref_fr": "Bonne pratique — NIST SP 800-131A : générer des signatures RSA avec des clés de moins de 2048 bits est interdit ; une clé hôte SSH signe à chaque connexion (ssh-keygen -t rsa -b 4096, ou une clé hôte ed25519)",
+    "ref": "Best practice — NIST SP 800-131A: generating RSA signatures with keys below 2048 bits is disallowed; an SSH host key signs every connection that negotiates its algorithm (ssh-keygen -t rsa -b 4096, or an ed25519 host key)",
+    "ref_fr": "Bonne pratique — NIST SP 800-131A : générer des signatures RSA avec des clés de moins de 2048 bits est interdit ; une clé hôte SSH signe chaque connexion qui négocie son algorithme (ssh-keygen -t rsa -b 4096, ou une clé hôte ed25519)",
     "code": null
   },
   "ssh.host_key_dsa": {
-    "ref": "CIS Ubuntu 22.04 L1 — 5.2.13 — Ensure only strong key exchange algorithms are used (no DSA host keys)",
-    "code": "CIS:5.2.13"
+    "ref": "Best practice — Remove DSA host keys: OpenSSH disabled DSA by default in 7.0, at compile time in 9.8, and removed it in 10.0 (release notes)",
+    "ref_fr": "Bonne pratique — Retirer les clés hôtes DSA : OpenSSH a désactivé DSA par défaut en 7.0, à la compilation en 9.8, et l'a retiré en 10.0 (notes de version)",
+    "code": null
   },
   "ssh.ignore_rhosts_disabled": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.1.11 — Ensure sshd IgnoreRhosts is enabled (Automated)",
@@ -1386,8 +1663,9 @@
     "code": null
   },
   "ssh.password_auth": {
-    "ref": "CIS Ubuntu 22.04 L1 — 5.2.8 — Ensure SSH PasswordAuthentication is disabled",
-    "code": "CIS:5.2.8"
+    "ref": "Best practice — Prefer key-based SSH authentication and disable passwords where possible (PasswordAuthentication no)",
+    "ref_fr": "Bonne pratique — Préférer l'authentification SSH par clé et désactiver les mots de passe quand c'est possible (PasswordAuthentication no)",
+    "code": null
   },
   "ssh.permit_empty_passwords": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.1.19 — Ensure sshd PermitEmptyPasswords is disabled (Automated)",
@@ -1467,12 +1745,14 @@
     "code": null
   },
   "ssh.rsa_weak": {
-    "ref": "CIS Ubuntu 22.04 L1 — 5.2.2 — Ensure SSH host key algorithm strength (RSA < 4096 bits)",
-    "code": "CIS:5.2.2"
+    "ref": "Best practice — NIST SP 800-131A: generating RSA signatures with keys below 2048 bits is disallowed (ssh-keygen -t ed25519, or -t rsa -b 4096)",
+    "ref_fr": "Bonne pratique — NIST SP 800-131A : générer des signatures RSA avec des clés de moins de 2048 bits est interdit (ssh-keygen -t ed25519, ou -t rsa -b 4096)",
+    "code": null
   },
   "ssh.strict_modes_disabled": {
-    "ref": "CIS Ubuntu 22.04 L1 — 5.2.2 — Ensure SSH private host key file permissions are configured",
-    "code": "CIS:5.2.2"
+    "ref": "Best practice — Keep StrictModes yes: sshd then refuses key files and home directories others can write",
+    "ref_fr": "Bonne pratique — Garder StrictModes yes : sshd refuse alors les fichiers de clés et les répertoires personnels que d'autres peuvent écrire",
+    "code": null
   },
   "ssh.weak_ciphers": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.1.6 — Ensure sshd Ciphers are configured (Automated)",
@@ -1534,8 +1814,9 @@
     "code": null
   },
   "ssh.x11.forwarding.server": {
-    "ref": "CIS Ubuntu 22.04 L1 — 5.2.6 — Ensure SSH X11 forwarding is disabled",
-    "code": "CIS:5.2.6"
+    "ref": "Best practice — Disable SSH X11 forwarding where it is not needed (X11Forwarding no)",
+    "ref_fr": "Bonne pratique — Désactiver le transfert X11 de SSH là où il n'est pas nécessaire (X11Forwarding no)",
+    "code": null
   },
   "ssl_certs.expired": {
     "ref": "Best practice — Ensure TLS certificates are valid and renewed before expiry",
@@ -1654,16 +1935,32 @@
     "code": null
   },
   "systemd_timers.pipe_to_shell": {
-    "ref": "CIS Ubuntu 22.04 L1 — 5.1 — Configure cron/timers (script integrity: verify sources before execution)",
-    "code": "CIS:5.1"
+    "ref": "Best practice — Do not run remote content fetched by a scheduled job (curl/wget | sh): verify it before it runs",
+    "ref_fr": "Bonne pratique — Ne pas exécuter un contenu distant récupéré par une tâche planifiée (curl/wget | sh) : le vérifier avant qu'il ne s'exécute",
+    "code": null
   },
   "systemd_timers.user_created_root": {
-    "ref": "CIS Ubuntu 22.04 L2 — 5.1.8 — Ensure cron/timer access is restricted to authorised users",
-    "code": "CIS:5.1.8"
+    "ref": "Best practice — Review timers that run as root and were added outside a package",
+    "ref_fr": "Bonne pratique — Examiner les minuteries qui tournent en root et ont été ajoutées hors d'un paquet",
+    "code": null
   },
   "systemd_timers.world_writable": {
-    "ref": "CIS Ubuntu 22.04 L1 — 6.1.10 — Ensure no world writable scripts are executed by privileged timers",
-    "code": "CIS:6.1.10"
+    "ref": "CIS Ubuntu 22.04 L1 — 7.1.11 — Ensure world writable files and directories are secured (Automated)",
+    "code": "CIS:7.1.11",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "7.1.11",
+        "title": "Ensure world writable files and directories are secured (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "7.1.11",
+        "title": "Ensure world writable files and directories are secured (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "7.1.11",
+        "title": "Ensure world writable files and directories are secured (Automated)"
+      }
+    }
   },
   "umask.group_writable": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.4.3.3 — Ensure default user umask is configured (Automated)",
@@ -1712,12 +2009,40 @@
     "code": null
   },
   "updates.security_pending": {
-    "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed",
-    "code": "CIS:1.9"
+    "ref": "CIS Ubuntu 22.04 L1 — 1.2.2.1 — Ensure updates, patches, and additional security software are installed (Manual)",
+    "code": "CIS:1.2.2.1",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      },
+      "CIS Debian 12": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      },
+      "CIS Debian 13": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      }
+    }
   },
   "updates.unattended_not_configured": {
-    "ref": "CIS Ubuntu 22.04 L1 — 1.9 — Ensure updates, patches and additional security software are installed",
-    "code": "CIS:1.9"
+    "ref": "CIS Ubuntu 22.04 L1 — 1.2.2.1 — Ensure updates, patches, and additional security software are installed (Manual)",
+    "code": "CIS:1.2.2.1",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      },
+      "CIS Debian 12": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      },
+      "CIS Debian 13": {
+        "code": "1.2.2.1",
+        "title": "Ensure updates, patches, and additional security software are installed (Manual)"
+      }
+    }
   },
   "user_accounts.empty_password": {
     "ref": "CIS Ubuntu 22.04 L1 — 7.2.2 — Ensure /etc/shadow password fields are not empty (Automated)",
@@ -1756,8 +2081,9 @@
     }
   },
   "user_accounts.no_shadow": {
-    "ref": "CIS Ubuntu 22.04 L1 — 6.2 — User and Group Settings (requires privileged access to /etc/shadow)",
-    "code": "CIS:6.2"
+    "ref": "Best practice — Run the audit with root so /etc/shadow can be read: password checks are skipped otherwise",
+    "ref_fr": "Bonne pratique — Lancer l'audit avec root pour pouvoir lire /etc/shadow : les contrôles de mots de passe sont sautés sinon",
+    "code": null
   },
   "user_accounts.uid_zero": {
     "ref": "CIS Ubuntu 22.04 L1 — 5.4.2.1 — Ensure root is the only UID 0 account (Automated)",
@@ -1964,7 +2290,17 @@
     "code": null
   },
   "ports.uncovered_netfilter_open": {
-    "ref": "CIS Ubuntu 22.04 L1 — 3.5.1.7 — Ensure ufw default deny firewall policy, or add an explicit rule",
-    "code": "CIS:3.5.1.7"
+    "ref": "CIS Ubuntu 22.04 L1 — 4.3.2.4 — Ensure iptables firewall rules exist for all open ports (Automated)",
+    "code": "CIS:4.3.2.4",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "4.4.2.4",
+        "title": "Ensure iptables firewall rules exist for all open ports (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "4.4.2.4",
+        "title": "Ensure iptables firewall rules exist for all open ports (Automated)"
+      }
+    }
   }
 }

@@ -324,10 +324,15 @@ def _timeshift_excludes() -> list:
     """v0.32.0 — the `exclude` patterns of timeshift.json: every path they
     match is in no snapshot (measured on Linux Mint 22.3: the home excluded
     while backup.active said "solution active"). [] when unread or not a
-    list of strings."""
+    list of strings, and in BTRFS mode: there Timeshift snapshots whole
+    subvolumes and never applies the list (timeshift source,
+    create_snapshot_with_btrfs; its settings hide the filters,
+    ``exclude_box.visible = !App.btrfs_mode``)."""
     try:
         cfg = json.loads(read_text_capped(_TIMESHIFT_CONFIG, encoding="utf-8", errors="replace"))
     except (OSError, ValueError):
+        return []
+    if isinstance(cfg, dict) and str(cfg.get("btrfs_mode", "")).lower() == "true":
         return []
     excludes = cfg.get("exclude") if isinstance(cfg, dict) else None
     if not isinstance(excludes, list):

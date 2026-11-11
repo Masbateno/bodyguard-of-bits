@@ -997,6 +997,107 @@ The real ufw 0.36.2 at `IPV6=no` in the same namespace bench left exactly `-P IN
 `-P FORWARD DROP`, `-P OUTPUT DROP`, `-A INPUT -i lo -j ACCEPT`, `-A OUTPUT -o lo -j ACCEPT`:
 the one table for which BOB says "IPv6 is unusable on this host".
 
+### 0.32.0 field pass — Kubernetes certificates verified before any request
+
+*MicroK8s 1.35.6 on Ubuntu Server 26.04.1 (2026-11-09 and 2026-11-11), k3s
+v1.37.2+k3s1 and kubeadm 1.37.2 with containerd 2.4.2 on Fedora 44 (2026-11-10
+and 2026-11-11), real nodes, removed after.*
+
+| Distribution | kubelet 10250 verified by | API server verified by | 127.0.0.1 in the certificate |
+|---|---|---|---|
+| MicroK8s | `certs/ca.crt` | `certs/ca.crt` (16443) | kubelet no, API yes |
+| k3s (server) | `server/tls/server-ca.crt` | `server-ca.crt` (6443) | yes, yes |
+| kubeadm | `/var/lib/kubelet/pki/kubelet.crt` (self-signed) | `pki/ca.crt` (not probed by BOB) | no, no |
+
+0.32.0 on each live node: certificates verified, the anonymous probes sent
+(401 answers), findings as under 0.31.4. A fake `k3s-server` serving its own
+self-signed certificate on 10250: `kubernetes.kubelet_tls_mismatch`, not asked
+(0.30.0 had read that set-up as "the kubelet requires authentication"). kubeadm
+on Fedora needed `failSwapOn: false` (zram swap comes back after `swapoff -a`).
+
+### 0.32.0 field pass — routing read as it runs, and FORWARD beside an active UFW
+
+*Ubuntu Server 26.04.1, real, 2026-11-11, docker.io 29.1.3 and wireguard-tools
+installed for the bench and purged after, MicroK8s stopped during it; UFW 0.36.2
+enabled with a firewall rollback armed before, restored after.*
+
+| State | 0.31.4 | 0.32.0 |
+|---|---|---|
+| Docker running | routing seen | routing seen |
+| Docker stopped (docker0, its 15 rules, /var/lib/docker remain) | routing seen | not routing: `ip_forward_enabled` WARN −1 |
+| WireGuard configured, no interface | routing seen | not routing |
+| WireGuard interface up (`DEVTYPE=wireguard`; a `tun` has none) | routing seen | routing seen |
+| UFW active, MicroK8s stopped (its two pod-network ACCEPT rules left in FORWARD), nothing else routing | −3 | −3 |
+| the same, Docker installed and stopped | 0 | `iptables_forward_bypass` ×2 + `ip_forward_enabled`, −3 |
+
+Docker 29 writes only jumps (`DOCKER-USER`, `DOCKER-FORWARD`) into FORWARD, no
+ACCEPT. While something routes, every ACCEPT in FORWARD is excused, whoever
+wrote it (unchanged).
+
+### 0.32.0 field pass — a port a rule admits with nothing listening
+
+*Ubuntu Server 26.04.1 (Nextcloud snap 35.0.2), real, 2026-11-11, UFW enabled
+with a rollback armed before, restored after.*
+
+`ufw allow 443/tcp` with nothing on 443: `services.exposed.nextcloud` ALERT −2
+under 0.31.4, `services.exposure.not_listening` INFO under 0.32.0; port 80, on
+which Apache listened, ALERT −2 under both.
+
+### 0.32.0 field pass — the legacy IPv6 tables beside nftables
+
+*Ubuntu Server 26.04.1, real, 2026-11-11, an ephemeral network namespace,
+listeners on 8098/8099 over IPv4 and IPv6.*
+
+| Legacy IPv6 tables | Oracle (8099, IPv6) | 0.31.4 | 0.32.0 |
+|---|---|---|---|
+| loaded, empty | open | ACCEPT | ACCEPT |
+| filter INPUT drops 8099 | closed | ACCEPT | DROP |
+| filter INPUT policy DROP | closed | ACCEPT | DROP |
+| raw PREROUTING drops 8099 | closed | ACCEPT | DROP |
+| nft drops 8099, legacy accepts it | closed | DROP | DROP |
+| loaded, `ip6tables-legacy` unreadable | closed | ACCEPT | UNKNOWN |
+
+`iptables-legacy` and `ip6tables-legacy` are one binary (`xtables-legacy-multi`):
+hiding one hides the other.
+
+### 0.32.0 field pass — an RSA host key below 2048 bits, served or not
+
+*Linux Mint 22.3 (OpenSSH 9.6p1) and Ubuntu Server 26.04.1 (OpenSSH 10.2p1),
+real, 2026-11-11, a rollback restoring the original key armed before; oracle
+`ssh-keyscan -t rsa` against the live sshd.*
+
+| sshd configuration, 1024-bit RSA key | Served | 0.31.4 | 0.32.0 |
+|---|---|---|---|
+| no `HostKey` line | yes | INFO | `ssh.host_key_rsa_weak` WARN −1 |
+| `HostKey` lines without the RSA key | no | INFO | `_unused` INFO |
+| `HostKeyAlgorithms ssh-ed25519,ecdsa-sha2-nistp256` | no | INFO | `_unused` INFO |
+| `HostKeyAlgorithms -rsa-sha2-*` | no | INFO | `_unused` INFO |
+| `HostKey` lines naming the RSA key | yes | INFO | WARN −1 |
+
+The fix command run without a terminal stops at `ssh-keygen`'s "Overwrite
+(y/n)?"; answered `y`, it writes a 4096-bit key. It holds `&&`, so `--fix`
+never runs it unattended.
+
+### 0.32.0 field pass — four texts held to what was measured, and the log preview
+
+*Linux Mint 22.3 test install (clamav-daemon and debsums installed for the
+bench), the Mint desktop read-only without root (Timeshift), Fedora 44 (samba
+4.24.0, firewalld), real, 2026-11-11.*
+
+- ClamAV: the package's `LocalSocketMode 666` gives `srw-rw-rw- clamav:clamav`,
+  directory `drwxr-xr-x`; 0.32.0 prints them in the finding.
+- Timeshift (rsync mode): `timeshift.json` excluded the home, `/var/lib/libvirt/**`
+  and `/root/**` while the backup section read "active"; 0.32.0 lists them.
+  BTRFS mode, read from Timeshift's source only: the list is not applied.
+- debsums on a real host: 21 package files differ (Firefox's `distribution.ini`,
+  icons); the limit of local digests now sits under that finding too.
+- NetBIOS on Fedora: with `nmb` run by its unit, the 0.31.4 registry entry
+  already handles 137/138; with `nmbd` started outside it, 0.31.4 printed the
+  UFW wording, 0.32.0 the firewalld one.
+- `--manage-logs` ←/→ in a real terminal over `ssh -tt`: the keypad-mode
+  sequences (`\eOD`, `\eOC`) work; the normal-mode form (`\e[D`) is read as Esc
+  then a letter, in every BOB screen, before and after 0.32.0.
+
 ### 0.31.4 field pass — Samba's NetBIOS daemon, and Fedora's `smb` / `nmb` units
 
 *Ubuntu Server 26.04.1 (samba 4.23.6), real, 2026-11-09, firewall rollback armed

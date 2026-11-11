@@ -717,22 +717,52 @@ _PREVIEW_KEYS = _keys.NAVIGATION + (_keys.SUMMARY,) + _keys.NESTED_EXIT
 _PREVIEW_KEYS_SUMMARY = _keys.NAVIGATION + (_keys.FULL,) + _keys.NESTED_EXIT
 
 
-def _preview_keys(mode: str) -> "tuple[str, ...]":
-    """The actions the preview advertises, which depend on what it is showing."""
-    return _PREVIEW_KEYS if mode == "full" else _PREVIEW_KEYS_SUMMARY
+def _preview_keys(mode: str, peers: bool = False) -> "tuple[str, ...]":
+    """The actions the preview advertises, which depend on what it is showing.
+
+    v0.32.0 — ``peers``: the list it was opened from holds another log, so
+    ←/→ reach it. Offered only then: an action with nothing to act on is noise
+    on the one line an operator reads to learn the screen.
+    """
+    base = _PREVIEW_KEYS if mode == "full" else _PREVIEW_KEYS_SUMMARY
+    if not peers:
+        return base
+    return base[:-len(_keys.NESTED_EXIT)] + (_keys.PEER,) + _keys.NESTED_EXIT
 
 
-def _curses_preview_log(stdscr, path: "Path", t) -> None:
-    """Scrollable read-only viewer for a log file.  Esc returns to list."""
-    import curses
-
+def _read_log_views(path: "Path") -> "tuple[list[str], list[str]]":
+    """A log's whole text and its condensed view, as the preview shows them."""
     try:
         raw = path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError as exc:
         raw = [f"Cannot read file: {exc}"]
+    return raw, _extract_summary_view(raw)
 
-    full_lines    = raw
-    summary_lines = _extract_summary_view(raw)
+
+def _peer_index(peers: "list[Path]", idx: int, side: int) -> int:
+    """The index ←/→ moves the preview to, in a list sorted newest first.
+
+    ← (side -1) is the older log, the next entry down; → (+1) the newer one,
+    the entry above — time runs left to right, as in the score chart. At
+    either end the preview stays where it is, as ↑↓ stop at the edges.
+    """
+    nxt = idx - side
+    return nxt if 0 <= nxt < len(peers) else idx
+
+
+def _curses_preview_log(stdscr, path: "Path", t, peers: "list[Path] | None" = None) -> "Path":
+    """Scrollable read-only viewer for a log file.  Esc returns to list.
+
+    v0.32.0 — *peers* is the list the preview was opened from, newest first:
+    ←/→ show the older/newer log without going back to it, keeping the full or
+    summary view. Returns the log shown last, so the list can put its cursor
+    on it.
+    """
+    import curses
+
+    peers = list(peers) if peers and path in peers else [path]
+    idx = peers.index(path)
+    full_lines, summary_lines = _read_log_views(path)
 
     has_color = curses.has_colors()
     scroll = 0
@@ -740,10 +770,11 @@ def _curses_preview_log(stdscr, path: "Path", t) -> None:
 
     while True:
         lines = full_lines if mode == "full" else summary_lines
+        _actions = _preview_keys(mode, peers=len(peers) > 1)
 
         h, w = stdscr.getmaxyx()
         from bob.tui import _chrome as _ch
-        body_h = max(1, h - 1 - _ch.chrome_height(t, _preview_keys(mode), w))
+        body_h = max(1, h - 1 - _ch.chrome_height(t, _actions, w))
         max_scroll = max(0, len(lines) - body_h)
         scroll = max(0, min(scroll, max_scroll))
 
@@ -755,7 +786,8 @@ def _curses_preview_log(stdscr, path: "Path", t) -> None:
         mode_tag = t("tui.mode_full") if mode == "full" else t("tui.mode_summary")
         _rng = t("tui.range", first=scroll + 1,
                  last=min(scroll + body_h, len(lines)), total=len(lines))
-        banner = f"  {path.name}  {mode_tag}   {_rng}"
+        _pos = f"{idx + 1}/{len(peers)}  " if len(peers) > 1 else ""
+        banner = f"  {path.name}  {_pos}{mode_tag}   {_rng}"
         from bob.tui import _chrome
         _chrome.draw_header(stdscr, curses, banner, has_color)
 
@@ -771,7 +803,6 @@ def _curses_preview_log(stdscr, path: "Path", t) -> None:
 
         # Bottom chrome — the shared key contract, translated.
         from bob.tui import _chrome
-        _actions = _preview_keys(mode)
         _chrome.draw(stdscr, curses, t, _actions, has_color)
 
         stdscr.refresh()
@@ -780,7 +811,13 @@ def _curses_preview_log(stdscr, path: "Path", t) -> None:
 
         action = _keys.resolve(curses, ch, _actions)
         if action == _keys.BACK:                        # nested screen: Esc goes back
-            break
+            return path
+        elif action == _keys.PEER:                      # ← older / → newer log
+            nxt = _peer_index(peers, idx, _keys.side(curses, ch))
+            if nxt != idx:
+                idx, path = nxt, peers[nxt]
+                full_lines, summary_lines = _read_log_views(path)
+                scroll = 0
         elif action in (_keys.SUMMARY, _keys.FULL):     # toggle summary / full
             mode = "summary" if mode == "full" else "full"
             scroll = 0
@@ -1227,7 +1264,9 @@ def _browse_dir(stdscr, browse_dir: Path, user_config, config, t) -> None:
                     confirm_delete = True
         elif _act == _keys.SELECT:
             if n and not n_sel:
-                _curses_preview_log(stdscr, logs[cursor], t)
+                # v0.32.0 — the list follows the preview: ←/→ may have moved it.
+                shown = _curses_preview_log(stdscr, logs[cursor], t, logs)
+                cursor = logs.index(shown) if shown in logs else cursor
 
 
 def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:

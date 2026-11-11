@@ -95,6 +95,12 @@ def _parse_config_file(
         if m:
             key   = m.group(1).lower()
             value = _strip_inline_comment(m.group(2)).strip().strip('"')
+            # v0.32.0 — HostKey is the one directive here that accumulates:
+            # sshd loads every key named, in order (sshd_config(5)). Kept
+            # whole beside the first-value-wins entry, so the host-key check
+            # knows which files sshd serves.
+            if key == "hostkey":
+                config.setdefault("_hostkeys", []).append(value)
             config.setdefault(key, value)  # first-value-wins
 
 def _strip_inline_comment(value: str) -> str:

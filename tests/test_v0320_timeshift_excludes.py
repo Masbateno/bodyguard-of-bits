@@ -40,6 +40,16 @@ class TestWhatItReads:
     def test_anything_else_is_empty(self, cfg, payload):
         assert cfg(payload) == []
 
+    @pytest.mark.parametrize("mode", ["true", True], ids=["string", "bool"])
+    def test_btrfs_mode_applies_no_exclusion(self, cfg, mode):
+        """Timeshift's BTRFS snapshots take whole subvolumes and never read the
+        list (its source, create_snapshot_with_btrfs): saying a path is
+        excluded there would be false."""
+        assert cfg({"btrfs_mode": mode, "exclude": _EXCL}) == []
+
+    def test_rsync_mode_said(self, cfg):
+        assert cfg({"btrfs_mode": "false", "exclude": _EXCL}) == _EXCL
+
 
 def _keys_details(**kw):
     snap = b.BackupSnapshot(active_tools=["timeshift"], **kw)

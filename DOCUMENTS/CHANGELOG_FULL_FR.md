@@ -6,6 +6,295 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.32.0] — 12-11-2026
+
+**Une version mineure, BREAKING pour les scores : BOB n'envoie aucune requête
+HTTP à un kubelet ou à un serveur d'API dont il n'a pas vérifié le certificat ;
+il lit Docker, WireGuard et les ports à l'écoute tels qu'ils tournent plutôt que
+tels qu'ils sont installés ou admis ; les tables IPv6 historiques entrent dans le
+verdict IPv6 des ports qu'il affiche ; une clé hôte SSH RSA sous 2048 bits que
+sshd sert est comptée ; cinq constats existants disent désormais ce qu'ils ont
+mesuré ou ce qu'ils ne peuvent pas voir, et un sixième est vérifié inchangé ;
+chaque référence CIS Ubuntu qu'il affiche est désormais générée depuis ComplianceAsCode ; et
+l'aperçu de `--manage-logs` passe d'un rapport à l'autre.**
+
+BREAKING pour les scores signifie : un même hôte peut obtenir un score différent
+sous 0.31.4 et sous 0.32.0 — global, par domaine, et la tendance `--history` à
+travers la mise à jour. La formule de score est inchangée ; aucune section
+ajoutée ni retirée ; aucune option ajoutée ni retirée ; aucune clé de constat
+renommée ni retirée — une clé hôte RSA sous 2048 bits signale désormais la
+nouvelle `ssh.host_key_rsa_weak` au lieu de `ssh.host_key_rsa_short`, qui reste
+pour 2048 à 4095 bits. Aucun changement de schéma de la sortie JSON ni de colonne
+CSV ; deux champs JSON existants changent de sens (§3). Nouvelles clés de
+constat : `ssh.host_key_rsa_weak`, `ssh.host_key_rsa_weak_unused`,
+`ssh.host_key_rsa_weak_unknown`, `kubernetes.kubelet_tls_unchecked`,
+`kubernetes.kubelet_tls_mismatch`, `kubernetes.apiserver_tls_unchecked`,
+`kubernetes.apiserver_tls_mismatch`.
+
+Scores qui bougent :
+
+| Où | 0.31.4 | 0.32.0 | § |
+|---|---|---|---|
+| `hardening.send_redirects_enabled`, aucune interface ne transfère | WARN −1 | INFO, 0 | 1 |
+| Un port qu'une règle UFW admet, aucun service à l'écoute (mesuré : le 443/tcp de Nextcloud) | `services.exposed.nextcloud` ALERT −2 | `services.exposure.not_listening` INFO, 0 | 2 |
+| `ip_forward=1`, `docker` ou `/var/lib/docker` présent, `dockerd` arrêté, rien d'autre ne route | OK | `firewall_drivers.ip_forward_enabled` WARN −1 | 3 |
+| `ip_forward=1`, `wg` ou une configuration WireGuard présente, aucune interface WireGuard, rien d'autre ne route | OK | `firewall_drivers.ip_forward_enabled` WARN −1 | 3 |
+| UFW actif, une règle ACCEPT laissée dans FORWARD, aucun mécanisme de routage en marche — seulement un Docker arrêté ou un WireGuard sans interface, que 0.31.4 comptait comme routage (mesuré : les deux règles de MicroK8s) | `forward_routing_ok` INFO, aucune pénalité | `firewall_drivers.iptables_forward_bypass` WARN −1 chacune | 3 |
+| Clé hôte SSH RSA sous 2048 bits que sshd sert (mesuré : 1024) | `ssh.host_key_rsa_short` INFO (8/10) | `ssh.host_key_rsa_weak` WARN −1 (7/10) | 5 |
+| Certificat du kubelet ou de l'API Kubernetes non vérifié | sondé, compté | non sondé ; INFO ; score « ≤ » | 6 |
+
+### 1. `send_redirects` ne coûte rien là où rien ne transfère
+
+`hardening.send_redirects_enabled` valait WARN −1 dès que
+`net.ipv4.conf.*.send_redirects` valait 1. Le noyau n'envoie une redirection
+ICMP qu'en transférant un paquet par l'interface même où il est arrivé ; mesuré
+en 0.31.4 (un espace de noms réseau, noyau 7.0) : aucune redirection sans
+transfert, et c'est le `forwarding` propre à l'interface qui décide. 0.31.4
+nommait déjà les interfaces qui transfèrent. Désormais, quand aucune ne le fait
+(la liste est lue et vide), le constat est INFO et ne coûte rien ; sa commande de
+correction reste affichée. Quand une interface transfère, ou que le transfert
+n'a pas pu être lu, il reste WARN −1.
+
+### 2. Un port sur lequel rien n'écoute n'est pas exposé
+
+La section services comptait le port d'un service du registre comme exposé dès
+qu'une règle UFW l'admettait (ou, sans UFW, quand aucune règle ne le nommait),
+que quelque chose écoute ou non. Mesuré sur Ubuntu Server 26.04.1 (Nextcloud en
+snap, `ufw allow 443/tcp`, rien sur 443) : `services.exposed.nextcloud` ALERT −2
+sous 0.31.4 ; `services.exposure.not_listening` INFO sous 0.32.0. Quand BOB a la
+liste des ports à l'écoute et que le port n'y figure pas, le verdict est « pas à
+l'écoute », quoi que dise la règle. Quand il n'a pas de liste (`ss` n'a pas pu
+être lancé), rien n'est conclu : l'exposition reste ce que dit la règle, comme
+avant. Le port 80, sur lequel l'Apache de Nextcloud écoutait pendant le même
+audit, reste ALERT −2. La section pare-feu liste toujours la règle
+(`firewall_rules.orphan_rule`).
+
+### 3. Docker et WireGuard comptent comme routage tant qu'ils tournent
+
+Un hôte qui transfère des paquets (`ip_forward=1`,
+`firewall_drivers.ip_forward_enabled` WARN −1) ou qui porte des règles ACCEPT
+dans FORWARD à côté d'un UFW actif (`firewall_drivers.iptables_forward_bypass`,
+WARN −1 chacune) n'est pas pénalisé tant qu'un mécanisme de routage actif est
+détecté. Docker comptait dès que `docker` ou `/var/lib/docker` existait,
+WireGuard dès que `wg` ou un fichier de configuration existait, même sans rien en
+marche — le défaut que 0.31.3 avait retiré pour libvirt. Mesuré sur Ubuntu Server
+26.04.1 (docker.io 29.1.3, wireguard-tools) :
+
+| État | 0.31.4 | 0.32.0 |
+|---|---|---|
+| Docker en marche | `ip_forward_ok` | `ip_forward_ok` |
+| Docker installé, arrêté (docker0, ses 15 règles et /var/lib/docker restent) | `ip_forward_ok` | `ip_forward_enabled` WARN −1 |
+| WireGuard configuré, sans interface | `ip_forward_ok` | `ip_forward_enabled` WARN −1 |
+| Interface WireGuard montée | `ip_forward_ok` | `ip_forward_ok` |
+
+Docker compte désormais tant qu'un processus nommé `dockerd` tourne ; WireGuard
+tant qu'une interface déclare `DEVTYPE=wireguard` (une interface `tun` ne le fait
+pas). Les champs JSON `firewall_drivers.docker_present` et
+`firewall_drivers.wireguard_present` suivent (documenté dans README_TECH). La
+même détection décide des règles ACCEPT de FORWARD à côté d'un UFW actif. Mesuré
+sur le même hôte avec UFW 0.36.2 actif et MicroK8s arrêté, qui laisse ses deux
+règles ACCEPT du réseau des pods dans FORWARD :
+
+| État | 0.31.4 | 0.32.0 |
+|---|---|---|
+| Docker en marche | `forward_routing_ok`, 0 | `forward_routing_ok`, 0 |
+| Docker installé, arrêté | `forward_routing_ok`, 0 | `iptables_forward_bypass` ×2 et `ip_forward_enabled`, −3 |
+| + une règle ACCEPT pour une interface WireGuard, WireGuard configuré, sans interface | `forward_routing_ok`, 0 | `iptables_forward_bypass` ×3 et `ip_forward_enabled`, −4 |
+| Interface WireGuard montée | `forward_routing_ok`, 0 | `forward_routing_ok`, 0 |
+
+La pénalité elle-même n'est pas nouvelle : sans rien qui route d'installé, les
+deux versions la comptent (mesuré, les deux règles de MicroK8s : −3 sous les
+deux ; les points s'additionnent, aucun plafond ne s'applique à ce domaine). Ce
+qui change, c'est qu'un Docker installé mais arrêté, ou un WireGuard sans
+interface, ne l'excuse plus. Docker 29 lui-même ne met aucune règle ACCEPT dans
+FORWARD, seulement des sauts vers ses propres chaînes : un Docker arrêté ne coûte
+jamais `iptables_forward_bypass` à lui seul ; les règles comptées sont celles
+qu'un autre outil a laissées. Limites : un `dockerd` sans root n'a pas été
+mesuré ; un client WireGuard qui ne transfère pas compte toujours comme routage,
+comme avant ; et tant que quelque chose route, toute règle ACCEPT de FORWARD est
+excusée, quel qu'en soit l'auteur — inchangé depuis 0.31.4.
+
+### 4. Les tables IPv6 historiques entrent dans le verdict IPv6 des ports
+
+0.31.0 pesait les tables IPv4 historiques (x_tables) à côté de nftables, et
+disait IPv6 inchangé. Un paquet traverse à la fois les chaînes de nftables et
+les historiques, donc un refus historique ferme le port. Mesuré sur Ubuntu Server
+26.04.1 dans un espace de noms réseau (un serveur à l'écoute sur 8099 en IPv6) :
+
+| Tables IPv6 historiques | Oracle | 0.31.4 (verdict IPv6 affiché) | 0.32.0 |
+|---|---|---|---|
+| chargées, vides | ouvert | ACCEPT | ACCEPT |
+| filter INPUT rejette 8099 | fermé | ACCEPT | DROP |
+| filter INPUT politique DROP | fermé | ACCEPT | DROP |
+| raw PREROUTING rejette 8099 | fermé | ACCEPT | DROP |
+| nft rejette 8099, l'historique l'accepte | fermé | DROP | DROP |
+| chargées, `ip6tables-legacy` illisible | fermé | ACCEPT | UNKNOWN |
+
+Le verdict IPv6 est affiché dans la section ports, pas compté (comme depuis
+0.30.0) ; aucun score ne bouge. Les tables IPv4 et IPv6 restent séparées : un
+refus dans une famille ne ferme pas l'autre.
+
+### 5. Une clé hôte SSH RSA sous 2048 bits que sshd sert est comptée
+
+Une clé hôte authentifie le serveur à chaque connexion (elle signe l'échange de
+clés). Le NIST interdit de générer des signatures RSA avec des clés de moins de
+2048 bits (SP 800-131A). 0.31.4 donnait à une clé hôte de 1024 bits le même INFO
+qu'à une clé de 3072 bits. Désormais `ssh.host_key_rsa_weak`, WARN −1 — le niveau
+qu'a une clé RSA d'utilisateur sous 2048 bits (`ssh.rsa_weak`). Mesuré sur Linux
+Mint 22.3 (OpenSSH 9.6p1, la clé chargée et servie par sshd) : 1024 bits, 0.31.4
+INFO 8/10, 0.32.0 WARN 7/10 ; 2048 bits, INFO 8/10 sous les deux. De 2048 à 4095
+bits rien ne change : `ssh.host_key_rsa_short`, INFO, comme avant. BOB lit les
+fichiers de clé de `/etc/ssh`, et un fichier là n'est pas une clé que sshd sert :
+le point n'est compté que si sshd_config charge le fichier (une ligne `HostKey`
+le nomme, ou aucune n'est écrite et c'est un des fichiers par défaut de sshd) et
+que `HostKeyAlgorithms` laisse RSA proposé (`+`, `^`, `-` et les motifs lus comme
+sshd les lit). Sinon `ssh.host_key_rsa_weak_unused`, INFO, non comptée ; avec
+sshd_config illisible, `ssh.host_key_rsa_weak_unknown`, INFO, et le score est un
+plafond. Aucune de ces deux nouvelles clés ne porte de pénalité. Mesuré sur Ubuntu
+Server 26.04.1 (OpenSSH 10.2p1) contre ce que sshd propose (`ssh-keyscan -t
+rsa`) : servie par défaut ou par une ligne `HostKey`, WARN −1 ; absente des
+lignes `HostKey`, ou RSA retiré de `HostKeyAlgorithms` (une liste, ou
+`-rsa-sha2-*`), INFO — cinq cas, cinq concordances. La commande de correction
+régénère désormais le fichier que sshd sert, qu'une ligne `HostKey` peut nommer,
+en clé de 4096 bits, et demande avant d'écraser l'ancienne ; son entrée
+`--explain` dit que chaque client qui a enregistré l'ancienne empreinte
+avertira tant qu'il n'est pas mis à jour.
+
+### 6. Kubernetes : aucune requête avant que le certificat soit vérifié
+
+Les sondes du kubelet (10250) et du serveur d'API passaient par TLS sans
+vérifier le certificat. BOB le vérifie désormais avec l'autorité de la
+distribution pendant la poignée de main TLS, avant toute requête HTTP — MicroK8s
+`certs/ca.crt` (kubelet et serveur d'API) ; k3s `server/tls/server-ca.crt`
+(kubelet et serveur d'API) ; un kubelet kubeadm, qui sert un certificat
+autosigné, contre le propre fichier de ce certificat, `<cert-dir>/kubelet.crt` —
+le fichier sur disque est l'ancre, et le kubelet qui répond doit présenter le
+certificat qu'il contient, ou un que sa clé signe (BOB ne sonde pas le serveur
+d'API de kubeadm). Il vérifie la chaîne, pas le nom du serveur : un certificat
+que l'autorité signe peut être accepté même quand son nom ne correspond pas à
+l'adresse à laquelle BOB se connecte — le kubelet de MicroK8s et celui de kubeadm
+émettent des certificats sans 127.0.0.1 dans leurs noms. Mesuré sur des nœuds
+vivants : MicroK8s 1.35.6 (Ubuntu), k3s v1.37.2 et kubeadm 1.37.2 (Fedora 44) —
+tous vérifiés, constats inchangés. Quand l'autorité est inconnue ou illisible
+(`kubernetes.*_tls_unchecked`), BOB ne se connecte pas du tout. Quand elle ne
+signe pas le certificat présenté (`kubernetes.*_tls_mismatch`), la poignée de
+main TLS échoue et BOB n'envoie aucune requête HTTP. Dans les deux cas il le dit,
+et le score est un plafond. Un kubelet kubeadm configuré avec son propre
+certificat (`tlsCertFile`, `--tls-cert-file`) ou `serverTLSBootstrap` n'a pas
+encore d'autorité connue : non vérifié.
+
+### 7. Des constats qui disent ce qu'ils ont mesuré, ou ce qu'ils ne voient pas — et un vérifié
+
+- **SMTP, port 25** — le texte de risque disait que TCP/25 accepte la soumission
+  de courrier. Il porte le transfert entre serveurs ; la soumission utilise 587,
+  ou 465 en TLS implicite (RFC 6409, RFC 8314).
+- **Socket ClamAV** — `clamav.socket_open_to_all` montre désormais les
+  permissions sur lesquelles il repose. Mesuré sur Linux Mint 22.3 (le
+  `LocalSocketMode 666` du paquet) : « Mesuré : srw-rw-rw- clamav:clamav —
+  /var/run/clamav: drwxr-xr-x. »
+- **Timeshift** — en mode rsync, la ligne Timeshift liste désormais les
+  exclusions de `timeshift.json` : ce qu'elles désignent n'est dans aucun
+  instantané. En mode BTRFS, Timeshift n'applique pas la liste (son source :
+  `create_snapshot_with_btrfs` ; ses réglages masquent les filtres), donc BOB
+  n'en liste aucune — lu dans le source, non mesuré sur un hôte BTRFS. Mesuré
+  sur un poste Linux Mint 22.3 : le home, `/var/lib/libvirt/**` et `/root/**`
+  exclus, alors que la section sauvegarde disait « active ».
+- **NetBIOS sur un hôte sans UFW** — 137/udp et 138/udp se lisaient « à l'écoute
+  sur toutes les interfaces sans règle UFW explicite », quoi qui les régisse.
+  Avec UFW inactif, ils prennent désormais le chemin général (firewalld, le
+  ruleset nftables ou iptables que BOB lit, ou un texte neutre). Mesuré sur
+  Fedora 44 (firewalld) : quand `nmb` tourne depuis son unité, l'entrée NetBIOS
+  du registre ajoutée en 0.31.4 traite déjà les ports et rien ne change ; avec
+  `nmbd` lancé hors de son unité, 0.31.4 affichait le texte UFW, 0.32.0 « régi
+  par la zone firewalld de l'interface par laquelle on l'atteint, pas par une
+  règle UFW ». Aucun score ne bouge.
+- **Intégrité des paquets** (`--exhaustive`) — les empreintes de référence
+  vivent dans la base locale des paquets, qu'un root compromis peut réécrire avec
+  les fichiers. Les constats « aucun fichier ne diffère » et « N fichiers
+  diffèrent » le disent désormais tous deux. Mesuré sur Linux Mint 22.3 : 21
+  fichiers diffèrent — la forme que montre un vrai hôte.
+- **Règle UFW orpheline** — vérifiée, inchangée : le constat est INFO et sa
+  commande `ufw delete` n'entre jamais dans `--fix` ; son détail dit de ne
+  supprimer la règle que si rien ne s'en sert. Un test le tient désormais.
+
+### 8. L'aperçu des rapports passe d'un rapport à l'autre
+
+Dans `--manage-logs`, l'aperçu d'un rapport (⏎) prend ← pour le rapport plus
+ancien et → pour le plus récent sans revenir à la liste. Il garde la vue complète
+ou la synthèse, commence chaque rapport en haut, s'arrête au plus ancien et au
+plus récent, affiche la position (« 2/3 »), et à Échap le curseur de la liste
+est sur le dernier rapport affiché. Les touches suivent le contrat de touches
+commun : les flèches seulement, puisque `h`/`l` entreraient en collision avec le
+changement de langue (`l`), `n`/`p` avec « nouveau » (`n`), et que `[`/`]`
+demandent AltGr sur un clavier AZERTY. Proposé seulement quand le dossier
+contient un autre rapport. Mesuré dans un vrai terminal sur Linux Mint 22.3,
+avec les séquences de flèches que curses demande au terminal (mode keypad) ; un
+terminal qui ignore cette demande est dans les Limites. Le repli sans curses est
+inchangé.
+
+### 9. Chaque référence CIS Ubuntu est désormais générée depuis ComplianceAsCode
+
+BOB affiche le numéro CIS d'un constat dans la boîte de synthèse (`[CIS:x.y.z]`)
+et dans `--explain`. Le générateur (`scripts/gen_cis_benchmarks.py`) l'écrit
+depuis les contrôles CIS Ubuntu 22.04 v2.0.0 de ComplianceAsCode, par la règle
+que le constat met en défaut ; 55 références hors du générateur avaient été
+tapées à la main sous la même étiquette. Lues contre ComplianceAsCode le 11
+novembre 2026, aucune de ces 55 ne correspondait à un contrôle CIS Ubuntu 22.04
+v2.0.0 : une douzaine
+étaient des numéros v1.0.0 (ComplianceAsCode a remplacé la v1.0.0 par la v2.0.0
+en septembre 2025), certaines des numéros de section (3.5, 1.1, 6.1), le reste
+d'autres contrôles — `ssh.rsa_weak` citait 5.2.2, « Ensure sudo commands use
+pty » en v2.0.0, sous un titre qu'aucune version n'a ; `secure_boot.disabled`
+citait 1.4.1, le mot de passe du chargeur de démarrage. 25 sont désormais
+ancrées sur leur règle ComplianceAsCode et régénérées (par exemple
+`ports.uncovered` 4.1.6, `grub.cfg_perms` 1.4.2, `faillock.not_configured`
+5.3.2.2, les constats de mise à jour 1.2.2.1). Les 30 autres n'ont pas de règle
+ComplianceAsCode directement applicable que BOB évalue, et deviennent des
+références de bonne pratique en anglais et en français, sans code : celles sur DSA citent les notes de version d'OpenSSH (désactivé par
+défaut en 7.0, retiré en 10.0), `ssh.rsa_weak` le NIST SP 800-131A.
+`ssh.x11.forwarding.server` et `ssh.allow_tcp_forwarding` restent des bonnes
+pratiques : le CIS v2.0.0 les couvre par `DisableForwarding`, que BOB ne lit
+pas. Un test refuse désormais une référence CIS Ubuntu qui ne vient pas du
+générateur. Deux textes qui nommaient une section à la main suivent :
+l'explication de GRUB (1.4.2) et la liste noire des modules (1.1.1 et 3.2). La
+répartition devient 90 CIS Ubuntu 22.04 et 132 références de bonne pratique (au
+lieu de 120 et 102), avec 259 citations inter-benchmarks sur 94 clés (au lieu de
+195 sur 69). Aucun score ne bouge ; les sorties JSON et CSV ne portent aucun
+code CIS.
+
+### 10. Outillage et documentation
+
+- Le banc de mutations enregistre sa sauvegarde avec le mode du fichier : un run
+  tué en pleine mutation puis récupéré avait laissé un script shell sans son bit
+  d'exécution.
+- SECURITY.md : un changement du contrat stable (codes de sortie, schéma JSON,
+  noms d'options, clés de constat) incrémente la version mineure ; un correctif
+  peut tout de même faire bouger les scores, et dit alors « BREAKING pour les
+  scores » et liste les pénalités (comme 0.31.1–0.31.4 l'ont fait).
+- Les références CIS de `file_perms.nopass_root_equivalent`, écrites à la main
+  en 0.27.0, sont désormais produites par le générateur ComplianceAsCode à partir
+  de la même règle que `file_perms.sudoers_nopasswd_all` ; aucun numéro ne
+  change.
+- `ssh.host_key_rsa_weak` a une entrée `--explain` et une référence de bonne
+  pratique (NIST SP 800-131A).
+
+### Limites
+
+- Docker : un `dockerd` sans root n'a pas été mesuré. WireGuard : un client qui
+  ne transfère pas compte toujours comme routage. Tant que quelque chose route,
+  toute règle ACCEPT de FORWARD est excusée, quel qu'en soit l'auteur (inchangé).
+- Kubernetes : un agent k3s (second nœud) n'a pas été mesuré ; un kubelet
+  kubeadm avec `tlsCertFile` ou `serverTLSBootstrap` n'est pas interrogé.
+- Le verdict IPv4 des ports répond « non établi » quand le ruleset nftables
+  porte une règle `meta nfproto ipv6` en entrée — prudent, inchangé, noté.
+- Une touche fléchée envoyée sous la forme du mode normal (`ESC [ D`) par un
+  terminal qui ignore le mode keypad est lue comme Échap suivi d'une lettre,
+  dans tous les écrans de BOB ; inchangé, noté.
+
+**Tests** 20565 → **20961**, mutations 1766 → **1825**.
+
+---
+
 ## [0.31.4] — 11-11-2026
 
 **Un correctif, BREAKING pour les scores : une nouvelle entrée du registre,

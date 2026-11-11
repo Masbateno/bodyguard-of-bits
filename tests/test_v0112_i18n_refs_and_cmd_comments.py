@@ -86,7 +86,9 @@ class TestBestPracticeRefsLocalised:
 
     def test_get_cis_ref_cis_coded_stays_english_in_fr(self):
         i18n.init("fr")
-        ref = get_cis_ref("auditd.missing_sensitive_rules")
+        # v0.32.0 — missing_sensitive_rules became a best practice (its "4.1.6"
+        # matched no CIS Ubuntu 22.04 v2.0.0 control); a generated key instead.
+        ref = get_cis_ref("auditd.not_installed")
         assert ref.startswith("CIS "), ref
 
     def test_explicit_lang_param_overrides_locale(self):

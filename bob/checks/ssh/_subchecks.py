@@ -7,7 +7,9 @@ no file I/O or subprocess (those live in ``_snapshot`` / ``_parsers``).
 
 from __future__ import annotations
 
+import os
 import shlex
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 from bob.checks._run import (TranslationFunc, _identity_t, service_enable_cmd,
@@ -129,10 +131,31 @@ def _check_host_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                 template_vars={"name": name},  # pilot v0.4.1 — exposes vars for locale-independent rebuild
             )
 
+        elif (hk.key_type == "rsa" and hk.rsa_bits is not None and hk.rsa_bits < 2048
+              and _rsa_host_key_served(snapshot, hk.path) is not True):
+            # v0.32.0 — a key on disk is not a key sshd serves: the file may be
+            # left out of the HostKey lines, or RSA out of HostKeyAlgorithms.
+            # Shown, not counted; unknown when sshd_config cannot be read.
+            if _rsa_host_key_served(snapshot, hk.path) is None:
+                result.info(
+                    message=_t("ssh.host_key_rsa_weak_unknown", name=name, bits=hk.rsa_bits),
+                    detail=_t("ssh.host_key_rsa_short_detail"),
+                    key="ssh.host_key_rsa_weak_unknown",
+                    template_vars={"name": name, "bits": hk.rsa_bits},
+                )
+            else:
+                result.info(
+                    message=_t("ssh.host_key_rsa_weak_unused", name=name, bits=hk.rsa_bits),
+                    detail=_t("ssh.host_key_rsa_short_detail"),
+                    key="ssh.host_key_rsa_weak_unused",
+                    template_vars={"name": name, "bits": hk.rsa_bits},
+                )
+
         elif hk.key_type == "rsa" and hk.rsa_bits is not None and hk.rsa_bits < 2048:
             # v0.32.0 — below the floor NIST sets for generating signatures
-            # (SP 800-131A, already cited in the detail): the host key signs at
-            # every connection. WARN -1, as the user identity keys below 2048
+            # (SP 800-131A, already cited in the detail), and served: sshd_config
+            # loads the file and offers RSA, so the key signs every connection
+            # that negotiates RSA. WARN -1, as the user identity keys below 2048
             # have been since 0.4.x (ssh.rsa_weak).
             result.warn_with_deduction(
                 key="ssh.host_key_rsa_weak",
@@ -140,7 +163,8 @@ def _check_host_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                 points=1,
                 nature="action",
                 detail=_t("ssh.host_key_rsa_short_detail"),
-                cmd=f"sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N '' && {service_restart_cmd(ssh_unit())}",
+                # the file sshd serves, which a HostKey line may name otherwise
+                cmd=f"sudo ssh-keygen -t rsa -b 4096 -f {shlex.quote(str(hk.path))} -N '' && {service_restart_cmd(ssh_unit())}",
                 cmd_type="fix",
                 template_vars={"name": name, "bits": hk.rsa_bits},
             )
@@ -162,6 +186,45 @@ def _check_host_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                 key="ssh.host_key_ok",
                 template_vars={"name": name, "type": hk.key_type.upper()},  # pilot v0.4.1
             )
+
+#: v0.32.0 — the host keys sshd loads when sshd_config names none (OpenSSH,
+#: pathnames.h: _PATH_HOST_{RSA,ECDSA,ED25519}_KEY_FILE under /etc/ssh).
+_DEFAULT_HOST_KEYS = frozenset({"/etc/ssh/ssh_host_rsa_key", "/etc/ssh/ssh_host_ecdsa_key",
+                                "/etc/ssh/ssh_host_ed25519_key"})
+#: The RSA signature algorithms in sshd's default HostKeyAlgorithms (ssh-rsa,
+#: SHA-1, left the default in OpenSSH 8.8), and every RSA one a list can name.
+_RSA_DEFAULT_ALGOS = ("rsa-sha2-512", "rsa-sha2-256")
+_RSA_ALGOS = _RSA_DEFAULT_ALGOS + ("ssh-rsa",)
+
+
+def _rsa_offered(value: str) -> bool:
+    """Whether a HostKeyAlgorithms value leaves an RSA algorithm offered
+    (sshd_config(5): ``+`` appends to the default, ``^`` puts in front of it,
+    ``-`` removes from it, otherwise the list replaces it; patterns allowed)."""
+    value = value.strip()
+    if not value or value[0] in "+^":
+        return True
+    if value[0] == "-":
+        removed = [p for p in value[1:].split(",") if p]
+        return any(not any(fnmatchcase(a, p) for p in removed) for a in _RSA_DEFAULT_ALGOS)
+    listed = [p for p in value.split(",") if p]
+    return any(fnmatchcase(a, p) for a in _RSA_ALGOS for p in listed)
+
+
+def _rsa_host_key_served(snapshot: SSHSnapshot, path: Path) -> "bool | None":
+    """v0.32.0 — whether sshd_config makes sshd serve the RSA host key at
+    *path*: the file is among the HostKey lines (or, with none, among sshd's
+    defaults) and HostKeyAlgorithms leaves RSA offered. None when sshd_config
+    cannot be read: what sshd loads is then unknown."""
+    if not snapshot.sshd_config_readable:
+        return None
+    cfg = snapshot.sshd_config
+    named = cfg.get("_hostkeys") or []
+    loaded = {os.path.normpath(p) for p in named} if named else _DEFAULT_HOST_KEYS
+    if os.path.normpath(str(path)) not in loaded:
+        return False
+    return _rsa_offered(str(cfg.get("hostkeyalgorithms", "")))
+
 
 def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
                        ssh_exposed: bool = True) -> None:

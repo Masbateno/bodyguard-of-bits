@@ -577,7 +577,8 @@
       "submit": "submit",
       "confirm": "confirm",
       "new": "new",
-      "create": "create"
+      "create": "create",
+      "peer": "older/newer"
     }
   },
   "install_cron": {
@@ -1428,7 +1429,9 @@
     "host_key_dsa": "DSA server host key found: {name} — DSA is cryptographically broken",
     "host_key_dsa_detail": "DSA host keys use a broken algorithm and can be forged by an attacker with sufficient resources. Remove the DSA host key and regenerate as ed25519. All clients that have cached this host key will need to accept the new one.",
     "host_key_dsa_reason": "DSA server host key in use: {name}",
-    "host_key_rsa_weak": "RSA server host key {name}: {bits} bits — below the 2048-bit floor NIST sets for generating signatures; it signs at every connection",
+    "host_key_rsa_weak": "RSA server host key {name}: {bits} bits — below the 2048-bit floor NIST sets for generating signatures; sshd serves it under sshd_config, and it signs every connection that negotiates RSA",
+    "host_key_rsa_weak_unused": "RSA server host key {name}: {bits} bits — below the 2048-bit floor NIST sets for generating signatures; sshd does not serve it under sshd_config (absent from the HostKey lines, or RSA left out of HostKeyAlgorithms): not counted",
+    "host_key_rsa_weak_unknown": "RSA server host key {name}: {bits} bits — below the 2048-bit floor NIST sets for generating signatures; whether sshd serves it is unknown (sshd_config unreadable): not counted, the score is an upper bound",
     "host_key_rsa_short": "RSA server host key {name}: {bits} bits — 4096-bit RSA gives a higher security margin; ed25519 is a modern alternative",
     "host_key_rsa_short_detail": "NIST rates 2048-bit RSA at 112-bit security, acceptable through 2030, and 3072-bit RSA at 128-bit, acceptable beyond (SP 800-57 Part 1); NIST disallows generating RSA signatures with keys below 2048 bits; verifying signatures made with 1024- to 2047-bit keys remains a legacy use (SP 800-131A). Regenerating a host key changes the fingerprint every client has recorded: each will warn that the host identification has changed until its known_hosts is updated — plan it, and give users the new fingerprint (ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub).",
     "host_key_ok": "Server host key {name} ({type}): strong algorithm",
@@ -1886,7 +1889,7 @@
       },
       "host_key_rsa_weak": {
         "title": "SSH host key: RSA below 2048 bits",
-        "why": "The server signs with its host key at every connection, and that signature is what lets a client tell this server from an impostor. NIST disallows generating RSA signatures with keys below 2048 bits (SP 800-131A); 2048-bit RSA rates 112-bit security, acceptable through 2030 (SP 800-57 Part 1). The same floor scores a user's RSA key below 2048 bits (ssh.rsa_weak).",
+        "why": "The server signs with its host key every connection that negotiates that key's algorithm — BOB counts this key only when sshd_config loads it (HostKey, or the default files when none is named) and offers RSA (HostKeyAlgorithms) — and that signature is what lets a client tell this server from an impostor. NIST disallows generating RSA signatures with keys below 2048 bits (SP 800-131A); 2048-bit RSA rates 112-bit security, acceptable through 2030 (SP 800-57 Part 1). The same floor scores a user's RSA key below 2048 bits (ssh.rsa_weak).",
         "how": "1. Generate a new RSA host key of 4096 bits (or rely on an ed25519 host key, which most distributions already generate):\n   sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N ''\n2. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch/Fedora/RHEL/openSUSE; on Alpine/OpenRC use rc-service\n3. Every client that recorded the old fingerprint will warn that the host identification changed: give users the new one first:\n   ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub"
       },
       "host_key_dsa": {
@@ -3086,7 +3089,7 @@
       "cfg_perms": {
         "title": "GRUB config (grub.cfg) is not owner-only",
         "why": "grub.cfg holds the full boot command line and, when a GRUB password is configured, its password_pbkdf2 hash. If the file is group- or world-readable, that hash can be copied and cracked offline, and the boot parameters are disclosed. If it is group- or world-writable, the boot command line itself can be altered — e.g. to add init=/bin/bash — which is a direct local privilege-escalation path.",
-        "how": "Restrict grub.cfg to root only:\n  sudo chmod 600 /boot/grub/grub.cfg   # or /boot/grub2/grub.cfg on Fedora/RHEL/openSUSE\n\nThis is preserved across regeneration on most distributions; if update-grub/grub2-mkconfig resets it, add a chmod to the update hook. CIS §1.4.1."
+        "how": "Restrict grub.cfg to root only:\n  sudo chmod 600 /boot/grub/grub.cfg   # or /boot/grub2/grub.cfg on Fedora/RHEL/openSUSE\n\nThis is preserved across regeneration on most distributions; if update-grub/grub2-mkconfig resets it, add a chmod to the update hook. CIS Ubuntu 22.04 §1.4.2."
       }
     },
     "cups": {
@@ -3919,7 +3922,7 @@
   "module_blacklist": {
     "unreadable": "modprobe.d directories could not be read — module blacklist state unknown",
     "candidates": "Defense-in-depth: {count} rarely-needed module(s) are neither loaded nor blacklisted ({modules})",
-    "candidates_detail": "These modules are not loaded now, but nothing stops them from loading later (no `blacklist` or `install ... /bin/true` line under /etc/modprobe.d). They are rarely needed on a server (exotic filesystems, legacy network protocols, USB storage). Blacklisting the ones you do not use is pure defense-in-depth — CIS §3.4. This is reported, not penalised: an un-blacklisted module is a hardening opportunity, not a vulnerability, and some of these are legitimately used (e.g. udf for optical media). A module that is currently loaded is reported by the kernel-module audit instead.",
+    "candidates_detail": "These modules are not loaded now, but nothing stops them from loading later (no `blacklist` or `install ... /bin/true` line under /etc/modprobe.d). They are rarely needed on a server (exotic filesystems, legacy network protocols, USB storage). Blacklisting the ones you do not use is pure defense-in-depth — CIS Ubuntu 22.04 §1.1.1 (filesystems) and §3.2 (network protocols). This is reported, not penalised: an un-blacklisted module is a hardening opportunity, not a vulnerability, and some of these are legitimately used (e.g. udf for optical media). A module that is currently loaded is reported by the kernel-module audit instead.",
     "all_handled": "Every rarely-needed module is either blacklisted or already handled by the kernel-module audit"
   },
   "dev_privileged": {
@@ -4019,7 +4022,7 @@
     "changed": "{count} packaged file(s) differ from the manager's recorded digest: {files}",
     "changed_detail": "These files were installed by a package but their content no longer matches the digest the package manager recorded. That can be benign — a local recompile, a vendor hotfix applied by hand, a file patched by another tool — or it can be the trace of an intruder replacing a system binary or library. BOB cannot tell which, so this is reported, not scored: verify each path against what you expect (reinstall the owning package to compare, e.g. apt reinstall / dnf reinstall, or inspect the file). Configuration files, which are expected to be edited, are already excluded.",
     "clean": "No packaged file differs from the manager's recorded digest ({tool} verified)",
-    "clean_detail": "The reference digests live in the local package database: a compromised root can rewrite them together with the files. This check attests consistency with that database, not an external chain of trust — repository signatures are the package-authenticity check's."
+    "local_digests_limit": "The reference digests live in the local package database: a compromised root can rewrite them together with the files. This check attests consistency with that database, not an external chain of trust — repository signatures are the package-authenticity check's."
   },
   "kexec_lockdown": {
     "kexec_disabled": "kexec is locked (kernel.kexec_load_disabled=1) — no new kernel can be loaded until reboot",
