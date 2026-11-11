@@ -1331,7 +1331,7 @@ def _detail_screen(stdscr, key: str, t) -> None:
 
         stdscr.refresh()
 
-        ch = stdscr.getch()
+        ch = _keys.complete_escape(stdscr, curses, stdscr.getch())
         action = _keys.resolve(curses, ch, _DETAIL_KEYS)
         if action == _keys.BACK:                       # nested screen: Esc goes back
             return
@@ -1453,7 +1453,7 @@ def _family_picker(stdscr, families, t, selected=0) -> tuple:
         _ch.draw(stdscr, curses, t, _FAMILY_KEYS, has_color)
         stdscr.refresh()
 
-        ch = stdscr.getch()
+        ch = _keys.complete_escape(stdscr, curses, stdscr.getch())
         action = _keys.resolve(curses, ch, _FAMILY_KEYS)
         if action == _keys.MOVE:
             selected = max(0, min(n - 1, selected + _keys.direction(curses, ch)))
@@ -1514,7 +1514,7 @@ def _version_picker(stdscr, distro_label, benches, t) -> None:
         _ch.draw(stdscr, curses, t, _VERSION_KEYS, has_color)
         stdscr.refresh()
 
-        ch = stdscr.getch()
+        ch = _keys.complete_escape(stdscr, curses, stdscr.getch())
         action = _keys.resolve(curses, ch, _VERSION_KEYS)
         if action == _keys.BACK:                       # nested screen: Esc goes back
             return
@@ -1587,7 +1587,7 @@ def _key_picker(stdscr, family_label, sections, t) -> None:
         _ch.draw(stdscr, curses, t, _KEY_PICKER_KEYS, has_color)
         stdscr.refresh()
 
-        ch = stdscr.getch()
+        ch = _keys.complete_escape(stdscr, curses, stdscr.getch())
         action = _keys.resolve(curses, ch, _KEY_PICKER_KEYS)
         if action == _keys.BACK:                       # nested screen: Esc goes back
             return

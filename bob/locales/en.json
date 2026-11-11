@@ -1400,7 +1400,7 @@
     "dir_perms_ok": "~/.ssh directory permissions are correct (700)",
     "no_private_keys": "No private keys found in ~/.ssh/",
     "private_key_perms": "Private key {name} has permissions {perms} — expected 600",
-    "dsa_key": "DSA key found: {name} — DSA is deprecated and cryptographically broken",
+    "dsa_key": "DSA key found: {name} — DSA is no longer approved for generating signatures (FIPS 186-5) and OpenSSH 10.0 removed it",
     "dsa_key_detail": "Generate a new key: ssh-keygen -t ed25519",
     "rsa_weak": "RSA key {name}: {bits} bits — minimum recommended size is 2048 bits",
     "rsa_ok": "RSA key {name}: {bits} bits",
@@ -1426,9 +1426,11 @@
     "known_hosts_duplicate": "Duplicate entries for host {host} in known_hosts",
     "known_hosts_deprecated": "Deprecated key type in known_hosts line {line}: {type}",
     "known_hosts_ok": "known_hosts: {count} entries, no issues detected",
-    "host_key_dsa": "DSA server host key found: {name} — DSA is cryptographically broken",
-    "host_key_dsa_detail": "DSA host keys use a broken algorithm and can be forged by an attacker with sufficient resources. Remove the DSA host key and regenerate as ed25519. All clients that have cached this host key will need to accept the new one.",
-    "host_key_dsa_reason": "DSA server host key in use: {name}",
+    "host_key_dsa": "DSA server host key: {name} — sshd serves it under sshd_config (a HostKey line and ssh-dss in HostKeyAlgorithms); DSA is no longer approved for generating signatures (FIPS 186-5)",
+    "host_key_dsa_detail": "NIST no longer approves DSA for generating signatures (FIPS 186-5), and OpenSSH removed DSA in 10.0. Remove the HostKey line naming this key and ssh-dss from HostKeyAlgorithms, then the key files; sshd keeps serving its other host keys. A client that recorded only this DSA key for the host will warn until it records another.",
+    "host_key_dsa_reason": "DSA server host key served: {name}",
+    "host_key_dsa_unused": "DSA server host key on disk: {name} — sshd does not serve it under sshd_config (no HostKey line names it, or ssh-dss is not in HostKeyAlgorithms; OpenSSH disabled DSA by default in 7.0 and removed it in 10.0): not counted; the files can be removed",
+    "host_key_dsa_unknown": "DSA server host key on disk: {name} — whether sshd serves it is unknown (sshd_config unreadable): not counted, the score is an upper bound",
     "host_key_rsa_weak": "RSA server host key {name}: {bits} bits — below the 2048-bit floor NIST sets for generating signatures; sshd serves it under sshd_config, and it signs every connection that negotiates RSA",
     "host_key_rsa_weak_unused": "RSA server host key {name}: {bits} bits — below the 2048-bit floor NIST sets for generating signatures; sshd does not serve it under sshd_config (absent from the HostKey lines, or RSA left out of HostKeyAlgorithms): not counted",
     "host_key_rsa_weak_unknown": "RSA server host key {name}: {bits} bits — below the 2048-bit floor NIST sets for generating signatures; whether sshd serves it is unknown (sshd_config unreadable): not counted, the score is an upper bound",
@@ -1763,9 +1765,9 @@
         "how": "1. Enable key-based authentication:\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  PubkeyAuthentication yes\n   (no sshd_config.d directory: put it at the top of /etc/ssh/sshd_config — sshd keeps the first value it reads; check: sudo sshd -T | grep -i pubkeyauthentication)\n2. Generate a key pair:\n   ssh-keygen -t ed25519\n3. Copy the key to the server:\n   ssh-copy-id user@server\n4. Restart SSH:\n   sudo sshd -t && sudo systemctl restart ssh   # 'sshd' on Arch/Fedora/RHEL/openSUSE; on Alpine/OpenRC use rc-service"
       },
       "dsa_key": {
-        "title": "DSA host key in use",
-        "why": "DSA keys are cryptographically broken and deprecated in OpenSSH 7.0+. The algorithm offers only 1024-bit security and is vulnerable to attacks when the random number generator produces weak values.",
-        "how": "1. Remove the DSA host key:\n   sudo rm /etc/ssh/ssh_host_dsa_key*\n2. Regenerate all host keys:\n   sudo ssh-keygen -A\n3. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch/Fedora/RHEL/openSUSE; on Alpine/OpenRC use rc-service\n4. Remove old fingerprints from clients:\n   ssh-keygen -R <hostname>"
+        "title": "SSH key: DSA",
+        "why": "This is one of your own SSH keys (in ~/.ssh), not a server host key. NIST no longer approves DSA for generating signatures (FIPS 186-5); OpenSSH disabled DSA keys by default in 7.0 and removed DSA in 10.0 — a current client or server cannot use this key at all.",
+        "how": "1. Generate a new key:\n   ssh-keygen -t ed25519\n2. Install its public key on every server that accepts the old one:\n   ssh-copy-id -i ~/.ssh/id_ed25519.pub user@host\n3. Remove the old public key from those servers' ~/.ssh/authorized_keys, then the DSA key pair from ~/.ssh."
       },
       "no_passphrase": {
         "title": "Private key without passphrase",
@@ -1818,9 +1820,9 @@
         "how": "1. Restrict to strong KEX:\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf\n   (no sshd_config.d directory: edit /etc/ssh/sshd_config — sshd keeps the first value it reads)\n   KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512\n2. Restart SSH:\n   sudo sshd -t && sudo systemctl restart ssh   # 'sshd' on Arch/Fedora/RHEL/openSUSE; on Alpine/OpenRC use rc-service"
       },
       "rsa_weak": {
-        "title": "RSA host key too short (< 4096 bits)",
-        "why": "RSA keys shorter than 4096 bits are considered weak by modern cryptographic standards. As computing power increases and factorisation attacks improve, short keys become feasible to break. Keys under 2048 bits are practically broken today.",
-        "how": "1. Generate a new 4096-bit RSA host key:\n   sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N ''\n2. Or prefer Ed25519 (shorter but stronger):\n   sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ''\n3. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch/Fedora/RHEL/openSUSE; on Alpine/OpenRC use rc-service\n4. Remove old host fingerprints on clients:\n   ssh-keygen -R <hostname>"
+        "title": "SSH key: RSA below 2048 bits",
+        "why": "This is one of your own SSH keys (in ~/.ssh), not a server host key. Each login with it signs with the key, and NIST disallows generating RSA signatures with keys below 2048 bits (SP 800-131A). OpenSSH itself refuses RSA keys below 1024 bits since 7.6.",
+        "how": "1. Generate a new key:\n   ssh-keygen -t ed25519        # or: ssh-keygen -t rsa -b 4096\n2. Install its public key on every server that accepts the old one:\n   ssh-copy-id -i ~/.ssh/id_ed25519.pub user@host\n3. Once each server accepts the new key, remove the old public key from their ~/.ssh/authorized_keys, then the old key pair from ~/.ssh."
       },
       "login_grace_time": {
         "title": "LoginGraceTime too long (> 60s)",
@@ -1893,9 +1895,9 @@
         "how": "1. Generate a new RSA host key of 4096 bits (or rely on an ed25519 host key, which most distributions already generate):\n   sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N ''\n2. Restart SSH:\n   sudo systemctl restart ssh   # 'sshd' on Arch/Fedora/RHEL/openSUSE; on Alpine/OpenRC use rc-service\n3. Every client that recorded the old fingerprint will warn that the host identification changed: give users the new one first:\n   ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub"
       },
       "host_key_dsa": {
-        "title": "SSH host key uses DSA (deprecated and considered insecure)",
-        "why": "DSA host keys are limited to 1024 bits and use a signature algorithm vulnerable to nonce-reuse attacks. OpenSSH dropped support for DSA host keys by default in version 7.0 (2015) — modern clients refuse to connect to a server presenting only a DSA host key. The key being present means the host was either upgraded from a very old install or somebody intentionally re-enabled DSA. Either way, the cryptographic posture is weak.",
-        "how": "1. Generate a modern host key (ed25519, the recommended choice for new keys):\n   sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ''\n2. Ensure sshd_config does NOT include the DSA key (remove or comment out):\n   HostKey /etc/ssh/ssh_host_dsa_key   # <-- remove this line\n3. Remove the DSA key files:\n   sudo rm /etc/ssh/ssh_host_dsa_key /etc/ssh/ssh_host_dsa_key.pub\n4. Restart sshd:\n   sudo systemctl restart ssh   # 'sshd' on Arch/Fedora/RHEL/openSUSE; on Alpine/OpenRC use rc-service\nNote: existing SSH clients will see a 'host key changed' warning the first time after key removal. Communicate the change to legitimate users.",
+        "title": "SSH host key: DSA, served",
+        "why": "sshd serves this DSA host key: a HostKey line names it and HostKeyAlgorithms adds ssh-dss (measured: OpenSSH 9.6 serves a DSA host key only then, never from the default path; OpenSSH 10.x cannot serve DSA at all). NIST no longer approves DSA for generating signatures (FIPS 186-5); OpenSSH disabled DSA by default in 7.0 and removed it in 10.0. A DSA key on disk that sshd does not serve is reported without a point (ssh.host_key_dsa_unused).",
+        "how": "1. Remove the HostKey line naming the DSA key and ssh-dss from HostKeyAlgorithms (in /etc/ssh/sshd_config or a file under /etc/ssh/sshd_config.d/)\n2. Check the configuration:\n   sudo sshd -t\n3. Remove the DSA key files:\n   sudo rm /etc/ssh/ssh_host_dsa_key /etc/ssh/ssh_host_dsa_key.pub\n4. If no ed25519 host key exists, generate one:\n   sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ''\n5. Restart sshd:\n   sudo systemctl restart ssh   # 'sshd' on Arch/Fedora/RHEL/openSUSE; on Alpine/OpenRC use rc-service\nNote: a client that recorded only the DSA key for this host warns once until it records another.",
         "server": {
           "why": "On any server, DSA host keys should not exist in 2026. Generate ed25519 (and optionally RSA-4096 for legacy client compatibility), remove DSA, restart sshd."
         },
@@ -4195,6 +4197,7 @@
     "installed_only": "Backup tool(s) found but not confirmed active: {tools}",
     "installed_only_detail": "Nothing BOB reads confirms that it runs: no configuration found, or, for Timeshift, no schedule on or no snapshot. Verify that backups are actually scheduled and running.",
     "timeshift_snapshots": "Timeshift: {count} snapshot(s) in {path}, the newest {newest} — schedule: {schedules}",
+    "timeshift_stale": "Timeshift: the newest of {count} snapshot(s) in {path} is {newest}, {days} day(s) old — more than twice its longest schedule ({schedules}): no scheduled snapshot since, so Timeshift is not counted as an active backup",
     "timeshift_none": "Timeshift: no snapshot in {path} — schedule: {schedules}",
     "timeshift_unread": "Timeshift: schedule: {schedules}; its snapshots were not read — {why}",
     "timeshift_excludes": "Excluded from every snapshot (timeshift.json): {paths}. What these patterns match is not backed up by Timeshift.",
@@ -4522,6 +4525,9 @@
     "runtime_socket_ok": "container runtime socket {path} ({mode}) is restricted to its owner and group"
   },
   "docker_hardening": {
+    "rootless_unexamined": "{count} rootless podman container(s) running, not examined: {users}",
+    "rootless_unexamined_detail": "Seen in /proc (their conmon monitor belongs to the user); BOB does not run podman as another user. A rootless container stays within its user's rights on the host, unless it is given more — a mounted root container socket (docker.sock), a device, or a host directory that user cannot otherwise reach. The user can list them: podman ps; and inspect one: podman inspect <name>.",
+    "runtime_unreachable": "Container runtime(s) not reachable: {runtimes} — their containers were not examined",
     "scan_error": "Container runtime not reachable — container security check skipped",
     "no_containers": "No running containers — nothing to audit",
     "ok": "{count} running container(s) — no critical security issues found",
@@ -4579,6 +4585,7 @@
     "no_issues": "No conflicting parallel firewall ruleset detected",
     "iptables_bypass": "Raw iptables ACCEPT rule bypasses UFW in INPUT chain: {rule}",
     "iptables_accept_conditional": "Raw iptables ACCEPT rule in INPUT, outside UFW, that cannot let a new connection in on its own (it matches a mark or an established state): {rule} — check what sets the mark",
+    "iptables_forward_orphan": "ACCEPT rule in FORWARD that no running routing mechanism owns: {rule} — it bypasses UFW for routed traffic",
     "iptables_forward_bypass": "Raw iptables ACCEPT rule bypasses UFW in FORWARD chain: {rule}",
     "forward_routing_ok": "FORWARD chain has ACCEPT rules — consistent with Docker, VPN, KVM or Kubernetes routing",
     "nftables_parallel": "Active nftables rules detected alongside UFW — potential rule conflicts",

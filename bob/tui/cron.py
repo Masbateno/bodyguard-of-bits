@@ -154,11 +154,14 @@ def _read_key(stdscr) -> int:
         ch = stdscr.get_wch()
     except Exception:
         return -1
-    if isinstance(ch, int):
-        return ch
     if isinstance(ch, str) and len(ch) == 1:
-        return ord(ch)
-    return -1
+        ch = ord(ch)
+    if not isinstance(ch, int):
+        return -1
+    # v0.33.0 — an arrow sent as ESC [ A by a terminal that ignores keypad
+    # mode is one key, not Esc then a letter (bob/tui/_keys.complete_escape).
+    import curses
+    return _keys.complete_escape(stdscr, curses, ch)
 
 
 def _is_printable_input_char(ch_i: int) -> bool:

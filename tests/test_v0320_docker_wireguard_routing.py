@@ -71,7 +71,7 @@ class TestWireGuard:
 @pytest.mark.parametrize("dockerd, wg", [(True, False), (False, True)], ids=["docker-runs", "wireguard-up"])
 def test_from_system_reads_them(monkeypatch, dockerd, wg):
     monkeypatch.setattr(fs, "_dockerd_runs", lambda: dockerd)
-    monkeypatch.setattr(fs, "_wireguard_interface", lambda: wg)
+    monkeypatch.setattr(fs, "_wireguard_ifaces", lambda: ["wg0"] if wg else [])
     monkeypatch.setattr(fs, "_run", lambda *a, **k: "")
     monkeypatch.setattr(fs, "_command_exists", lambda n: False)
     monkeypatch.setattr(fs, "_libvirt_routing", lambda: False)

@@ -943,28 +943,38 @@ class TestHasPassphrase:
 # Host key checks
 # ---------------------------------------------------------------------------
 
+def _served_dsa(*names):
+    """v0.33.0 — the sshd_config that serves DSA host keys (measured on
+    OpenSSH 9.6): a HostKey line naming each, and ssh-dss added to
+    HostKeyAlgorithms. Without it the key is on disk only
+    (tests/test_v0330_dsa_host_key.py)."""
+    return {"_hostkeys": [f"/etc/ssh/{n}" for n in names], "hostkeyalgorithms": "+ssh-dss"}
+
+
+def _dsa_snap(*keys, names=("ssh_host_dsa_key",)):
+    snap = base_snapshot(host_keys=list(keys) or [_make_host_key("dsa")])
+    snap.sshd_config = _served_dsa(*names)
+    return snap
+
+
 class TestHostKeyDsa:
     def test_dsa_host_key_is_warn(self):
-        snap = base_snapshot(host_keys=[_make_host_key("dsa")])
-        result = check_ssh(snap)
+        result = check_ssh(_dsa_snap())
         assert _has_finding(result, "ssh.host_key_dsa", FindingLevel.WARN)
 
     def test_dsa_host_key_deducts_1(self):
-        snap = base_snapshot(host_keys=[_make_host_key("dsa")])
-        result = check_ssh(snap)
+        result = check_ssh(_dsa_snap())
         assert _deduction_points(result) >= 1
         assert "ssh.host_key_dsa" in _deduction_keys(result)
 
     def test_dsa_host_key_has_fix_cmd(self):
-        snap = base_snapshot(host_keys=[_make_host_key("dsa")])
-        result = check_ssh(snap)
+        result = check_ssh(_dsa_snap())
         f = next(f for f in result.findings if f.key == "ssh.host_key_dsa")
         assert f.cmd is not None
         assert f.cmd_type == "fix"
 
     def test_dsa_host_key_has_detail(self):
-        snap = base_snapshot(host_keys=[_make_host_key("dsa")])
-        result = check_ssh(snap)
+        result = check_ssh(_dsa_snap())
         f = next(f for f in result.findings if f.key == "ssh.host_key_dsa")
         assert f.detail is not None
 
@@ -1053,10 +1063,7 @@ class TestHostKeyCombined:
 
     def test_dsa_plus_ed25519(self):
         """DSA host key (WARN) + ed25519 (OK) → deduction from DSA only."""
-        snap = base_snapshot(host_keys=[
-            _make_host_key("dsa"),
-            _make_host_key("ed25519"),
-        ])
+        snap = _dsa_snap(_make_host_key("dsa"), _make_host_key("ed25519"))
         result = check_ssh(snap)
         assert _has_finding(result, "ssh.host_key_dsa", FindingLevel.WARN)
         assert _has_finding(result, "ssh.host_key_ok", FindingLevel.OK)
@@ -1066,10 +1073,9 @@ class TestHostKeyCombined:
 
     def test_multiple_dsa_keys_each_deduct(self):
         """Two DSA keys → two separate deductions."""
-        snap = base_snapshot(host_keys=[
-            _make_host_key("dsa", name="ssh_host_dsa_key"),
-            _make_host_key("dsa", name="ssh_host_dsa2_key"),
-        ])
+        snap = _dsa_snap(_make_host_key("dsa", name="ssh_host_dsa_key"),
+                         _make_host_key("dsa", name="ssh_host_dsa2_key"),
+                         names=("ssh_host_dsa_key", "ssh_host_dsa2_key"))
         result = check_ssh(snap)
         dsa_deductions = [d for d in result.deductions if d.key == "ssh.host_key_dsa"]
         assert len(dsa_deductions) == 2

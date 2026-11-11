@@ -1400,7 +1400,7 @@
     "dir_perms_ok": "Les permissions du répertoire ~/.ssh sont correctes (700)",
     "no_private_keys": "Aucune clé privée trouvée dans ~/.ssh/",
     "private_key_perms": "La clé privée {name} a les permissions {perms} — attendu 600",
-    "dsa_key": "Clé DSA trouvée : {name} — DSA est déprécié et cryptographiquement cassé",
+    "dsa_key": "Clé DSA trouvée : {name} — DSA n'est plus approuvé pour générer des signatures (FIPS 186-5) et OpenSSH 10.0 l'a retiré",
     "dsa_key_detail": "Générer une nouvelle clé : ssh-keygen -t ed25519",
     "rsa_weak": "Clé RSA {name} : {bits} bits — taille minimale recommandée : 2048 bits",
     "rsa_ok": "Clé RSA {name} : {bits} bits",
@@ -1426,9 +1426,11 @@
     "known_hosts_duplicate": "Entrées dupliquées pour l'hôte {host} dans known_hosts",
     "known_hosts_deprecated": "Type de clé déprécié dans known_hosts ligne {line} : {type}",
     "known_hosts_ok": "known_hosts : {count} entrée(s), aucun problème détecté",
-    "host_key_dsa": "Clé hôte serveur DSA trouvée : {name} — DSA est cryptographiquement cassé",
-    "host_key_dsa_detail": "Les clés hôte DSA utilisent un algorithme cassé et peuvent être forgées par un attaquant disposant de ressources suffisantes. Supprimez la clé DSA et régénérez-la en ed25519. Tous les clients ayant mis en cache cette clé hôte devront accepter la nouvelle.",
-    "host_key_dsa_reason": "Clé hôte serveur DSA en service : {name}",
+    "host_key_dsa": "Clé hôte serveur DSA : {name} — sshd la sert d'après sshd_config (une ligne HostKey et ssh-dss dans HostKeyAlgorithms) ; DSA n'est plus approuvé pour générer des signatures (FIPS 186-5)",
+    "host_key_dsa_detail": "Le NIST n'approuve plus DSA pour générer des signatures (FIPS 186-5), et OpenSSH a retiré DSA en 10.0. Retirer la ligne HostKey qui nomme cette clé et ssh-dss de HostKeyAlgorithms, puis les fichiers de clé ; sshd continue de servir ses autres clés hôtes. Un client qui n'a enregistré que cette clé DSA pour l'hôte avertira tant qu'il n'en a pas enregistré une autre.",
+    "host_key_dsa_reason": "Clé hôte serveur DSA servie : {name}",
+    "host_key_dsa_unused": "Clé hôte serveur DSA sur le disque : {name} — sshd ne la sert pas d'après sshd_config (aucune ligne HostKey ne la nomme, ou ssh-dss n'est pas dans HostKeyAlgorithms ; OpenSSH a désactivé DSA par défaut en 7.0 et l'a retiré en 10.0) : non comptée ; les fichiers peuvent être retirés",
+    "host_key_dsa_unknown": "Clé hôte serveur DSA sur le disque : {name} — inconnu si sshd la sert (sshd_config illisible) : non comptée, le score est un plafond",
     "host_key_rsa_weak": "Clé hôte serveur RSA {name} : {bits} bits — sous le plancher de 2048 bits que le NIST fixe pour générer des signatures ; sshd la sert d'après sshd_config, elle signe chaque connexion qui négocie RSA",
     "host_key_rsa_weak_unused": "Clé hôte serveur RSA {name} : {bits} bits — sous le plancher de 2048 bits que le NIST fixe pour générer des signatures ; sshd ne la sert pas d'après sshd_config (absente des lignes HostKey, ou RSA retiré de HostKeyAlgorithms) : non comptée",
     "host_key_rsa_weak_unknown": "Clé hôte serveur RSA {name} : {bits} bits — sous le plancher de 2048 bits que le NIST fixe pour générer des signatures ; inconnu si sshd la sert (sshd_config illisible) : non comptée, le score est un plafond",
@@ -1763,9 +1765,9 @@
         "how": "1. Activez l'authentification par clé :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf  →  PubkeyAuthentication yes\n   (pas de répertoire sshd_config.d : le mettre en tête de /etc/ssh/sshd_config — sshd garde la première valeur lue ; vérifier : sudo sshd -T | grep -i pubkeyauthentication)\n2. Générez une paire de clés :\n   ssh-keygen -t ed25519\n3. Copiez la clé sur le serveur :\n   ssh-copy-id utilisateur@serveur\n4. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "dsa_key": {
-        "title": "Clé hôte DSA en cours d'utilisation",
-        "why": "Les clés DSA sont cryptographiquement obsolètes et dépréciées depuis OpenSSH 7.0+. L'algorithme n'offre qu'une sécurité de 1024 bits et est vulnérable aux attaques lorsque le générateur de nombres aléatoires est faible.",
-        "how": "1. Supprimez la clé hôte DSA :\n   sudo rm /etc/ssh/ssh_host_dsa_key*\n2. Régénérez toutes les clés hôtes :\n   sudo ssh-keygen -A\n3. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service\n4. Supprimez les anciennes empreintes chez les clients :\n   ssh-keygen -R <nom_hôte>"
+        "title": "Clé SSH : DSA",
+        "why": "C'est une clé SSH d'utilisateur (dans ~/.ssh), pas une clé hôte de serveur. Le NIST n'approuve plus DSA pour générer des signatures (FIPS 186-5) ; OpenSSH a désactivé les clés DSA par défaut en 7.0 et a retiré DSA en 10.0 — un client ou un serveur actuel ne peut pas du tout utiliser cette clé.",
+        "how": "1. Générer une nouvelle clé :\n   ssh-keygen -t ed25519\n2. Installer sa clé publique sur chaque serveur qui accepte l'ancienne :\n   ssh-copy-id -i ~/.ssh/id_ed25519.pub utilisateur@hôte\n3. Retirer l'ancienne clé publique du ~/.ssh/authorized_keys de ces serveurs, puis la paire DSA de ~/.ssh."
       },
       "no_passphrase": {
         "title": "Clé privée sans phrase de passe",
@@ -1818,9 +1820,9 @@
         "how": "1. Restreignez aux algorithmes KEX forts :\n   sudo nano /etc/ssh/sshd_config.d/00-hardening.conf\n   (pas de répertoire sshd_config.d : éditer /etc/ssh/sshd_config — sshd garde la première valeur lue)\n   KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512\n2. Redémarrez SSH :\n   sudo sshd -t && sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service"
       },
       "rsa_weak": {
-        "title": "Clé hôte RSA trop courte (< 4096 bits)",
-        "why": "Les clés RSA inférieures à 4096 bits sont considérées comme faibles par les standards cryptographiques modernes. À mesure que la puissance de calcul augmente et que les attaques de factorisation progressent, les clés courtes deviennent factorisables. Les clés inférieures à 2048 bits sont déjà pratiquement compromises.",
-        "how": "1. Générez une nouvelle clé hôte RSA 4096 bits :\n   sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N ''\n2. Ou préférez Ed25519 (plus court mais plus solide) :\n   sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ''\n3. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service\n4. Supprimez les anciennes empreintes chez les clients :\n   ssh-keygen -R <nom_hôte>"
+        "title": "Clé SSH : RSA sous 2048 bits",
+        "why": "C'est une clé SSH d'utilisateur (dans ~/.ssh), pas une clé hôte de serveur. Chaque connexion avec elle signe avec la clé, et le NIST interdit de générer des signatures RSA avec des clés de moins de 2048 bits (SP 800-131A). OpenSSH refuse lui-même les clés RSA de moins de 1024 bits depuis la 7.6.",
+        "how": "1. Générer une nouvelle clé :\n   ssh-keygen -t ed25519        # ou : ssh-keygen -t rsa -b 4096\n2. Installer sa clé publique sur chaque serveur qui accepte l'ancienne :\n   ssh-copy-id -i ~/.ssh/id_ed25519.pub utilisateur@hôte\n3. Une fois la nouvelle clé acceptée partout, retirer l'ancienne clé publique de leur ~/.ssh/authorized_keys, puis l'ancienne paire de ~/.ssh."
       },
       "login_grace_time": {
         "title": "LoginGraceTime trop long (> 60s)",
@@ -1893,9 +1895,9 @@
         "how": "1. Générez une nouvelle clé hôte RSA de 4096 bits (ou appuyez-vous sur une clé hôte ed25519, que la plupart des distributions génèrent déjà) :\n   sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N ''\n2. Redémarrez SSH :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service\n3. Chaque client qui a enregistré l'ancienne empreinte signalera que l'identité de l'hôte a changé : donnez d'abord la nouvelle aux utilisateurs :\n   ssh-keygen -lf /etc/ssh/ssh_host_rsa_key.pub"
       },
       "host_key_dsa": {
-        "title": "Clé hôte SSH utilise DSA (obsolète et considérée comme non sûre)",
-        "why": "Les clés hôte DSA sont limitées à 1024 bits et utilisent un algorithme de signature vulnérable aux attaques par réutilisation de nonce. OpenSSH a abandonné le support des clés hôte DSA par défaut depuis la version 7.0 (2015) — les clients modernes refusent de se connecter à un serveur ne présentant qu'une clé hôte DSA. La présence de la clé signifie que l'hôte a été soit upgradé depuis une très vieille installation, soit que quelqu'un a intentionnellement ré-activé DSA. Dans les deux cas, la posture cryptographique est faible.",
-        "how": "1. Générer une clé hôte moderne (ed25519, le choix recommandé pour les nouvelles clés) :\n   sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ''\n2. Vérifier que sshd_config n'inclut PAS la clé DSA (supprimer ou commenter) :\n   HostKey /etc/ssh/ssh_host_dsa_key   # <-- supprimer cette ligne\n3. Supprimer les fichiers de clé DSA :\n   sudo rm /etc/ssh/ssh_host_dsa_key /etc/ssh/ssh_host_dsa_key.pub\n4. Redémarrer sshd :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service\nNote : les clients SSH existants verront un avertissement 'host key changed' la première fois après le retrait de la clé. Communiquez le changement aux utilisateurs légitimes.",
+        "title": "Clé hôte SSH : DSA, servie",
+        "why": "sshd sert cette clé hôte DSA : une ligne HostKey la nomme et HostKeyAlgorithms ajoute ssh-dss (mesuré : OpenSSH 9.6 ne sert une clé hôte DSA que dans ce cas, jamais depuis le chemin par défaut ; OpenSSH 10.x ne peut plus du tout servir DSA). Le NIST n'approuve plus DSA pour générer des signatures (FIPS 186-5) ; OpenSSH a désactivé DSA par défaut en 7.0 et l'a retiré en 10.0. Une clé DSA sur le disque que sshd ne sert pas est signalée sans point (ssh.host_key_dsa_unused).",
+        "how": "1. Retirer la ligne HostKey qui nomme la clé DSA et ssh-dss de HostKeyAlgorithms (dans /etc/ssh/sshd_config ou un fichier de /etc/ssh/sshd_config.d/)\n2. Vérifier la configuration :\n   sudo sshd -t\n3. Supprimer les fichiers de clé DSA :\n   sudo rm /etc/ssh/ssh_host_dsa_key /etc/ssh/ssh_host_dsa_key.pub\n4. S'il n'existe aucune clé hôte ed25519, en générer une :\n   sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ''\n5. Redémarrer sshd :\n   sudo systemctl restart ssh   # « sshd » sur Arch/Fedora/RHEL/openSUSE ; sur Alpine/OpenRC utiliser rc-service\nNote : un client qui n'avait enregistré que la clé DSA de cet hôte avertit une fois, le temps d'en enregistrer une autre.",
         "server": {
           "why": "Sur tout serveur, les clés hôte DSA ne devraient pas exister en 2026. Générer ed25519 (et éventuellement RSA-4096 pour la compatibilité client legacy), supprimer DSA, redémarrer sshd."
         },
@@ -4195,6 +4197,7 @@
     "installed_only": "Outil(s) de sauvegarde trouvé(s) mais actif non confirmé : {tools}",
     "installed_only_detail": "Rien de ce que BOB lit ne confirme qu'il tourne : aucune configuration trouvée ou, pour Timeshift, aucune planification active ou aucun instantané. Vérifiez que les sauvegardes sont réellement planifiées et exécutées.",
     "timeshift_snapshots": "Timeshift : {count} instantané(s) dans {path}, le plus récent {newest} — planification : {schedules}",
+    "timeshift_stale": "Timeshift : le plus récent des {count} instantané(s) de {path} est {newest}, vieux de {days} jour(s) — plus de deux fois sa plus longue planification ({schedules}) : aucun instantané planifié depuis, Timeshift n'est donc pas compté comme sauvegarde active",
     "timeshift_none": "Timeshift : aucun instantané dans {path} — planification : {schedules}",
     "timeshift_unread": "Timeshift : planification : {schedules} ; ses instantanés n'ont pas été lus — {why}",
     "timeshift_excludes": "Exclu de chaque instantané (timeshift.json) : {paths}. Ce que ces motifs couvrent n'est pas sauvegardé par Timeshift.",
@@ -4522,6 +4525,9 @@
     "runtime_socket_ok": "Le socket du runtime de conteneurs {path} ({mode}) est réservé à son propriétaire et à son groupe"
   },
   "docker_hardening": {
+    "rootless_unexamined": "{count} conteneur(s) podman sans root en marche, non examiné(s) : {users}",
+    "rootless_unexamined_detail": "Vus dans /proc (leur moniteur conmon appartient à l'utilisateur) ; BOB ne lance pas podman au nom d'un autre utilisateur. Un conteneur sans root reste dans les droits de son utilisateur sur l'hôte, sauf si on lui en donne plus — un socket de conteneurs root monté (docker.sock), un périphérique, ou un répertoire de l'hôte que cet utilisateur ne pourrait pas atteindre autrement. L'utilisateur peut les lister : podman ps ; et en examiner un : podman inspect <nom>.",
+    "runtime_unreachable": "Runtime(s) de conteneurs injoignable(s) : {runtimes} — leurs conteneurs n'ont pas été examinés",
     "scan_error": "Runtime de conteneurs inaccessible — vérification de sécurité des conteneurs ignorée",
     "no_containers": "Aucun conteneur en cours d'exécution — rien à auditer",
     "ok": "{count} conteneur(s) en cours d'exécution — aucun problème de sécurité critique",
@@ -4579,6 +4585,7 @@
     "no_issues": "Aucun ruleset pare-feu parallèle en conflit détecté",
     "iptables_bypass": "Règle iptables ACCEPT brute contourne UFW dans la chaîne INPUT : {rule}",
     "iptables_accept_conditional": "Règle iptables ACCEPT brute dans INPUT, hors UFW, qui ne peut pas laisser entrer une nouvelle connexion à elle seule (elle porte sur une marque ou un état établi) : {rule} — vérifier ce qui pose la marque",
+    "iptables_forward_orphan": "Règle ACCEPT dans FORWARD qu'aucun mécanisme de routage en marche ne possède : {rule} — elle contourne UFW pour le trafic routé",
     "iptables_forward_bypass": "Règle iptables ACCEPT brute contourne UFW dans la chaîne FORWARD : {rule}",
     "forward_routing_ok": "La chaîne FORWARD contient des règles ACCEPT — cohérent avec le routage Docker, VPN, KVM ou Kubernetes",
     "nftables_parallel": "Règles nftables actives détectées en parallèle d'UFW — conflits potentiels",

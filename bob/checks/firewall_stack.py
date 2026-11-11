@@ -86,6 +86,12 @@ class FirewallStackSnapshot:
     wireguard_present:   bool = False
     libvirt_present:     bool = False
     kubernetes_running:  bool = False
+    #: v0.33.0 — the ``-A FORWARD … -j ACCEPT`` lines in ``-S`` form (``-L``
+    #: prints neither interfaces nor ``-i``/``-o``), to tell whose a rule is;
+    #: the WireGuard interfaces by name; MicroK8s' own process running.
+    forward_accepts_s:   list[str] = field(default_factory=list)
+    wireguard_ifaces:    list[str] = field(default_factory=list)
+    microk8s_running:    bool = False
 
     @classmethod
     def from_system(cls) -> "FirewallStackSnapshot":
@@ -149,7 +155,8 @@ class FirewallStackSnapshot:
         # dockerd process was gone; WireGuard configured (wg, /etc/wireguard/
         # *.conf) had no interface until wg-quick brought one up.
         docker_present = _dockerd_runs()
-        wireguard_present = _wireguard_interface()
+        wireguard_ifaces = _wireguard_ifaces()
+        wireguard_present = bool(wireguard_ifaces)
 
         # libvirt/KVM also requires ip_forward and manages FORWARD rules —
         # v0.31.3: while one of its networks routes, not because it is installed.
@@ -167,6 +174,9 @@ class FirewallStackSnapshot:
             wireguard_present=wireguard_present,
             libvirt_present=libvirt_present,
             kubernetes_running=kubelet_running(),
+            forward_accepts_s=_parse_raw_accepts_s(_run("iptables", "-S", "FORWARD")),
+            wireguard_ifaces=wireguard_ifaces,
+            microk8s_running=_process_runs("kubelite"),
         )
 
 
@@ -216,13 +226,18 @@ _SYS_NET = Path("/sys/class/net")
 def _dockerd_runs() -> bool:
     """v0.32.0 — a process named ``dockerd`` runs (measured: Docker 29.1.3's
     daemon; none once the docker service and socket are stopped)."""
+    return _process_runs("dockerd")
+
+
+def _process_runs(name: str) -> bool:
+    """A process whose ``comm`` is *name* runs."""
     try:
         pids = [d for d in _PROC.iterdir() if d.name.isdigit()]
     except OSError:
         return False
     for pid in pids:
         try:
-            if (pid / "comm").read_text(errors="replace").strip() == "dockerd":
+            if (pid / "comm").read_text(errors="replace").strip() == name:
                 return True
         except OSError:
             continue
@@ -230,20 +245,83 @@ def _dockerd_runs() -> bool:
 
 
 def _wireguard_interface() -> bool:
-    """v0.32.0 — an interface the kernel calls a WireGuard device: its
+    """v0.32.0 — a WireGuard interface exists (``_wireguard_ifaces``)."""
+    return bool(_wireguard_ifaces())
+
+
+def _wireguard_ifaces() -> "list[str]":
+    """v0.32.0 — the interfaces the kernel calls WireGuard devices: their
     ``uevent`` says ``DEVTYPE=wireguard`` (measured, wg-quick on Ubuntu 26.04;
-    a tun device has no DEVTYPE, and both have type 65534)."""
+    a tun device has no DEVTYPE, and both have type 65534). v0.33.0 — by name."""
     try:
-        ifaces = list(_SYS_NET.iterdir())
+        ifaces = sorted(_SYS_NET.iterdir())
     except OSError:
-        return False
+        return []
+    found = []
     for iface in ifaces:
         try:
             if "DEVTYPE=wireguard" in (iface / "uevent").read_text(errors="replace").split():
-                return True
+                found.append(iface.name)
         except OSError:
             continue
-    return False
+    return found
+
+
+#: v0.33.0 — the interfaces each routing mechanism creates, as prefixes (an
+#: iptables ``-i docker+`` is a prefix too). Docker: docker0 and its br-<id>
+#: networks; libvirt: virbrN; the Kubernetes CNIs (names from their
+#: projects, not all measured: they only excuse, they never charge).
+_DOCKER_IFACES = ("docker", "br-")
+_LIBVIRT_IFACES = ("virbr",)
+_CNI_IFACES = ("cali", "flannel", "cni", "vxlan.calico", "cilium", "kube-bridge", "weave", "tunl")
+#: v0.33.0 — the comment MicroK8s writes on its FORWARD rules (measured on
+#: MicroK8s 1.35.6, Ubuntu Server 26.04: two rules, -s/-d of the pod network).
+_MICROK8S_COMMENT = "generated for MicroK8s pods"
+_IFACE_ARG = re.compile(r"(!\s+)?-[io]\s+(\S+)")
+
+
+def _active_ifaces(snapshot: "FirewallStackSnapshot") -> "tuple[str, ...]":
+    """Interface prefixes of the routing mechanisms that run now."""
+    out: "list[str]" = []
+    if snapshot.docker_present:
+        out += _DOCKER_IFACES
+    out += snapshot.wireguard_ifaces
+    if snapshot.libvirt_present:
+        out += _LIBVIRT_IFACES
+    if snapshot.kubernetes_running:
+        out += _CNI_IFACES
+    return tuple(out)
+
+
+def _owned(name: str, active: "tuple[str, ...]") -> bool:
+    """Whether the interface *name* of a rule belongs to a running mechanism
+    (*active*: prefixes, or WireGuard's exact names). iptables reads a
+    trailing ``+`` as every interface starting with what precedes it."""
+    if name.endswith("+"):
+        stem = name[:-1]
+        return any(a.startswith(stem) or stem.startswith(a) for a in active)
+    return name.startswith(active)
+
+
+def _forward_orphans(snapshot: "FirewallStackSnapshot") -> "list[str]":
+    """v0.33.0 — the FORWARD ACCEPT rules no running mechanism can own, while
+    something routes: one that names interfaces, none of them a running
+    mechanism's (measured, fwd0320 case 6: ``-i bobwg0`` with WireGuard down
+    and Docker up, excused by 0.32.0); one that carries MicroK8s' comment
+    while MicroK8s does not run. A rule naming no interface and no known
+    comment cannot be attributed either way: excused, as before."""
+    active = _active_ifaces(snapshot)
+    orphans = []
+    for rule in snapshot.forward_accepts_s:
+        named = [m.group(2) for m in _IFACE_ARG.finditer(rule) if not m.group(1)]
+        named = [n for n in named if n != "lo"]
+        if named:
+            if not any(_owned(n, active) for n in named):
+                orphans.append(rule)
+            continue
+        if _MICROK8S_COMMENT in rule and not snapshot.microk8s_running:
+            orphans.append(rule)
+    return orphans
 
 
 def _routing_daemon(snapshot: "FirewallStackSnapshot") -> bool:
@@ -310,6 +388,15 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
                 message=_t("firewall_drivers.forward_routing_ok"),
                 key="firewall_drivers.forward_routing_ok",
             )
+            # v0.33.0 — but not the rules no running mechanism can own.
+            for rule in _forward_orphans(snapshot):
+                result.warn_with_deduction(
+                    key="firewall_drivers.iptables_forward_bypass",
+                    message=_t("firewall_drivers.iptables_forward_orphan", rule=rule),
+                    points=1,
+                    nature="action",
+                )
+                found_issue = True
         else:
             for rule in snapshot.forward_raw_accepts:
                 result.warn_with_deduction(

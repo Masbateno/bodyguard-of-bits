@@ -42,6 +42,7 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 from bob.checks._run import _command_exists, install_fix, _identity_t, _run, is_unit_active  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
@@ -74,6 +75,11 @@ _TIMESHIFT_CONFIG = Path("/etc/timeshift/timeshift.json")
 #: 2026-11-01_19-00-01 and 2026-11-08_19-00-02.
 _TIMESHIFT_SCHEDULES = ("hourly", "daily", "weekly", "monthly", "boot")
 _TIMESHIFT_SNAPSHOT_RE = re.compile(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}")
+#: v0.33.0 — each schedule's period, in hours. Timeshift's hourly cron job
+#: takes a snapshot when one is due, so a newest snapshot older than twice the
+#: longest enabled period means no schedule produced one for that long: the
+#: machine was off, or Timeshift did not run. "boot" has no period.
+_TIMESHIFT_PERIOD_H = {"hourly": 1, "daily": 24, "weekly": 168, "monthly": 744}
 _DISK_BY_UUID = Path("/dev/disk/by-uuid")
 _MOUNTINFO = Path("/proc/self/mountinfo")
 
@@ -176,6 +182,9 @@ class BackupSnapshot:
     #: (on a desktop, often the home). Shown so "active" is not read as "my
     #: files are backed up". [] when none or unread.
     timeshift_excludes:  list = field(default_factory=list)
+    #: v0.33.0 — the newest snapshot's age in hours when it is older than
+    #: twice the longest enabled period (``_timeshift_stale``); None otherwise.
+    timeshift_stale_h:   "float | None" = None
 
     @classmethod
     def from_system(cls) -> "BackupSnapshot":
@@ -227,7 +236,13 @@ class BackupSnapshot:
                 (snap.timeshift_schedules, snap.timeshift_snapshots,
                  snap.timeshift_unread, snap.timeshift_dir) = _read_timeshift()
                 snap.timeshift_excludes = _timeshift_excludes()
-            if snap.timeshift_schedules and snap.timeshift_snapshots != []:
+                snap.timeshift_stale_h = _timeshift_stale(snap.timeshift_schedules,
+                                                          snap.timeshift_snapshots, datetime.now())
+            # v0.33.0 — and a newest snapshot no older than twice the longest
+            # schedule: a weekly schedule whose last snapshot is two months old
+            # is not an active backup.
+            if (snap.timeshift_schedules and snap.timeshift_snapshots != []
+                    and snap.timeshift_stale_h is None):
                 snap.active_tools.append("timeshift")
             else:
                 snap.installed_tools.append("timeshift")
@@ -318,6 +333,21 @@ def _read_timeshift() -> "tuple[list[str] | None, list[str] | None, str, str]":
     except OSError:
         return schedules, None, "unreadable", directory
     return schedules, names, "", directory
+
+
+def _timeshift_stale(schedules, snapshots, now) -> "float | None":
+    """v0.33.0 — the newest snapshot's age in hours when it exceeds twice the
+    longest enabled period; None when it does not, when only "boot" is set,
+    or when the snapshots were not read or none exists."""
+    periods = [_TIMESHIFT_PERIOD_H[s] for s in (schedules or []) if s in _TIMESHIFT_PERIOD_H]
+    if not periods or not snapshots:
+        return None
+    try:
+        newest = datetime.strptime(snapshots[-1], "%Y-%m-%d_%H-%M-%S")
+    except ValueError:
+        return None
+    age_h = (now - newest).total_seconds() / 3600
+    return age_h if age_h > 2 * max(periods) else None
 
 
 def _timeshift_excludes() -> list:
@@ -559,7 +589,15 @@ def _timeshift_finding(snapshot: BackupSnapshot, result: CheckResult, _t) -> Non
     # read as "my files are backed up" when the home is excluded.
     excl = (_t("backup.timeshift_excludes", paths=", ".join(snapshot.timeshift_excludes))
             if snapshot.timeshift_excludes else "")
-    if snaps:
+    if snaps and snapshot.timeshift_stale_h is not None:
+        result.info(
+            key="backup.timeshift_stale",
+            message=_t("backup.timeshift_stale", count=len(snaps), newest=snaps[-1],
+                       days=int(snapshot.timeshift_stale_h // 24),
+                       path=snapshot.timeshift_dir, schedules=when),
+            detail=excl,
+        )
+    elif snaps:
         result.info(
             key="backup.timeshift_snapshots",
             message=_t("backup.timeshift_snapshots", count=len(snaps), newest=snaps[-1],

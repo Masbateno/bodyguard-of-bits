@@ -807,7 +807,7 @@ def _curses_preview_log(stdscr, path: "Path", t, peers: "list[Path] | None" = No
 
         stdscr.refresh()
 
-        ch = stdscr.getch()
+        ch = _keys.complete_escape(stdscr, curses, stdscr.getch())
 
         action = _keys.resolve(curses, ch, _actions)
         if action == _keys.BACK:                        # nested screen: Esc goes back
@@ -1010,7 +1010,7 @@ def _dir_picker(stdscr, user_config, config, t) -> "tuple[str, Path | None]":
         _ch.draw(stdscr, curses, t, _DIR_KEYS, has_color, context=_transient)
         stdscr.refresh()
 
-        ch = stdscr.getch()
+        ch = _keys.complete_escape(stdscr, curses, stdscr.getch())
         act = _keys.resolve(curses, ch, _DIR_KEYS)
 
         if act == _keys.QUIT:
@@ -1210,7 +1210,7 @@ def _browse_dir(stdscr, browse_dir: Path, user_config, config, t) -> None:
         _ch.draw(stdscr, curses, t, _actions, has_color, context=_transient)
         stdscr.refresh()
 
-        ch = stdscr.getch()
+        ch = _keys.complete_escape(stdscr, curses, stdscr.getch())
 
         if confirm_delete:
             confirm_delete = False

@@ -136,6 +136,52 @@ def _special(curses, action: str) -> "tuple[int, ...]":
     return tuple(getattr(curses, name) for name in _SPECIAL.get(action, ()))
 
 
+#: v0.33.0 — the arrow and page keys a terminal sends when it ignores the
+#: keypad mode curses asks for (smkx): ``ESC [ A`` instead of ``ESC O A``.
+#: curses knows only the form terminfo declares, so it returned Esc, then
+#: ``[``, then the letter — read as BACK, then as the action bound to that
+#: letter: ↑ as ``A`` (mark all), ← as ``D`` (delete), measured in a pty on
+#: Linux Mint 22.3 (0.32.0). Both introducers are accepted (CSI ``[`` and SS3
+#: ``O``); the tilde forms carry the page and home/end keys.
+_FINAL = {"A": "KEY_UP", "B": "KEY_DOWN", "C": "KEY_RIGHT", "D": "KEY_LEFT",
+          "H": "KEY_HOME", "F": "KEY_END"}
+_TILDE = {"5": "KEY_PPAGE", "6": "KEY_NPAGE", "1": "KEY_HOME", "7": "KEY_HOME",
+          "4": "KEY_END", "8": "KEY_END"}
+
+
+def complete_escape(win, curses, ch: int) -> int:
+    """*ch* as read; when it is Esc and an arrow or page sequence follows in
+    the input already received, that key instead. Nothing waits: the bytes of
+    a sequence arrive together, so an Esc pressed alone stays BACK. Bytes that
+    form no known sequence are pushed back, in order."""
+    if ch != 27 or not hasattr(win, "nodelay"):
+        return ch                           # a window that cannot be read without waiting is not peeked
+    seq: "list[int]" = []
+    win.nodelay(True)
+    try:
+        while len(seq) < 4:
+            nxt = win.getch()
+            if nxt == -1:
+                break
+            seq.append(nxt)
+            if len(seq) > 1 and not 48 <= nxt <= 57:
+                break                       # a final byte ends the sequence
+    finally:
+        win.nodelay(False)
+    text = "".join(chr(c) for c in seq if 0 <= c < 256)
+    name = None
+    if len(text) == 2 and text[0] in "[O":
+        name = _FINAL.get(text[1])
+    elif len(text) == 3 and text[0] == "[" and text[2] == "~":
+        name = _TILDE.get(text[1])
+    key = getattr(curses, name, None) if name else None
+    if key is not None:
+        return key
+    for c in reversed(seq):
+        curses.ungetch(c)
+    return 27
+
+
 def resolve(curses, ch: int, actions: "tuple[str, ...]") -> "str | None":
     """Which declared action *ch* triggers, or None.
 

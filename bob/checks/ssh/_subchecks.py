@@ -120,14 +120,37 @@ def _check_host_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
     for hk in keys:
         name = hk.path.name
 
-        if hk.key_type == "dsa":
+        if hk.key_type == "dsa" and _dsa_host_key_served(snapshot, hk.path) is None:
+            # v0.33.0 — what sshd serves is unknown: shown, not counted, a ceiling.
+            result.info(
+                message=_t("ssh.host_key_dsa_unknown", name=name),
+                key="ssh.host_key_dsa_unknown",
+                template_vars={"name": name},
+            )
+
+        elif hk.key_type == "dsa" and not _dsa_host_key_served(snapshot, hk.path):
+            # v0.33.0 — a DSA file sshd does not serve. Measured (OpenSSH 9.6 on
+            # Mint, 10.2 on Ubuntu, oracle ssh-keyscan -t dsa): served only when
+            # a HostKey line names it AND HostKeyAlgorithms adds ssh-dss; never
+            # from the default path; never on 10.x, which refuses +ssh-dss.
+            result.info(
+                message=_t("ssh.host_key_dsa_unused", name=name),
+                key="ssh.host_key_dsa_unused",
+                template_vars={"name": name},
+            )
+
+        elif hk.key_type == "dsa":
+            # Served. The fix removes it; it generates an ed25519 host key only
+            # when there is none (ssh-keygen would stop at "Overwrite (y/n)?").
+            regen = ("" if any(k.key_type == "ed25519" for k in keys)
+                     else "sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N '' && ")
             result.warn_with_deduction(
                 key="ssh.host_key_dsa",
                 message=_t("ssh.host_key_dsa", name=name),
                 reason=_t("ssh.host_key_dsa_reason", name=name),
                 points=1,
                 detail=_t("ssh.host_key_dsa_detail"),
-                cmd=f"sudo rm {shlex.quote(str(hk.path))} {shlex.quote(str(hk.path) + '.pub')} && sudo ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N '' && {service_restart_cmd(ssh_unit())}",
+                cmd=f"sudo rm {shlex.quote(str(hk.path))} {shlex.quote(str(hk.path) + '.pub')} && {regen}{service_restart_cmd(ssh_unit())}",
                 template_vars={"name": name},  # pilot v0.4.1 — exposes vars for locale-independent rebuild
             )
 
@@ -209,6 +232,30 @@ def _rsa_offered(value: str) -> bool:
         return any(not any(fnmatchcase(a, p) for p in removed) for a in _RSA_DEFAULT_ALGOS)
     listed = [p for p in value.split(",") if p]
     return any(fnmatchcase(a, p) for a in _RSA_ALGOS for p in listed)
+
+
+def _dsa_offered(value: str) -> bool:
+    """v0.33.0 — whether HostKeyAlgorithms offers ssh-dss. Never by default
+    (OpenSSH 7.0); ``+``/``^`` or a list must name it (patterns allowed);
+    ``-`` only removes."""
+    value = value.strip()
+    if not value or value[0] == "-":
+        return False
+    listed = [p for p in (value[1:] if value[0] in "+^" else value).split(",") if p]
+    return any(fnmatchcase("ssh-dss", p) for p in listed)
+
+
+def _dsa_host_key_served(snapshot: SSHSnapshot, path: Path) -> "bool | None":
+    """v0.33.0 — whether sshd_config makes sshd serve the DSA host key at
+    *path*: a HostKey line names it (DSA is not among the default files) and
+    HostKeyAlgorithms offers ssh-dss. None when sshd_config cannot be read."""
+    if not snapshot.sshd_config_readable:
+        return None
+    cfg = snapshot.sshd_config
+    named = {os.path.normpath(p) for p in (cfg.get("_hostkeys") or [])}
+    if os.path.normpath(str(path)) not in named:
+        return False
+    return _dsa_offered(str(cfg.get("hostkeyalgorithms", "")))
 
 
 def _rsa_host_key_served(snapshot: SSHSnapshot, path: Path) -> "bool | None":

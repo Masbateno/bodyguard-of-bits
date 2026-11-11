@@ -116,7 +116,7 @@ class IptablesNftSnapshot:
             return "DROP", "nat"
         plain = effect == "untouched"
         if self.backend == "nftables":
-            return self._with_legacy(nft_port_verdict(self.raw_output, port, proto, self.host_addresses,
+            return self._with_legacy(nft_port_verdict(_v4_view(self.raw_output), port, proto, self.host_addresses,
                                                       nat_floor=_DSTNAT if self.nat_prerouting else None,
                                                       nat_ignored=plain), port, proto, plain)
         if self.backend == "iptables":
@@ -124,8 +124,9 @@ class IptablesNftSnapshot:
                                    self._nat(_IPV4_FAMILIES, self.nat_prerouting) and not plain)
             if got[0] == "ACCEPT" and self.nft_pre_input:
                 # v0.30.0 — nft's own chains before input, weighed port by port.
-                pre = _nft_pre_input_port(self.nft_pre_input, _nft_all_chains(self.nft_pre_input), port,
-                                          proto, self.host_addresses, _nft_sets(self.nft_pre_input),
+                view = _v4_view(self.nft_pre_input)
+                pre = _nft_pre_input_port(view, _nft_all_chains(view), port,
+                                          proto, self.host_addresses, _nft_sets(view),
                                           nat_floor=_DSTNAT if self.nat_prerouting else None, nat_ignored=plain)
                 if pre[0] != "PASS":
                     return pre
@@ -1601,6 +1602,20 @@ def _v6_view(ruleset: str) -> str:
     dropped, ``meta nfproto ipv6`` taken as always true."""
     return "\n".join(line.replace("meta nfproto ipv6 ", "") for line in ruleset.splitlines()
                      if not _V4_ONLY.search(line.strip()))
+
+
+#: v0.33.0 — a rule that matches IPv6 only, set aside when IPv4 is weighed:
+#: the mirror of _V4_ONLY. A ``meta nfproto ipv6`` rule in an inet input chain
+#: left the IPv4 verdict "not established" though no IPv4 packet can match it.
+_V6_ONLY = re.compile(r"(?:^|\s)(?:ip6\s+(?:saddr|daddr|nexthdr|hoplimit|flowlabel|dscp|length|version)"
+                      r"|meta\s+nfproto\s+ipv6|icmpv6\s+(?:type|code))\b")
+
+
+def _v4_view(ruleset: str) -> str:
+    """v0.33.0 — the ruleset as an IPv4 packet meets it: IPv6-only rules
+    dropped, ``meta nfproto ipv4`` taken as always true."""
+    return "\n".join(line.replace("meta nfproto ipv4 ", "") for line in ruleset.splitlines()
+                     if not _V6_ONLY.search(line.strip()))
 
 
 def _hosts_v6(hosts: "frozenset | None") -> "frozenset | None":

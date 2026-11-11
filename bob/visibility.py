@@ -144,6 +144,8 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     # v0.32.0 — an RSA host key below 2048 bits whose serving sshd_config
     # could not tell: its −1 is unknown, not absent.
     "ssh.host_key_rsa_weak_unknown",
+    # v0.33.0 — the same for a DSA host key: served or not is unknown.
+    "ssh.host_key_dsa_unknown",
     "ssl_certs.dir_unreadable",
     "suid_audit.ok_partial",
     # v0.31.0 — the find over the SUID roots timed out or failed: its −1 is
@@ -154,6 +156,10 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     # `docker ps` killed at its timeout): a privileged container's −1 and a
     # mounted socket's −1 are unknown, not absent.
     "docker_hardening.scan_error",
+    # v0.33.0 — containers BOB did not ask about: a runtime that could not be
+    # listed beside one that could, and rootless podman containers.
+    "docker_hardening.runtime_unreachable",
+    "docker_hardening.rootless_unexamined",
     # v0.31.0 — fwupdmgr failed (daemon unreachable, exit 1) or did not answer
     # (killed at the timeout): whether firmware is pending (−1) is unknown.
     "firmware.fwupd_error",

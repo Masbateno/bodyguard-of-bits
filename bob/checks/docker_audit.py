@@ -76,96 +76,121 @@ class DockerAuditSnapshot:
     host_network_containers:   list[str] = field(default_factory=list)
     userns_remap:              bool      = False
     scan_error:                bool      = False
+    #: v0.33.0 — every runtime present was asked (Docker only, before, when
+    #: both were installed); which runtime holds each container named above;
+    #: the runtimes whose listing failed (a stopped dockerd read as "no
+    #: container"); the rootless podman containers seen in /proc, by user.
+    runtimes:                  list[str] = field(default_factory=list)
+    container_runtime:         dict      = field(default_factory=dict)
+    failed_runtimes:           list[str] = field(default_factory=list)
+    rootless_containers:       dict      = field(default_factory=dict)
 
     @classmethod
     def from_system(cls) -> "DockerAuditSnapshot":
-        """Inspect running containers via Docker or Podman. Never raises."""
-        runtime = next((rt for rt in _RUNTIMES if _command_exists(rt)), "")
-        if not runtime:
-            return cls(runtime="", docker_installed=False)
+        """Inspect running containers via Docker and Podman. Never raises.
 
-        is_docker = runtime == "docker"
-        # userns-remap lives in Docker's daemon.json; Podman has no equivalent
-        # daemon config, so the check is Docker-only.
+        v0.33.0 — every runtime present, not the first found: on a host with
+        both, Podman's containers were never asked about. A container both
+        list (podman-docker's ``docker`` runs podman) counts once, by Id."""
+        runtimes = [rt for rt in _RUNTIMES if _command_exists(rt)]
+        rootless = _rootless_podman()
+        if not runtimes:
+            return cls(runtime="", docker_installed=False, rootless_containers=rootless)
+        is_docker = "docker" in runtimes
         userns_remap = _read_userns_remap() if is_docker else False
-        sock_path = _RUNTIME_SOCKETS.get(runtime, _DOCKER_SOCK)
-
-        # Get running container IDs
-        try:
-            proc = subprocess.run(
-                [runtime, "ps", "-q"],
-                capture_output=True, text=True,
-                timeout=10, env=_C_LOCALE_ENV,
-            )
-            container_ids = [
-                line.strip() for line in proc.stdout.splitlines() if line.strip()
-            ]
-        except (subprocess.TimeoutExpired, OSError):
-            return cls(runtime=runtime, docker_installed=is_docker,
-                       userns_remap=userns_remap, scan_error=True)
-
-        if not container_ids:
-            return cls(runtime=runtime, docker_installed=is_docker,
-                       userns_remap=userns_remap)
-
-        # Bulk inspect — one call for all containers
-        privileged:     list[str] = []
-        sock_mounted:   list[str] = []
-        root_user:      list[str] = []
-        host_net:       list[str] = []
-
-        try:
-            proc = subprocess.run(
-                [runtime, "inspect"] + container_ids,
-                capture_output=True, text=True,
-                timeout=_INSPECT_TIMEOUT, env=_C_LOCALE_ENV,
-            )
-            if proc.returncode != 0:
-                raise subprocess.SubprocessError(
-                    f"{runtime} inspect exited {proc.returncode}: {proc.stderr.strip()}"
-                )
-            containers = json.loads(proc.stdout)
+        snap = cls(runtime=runtimes[0], docker_installed=is_docker, runtimes=runtimes,
+                   userns_remap=userns_remap, rootless_containers=rootless)
+        seen: "set[str]" = set()
+        for rt in runtimes:
+            containers = _inspect(rt)
+            if containers is None:
+                snap.failed_runtimes.append(rt)
+                continue
+            sock_path = _RUNTIME_SOCKETS.get(rt, _DOCKER_SOCK)
             for c in containers:
-                name = (c.get("Name", "").lstrip("/") or c.get("Id", "")[:12])
+                cid = c.get("Id", "")
+                if cid and cid in seen:
+                    continue
+                seen.add(cid)
+                name = (c.get("Name", "").lstrip("/") or cid[:12])
+                snap.container_runtime[name] = rt
+                snap.running_count += 1
                 host_config = c.get("HostConfig", {})
-
                 if host_config.get("Privileged", False):
-                    privileged.append(name)
-
+                    snap.privileged_containers.append(name)
                 for mount in c.get("Mounts", []):
                     if mount.get("Source") in (_DOCKER_SOCK, sock_path):
-                        sock_mounted.append(name)
+                        snap.socket_mounted_containers.append(name)
                         break
-
-                # Podman reports the host network as "host"; Docker too. Podman
-                # also uses "NetworkMode":"host" under HostConfig, so the same
-                # read works for both.
+                # Podman reports the host network as "host"; Docker too.
                 if host_config.get("NetworkMode") == "host":
-                    host_net.append(name)
-
+                    snap.host_network_containers.append(name)
                 user = c.get("Config", {}).get("User", "")
                 if not user or user in ("root", "0", "0:0", "0:root"):
-                    root_user.append(name)
+                    snap.root_containers.append(name)
+        # Nothing could be listed at all: the check says so and asserts nothing.
+        snap.scan_error = len(snap.failed_runtimes) == len(runtimes)
+        for lst in (snap.privileged_containers, snap.socket_mounted_containers,
+                    snap.root_containers, snap.host_network_containers):
+            lst.sort()
+        return snap
 
-        except (subprocess.TimeoutExpired, OSError, json.JSONDecodeError):
-            return cls(
-                runtime=runtime,
-                docker_installed=is_docker,
-                running_count=len(container_ids),
-                userns_remap=userns_remap,
-                scan_error=True,
-            )
 
-        return cls(
-            runtime=runtime,
-            docker_installed=is_docker,
-            running_count=len(container_ids),
-            privileged_containers=sorted(privileged),
-            socket_mounted_containers=sorted(sock_mounted),
-            root_containers=sorted(root_user),
-            host_network_containers=sorted(host_net),
-            userns_remap=userns_remap,
-        )
+def _inspect(runtime: str) -> "list[dict] | None":
+    """The running containers of *runtime*, inspected; None when it could not
+    be asked (v0.33.0: a failed ``ps`` too, which read as "no container")."""
+    try:
+        proc = subprocess.run([runtime, "ps", "-q"], capture_output=True, text=True,
+                              timeout=10, env=_C_LOCALE_ENV)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if proc.returncode != 0:
+        return None
+    ids = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    if not ids:
+        return []
+    try:
+        proc = subprocess.run([runtime, "inspect"] + ids, capture_output=True, text=True,
+                              timeout=_INSPECT_TIMEOUT, env=_C_LOCALE_ENV)
+        if proc.returncode != 0:
+            return None
+        return json.loads(proc.stdout)
+    except (subprocess.TimeoutExpired, OSError, json.JSONDecodeError):
+        return None
+
+
+_PROC = Path("/proc")
+
+
+def _rootless_podman() -> "dict[str, int]":
+    """v0.33.0 — the rootless podman containers running, by user: each has a
+    ``conmon`` monitor owned by that user (root's are podman's own, asked
+    above). Read from /proc only — nothing is run as the user (decided with
+    the user, 11 November 2026: running podman for each account could write
+    in its home and depends on its session)."""
+    import pwd
+    counts: "dict[str, int]" = {}
+    try:
+        pids = [d for d in _PROC.iterdir() if d.name.isdigit()]
+    except OSError:
+        return counts
+    for pid in pids:
+        try:
+            if (pid / "comm").read_text(errors="replace").strip() != "conmon":
+                continue
+            uid_line = next(ln for ln in (pid / "status").read_text(errors="replace").splitlines()
+                            if ln.startswith("Uid:"))
+            uid = int(uid_line.split()[1])
+        except (OSError, StopIteration, ValueError, IndexError):
+            continue
+        if uid == 0:
+            continue
+        try:
+            user = pwd.getpwuid(uid).pw_name
+        except KeyError:
+            user = str(uid)
+        counts[user] = counts.get(user, 0) + 1
+    return counts
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +237,25 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
     _t = t if t is not None else _identity_t
     result = CheckResult()
 
+    # v0.33.0 — what was not examined, said first and whatever follows.
+    if snapshot.rootless_containers:
+        users = ", ".join(f"{u} ({n})" for u, n in sorted(snapshot.rootless_containers.items()))
+        result.info(
+            message=_t("docker_hardening.rootless_unexamined",
+                       count=sum(snapshot.rootless_containers.values()), users=users),
+            detail=_t("docker_hardening.rootless_unexamined_detail"),
+            key="docker_hardening.rootless_unexamined",
+            template_vars={"count": sum(snapshot.rootless_containers.values()), "users": users},
+        )
+    if snapshot.failed_runtimes and not snapshot.scan_error:
+        result.info(
+            message=_t("docker_hardening.runtime_unreachable", runtimes=", ".join(snapshot.failed_runtimes)),
+            key="docker_hardening.runtime_unreachable",
+            template_vars={"runtimes": ", ".join(snapshot.failed_runtimes)},
+        )
+    if not snapshot.runtimes and not snapshot.runtime and snapshot.rootless_containers:
+        return result                       # no runtime root can ask: only the rootless ones were seen
+
     if snapshot.scan_error:
         result.info(
             message=_t("docker_hardening.scan_error"),
@@ -248,7 +292,7 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
             ),
             points=1,
             detail=_t("docker_hardening.privileged_detail"),
-            cmd=f"{snapshot.runtime or 'docker'} inspect --format '{{{{.HostConfig.Privileged}}}}' {first}",
+            cmd=f"{snapshot.container_runtime.get(first, snapshot.runtime or 'docker')} inspect --format '{{{{.HostConfig.Privileged}}}}' {first}",
             cmd_type="check",
         )
 
@@ -269,7 +313,7 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
             ),
             points=1,
             detail=_t("docker_hardening.socket_mounted_detail"),
-            cmd=f"{snapshot.runtime or 'docker'} inspect --format '{{{{json .Mounts}}}}' {first}",
+            cmd=f"{snapshot.container_runtime.get(first, snapshot.runtime or 'docker')} inspect --format '{{{{json .Mounts}}}}' {first}",
             cmd_type="check",
         )
 
@@ -305,7 +349,7 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
                 # while OpenRC said "started" and the command exited 0. Nor can
                 # the range be left to docker where the files exist: measured
                 # on Mint 22.3 (docker 29.1.3), it gave dockremap 100000:65536,
-                # the range so6 already held. See _dockremap_range.
+                # the range the first user account already held. See _dockremap_range.
                 cmd=('test -f /etc/docker/daemon.json || { sudo mkdir -p /etc/docker && '
                      'echo \'{"userns-remap": "default"}\' | sudo tee /etc/docker/daemon.json >/dev/null && '
                      f'{_DOCKREMAP_USER} && {_dockremap_range("/etc/subuid")} && {_dockremap_range("/etc/subgid")} && '
