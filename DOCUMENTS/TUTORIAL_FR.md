@@ -77,6 +77,7 @@ Chaque domaine part de 10/10 et perd les points de ses constats ; le score globa
 - Un **niveau** : OK (✔, vert) / INFO (ℹ, cyan — signalé, ne coûte aucun point) / ATTENTION (⚠, jaune) / ALERTE (✖, rouge)
 - Une **clé** (ex. `ssh.password_auth`) — identifiant stable pour les scripts, `--explain` et `--ignore` ; le cadre de synthèse l'affiche sur la ligne `? bob --explain CLÉ`
 - Un message court et, dans le cadre de synthèse, la commande que BOB suggère — après `→` pour un correctif, après `ℹ` pour une commande qui ne fait que vérifier
+- Pour une ATTENTION ou une ALERTE déjà vue, `↩ N×` en dessous : présente dans N audits d'affilée, celui-ci compris
 
 Le verdict dépend de ton profil : `server` par défaut, ou `desktop` quand aucun profil n'est défini et que BOB trouve un gestionnaire d'affichage actif — il l'annonce dans une ligne INFO avant le début de l'audit. Le profil desktop ramène en INFO des constats qui pèsent moins sur une machine personnelle, comme l'absence de sauvegarde ou de règles auditd. Voir l'étape 5 pour les profils.
 
@@ -100,7 +101,7 @@ Pas besoin de `sudo` — `--explain` est une consultation autonome, qui tient co
 Tu peux lister toutes les clés explicables :
 
 ```bash
-bob --explain list                          # 237 clés en v0.32.0, groupées par famille CIS
+bob --explain list                          # 238 clés en v0.34.0, groupées par famille CIS
 bob --explain                               # sélecteur interactif (↑↓/jk, PgUp/PgDn, g/G, Entrée, Échap retour ; l langue et q quitter sur le premier écran)
 ```
 
@@ -358,7 +359,7 @@ sudo bob --french                           # raccourci pour --lang=fr
 sudo bob --lang=fr                          # explicite
 ```
 
-Toute la sortie (terminal, `--help`, .log, messages de détail JSON, contenus des webhooks, entrées explain) est localisée — 3220 clés × 2 locales — à trois exceptions près, décrites ci-dessous. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
+Toute la sortie (terminal, `--help`, .log, messages de détail JSON, contenus des webhooks, entrées explain) est localisée — 3234 clés × 2 locales — à trois exceptions près, décrites ci-dessous. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
 
 Trois choses restent anglaises à dessein, et un diff bilingue de la sortie d'audit en v0.15.4 a confirmé que ce sont les seules : les **commandes shell** des lignes de remédiation (une commande n'est pas de la prose), les **références CIS** portant un code numéroté (décision v0.11.2 — les références « Bonne pratique », sans code, *sont* traduites), et les **38 libellés de services**, comme `Samba (Windows file sharing)` ou `Apache Web Server`, traités comme des noms de produits même quand ils portent des mots anglais. Ces libellés servent aussi de clé aux entrées `service_risk.*` et entrent dans la ligne de base d'audit : les traduire à la source renommerait 114 entrées de locale et ferait apparaître des changements fantômes dans `--diff` au changement de langue.
 

@@ -160,6 +160,9 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     # listed beside one that could, and rootless podman containers.
     "docker_hardening.runtime_unreachable",
     "docker_hardening.rootless_unexamined",
+    # v0.34.0 — whether a Docker socket gives the docker group access could
+    # not be read: the −2 of docker_group_root is unknown, not absent.
+    "docker_hardening.docker_group_unknown",
     # v0.31.0 — fwupdmgr failed (daemon unreachable, exit 1) or did not answer
     # (killed at the timeout): whether firmware is pending (−1) is unknown.
     "firmware.fwupd_error",

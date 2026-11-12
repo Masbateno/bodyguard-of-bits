@@ -91,6 +91,10 @@ class IptablesNftSnapshot:
     #: [] for none; None when one could not be followed: the port verdict then
     #: reads a NAT chain as 0.30.0 did.
     nat_rules: "list | None" = field(default=None, repr=False)
+    #: v0.34.0 — the same for IPv6 (ip6 and inet NAT chains, read through
+    #: _v6_view): IPv6's verdict ignored NAT, measured (b10340): a redirect of
+    #: 8099 to :9999 closed 8099 over IPv6 while BOB said ACCEPT.
+    nat_rules6: "list | None" = field(default=None, repr=False)
     #: v0.31.0 — ``iptables-legacy -t T -S`` of the legacy filter, raw,
     #: mangle and security tables held beside nft (:func:`_legacy_tables`):
     #: {} for none, None when they could not be read.
@@ -165,10 +169,19 @@ class IptablesNftSnapshot:
         """v0.30.0 — the IPv6 verdict, read as :meth:`port_verdict` reads the
         IPv4 one; shown with each IPv6 listener, not scored."""
         if self.backend == "nftables":
+            # v0.34.0 — IPv6's destination NAT followed as IPv4's is, redirects
+            # only (a dnat to an address is not followed: no host view given).
+            effect6 = _nat_effect(port, proto, self.nat_rules6, None)
+            if effect6 == "away":
+                return "DROP", "nat"
             # v0.32.0 — met by the legacy v6 tables beside nft, as the IPv4
             # verdict meets the v4 ones (measured, b3bench.sh: a legacy drop
             # closed 8099 over IPv6 while the shown verdict said ACCEPT).
             nat6 = self.nat_prerouting6 or _nft_nat_priority(self.raw_output, _IPV6_FAMILIES) is not None
+            # v0.34.0 — a NAT BOB does not follow (a dnat to an address, b10340
+            # N4: 8099 closed, shown ACCEPT) leaves the verdict not established.
+            if effect6 is None and nat6:
+                return "UNKNOWN", ""
             return self._legacy_met(
                 nft_port_verdict_v6(self.raw_output, port, proto, self.host_addresses,
                                     nat_floor=_DSTNAT if self.nat_prerouting6 else None),
@@ -224,7 +237,8 @@ class IptablesNftSnapshot:
                     # v0.30.0 — a legacy nat table nft does not show.
                     nat_prerouting=_legacy_nat_rewrites(),
                     nat_prerouting6=_legacy_nat_rewrites(v6=True),
-                    nat_rules=_nat_rules_of(_nft_nat_rules(raw), _ipt_nat_rules(_legacy_nat_text())),
+                    nat_rules=_nft_nat_views(raw, _legacy_nat_text(), _legacy_nat_text(v6=True))[0],
+                    nat_rules6=_nft_nat_views(raw, _legacy_nat_text(), _legacy_nat_text(v6=True))[1],
                     forward_policy=_nft_policy(raw, "forward"),
                     has_loopback_rule=_nft_has_loopback(raw),
                     has_conntrack_rule=_nft_has_conntrack(raw),
@@ -676,6 +690,22 @@ _NFT_PORT_NEUTRAL = re.compile(
     r"|^log\b[^;]*$"
     r"|^(?:ip\s+protocol\s+icmp|meta\s+l4proto\s+(?:icmp|ipv6-icmp)|icmp\s+type\b.*|icmpv6\s+type\b.*)\s*accept$")
 _NFT_COMMENT = re.compile(r'\s*comment\s+"[^"]*"')
+#: v0.34.0 — an ICMP rule by type, whatever its verdict: it cannot decide a
+#: TCP or UDP connection. Not when it names IPv6 neighbour discovery (the
+#: nd-* types): refusing those breaks IPv6 reachability altogether (seen on
+#: Ubuntu, 11 November 2026: a policy-drop chain without them left an IPv6
+#: listener unreachable whatever its port rule said) — those stay unknown.
+_NFT_ICMP_BY_TYPE = re.compile(
+    r"^(icmp|icmpv6)\s+type\s+(\{[^}]*\}|[\w-]+)\s+(?:accept|drop|reject(?:\s+with\s+[\w\s-]+)?)$")
+
+
+def _icmp_neutral(text: str) -> bool:
+    """v0.34.0 — whether *text* is an ICMP rule by type that touches no port."""
+    m = _NFT_ICMP_BY_TYPE.match(text)
+    if not m:
+        return False
+    types = [t.strip() for t in m.group(2).strip("{} ").split(",") if t.strip()]
+    return m.group(1) == "icmp" or not any(t.startswith("nd-") for t in types)
 _IPT_PORT_RULE = re.compile(
     r"^-p (tcp|udp)(?: -m (?:tcp|udp))? --dport (\d+(?::\d+)?) -j (ACCEPT|DROP|REJECT)(?: --reject-with \S+)?$"
     r"|^-p (tcp|udp) -m multiport --dports ([\d,:]+) -j (ACCEPT|DROP|REJECT)(?: --reject-with \S+)?$")
@@ -812,7 +842,7 @@ def _nft_port_walk(rules, chains, family, table, port, proto, seen, hosts=None, 
     after a goto ran out, None when the chain falls through."""
     for rule in rules:
         text = re.sub(r"\s+", " ", _NFT_COMMENT.sub("", _RULE_NOISE.sub("", rule))).strip()
-        if not text or _NFT_PORT_NEUTRAL.match(text):
+        if not text or _NFT_PORT_NEUTRAL.match(text) or _icmp_neutral(text):
             continue
         # v0.30.0 — a named port set or verdict map, written out.
         if "@" in text:
@@ -1427,6 +1457,14 @@ def _nat_rule(proto, spec, to_port, addr, addr_port) -> "dict | None":
             "to": int(to_port or addr_port) if (to_port or addr_port) else None}
 
 
+def _nft_nat_views(ruleset: str, legacy4: "str | None", legacy6: "str | None") -> "tuple":
+    """v0.34.0 — the destination NAT rules for IPv4 and for IPv6, each read
+    through its family's view of the ruleset (an IPv6-only rule neither
+    spoils IPv4's NAT nor escapes IPv6's), each with its legacy nat table."""
+    return (_nat_rules_of(_nft_nat_rules(_v4_view(ruleset)), _ipt_nat_rules(legacy4)),
+            _nat_rules_of(_nft_nat_rules(_v6_view(ruleset), _IPV6_FAMILIES), _ipt_nat_rules(legacy6)))
+
+
 def _nft_nat_rules(ruleset: str, families: tuple = _IPV4_FAMILIES) -> "list | None":
     """v0.31.0 — the rules of the NAT prerouting chains (*families*) as
     :func:`_nat_effect` reads them, in order; None when one is not of a form
@@ -1632,8 +1670,33 @@ def nft_port_verdict_v6(ruleset: str, port: int, proto: str,
     """v0.30.0 — the IPv6 verdict a new connection to *port*/*proto* meets,
     read as the IPv4 one is (ip6 and inet chains, IPv4-only rules set aside,
     the chains before input weighed). Shown, not scored: IPv6 exposure is
-    weighed by the IPv6 section."""
-    return nft_port_verdict(_v6_view(ruleset), port, proto, _hosts_v6(hosts), _IPV6_FAMILIES, nat_floor)
+    weighed by the IPv6 section.
+
+    v0.34.0 — an accept under an input chain at policy drop that nowhere
+    accepts IPv6 neighbour discovery is not established: measured on Fedora 44
+    (netns, 11 November 2026, a2bench), `policy drop` with `tcp dport 8099
+    accept` and no nd-* accept left the IPv6 listener unreachable while BOB
+    said ACCEPT; with the nd types accepted it was reachable. Not DROP: the
+    acceptance may sit in a form BOB does not follow."""
+    view = _v6_view(ruleset)
+    got = nft_port_verdict(view, port, proto, _hosts_v6(hosts), _IPV6_FAMILIES, nat_floor)
+    if got[0] == "ACCEPT" and not _nd_accepted(view) and any(
+            c["policy"] in ("DROP", "REJECT") for c in _nft_base_chains(view, "input")
+            if c["family"] in _IPV6_FAMILIES):
+        return "UNKNOWN", ""
+    return got
+
+
+#: v0.34.0 — a rule that accepts IPv6 neighbour discovery: the nd types by
+#: name, or ICMPv6 as a whole.
+_ND_ACCEPT = re.compile(
+    r"(?:icmpv6\s+type\s+(?:\{[^}]*nd-neighbor-(?:solicit|advert)[^}]*\}|nd-neighbor-(?:solicit|advert))"
+    r"|meta\s+l4proto\s+(?:ipv6-icmp|icmpv6)|ip6\s+nexthdr\s+(?:ipv6-icmp|icmpv6))[^\n]*\baccept\b")
+
+
+def _nd_accepted(ruleset: str) -> bool:
+    """Whether some rule of *ruleset* accepts IPv6 neighbour discovery."""
+    return bool(_ND_ACCEPT.search(ruleset))
 
 
 def nft_input_policy_v6(ruleset: str, hosts: "frozenset | None" = None) -> "str | None":

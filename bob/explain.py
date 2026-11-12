@@ -355,6 +355,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "firmware.microcode_missing",
     ]),
     ("Docker", [
+        "docker_hardening.docker_group_root",
         "docker_hardening.privileged",
         "docker_hardening.root_containers",
         "docker_hardening.socket_mounted",

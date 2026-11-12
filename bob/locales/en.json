@@ -169,7 +169,7 @@
       "ports": "Listening ports — ports not covered by the firewall (UFW rules, firewalld zone, raw ruleset)"
     },
     "cron": "CRON JOB AUDIT",
-    "docker_hardening": "DOCKER CONTAINER SECURITY AUDIT",
+    "docker_hardening": "CONTAINER SECURITY AUDIT (DOCKER, PODMAN)",
     "kubernetes": "KUBERNETES NODE AUDIT",
     "services_health": "SERVICE STATE AUDIT",
     "firewall_iptables": "IPTABLES / NFTABLES AUDIT",
@@ -3405,6 +3405,11 @@
         "why": "Containers running as UID 0 inside the container map directly to root on the host when user namespace remapping is not configured. A container escape vulnerability — of which Docker has had several — gives an attacker immediate root on the host.",
         "how": "1. Add a non-root USER in your Dockerfile:\n   USER 1000:1000\n2. Or enable user namespace remapping globally:\n   sudo nano /etc/docker/daemon.json\n   { \"userns-remap\": \"default\" }\n   sudo systemctl restart docker\n3. Verify:\n   docker run alpine id  # should not return uid=0"
       },
+      "docker_group_root": {
+        "title": "Accounts in the docker group (root-equivalent)",
+        "why": "Docker's post-install documentation: \"The docker group grants root-level privileges to the user.\" dockerd runs as root and obeys whoever can write to its socket; a member of the docker group can start a container that mounts the host's root filesystem and edit /etc/shadow or /etc/sudoers, without a password and without sudo. BOB counts it only while a Docker socket gives the group write access; with dockerd and its socket stopped the members are listed without a point.",
+        "how": "1. List the members:\n   getent group docker\n2. Remove an account that must not be root:\n   sudo gpasswd -d <user> docker\n   (an account whose primary group is docker: sudo usermod -g <group> <user>)\n3. For users who only need containers, prefer rootless Docker or podman without root:\n   https://docs.docker.com/engine/security/rootless/"
+      },
       "socket_mounted": {
         "title": "Docker socket mounted inside a container",
         "why": "Mounting /var/run/docker.sock into a container gives it full control of the Docker daemon — and therefore the host. From inside the container, an attacker can start a new privileged container, mount the host filesystem, and escape with a single docker command. This is a complete container isolation bypass.",
@@ -4029,7 +4034,7 @@
   "kexec_lockdown": {
     "kexec_disabled": "kexec is locked (kernel.kexec_load_disabled=1) — no new kernel can be loaded until reboot",
     "kexec_allowed": "kexec load is allowed (kernel.kexec_load_disabled=0)",
-    "kexec_allowed_detail": "With kexec_load_disabled=0, a privileged user can load and boot a different kernel image without a reboot — bypassing the firmware and, with it, Secure Boot for the next kernel. This is used legitimately by kdump (crash-dump capture), so it is reported, not penalised. If you do not use kdump/kexec, set kernel.kexec_load_disabled=1 (sysctl.d) to lock it for the uptime — note it cannot be re-enabled without a reboot.",
+    "kexec_allowed_detail": "With kexec_load_disabled=0, a privileged user can load and boot a different kernel image without a reboot, without going through the firmware. Whether an unsigned image is accepted depends on kernel lockdown and kexec's signature checking, which Secure Boot usually brings; without them, the next kernel skips Secure Boot. This is used legitimately by kdump (crash-dump capture), so it is reported, not penalised. If you do not use kdump/kexec, set kernel.kexec_load_disabled=1 (sysctl.d) to lock it for the uptime — note it cannot be re-enabled without a reboot.",
     "kexec_unknown": "kexec state could not be read (kernel.kexec_load_disabled)",
     "lockdown_active": "Kernel lockdown is active (mode: {mode})",
     "lockdown_none": "Kernel lockdown is not active",
@@ -4135,6 +4140,8 @@
     "ssh_jail_blind_reason": "SSH jail reads a log file nothing writes",
     "ssh_jail_blind_detail": "The jail '{jail}' watches {files}. No syslog daemon (rsyslog, syslog-ng, syslog) is running, so sshd's failures go to the systemd journal only and the jail counts none of them: it is active and bans nobody. Point the jail at the journal (backend = systemd), or start a syslog daemon that writes the file.",
     "active": "Fail2ban active — {count} jail(s) enabled",
+    "bans": "Bans: {bans} (total since fail2ban started)",
+    "bans_jail": "{jail} {now} now, {total} in total",
     "ssh_jail_active": "SSH brute-force protection active (jail: {jail})",
     "ssh_jail_active_file_detail": "Checked: the jail's file holds sshd's latest message, and the latest failed login of each kind seen since rsyslog started (invalid user; an existing user's password or key refused; PAM; too many attempts). This is not a proof that every failure reaches the file: only the latest of each kind is compared, so routing that sends some failures of a kind elsewhere can be missed, and a kind not seen since then is not checked.",
     "ssh_jail_active_counted_detail": "Checked: the jail counted {count} failed login(s) in its file since fail2ban started (fail2ban-client status {jail}, \"Total failed\") — its filter does match sshd's messages there. This is not a proof that later failures still reach the file: routing changed since then does not show in that count.",
@@ -4165,7 +4172,7 @@
     "apparmor_ok": "AppArmor enforcing — {enforcing} profile(s) enforce, {complain} complain",
     "apparmor_complain_profiles": "{complain} AppArmor profile(s) in complain mode — violations are logged but not blocked",
     "apparmor_complain_detail": "In complain mode, AppArmor logs policy violations but does not block them. To enforce a profile, run sudo aa-enforce on its own file in /etc/apparmor.d (apparmor-utils) — one at a time, not /etc/apparmor.d/*: measured on Ubuntu Server 26.04, that set 97 files to enforce, 74 of them shipped unconfined on purpose (flags=(unconfined)), and left the snap profiles as they were.",
-    "apparmor_complain_split": "{snap} of them are snap profiles, kept by snapd — aa-enforce on /etc/apparmor.d does not change them; the others: {others}.",
+    "apparmor_complain_split": "Snap profiles among them (kept by snapd — aa-enforce on /etc/apparmor.d does not change them): {snap}; the others: {others}.",
     "apparmor_no_enforce": "AppArmor active but no profiles in enforce mode ({complain} in complain)",
     "apparmor_no_enforce_detail": "All profiles are in complain mode — violations are logged but not blocked. Switch to enforce mode to actively prevent attacks.",
     "apparmor_no_enforce_reason": "AppArmor active but no profiles enforcing",
@@ -4525,11 +4532,16 @@
     "runtime_socket_ok": "container runtime socket {path} ({mode}) is restricted to its owner and group"
   },
   "docker_hardening": {
+    "docker_group_root": "{count} account(s) in the docker group: {users} — the group grants root-level privileges (Docker documentation), and the Docker socket gives it write access",
+    "docker_group_root_reason": "docker group members are root-equivalent: {users}",
+    "docker_group_root_detail": "Docker's post-install documentation: \"The docker group grants root-level privileges to the user.\" A member can start a container that mounts the host's root filesystem, without a password. Keep the group for accounts that must be root anyway, or use rootless Docker. An account whose primary group is docker is changed with usermod -g, not gpasswd.",
+    "docker_group_dormant": "{count} account(s) in the docker group: {users} — nothing listens on a Docker socket the group can write now (dockerd and its socket stopped): not counted",
+    "docker_group_unknown": "{count} account(s) in the docker group: {users} — whether a Docker socket gives the group access could not be read: not counted, the score is an upper bound",
     "rootless_unexamined": "{count} rootless podman container(s) running, not examined: {users}",
     "rootless_unexamined_detail": "Seen in /proc (their conmon monitor belongs to the user); BOB does not run podman as another user. A rootless container runs with at most its user's rights on the host, not root's; if the socket of a container daemon running as root (docker.sock) is mounted into it and it can open it, it can drive that daemon, which is root-equivalent on the host. The user can list them: podman ps; and inspect one: podman inspect <name>.",
     "runtime_unreachable": "Container runtime(s) not reachable: {runtimes} — their containers were not examined",
     "scan_error": "Container runtime not reachable — container security check skipped",
-    "no_containers": "No running containers — nothing to audit",
+    "no_containers": "No running containers ({runtimes}) — nothing to audit",
     "ok": "{count} running container(s) — no critical security issues found",
     "privileged": "{count} container(s) running in privileged mode: {containers}",
     "privileged_detail": "Privileged containers have full access to the host kernel and devices. This effectively disables container isolation. Replace with fine-grained capabilities (--cap-add) if elevated privileges are required.",
@@ -4592,6 +4604,10 @@
     "nftables_parallel": "Active nftables rules detected alongside UFW — potential rule conflicts",
     "ip_forward_ok": "IP forwarding enabled — routing daemon detected (Docker, VPN, KVM or Kubernetes)",
     "ip_forward_enabled": "IP forwarding enabled without detected VPN/Docker — verify this is intentional",
+    "ip_forward_wireguard_idle": "IP forwarding enabled; the only routing mechanism detected is WireGuard ({ifaces}), and the kernel has forwarded no IPv4 packet in the {since} since boot",
+    "ip_forward_wireguard_idle_detail": "A WireGuard client sends and receives its own traffic through the tunnel and forwards nothing; a gateway that routes for others forwards every such packet. If this host routes for no one, net.ipv4.ip_forward=0 is enough. The count restarts at each boot: a gateway that has carried no traffic since its last boot reads the same.",
+    "since_boot_days": "{days} day(s)",
+    "since_boot_hours": "{hours} h",
     "rules_unreadable": "Firewall driver rules could not be listed",
     "rules_unreadable_detail": "`iptables -L` and `nft list ruleset` both need CAP_NET_ADMIN and write their refusal to stderr, leaving stdout empty. A working `iptables -L` always prints its chain headers, even with no rules loaded, so empty output from an installed binary means the query was refused rather than that the ruleset is empty. BOB reports neither a conflict nor a clean stack here. Check with: sudo iptables -L -n"
   },

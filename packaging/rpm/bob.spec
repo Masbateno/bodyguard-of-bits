@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.33.0
+Version:        0.34.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,14 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Thu Nov 12 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.34.0-1
+- Minor, BREAKING for scores; no JSON-schema or CSV-column change.
+  DisableForwarding read; docker group members cost two points while the
+  system Docker socket listens (dormant said, unreadable an upper bound,
+  never removed unattended); ICMP rules, neighbour discovery and IPv6 NAT in
+  the port verdicts; fail2ban bans per jail; WireGuard-only routing with no
+  IPv4 datagram forwarded said; container, AppArmor and kexec texts.
+
 * Thu Nov 12 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.33.0-1
 - Minor, BREAKING for scores; no JSON-schema or CSV-column change. A DSA
   host key costs a point only when sshd serves it; FORWARD rules beside an

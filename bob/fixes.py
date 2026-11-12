@@ -76,7 +76,10 @@ _LOCKOUT_COMMANDS = re.compile(
     # ip6tables and the -nft/-legacy variants cut the same access; the family
     # in the binary's name is not the point.
     r"(?<![\w-])ip6?tables(?:-nft|-legacy)?\s+.*-P\s+(?:INPUT|FORWARD)\s+DROP"
-    r"|(?<![\w-])nft\s+.*policy\s+drop",
+    r"|(?<![\w-])nft\s+.*policy\s+drop"
+    # v0.34.0 — removing an account from a group (docker) can cut the
+    # operator's own access: shown, never run unattended.
+    r"|(?<![\w-])gpasswd\s+(?:-d|--delete)\s",
     re.IGNORECASE,
 )
 

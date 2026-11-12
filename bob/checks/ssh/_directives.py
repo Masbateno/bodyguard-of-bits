@@ -127,6 +127,10 @@ class _BadDirective:
     # v0.24.1: the directive line to make effective (e.g. "X11Forwarding no"),
     # rendered by ``_sshd_directive_fix`` — it was a literal ``sed`` template.
     fix: str = ""
+    #: v0.34.0 — (directive, value) that makes this one ineffective: sshd's
+    #: ``DisableForwarding yes`` turns off X11 and TCP forwarding whatever
+    #: X11Forwarding and AllowTcpForwarding say (sshd_config(5)).
+    off_when: "tuple[str, str] | None" = None
 
     def __post_init__(self) -> None:
         if bool(self.bad_values) == bool(self.safe_values):
@@ -164,6 +168,7 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
         level="warn", key="ssh.x11.forwarding.server",
         points=1,
         fix="X11Forwarding no",
+        off_when=("disableforwarding", "yes"),
     ),
     _BadDirective(
         name="ignorerhosts", default="yes",
@@ -201,6 +206,7 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
         level="warn", key="ssh.allow_tcp_forwarding",
         points=1, detail_key="ssh.allow_tcp_forwarding_detail",
         fix="AllowTcpForwarding no",
+        off_when=("disableforwarding", "yes"),
     ),
     _BadDirective(
         name="pubkeyauthentication", default="yes",
@@ -219,6 +225,9 @@ def _apply_bad_directive(rule: _BadDirective, cfg: dict, result: CheckResult, _t
     value = cfg.get(rule.name, rule.default)
     if not rule.is_bad(value):
         return False
+    if rule.off_when and str(cfg.get(rule.off_when[0], "")).lower() == rule.off_when[1]:
+        return False                        # overridden: the directive has no effect
+
     kwargs = {
         "key": rule.key,
         "message": _t(rule.key),

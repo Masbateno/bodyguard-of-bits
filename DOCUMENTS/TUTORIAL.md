@@ -77,6 +77,7 @@ Each domain starts at 10/10 and loses the points of its findings; the headline s
 - A **level** : OK (✔, green) / INFO (ℹ, cyan — reported, costs no points) / WARNING (⚠, yellow) / ALERT (✖, red)
 - A **key** (e.g. `ssh.password_auth`) — stable identifier for scripting, `--explain` and `--ignore`; the summary box prints it on the `? bob --explain KEY` line
 - A short message and, in the summary box, the command BOB suggests — after `→` for a fix, after `ℹ` for a command that only checks something
+- For a WARNING or an ALERT seen before, `↩ N×` under it: present in N audits in a row, this one included
 
 The verdict depends on your profile: `server` by default, or `desktop` when no profile is set and BOB finds an active display manager — it says so in an INFO line before the audit starts. The desktop profile downgrades to INFO findings that weigh less on a personal machine, such as a missing backup or auditd rules. See Step 5 for profiles.
 
@@ -100,7 +101,7 @@ No `sudo` needed — `--explain` is a standalone, profile-aware lookup. The outp
 You can list every explainable key :
 
 ```bash
-bob --explain list                          # 237 keys at v0.32.0, grouped by CIS family
+bob --explain list                          # 238 keys at v0.34.0, grouped by CIS family
 bob --explain                               # interactive picker (↑↓/jk, PgUp/PgDn, g/G, Enter, Esc back; l language and q quit on the first screen)
 ```
 
@@ -352,7 +353,7 @@ sudo bob --french                           # shortcut for --lang=fr
 sudo bob --lang=fr                          # explicit
 ```
 
-All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 3220 keys × 2 locales — except three things, described below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
+All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 3234 keys × 2 locales — except three things, described below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
 
 Three things stay English on purpose, and a bilingual diff of the audit output in v0.15.4 confirmed they are the only ones: **shell commands** in remediation lines (a command is not prose), **CIS benchmark references** that carry a numbered code (v0.11.2 decision — the uncoded "Best practice" ones *are* translated), and the **38 service labels**, such as `Samba (Windows file sharing)` or `Apache Web Server`, treated as product names even when they carry English words. The labels also key the `service_risk.*` entries and go into the audit baseline, so translating them at the source would rename 114 locale entries and make `--diff` report phantom changes on a locale switch.
 

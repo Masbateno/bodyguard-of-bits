@@ -1,3 +1,23 @@
+bodyguard-of-bits (0.34.0-1) unstable; urgency=medium
+
+  * Minor, BREAKING for scores through the docker group, DisableForwarding
+    and the ICMP port verdicts; no JSON-schema or CSV-column change.
+  * sshd's DisableForwarding is read: the X11 and TCP forwarding findings
+    it overrides are no longer emitted.
+  * Accounts in the docker group cost two points while a group-writable
+    system Docker socket has a listener; dormant socket said, unreadable
+    state an upper bound; removing a member is never run unattended.
+  * ICMP rules by type no longer blind the port verdicts; an IPv6 verdict
+    without neighbour discovery admitted is unknown, not open; IPv6 NAT
+    redirections enter the IPv6 port verdict.
+  * fail2ban's bans per jail are shown.
+  * WireGuard as the only routing mechanism with no IPv4 datagram forwarded
+    since boot is said (INFO).
+  * Texts: containers section names Podman, AppArmor, kexec; the recurrence
+    mark is documented.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 12 Nov 2026 15:29:11 +0000
+
 bodyguard-of-bits (0.33.0-1) unstable; urgency=medium
 
   * Minor, BREAKING for scores; no JSON-schema or CSV-column change.

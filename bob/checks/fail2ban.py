@@ -86,6 +86,10 @@ class Fail2banSnapshot:
     #: The ``/etc/fail2ban/jail.d/*.local`` files, read last and in name
     #: order — the last one that sets the jail's backend wins.
     jail_d_locals:  tuple       = ()
+    #: v0.34.0 — per active jail, (currently banned, total banned since
+    #: fail2ban started), from ``fail2ban-client status <jail>``; a jail whose
+    #: status could not be read is left out. The banned addresses are not kept.
+    jail_bans:      dict        = field(default_factory=dict)
 
     @classmethod
     def from_system(cls) -> "Fail2banSnapshot":
@@ -129,6 +133,10 @@ class Fail2banSnapshot:
             "jail list" in line.lower() for line in status_out.splitlines()
         )
         snap.active_jails = _parse_jails(status_out)
+        for jail in snap.active_jails:
+            bans = _parse_bans(_run("fail2ban-client", "status", jail) or "")
+            if bans is not None:
+                snap.jail_bans[jail] = bans
 
         # Detect SSH jail
         snap.ssh_jail = next(
@@ -199,6 +207,14 @@ def _parse_jail_sources(jail_status: str) -> "tuple[tuple, bool]":
         elif "journal matches:" in low:
             journal = True
     return files, journal
+
+
+def _parse_bans(jail_status: str) -> "tuple[int, int] | None":
+    """v0.34.0 — ``Currently banned:`` and ``Total banned:`` of ``fail2ban-client
+    status <jail>``; None when either is missing."""
+    cur = re.search(r"Currently banned:\s*(\d+)", jail_status)
+    tot = re.search(r"Total banned:\s*(\d+)", jail_status)
+    return (int(cur.group(1)), int(tot.group(1))) if cur and tot else None
 
 
 def _parse_total_failed(jail_status: str) -> int:
@@ -548,6 +564,15 @@ def check_fail2ban(snapshot: Fail2banSnapshot, t: TranslationFunc | None = None)
         message=_t("fail2ban.active", count=jail_count),
         key="fail2ban.active",
     )
+    # v0.34.0 — what the jails did: bans now, and since fail2ban started.
+    if snapshot.jail_bans:
+        bans = "; ".join(_t("fail2ban.bans_jail", jail=j, now=n, total=tot)
+                         for j, (n, tot) in sorted(snapshot.jail_bans.items()))
+        result.info(
+            message=_t("fail2ban.bans", bans=bans),
+            key="fail2ban.bans",
+            template_vars={"bans": bans},
+        )
 
     if snapshot.ssh_jail and snapshot.ssh_jail_files and not snapshot.ssh_jail_journal \
             and snapshot.syslog_active is False:

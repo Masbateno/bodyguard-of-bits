@@ -96,6 +96,13 @@ class FirewallStackSnapshot:
     #: could not be listed. A rule naming one BOB cannot attribute is unknown;
     #: one naming an interface that does not exist is a stale rule.
     host_ifaces:         "list[str] | None" = None
+    #: v0.34.0 — IPv4 datagrams the kernel forwarded since boot
+    #: (/proc/net/snmp, ``Ip: ForwDatagrams``) and the seconds since boot;
+    #: None when unread. Measured in network namespaces (wgfwd): a WireGuard
+    #: client with ip_forward=1 and traffic in its tunnel stays at 0, a
+    #: WireGuard gateway routing its client to a LAN counts each datagram.
+    forwarded_v4:        "int | None" = None
+    uptime_s:            "float | None" = None
 
     @classmethod
     def from_system(cls) -> "FirewallStackSnapshot":
@@ -182,6 +189,8 @@ class FirewallStackSnapshot:
             wireguard_ifaces=wireguard_ifaces,
             microk8s_running=_process_runs("kubelite"),
             host_ifaces=_host_ifaces(),
+            forwarded_v4=_forwarded_v4(),
+            uptime_s=_uptime_s(),
         )
 
 
@@ -456,7 +465,22 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
 
     # --- IP forwarding ---
     if snapshot.ip_forward:
-        if _routing_daemon(snapshot):
+        # v0.34.0 — WireGuard alone excuses forwarding, but a client routes
+        # for no one: when it is the only mechanism and the kernel has
+        # forwarded nothing since boot, say so (INFO, no point, no fix — a
+        # counter is not a reason to switch routing off unattended).
+        wireguard_only = (snapshot.wireguard_present and not snapshot.docker_present
+                          and not snapshot.libvirt_present and not snapshot.kubernetes_running)
+        if (wireguard_only and snapshot.forwarded_v4 == 0
+                and snapshot.uptime_s is not None):
+            result.info(
+                message=_t("firewall_drivers.ip_forward_wireguard_idle",
+                           ifaces=", ".join(snapshot.wireguard_ifaces) or "wg",
+                           since=_since_boot(snapshot.uptime_s, _t)),
+                detail=_t("firewall_drivers.ip_forward_wireguard_idle_detail"),
+                key="firewall_drivers.ip_forward_wireguard_idle",
+            )
+        elif _routing_daemon(snapshot):
             result.ok(message=_t("firewall_drivers.ip_forward_ok"), key="firewall_drivers.ip_forward_ok")
         else:
             result.warn_with_deduction(
@@ -822,6 +846,38 @@ def _has_user_nft_rules(nft_output: str) -> bool:
                     and table_name not in _IPTABLES_COMPAT):
                 return True
     return False
+
+
+_PROC_SNMP = Path("/proc/net/snmp")
+_PROC_UPTIME = Path("/proc/uptime")
+
+
+def _forwarded_v4() -> "int | None":
+    """v0.34.0 — ``Ip: ForwDatagrams`` of /proc/net/snmp (a header line
+    names the fields, the next line holds the values); None when unread."""
+    try:
+        lines = [ln.split() for ln in _PROC_SNMP.read_text(encoding="ascii", errors="ignore").splitlines()
+                 if ln.startswith("Ip:")]
+        names, values = lines[0], lines[1]
+        return int(values[names.index("ForwDatagrams")])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def _uptime_s() -> "float | None":
+    """Seconds since boot (/proc/uptime); None when unread."""
+    try:
+        return float(_PROC_UPTIME.read_text(encoding="ascii", errors="ignore").split()[0])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def _since_boot(seconds: float, _t) -> str:
+    """``3 day(s)`` or ``5 h`` — how long the counter has been counting."""
+    days = int(seconds // 86400)
+    if days:
+        return _t("firewall_drivers.since_boot_days", days=days)
+    return _t("firewall_drivers.since_boot_hours", hours=max(1, int(seconds // 3600)))
 
 
 def _read_ip_forward() -> bool:

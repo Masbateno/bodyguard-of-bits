@@ -2302,5 +2302,10 @@
         "title": "Ensure iptables firewall rules exist for all open ports (Automated)"
       }
     }
+  },
+  "docker_hardening.docker_group_root": {
+    "ref": "Best practice — Docker post-install documentation: the docker group grants root-level privileges to the user; keep it to accounts that must be root, or use rootless Docker",
+    "ref_fr": "Bonne pratique — documentation Docker (post-installation) : le groupe docker donne des privilèges de niveau root ; le réserver aux comptes qui doivent être root, ou utiliser Docker sans root",
+    "code": null
   }
 }

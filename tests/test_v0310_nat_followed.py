@@ -264,7 +264,7 @@ class TestTheSources:
 
     def test_read_with_the_ruleset(self):
         src = inspect.getsource(nf.IptablesNftSnapshot.from_system)
-        assert "nat_rules=_nat_rules_of(_nft_nat_rules(raw), _ipt_nat_rules(_legacy_nat_text()))," in src
+        assert "nat_rules=_nft_nat_views(raw, _legacy_nat_text(), _legacy_nat_text(v6=True))[0]," in src
         assert "nat_rules=_nat_rules_of(_ipt_nat_rules(_ipt_nat_text())," in src
         assert "_nft_nat_rules(nft_raw) if nft_raw else []," in src
 

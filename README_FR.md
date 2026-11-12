@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.33.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.34.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -227,7 +227,7 @@ Chaque point de la liste *À corriger* affiche une référence CIS quand il y en
 
 ## Mapping des benchmarks CIS
 
-237 entrées : **90 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 7 CIS Kubernetes 2.0 · 1 CIS Red Hat 8/9 · 132 bonnes pratiques**, plus **259 citations inter-benchmarks** sur 94 clés (CIS Debian 12/13 et CIS Ubuntu 24.04), sourcées depuis [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) pour que chaque numéro de contrôle soit vérifiable et non inventé.
+238 entrées : **90 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 7 CIS Kubernetes 2.0 · 1 CIS Red Hat 8/9 · 133 bonnes pratiques**, plus **259 citations inter-benchmarks** sur 94 clés (CIS Debian 12/13 et CIS Ubuntu 24.04), sourcées depuis [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) pour que chaque numéro de contrôle soit vérifiable et non inventé.
 
 Chaque résultat avec un code CIS formel affiche `[CIS:X.Y.Z]` en ligne dans la boîte de synthèse.  
 Le texte de référence complet est montré en mode `--verbose`.  

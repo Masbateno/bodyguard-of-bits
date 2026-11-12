@@ -131,7 +131,8 @@ are not backported.
 
 | Version        | Supported          |
 |----------------|--------------------|
-| 0.33.x         | ✅ current          |
+| 0.34.x         | ✅ current          |
+| 0.33.x         | ❌ end of life      |
 | 0.32.x         | ❌ end of life      |
 | 0.31.x         | ❌ end of life      |
 | 0.30.x         | ❌ end of life      |
@@ -158,15 +159,15 @@ are not backported.
 | 0.6.x          | ❌ end of life      |
 | ≤ 0.5.x        | ❌ end of life      |
 
-Patches release as `0.33.x+1`. A change to the stable contract — exit codes, the
+Patches release as `0.34.x+1`. A change to the stable contract — exit codes, the
 JSON schema, option names, finding keys ([CONVENTIONS](DOCUMENTS/CONVENTIONS.md#8-versioning))
-— bumps the minor (`0.34.0`). A patch can still move scores, when a finding is
+— bumps the minor (`0.35.0`). A patch can still move scores, when a finding is
 corrected against a measurement: its changelog entry then says *BREAKING for
 scores* and lists every penalty it newly triggers (0.31.1 to 0.31.4 did).
 
-**v0.32.x is end-of-life as of the day 0.33.0 ships**, per the "latest minor
-line only" policy above. No security fixes will be backported. Users on v0.32.x
-must `pipx upgrade bodyguard-of-bits` to v0.33.x.
+**v0.33.x is end-of-life as of the day 0.34.0 ships**, per the "latest minor
+line only" policy above. No security fixes will be backported. Users on v0.33.x
+must `pipx upgrade bodyguard-of-bits` to v0.34.x.
 
 The upgrade changes what the score *means* when BOB cannot read part of the
 host. Until v0.16.0 the score was a sum over the checks that ran, and a check

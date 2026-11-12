@@ -6,6 +6,234 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.34.0] — 2026-11-12
+
+**A minor release, BREAKING for scores: sshd's `DisableForwarding` is read; the
+accounts granted root-equivalent access through the `docker` group are
+counted; ICMP rules, neighbour discovery and IPv6 NAT redirections enter the
+port verdicts; fail2ban's bans are shown; and a host whose only detected
+routing mechanism is WireGuard and that has forwarded no IPv4 datagram since
+boot is told so.**
+
+BREAKING for scores means: the same host can score differently under 0.33.0 and
+0.34.0 — global, per domain, and the `--history` trend across the upgrade. The
+scoring formula is unchanged; no section is added or removed; no option is added
+or removed; no finding key is renamed or removed. No JSON-output-schema or
+CSV-column change. New finding keys: `docker_hardening.docker_group_root`,
+`docker_hardening.docker_group_dormant`,
+`docker_hardening.docker_group_unknown`, `fail2ban.bans`,
+`firewall_drivers.ip_forward_wireguard_idle`. One new `--explain` entry
+(`docker_hardening.docker_group_root`) and its best-practice reference.
+
+Scores that move:
+
+| Where | 0.33.0 | 0.34.0 | § |
+|---|---|---|---|
+| sshd with `DisableForwarding yes` and X11Forwarding / AllowTcpForwarding left at yes (measured: Fedora 44's defaults) | `ssh.x11.forwarding.server` WARN −1, `ssh.allow_tcp_forwarding` WARN −1 | neither, 0 | 1 |
+| Accounts in the `docker` group, dockerd listening on its group-writable socket (measured) | nothing | `docker_hardening.docker_group_root` WARN −2 | 2 |
+| Accounts in the `docker` group, dockerd and its socket unit stopped (measured) | nothing | `docker_hardening.docker_group_dormant` INFO, 0 | 2 |
+| Accounts in the `docker` group, the socket's state unreadable (reproduced in code) | nothing | `docker_hardening.docker_group_unknown` INFO, score “≤” | 2 |
+| Raw nftables ruleset accepting by default, an `icmp type …` rule in input, a port listening on every IPv4 interface with no rule naming it | `ports.uncovered_netfilter_unweighed` INFO, 0 | `ports.uncovered_netfilter_open` WARN −1 (local) / −2 (public) | 3 |
+| `ip_forward=1`, WireGuard the only routing mechanism detected, nothing forwarded since boot | `firewall_drivers.ip_forward_ok` OK | `firewall_drivers.ip_forward_wireguard_idle` INFO, 0 | 7 |
+
+### 1. sshd's `DisableForwarding` is read
+
+`DisableForwarding yes` turns off X11 and TCP forwarding whatever
+`X11Forwarding` and `AllowTcpForwarding` say (sshd_config(5)). BOB read the two
+directives alone. Measured on Fedora 44 (OpenSSH 10.2p1, whose packaged
+`50-redhat.conf` sets `X11Forwarding yes`), oracle from a client: a TCP
+forward (`ssh -W 127.0.0.1:22`) and an X11 forward (`ssh -X`):
+
+| Configuration | `sshd -T` | Oracle | 0.33.0 | 0.34.0 |
+|---|---|---|---|---|
+| Fedora's defaults | x11 yes, tcp yes, disableforwarding no | both accepted | both findings | both findings |
+| `DisableForwarding yes` | **x11 yes, tcp yes**, disableforwarding yes | **both refused** | both findings | neither |
+| `X11Forwarding no`, `AllowTcpForwarding no` | no, no | both refused | neither | neither |
+
+`sshd -T` keeps printing both directives at `yes` under `DisableForwarding`:
+only the attempted forward tells. Under `DisableForwarding yes` the two
+findings are no longer emitted. Not tied to a CIS number: CIS's control asks
+for `DisableForwarding`, and BOB's fix for these findings (setting
+`X11Forwarding no`) does not satisfy it.
+
+### 2. The `docker` group counts as root
+
+Docker's post-install documentation: “The docker group grants root-level
+privileges to the user.” dockerd runs as root and obeys whoever can write to
+its socket. BOB now lists the accounts in the `docker` group (its member list
+and the accounts whose primary group it is) and costs two points — the level of
+a `NOPASSWD: ALL` rule — while a Docker socket owned by that group with group
+write has a listener. A socket file alone is not enough: measured on Fedora 44
+(moby-engine installed for the run, a throwaway account in the group), oracle
+`docker ps` run by that account:
+
+| Case | Oracle | Socket file | 0.33.0 | 0.34.0 |
+|---|---|---|---|---|
+| dockerd running, the account in the group | works | `srw-rw---- docker` | nothing | `docker_group_root` WARN −2 |
+| dockerd and `docker.socket` stopped | refused | **still there**, `srw-rw---- docker` | nothing | `docker_group_dormant` INFO, 0 |
+| the account removed from the group | refused | idem | nothing | nothing |
+
+The first version of the code counted the second case (−2 on a socket file
+nobody listened on); it now asks the kernel whether a process listens on the
+socket — the `__SO_ACCEPTCON` flag of its entry in `/proc/net/unix`, the path
+resolved (`/var/run` being `/run`), not merely an entry with that path. The
+finding names the accounts. When the socket's state cannot be read, BOB says so
+(`docker_hardening.docker_group_unknown`) and the score is an upper bound. The
+command removes the accounts the group's member list names (`gpasswd -d`) and is
+never run unattended by `--fix` — on a desktop the member is often the operator;
+an account whose primary group is `docker` is named, and the detail says to give
+it another primary group (`usermod -g`) — guidance, not a command, since BOB
+does not know which group to give. The `--explain` entry says how to remove one
+and points to rootless Docker. The section runs on a host with members in the
+group even when no container runtime is installed.
+
+### 3. ICMP rules and neighbour discovery in the port verdicts
+
+A raw nftables ruleset is read rule by rule to tell whether it admits a port. A
+rule that matched ICMP or ICMPv6 by message type left the verdict unknown for
+every port of that family; it concerns no TCP or UDP port, and is now passed
+over (neighbour-discovery types aside, below). Measured on Fedora 44
+(nftables 1.1.6) in a network namespace, listeners on 8099 over IPv4 and
+IPv6, a real connection as the oracle, the neighbour caches flushed between
+cases:
+
+| `inet` input chain | Oracle IPv4/IPv6 | 0.33.0 IPv4/IPv6 | 0.34.0 IPv4/IPv6 |
+|---|---|---|---|
+| policy accept, `icmpv6 type echo-request drop` | open/open | accept/unknown | accept/accept |
+| policy accept, `icmpv6 type {nd-neighbor-solicit, nd-neighbor-advert} drop` | open/closed | accept/unknown | accept/unknown |
+| policy accept, `icmp type echo-request drop` | open/open | unknown/accept | accept/accept |
+| policy drop, ICMPv6 echo and `tcp dport 8099` accepted, neighbour discovery not | open/**closed on a first pass, open on a second** (neighbour state differed) | accept/accept | accept/unknown |
+| policy drop, neighbour discovery and `tcp dport 8099` accepted | open/open | accept/accept | accept/accept |
+
+The fourth case is an older defect the bench found: under a drop policy that
+admits no neighbour discovery, whether an IPv6 port is reached depends on
+neighbour state, and the oracle changed between two passes; 0.33.0 said
+“open”, 0.34.0 says the verdict is not established (not “closed”: the
+discovery messages can be admitted in a form BOB does not follow). The IPv4
+verdict is scored where the ruleset accepts by default (since 0.28.0): the
+third case moves a port from unweighed to weighed, as 0.33.0 did for
+IPv6-only rules: `ports.uncovered_netfilter_unweighed` INFO 0 under 0.33.0,
+`ports.uncovered_netfilter_open` WARN −1 in a local context under 0.34.0
+(reproduced in code on both versions, not measured as a score on the host). The
+IPv6 verdict is shown, not scored. On the same host's real firewalld ruleset,
+the verdicts of 22, 9090 and 8099 did not change (unknown under both:
+firewalld is not weighed port by port).
+
+### 4. IPv6 NAT redirections in the IPv6 port verdict
+
+Since 0.31.0, a NAT rule that redirects an IPv4 port elsewhere enters that
+port's IPv4 verdict. IPv6 NAT was not read. Measured on Fedora 44 (nftables
+1.1.6) in a network namespace, oracle a real connection over IPv6:
+
+| `prerouting` NAT rule | Oracle IPv6 | 0.33.0 IPv6 | 0.34.0 IPv6 |
+|---|---|---|---|
+| none | open | accept | accept |
+| `ip6`: `tcp dport 8099 redirect to :9999` | closed | accept | dropped (NAT) |
+| `ip6`: `tcp dport 8080 redirect to :8099` | open (and 8080 open) | accept | accept |
+| `inet`: `meta nfproto ipv6 tcp dport 8099 redirect to :9999` | closed | accept | dropped (NAT) |
+| `ip6`: `tcp dport 8099 dnat ip6 to [fd77::9]:8099` | closed | accept | unknown (not followed) |
+
+The IPv4 verdicts matched the oracle under both versions. Redirections to a
+port on the host are followed; a `dnat` to another address is not, and leaves
+the verdict unknown. The IPv6 verdict is shown, not scored: no score moves.
+
+### 5. fail2ban's bans per jail
+
+For each active jail BOB now reads `fail2ban-client status <jail>` and shows,
+as INFO, how many addresses are banned now and how many since fail2ban
+started, without listing them. Measured on Ubuntu Server 26.04.1 (fail2ban
+already running), one documentation address (RFC 5737) banned by hand and
+unbanned:
+
+| Case | Oracle (`status sshd`) | 0.34.0 |
+|---|---|---|
+| nothing banned | 0 now, 0 in total | “Bans: sshd 0 now, 0 in total (total since fail2ban started)” |
+| one address banned | 1, 1 | “sshd 1 now, 1 in total” |
+| unbanned | 0, 1 | “sshd 0 now, 1 in total” |
+
+A jail whose status cannot be read is left out. No score moves.
+
+### 6. k3s and the FORWARD rules beside UFW (checked, nothing to change)
+
+0.33.0 attributes the ACCEPT rules of FORWARD to the routing mechanism that
+runs. Measured on Ubuntu Server 26.04.1 with UFW active and k3s v1.37.2 (its
+checksum verified) running a node: k3s and flannel put only jumps into
+FORWARD (`KUBE-ROUTER-FORWARD`, `KUBE-FORWARD`, `FLANNEL-FWD`…); flannel's
+ACCEPT rules sit inside `FLANNEL-FWD`. Nothing of k3s is charged under 0.33.0
+or 0.34.0, as with Docker 29; the code is unchanged.
+
+### 7. A host whose only routing is WireGuard and that forwarded no IPv4 datagram is told so
+
+WireGuard counts as a routing mechanism while an interface exists (since
+0.32.0), so `ip_forward=1` beside it read OK. A WireGuard client routes for no
+one. The interface's own `forwarding` setting follows `ip_forward` and tells
+nothing; the kernel's count of forwarded IPv4 datagrams does. Measured on
+Linux Mint 22.3 in three network namespaces — a client, a gateway, a LAN
+behind the gateway — `ip_forward=1` on both ends:
+
+| Case | `Ip: ForwDatagrams` |
+|---|---|
+| the client, traffic in its tunnel | 0 |
+| the gateway, answering on its own tunnel address | 0 |
+| the gateway, routing the client to the LAN (5 pings) | 10 |
+
+BOB now reads that count (`/proc/net/snmp`, by field name) and the time since
+boot. When WireGuard is the only routing mechanism it detects and the count is
+0, it shows, as INFO without a point, “IP forwarding enabled; the only routing
+mechanism detected is WireGuard (wg0), and the kernel has forwarded no IPv4
+packet in the 3 day(s) since boot”; its detail says that
+`net.ipv4.ip_forward=0` is enough if the host routes for no one, and that a
+gateway that has carried no traffic since its last boot reads the same. No
+command is offered: a count at zero is no reason to switch routing off
+unattended. Otherwise nothing changes. Run end to end on the same bench with
+the real BOB in each namespace: the client read OK under 0.33.0 and this INFO
+under 0.34.0; the gateway read OK under both.
+
+### 8. Four texts from a field audit
+
+A run of this release's work on the operator's desktop (Linux Mint 22.3) was
+reviewed:
+
+- **Containers on a Podman-only host.** The section read “Docker” and “No
+  running containers — nothing to audit” where Podman alone was asked, beside
+  the Docker section's “Docker not installed”. The title is now “Container
+  security audit (Docker, Podman)” and the message names the runtimes asked
+  (“No running containers (podman)”).
+- **AppArmor.** The complain-mode detail read “0 of them are snap profiles”;
+  it now reads “Snap profiles among them (…): 0; the others: …”.
+- **kexec.** The detail said `kexec_load_disabled=0` lets the next kernel
+  bypass Secure Boot. Whether an unsigned image is accepted depends on kernel
+  lockdown and kexec's signature checking; the text now says so.
+- **`↩ N×`.** The mark under a WARNING or an ALERT — present in N audits in a
+  row, this one included — was explained only in changelogs; the tutorial and
+  the technical README now say what it counts.
+
+No score moves.
+
+### Limits
+
+- §2: a member's access is judged from the socket's group and mode and a
+  listener on the system socket paths (`/run/docker.sock`,
+  `/var/run/docker.sock`), where a dockerd running as root listens; that the
+  listening process runs as root is not checked; a rootless dockerd, which
+  listens under its user's runtime directory, is not considered; ACLs and a
+  dockerd listening on TCP are not read; LXD's group was not treated (its
+  documentation could not be checked).
+- §3: neighbour discovery admitted in a form BOB does not follow leaves the
+  IPv6 verdict unknown, not open.
+- §4: NAT to another address is not followed.
+- §7: only IPv4 is judged — `ip_forward` and the `ForwDatagrams` count are IPv4;
+  IPv6 forwarding is not part of this finding. The count is host-wide — another
+  forwarder (Docker, libvirt, Kubernetes) makes it move, which is why the
+  finding stays silent when one runs; inside a network namespace or a container
+  the count starts with the namespace while the time shown is the host's
+  (measured: “1 h” for a count a few minutes old); a `wg-quick` full-tunnel
+  client was not measured.
+
+**Tests** 21220 → **21424**, mutations 1868 → **1904**.
+
+---
+
 ## [0.33.0] — 2026-11-12
 
 **A minor release, BREAKING for scores: a DSA SSH host key is counted only when

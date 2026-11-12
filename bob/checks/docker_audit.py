@@ -25,6 +25,8 @@ Split:
 from __future__ import annotations
 
 import json
+import os
+import shlex
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -85,6 +87,16 @@ class DockerAuditSnapshot:
     container_runtime:         dict      = field(default_factory=dict)
     failed_runtimes:           list[str] = field(default_factory=list)
     rootless_containers:       dict      = field(default_factory=dict)
+    #: v0.34.0 — the accounts in the ``docker`` group (listed, or with it as
+    #: their primary group) and whether a Docker socket gives that group
+    #: write access now: "The docker group grants root-level privileges to
+    #: the user" (Docker's post-install documentation). None: not read.
+    docker_group_members:      list[str] = field(default_factory=list)
+    docker_socket_group_rw:    "bool | None" = False
+    #: v0.34.0, after review — the members the group's member list names:
+    #: `gpasswd -d` removes those only; an account whose primary group is
+    #: docker is not in that list.
+    docker_group_listed:       list[str] = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "DockerAuditSnapshot":
@@ -95,12 +107,17 @@ class DockerAuditSnapshot:
         list (podman-docker's ``docker`` runs podman) counts once, by Id."""
         runtimes = [rt for rt in _RUNTIMES if _command_exists(rt)]
         rootless = _rootless_podman()
+        members, socket_rw, listed = _docker_group()
         if not runtimes:
-            return cls(runtime="", docker_installed=False, rootless_containers=rootless)
+            return cls(runtime="", docker_installed=False, rootless_containers=rootless,
+                       docker_group_members=members, docker_socket_group_rw=socket_rw,
+                       docker_group_listed=listed)
         is_docker = "docker" in runtimes
         userns_remap = _read_userns_remap() if is_docker else False
         snap = cls(runtime=runtimes[0], docker_installed=is_docker, runtimes=runtimes,
-                   userns_remap=userns_remap, rootless_containers=rootless)
+                   userns_remap=userns_remap, rootless_containers=rootless,
+                   docker_group_members=members, docker_socket_group_rw=socket_rw,
+                   docker_group_listed=listed)
         seen: "set[str]" = set()
         for rt in runtimes:
             containers = _inspect(rt)
@@ -161,6 +178,73 @@ def _inspect(runtime: str) -> "list[dict] | None":
 
 
 _PROC = Path("/proc")
+#: v0.34.0 — where dockerd (or its systemd socket unit) listens.
+_DOCKER_SOCKETS = (Path("/var/run/docker.sock"), Path("/run/docker.sock"))
+
+
+def _docker_group() -> "tuple[list[str], bool | None, list[str]]":
+    """v0.34.0 — the members of the ``docker`` group (its member list and the
+    accounts whose primary group it is), and whether a Docker socket is a
+    socket owned by that group with group write: then each member can drive
+    dockerd, which runs as root. ([], False, []) without such a group; the
+    second value None when a socket could not be read; the third, the
+    members the group's own list names."""
+    import grp
+    import pwd
+    import stat
+    try:
+        group = grp.getgrnam("docker")
+    except KeyError:
+        return [], False, []
+    listed = sorted(set(group.gr_mem))
+    members = set(group.gr_mem)
+    try:
+        members |= {u.pw_name for u in pwd.getpwall() if u.pw_gid == group.gr_gid}
+    except OSError:
+        pass
+    rw: "bool | None" = False
+    for sock in _DOCKER_SOCKETS:
+        try:
+            st = os.stat(sock)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            rw = None
+            continue
+        if stat.S_ISSOCK(st.st_mode) and st.st_gid == group.gr_gid and st.st_mode & stat.S_IWGRP:
+            # Measured (Fedora 44, moby-engine): with dockerd and docker.socket
+            # stopped the socket file stays, srw-rw---- docker, and `docker
+            # ps` as a member is refused. Only a listener makes it a way in.
+            listening = _unix_listening(str(sock))
+            if listening:
+                return sorted(members), True, listed
+            if listening is None:
+                rw = None
+    return sorted(members), rw, listed
+
+
+_PROC_NET_UNIX = Path("/proc/net/unix")
+_SO_ACCEPTCON = 0x10000
+
+
+def _unix_listening(path: str) -> "bool | None":
+    """v0.34.0 — whether a process listens on the Unix socket *path* (the
+    kernel's listening flag in /proc/net/unix, the path resolved: /var/run is
+    /run). None when /proc/net/unix cannot be read."""
+    want = {path, os.path.realpath(path)}
+    try:
+        lines = _PROC_NET_UNIX.read_text(errors="replace").splitlines()[1:]
+    except OSError:
+        return None
+    for line in lines:
+        parts = line.split()
+        if len(parts) >= 8 and parts[7] in want:
+            try:
+                if int(parts[3], 16) & _SO_ACCEPTCON:
+                    return True
+            except ValueError:
+                continue
+    return False
 
 
 def _rootless_podman() -> "dict[str, int]":
@@ -254,7 +338,42 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
             key="docker_hardening.runtime_unreachable",
             template_vars={"runtimes": ", ".join(snapshot.failed_runtimes)},
         )
-    if not snapshot.runtimes and not snapshot.runtime and snapshot.rootless_containers:
+    # v0.34.0 — the accounts the docker group makes root-equivalent.
+    if snapshot.docker_group_members:
+        users = ", ".join(snapshot.docker_group_members)
+        if snapshot.docker_socket_group_rw:
+            result.warn_with_deduction(
+                key="docker_hardening.docker_group_root",
+                message=_t("docker_hardening.docker_group_root",
+                           count=len(snapshot.docker_group_members), users=users),
+                reason=_t("docker_hardening.docker_group_root_reason", users=users),
+                points=2,
+                nature="action",
+                detail=_t("docker_hardening.docker_group_root_detail"),
+                # After review: only the listed members — `gpasswd -d` cannot
+                # remove a primary group (the detail says `usermod -g`).
+                cmd=" && ".join(f"sudo gpasswd -d {shlex.quote(u)} docker" for u in snapshot.docker_group_listed),
+                cmd_type="fix",
+                template_vars={"count": len(snapshot.docker_group_members), "users": users},
+            )
+        elif snapshot.docker_socket_group_rw is None:
+            # After review: a socket that could not be read is unknown, not
+            # "nothing listens" — the −2 is unknown, not absent (a ceiling).
+            result.info(
+                message=_t("docker_hardening.docker_group_unknown",
+                           count=len(snapshot.docker_group_members), users=users),
+                key="docker_hardening.docker_group_unknown",
+                template_vars={"count": len(snapshot.docker_group_members), "users": users},
+            )
+        else:
+            result.info(
+                message=_t("docker_hardening.docker_group_dormant",
+                           count=len(snapshot.docker_group_members), users=users),
+                key="docker_hardening.docker_group_dormant",
+                template_vars={"count": len(snapshot.docker_group_members), "users": users},
+            )
+    if not snapshot.runtimes and not snapshot.runtime and (snapshot.rootless_containers
+                                                           or snapshot.docker_group_members):
         return result                       # no runtime root can ask: only the rootless ones were seen
 
     if snapshot.scan_error:
@@ -266,9 +385,13 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
 
     # No containers running — nothing critical to report
     if snapshot.running_count == 0:
+        # v0.34.0 — the runtimes asked, named: on a host with Podman only the
+        # section read "Docker" beside "Docker not installed".
+        _asked = ", ".join(snapshot.runtimes or ([snapshot.runtime] if snapshot.runtime else [])) or "—"
         result.ok(
-            message=_t("docker_hardening.no_containers"),
+            message=_t("docker_hardening.no_containers", runtimes=_asked),
             key="docker_hardening.no_containers",
+            template_vars={"runtimes": _asked},
         )
         return result
 
