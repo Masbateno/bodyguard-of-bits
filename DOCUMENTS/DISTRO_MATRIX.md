@@ -997,6 +997,91 @@ The real ufw 0.36.2 at `IPV6=no` in the same namespace bench left exactly `-P IN
 `-P FORWARD DROP`, `-P OUTPUT DROP`, `-A INPUT -i lo -j ACCEPT`, `-A OUTPUT -o lo -j ACCEPT`:
 the one table for which BOB says "IPv6 is unusable on this host".
 
+### 0.33.0 field pass — a DSA host key, served or not
+
+*Linux Mint 22.3 (OpenSSH 9.6p1) and Ubuntu Server 26.04.1 (OpenSSH 10.2p1),
+real, 2026-11-11, a throwaway 1024-bit DSA key and a drop-in, a rollback armed
+before; oracle `ssh-keyscan -t dsa` against the live sshd; everything removed
+after.*
+
+| sshd configuration | OpenSSH 9.6 | OpenSSH 10.2 |
+|---|---|---|
+| key at the default path, no line | not served | not served |
+| `HostKeyAlgorithms +ssh-dss` only | not served | `sshd -t` refuses `+ssh-dss` |
+| a `HostKey` line names it, default algorithms | not served | not served |
+| a `HostKey` line and `HostKeyAlgorithms +ssh-dss` | **served** | `sshd -t` refuses `+ssh-dss` |
+
+On the Mint: key on disk only, 0.32.0 `ssh.host_key_dsa` WARN −1, 0.33.0
+`ssh.host_key_dsa_unused` INFO 0; key served, WARN −1 under both. The fix no
+longer regenerates the existing ed25519 host key.
+
+### 0.33.0 field pass — FORWARD rules weighed against the mechanism that runs
+
+*Ubuntu Server 26.04.1, real, 2026-11-11, UFW 0.36.2 enabled with a rollback
+armed before, MicroK8s 1.35.6, docker.io 29.1.3 and wireguard-tools installed
+for the bench and purged after; `--check=firewall_drivers --profile server`.*
+
+| Case | 0.32.0 | 0.33.0 |
+|---|---|---|
+| MicroK8s running, plus `-i bobwg0` (no such interface) | 0 | −1 |
+| MicroK8s running, its own two rules | 0 | 0 |
+| MicroK8s stopped (its two rules left), Docker running | 0 | −2 |
+| the same, plus `-i docker0`, Docker running | 0 | −2 (`docker0` excused) |
+| WireGuard up, a gateway `-i bobwg0 -o enp3s0`, MicroK8s stopped | 0 | −2 (the gateway excused) |
+
+The bench measured the first version of the rule; the released rule was
+narrowed after review (an existing interface BOB cannot attribute stays
+excused; each interface judged on its own) and checked in code against these
+five cases with the bench host's interfaces, same results — not re-run on the
+host. The Kubernetes plugin names and libvirt's `virbr` were not measured.
+
+### 0.33.0 field pass — IPv6-only nft rules and the IPv4 port verdict
+
+*Linux Mint 22.3 test install (nftables 1.0.9), real, 2026-11-11, an ephemeral
+network namespace, listeners on 8099 over IPv4 and IPv6, a real connection as
+the oracle.*
+
+| `inet` input chain | Oracle IPv4 | 0.32.0 IPv4 | 0.33.0 IPv4 |
+|---|---|---|---|
+| policy accept, `meta nfproto ipv6 tcp dport 8099 drop` | open | UNKNOWN | ACCEPT default |
+| policy drop, `meta nfproto ipv6 tcp dport 8099 accept` | closed | UNKNOWN | DROP default |
+| policy drop, `ip6 saddr fd77::/64 tcp dport 8099 accept` | closed | UNKNOWN | DROP default |
+| policy drop, `meta nfproto ipv4 tcp dport 8099 accept` | open | UNKNOWN | ACCEPT rule |
+| policy accept, `icmpv6 type echo-request drop` | open | UNKNOWN | ACCEPT default |
+
+The IPv6 verdicts did not change (the `icmpv6` rule without a port still leaves
+IPv6 unknown).
+
+### 0.33.0 field pass — Docker and Podman on one host, and rootless Podman
+
+*Fedora 44, real, 2026-11-11, Podman 5.8.1, moby-engine installed for the bench
+and removed after, a throwaway user with one rootless container (removed
+after), a firewall rollback armed before; oracle `podman ps` as root and as that
+user, and `docker ps`; `--check=docker_hardening`.*
+
+| Case | 0.32.0 | 0.33.0 |
+|---|---|---|
+| Podman only: a privileged root container, one rootless | privileged −1, rootless not mentioned | privileged −1, `rootless_unexamined` (a ceiling) |
+| + Docker running (one container) | the privileged Podman container not seen, 0 | both runtimes asked, privileged −1 |
+| Docker stopped (`docker` and `docker.socket`), Podman as above | "No running containers — nothing to audit" | `runtime_unreachable` docker, privileged −1 |
+
+Nothing was run as the throwaway user by BOB: the rootless container was seen
+through its `conmon` process in `/proc`.
+
+### 0.33.0 field pass — Timeshift's newest snapshot and the keys of a terminal without keypad mode
+
+*Linux Mint 22.3: the daily desktop read-only without root, and the test install
+(root, a `timeshift.json` and two dated snapshot directories written for the
+bench and removed after), real, 2026-11-11.*
+
+- Timeshift, weekly schedule: the desktop's newest snapshot three days old,
+  active under both versions; the test install's newest 66 days old, "Backup
+  solution active: timeshift" under 0.32.0, installed with its age under 0.33.0.
+- `--manage-logs` in a pseudo-terminal (TERM=xterm, rendered by pyte), three
+  reports: `ESC [ D` in the preview, 0.32.0 "Confirm deletion below", 0.33.0
+  the older report (2/3, then 3/3); `ESC [ C` and the keypad form `ESC O D`
+  move; Esc alone returns to the list. No report deleted.
+
 ### 0.32.0 field pass — Kubernetes certificates verified before any request
 
 *MicroK8s 1.35.6 on Ubuntu Server 26.04.1 (2026-11-09 and 2026-11-11), k3s
