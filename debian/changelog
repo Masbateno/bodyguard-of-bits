@@ -1,3 +1,23 @@
+bodyguard-of-bits (0.33.0-1) unstable; urgency=medium
+
+  * Minor, BREAKING for scores; no JSON-schema or CSV-column change.
+  * A DSA SSH host key costs a point only when sshd serves it (a HostKey
+    line names it and HostKeyAlgorithms offers ssh-dss); otherwise shown,
+    not counted; sshd_config unreadable makes the score an upper bound.
+  * FORWARD beside an active UFW, while something routes: a rule naming an
+    interface that does not exist and cannot be attributed to a running
+    mechanism, or carrying MicroK8s' comment while MicroK8s is stopped,
+    costs a point; one naming only existing interfaces stays excused.
+  * IPv6-only nftables rules no longer leave the IPv4 port verdict unknown.
+  * Docker and Podman both examined; an unreachable runtime is said;
+    rootless Podman containers are reported, not examined (upper bound).
+  * The workstation profile keeps its backup and auditd warnings.
+  * Timeshift counts as installed when its newest snapshot is stale.
+  * Arrow keys sent in normal mode are one key in every screen.
+  * README sample output regenerated from a real run.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 12 Nov 2026 13:20:59 +0000
+
 bodyguard-of-bits (0.32.0-1) unstable; urgency=medium
 
   * Minor, BREAKING for scores; no JSON-schema or CSV-column change; the

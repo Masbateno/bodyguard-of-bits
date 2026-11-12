@@ -4526,7 +4526,7 @@
   },
   "docker_hardening": {
     "rootless_unexamined": "{count} conteneur(s) podman sans root en marche, non examiné(s) : {users}",
-    "rootless_unexamined_detail": "Vus dans /proc (leur moniteur conmon appartient à l'utilisateur) ; BOB ne lance pas podman au nom d'un autre utilisateur. Un conteneur sans root reste dans les droits de son utilisateur sur l'hôte, sauf si on lui en donne plus — un socket de conteneurs root monté (docker.sock), un périphérique, ou un répertoire de l'hôte que cet utilisateur ne pourrait pas atteindre autrement. L'utilisateur peut les lister : podman ps ; et en examiner un : podman inspect <nom>.",
+    "rootless_unexamined_detail": "Vus dans /proc (leur moniteur conmon appartient à l'utilisateur) ; BOB ne lance pas podman au nom d'un autre utilisateur. Un conteneur sans root a au plus les droits de son utilisateur sur l'hôte, pas ceux de root ; si le socket d'un démon de conteneurs qui tourne en root (docker.sock) est monté dedans et qu'il peut l'ouvrir, il peut piloter ce démon, ce qui équivaut à root sur l'hôte. L'utilisateur peut les lister : podman ps ; et en examiner un : podman inspect <nom>.",
     "runtime_unreachable": "Runtime(s) de conteneurs injoignable(s) : {runtimes} — leurs conteneurs n'ont pas été examinés",
     "scan_error": "Runtime de conteneurs inaccessible — vérification de sécurité des conteneurs ignorée",
     "no_containers": "Aucun conteneur en cours d'exécution — rien à auditer",
@@ -4585,7 +4585,8 @@
     "no_issues": "Aucun ruleset pare-feu parallèle en conflit détecté",
     "iptables_bypass": "Règle iptables ACCEPT brute contourne UFW dans la chaîne INPUT : {rule}",
     "iptables_accept_conditional": "Règle iptables ACCEPT brute dans INPUT, hors UFW, qui ne peut pas laisser entrer une nouvelle connexion à elle seule (elle porte sur une marque ou un état établi) : {rule} — vérifier ce qui pose la marque",
-    "iptables_forward_orphan": "Règle ACCEPT dans FORWARD qu'aucun mécanisme de routage en marche ne possède : {rule} — elle contourne UFW pour le trafic routé",
+    "iptables_forward_orphan": "Règle ACCEPT dans FORWARD avec le commentaire de MicroK8s alors que MicroK8s ne tourne pas : {rule} — elle laisse le trafic routé contourner UFW",
+    "iptables_forward_stale": "Règle ACCEPT dans FORWARD pour une interface qui n'existe pas sur cet hôte : {rule} — une interface créée plus tard sous ce nom contournerait UFW pour le trafic routé",
     "iptables_forward_bypass": "Règle iptables ACCEPT brute contourne UFW dans la chaîne FORWARD : {rule}",
     "forward_routing_ok": "La chaîne FORWARD contient des règles ACCEPT — cohérent avec le routage Docker, VPN, KVM ou Kubernetes",
     "nftables_parallel": "Règles nftables actives détectées en parallèle d'UFW — conflits potentiels",

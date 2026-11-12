@@ -123,8 +123,8 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  bob 0.32.0     ~60.4 kLoC Python · 0 runtime deps outside stdlib        │
-│                 20961 unit tests · 28 doc files · 7+ distros field-tested │
+│  bob 0.33.0     ~60.7 kLoC Python · 0 runtime deps outside stdlib        │
+│                 21220 unit tests · 28 doc files · 7+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -172,7 +172,7 @@ LAYER (top→bottom = imports flow down)
     bob/json_output.py + html_output.py + csv_output.py + markdown_output.py + report_markdown.py
         ← export formatters
     bob/formatter.py + bob/i18n.py + bob/_i18n_safe.py + bob/locales/{en,fr}.json
-        ← locale-independent reconstruction + i18n (3212 keys per language;
+        ← locale-independent reconstruction + i18n (3220 keys per language;
           _i18n_safe.py since v0.8.2 = shared make_fallback_t + t_or_hardcoded)
 
 DATA (read-only at runtime, shipped in the package)
@@ -244,7 +244,7 @@ bodyguard-of-bits/
 │   │       ├── _directives.py ← _BadDirective table + _BAD_DIRECTIVES + _WEAK_CIPHERS/_WEAK_MACS/_WEAK_KEX sets (250 L)
 │   │       ├── _snapshot.py   ← 5 dataclasses + SSHSnapshot + from_system (356 L)
 │   │       ├── _parsers.py    ← pure parsers, key-type helpers, collect_host_keys (496 L)
-│   │       └── _subchecks.py  ← check_ssh entry point + per-area _check_* helpers, incl. v0.10.1 client-side ForwardX11 detection (743 L)
+│   │       └── _subchecks.py  ← check_ssh entry point + per-area _check_* helpers, incl. v0.10.1 client-side ForwardX11 detection (790 L)
 │   ├── cron/                  ← split package since v0.6.0 (was 1204 L monolith)
 │   │   ├── __init__.py        ← public re-exports incl. datetime + _EMAIL_RE (114 L)
 │   │   ├── _crontab.py        ← **NEW 0.26.0** BusyBox crond: BOB jobs as `# BEGIN/END BOB cron bob-<slug>` blocks of `/etc/crontabs/root`, then `root` to `cron.update` (108 L)
@@ -255,17 +255,17 @@ bodyguard-of-bits/
 │   │   └── _manage.py         ← edit_cron_email/schedule + plain wizard + run_manage_cron (454 L)
 │   ├── tui/                   ← optional curses subpackage (v0.4.1 extraction)
 │   │   ├── __init__.py
-│   │   ├── _keys.py           ← v0.16.3 THE curses key contract: actions, footer, dispatch (241 L)
+│   │   ├── _keys.py           ← v0.16.3 THE curses key contract: actions, footer, dispatch (287 L)
 │   │   ├── _palette.py        ← v0.16.1 THE curses colour chart, single source for all 3 screens (128 L)
 │   │   ├── _chrome.py         ← v0.16.3 THE bottom chrome: reserved context line + orange key banner (135 L)
-│   │   └── cron.py            ← curses wizard for --install-cron / --manage-cron (1289 L)
+│   │   └── cron.py            ← curses wizard for --install-cron / --manage-cron (1292 L)
 │   ├── display.py             ← terminal output helpers + _compute_posture_annotation single helper (v0.7.2 M-10), 1212 L
 │   ├── output.py              ← low-level terminal primitives, 754 L
 │   ├── panorama.py            ← services panorama table builder
 │   ├── breakdown.py           ← --breakdown score computation transparency
 │   ├── exposure.py            ← attack-surface table (compute_exposure)
 │   ├── formatter.py           ← locale-independent reconstruction (v0.4.1)
-│   ├── i18n.py                ← t(key, **vars), 3212 keys per locale (strict parity)
+│   ├── i18n.py                ← t(key, **vars), 3220 keys per locale (strict parity)
 │   ├── locales/
 │   │   ├── en.json            ← English translation keys
 │   │   └── fr.json            ← French translation keys (strict parity)
@@ -300,7 +300,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 487 test files, ~8653 functions, 20961 collected (0.32.0)
+├── tests/                     ← 494 test files, ~8705 functions, 21220 collected (0.33.0)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -344,7 +344,7 @@ bodyguard-of-bits/
 | `breakdown.py` | 187 | `--breakdown` / `-B` score computation transparency display |
 | `exposure.py` | 299 | `compute_exposure()` — attack-surface table for the audit summary (synthesises firewall state + ports + network context + finding keys) |
 | `formatter.py` | 119 | `format_finding()`, `format_deduction()` — locale-independent via `template_vars` |
-| `i18n.py` | 309 | `t(key, **vars)`, locale auto-detect (POSIX), 3212 keys EN/FR |
+| `i18n.py` | 309 | `t(key, **vars)`, locale auto-detect (POSIX), 3220 keys EN/FR |
 | `compare.py` | 754 | `AuditBaseline`, `AuditDelta`, `build_baseline()`, `compute_delta()`, `display_delta()`. **v0.9.0 F-2**: `AuditBaseline.hostname` field + `BaselineLoadError` + strict-mode `load_baseline(path, strict=True)` for `--diff [PATH]` cross-machine compare. **v0.9.2**: `load_baseline` calls `bob._v090_renames.remap_finding_key` per entry to remap legacy section prefixes at load + `BaselineLoadError` raise sites use `_i18n_safe.t_or_hardcoded` for 4 new `compare.baseline_load.*` keys. |
 | `correlation.py` | 161 | 6 compound-risk rules (`CorrelationRule` with frozensets) |
 | `recurrence.py` | 101 | Recurring finding tracker: consecutive-audit counters |
@@ -359,7 +359,7 @@ bodyguard-of-bits/
 | `manage_logs.py` | 1327 | `--manage-logs` curses TUI with score history chart; **v0.18.1** opens on a folder picker (`_dir_picker`) of tracked log directories (`_declared_dirs` / `_forget_dir` — kept until explicitly forgotten), Enter browses one (`_browse_dir`, nested); `_is_finding_continuation` helper + 3 bare `input()` now catch EOFError (v0.5.x) |
 | `completion.py` | 129 | `--install-completion` → writes `/etc/bash_completion.d/bob` and, under `sudo`, links `/usr/local/bin/bob` to the invoking user's `~/.local/bin/bob`; v0.8.2 bash completion sync + v0.9.0 `cur="="` companion fix |
 | `webhook.py` | 491 | Generic JSON / Slack payload + send (10s timeout); HTTPS-only + `BOB_WEBHOOK_ALLOW_INSECURE=1` escape hatch (v0.7.1 I-4; HTTPS:// prefix tolerance v0.7.3); URL credential redaction (v0.8.1 T74); `--test-webhook` smoke entry point (v0.8.2). Uses `_i18n_safe.make_fallback_t`. |
-| `visibility.py` | 249 | **v0.16.0** the keys that mean BOB could not see part of the host: `VISIBILITY_KEYS`, `NOT_A_VISIBILITY_LIMIT`, `section_of()`. A key here makes `ScoreEngine.score_is_upper_bound` true, so the score renders as `≤ N/10` and `--diff` stops comparing like for like. **v0.16.2** also adds `is_visibility_key()` — a predicate, because `_sec`'s `<section>.unavailable` is generated per section and cannot be enumerated; without it a section that *raised* counted as more verified than one that degraded honestly. And: a key here no longer implies a *ceiling* — when blindness drops a whole domain out of the score average the direction is unknown, so `ScoreEngine` exposes `score_is_upper_bound` (a ceiling), `score_is_uncertain` (anything unread — what a gate must read) and `score_span`. **v0.16.1** added `user_accounts.no_passwd` / `no_shadow`: the set was first enumerated by name (`*_unreadable` / `*_unknown`) and neither matches, so a third guard now sweeps by position — any key emitted inside an `if not snapshot.<x>readable` body must be in this set or in `NOT_A_VISIBILITY_LIMIT`, whatever it is called |
+| `visibility.py` | 255 | **v0.16.0** the keys that mean BOB could not see part of the host: `VISIBILITY_KEYS`, `NOT_A_VISIBILITY_LIMIT`, `section_of()`. A key here makes `ScoreEngine.score_is_upper_bound` true, so the score renders as `≤ N/10` and `--diff` stops comparing like for like. **v0.16.2** also adds `is_visibility_key()` — a predicate, because `_sec`'s `<section>.unavailable` is generated per section and cannot be enumerated; without it a section that *raised* counted as more verified than one that degraded honestly. And: a key here no longer implies a *ceiling* — when blindness drops a whole domain out of the score average the direction is unknown, so `ScoreEngine` exposes `score_is_upper_bound` (a ceiling), `score_is_uncertain` (anything unread — what a gate must read) and `score_span`. **v0.16.1** added `user_accounts.no_passwd` / `no_shadow`: the set was first enumerated by name (`*_unreadable` / `*_unknown`) and neither matches, so a third guard now sweeps by position — any key emitted inside an `if not snapshot.<x>readable` body must be in this set or in `NOT_A_VISIBILITY_LIMIT`, whatever it is called |
 | `watch.py` | 190 | `--watch=N` live monitoring loop; posture stickiness + ignore key wiring (v0.7.1 I-1, I-2) |
 | `plugin_checks.py` | 363 | `PluginCheck`, size-limited + ANSI-sanitized user plugin loader; **execution delegated to `_sandbox.SandboxRunner` since v0.7.0 T3** — single path now that the `BOB_SANDBOX_LEGACY` trap door is gone (v0.9.0 TD-1) |
 | `registry.py` | 455 | `ServiceRegistry.load()`: bundle services.json + ~/.config/bob/services.d/ |
@@ -381,8 +381,8 @@ bodyguard-of-bits/
 | Check | LoC | Domain (scoring) | Notes |
 |---|---:|---|---|
 | `firewall.py` | 1051 | firewall_network | UFW state, `check_rules()` for duplicates / open-any (section name `firewall_rules` since v0.9.0 D-1; file still `firewall.py`); `FirewallPosture` / `resolve_firewall_posture()` — the one answer every summary reads: UFW, firewalld (zone target) or a raw DROP/REJECT ruleset (v0.24.1) |
-| `firewall_stack.py` | 713 | firewall_network | Docker iptables bypass, nftables parallel rules (section name `firewall_drivers` since v0.9.0 D-1) |
-| `iptables_nftables.py` | 2161 | firewall_network | Fallback audit when UFW inactive (INPUT/FORWARD policy) (section name `firewall_iptables` since v0.9.0 D-1) |
+| `firewall_stack.py` | 835 | firewall_network | Docker iptables bypass, nftables parallel rules (section name `firewall_drivers` since v0.9.0 D-1) |
+| `iptables_nftables.py` | 2176 | firewall_network | Fallback audit when UFW inactive (INPUT/FORWARD policy) (section name `firewall_iptables` since v0.9.0 D-1) |
 | `ipv6.py` | 830 | firewall_network | IPv6 listener vs UFW v6 rule consistency; on a host without UFW, listeners attributed to the governing filter, no address-family claim (v0.24.1) |
 | `network_context.py` | 355 | firewall_network | Interface table, established TCP, sensitive remote ports |
 | `services.py` | 1490 | exposure_services | 39 known services, risk context, exposure classification; `_PRIVATE_ADDR` constant retired (v0.7.4 M) — now delegates to `sysinfo._is_private_or_loopback_ipv4`; +6 modern services in v0.8.0 T2 (32 → 38); states include socket-activated (v0.18.1) and condition-unmet — skipped by its own Condition…/ExecCondition (v0.24.1); a single-host UFW source named as such (v0.24.1) |
@@ -393,7 +393,7 @@ bodyguard-of-bits/
 | `auth_log.py` | 324 | access_control | SSH connection log, brute-force detection |
 | `ddns.py` | 473 | exposure_services | DDNS client + crossed with open UFW ports |
 | `docker.py` | 427 | exposure_services | iptables bypass detection, container port exposure |
-| `docker_audit.py` | 369 | system_hardening | daemon.json hardening, privileged containers, sensitive mounts (section name `docker_hardening` since v0.9.0 D-1) |
+| `docker_audit.py` | 414 | system_hardening | daemon.json hardening, privileged containers, sensitive mounts (section name `docker_hardening` since v0.9.0 D-1) |
 | `kubernetes.py` | 1308 | system_hardening | **v0.25.0** Kubernetes node: pods' rights through `ctr` (containerd, MicroK8s, k3s) or `crictl` (CRI-O) (privileged, node-handing host paths, host namespaces; kube-system said, not deducted), kubelet anonymous access (10250) and read-only port (10255); the API server (v0.28.0 MicroK8s args file, v0.31.3 a k3s server's journal line); skipped where no kubelet runs |
 | `virtualization.py` | 231 | exposure_services | KVM/VirtualBox/VMware/LXC + Snap network packages |
 | `samba.py` | 532 | exposure_services | SMBv1, signing, map-to-guest, bind interfaces |
@@ -420,11 +420,11 @@ bodyguard-of-bits/
 | `umask.py` | 293 | system_hardening | login.defs, common-session, profile, current process |
 | `cron_audit.py` | 374 | system_hardening | Pipe-to-shell (`curl/wget \| sh`), world-writable scripts, unexpected users with root crontabs (section name `cron` since v0.9.0 D-1). The cron *range* validator (`_validate_custom_cron`) lives in `bob/cron/_parse.py`, not here. |
 | `disk.py` | 518 | health_resilience | SMART (skip all-virtual since v0.4.4), partition usage, NVMe |
-| `backup.py` | 607 | health_resilience | borgmatic / restic / timeshift / duplicati / rclone |
+| `backup.py` | 641 | health_resilience | borgmatic / restic / timeshift / duplicati / rclone |
 | `memory.py` | 371 | health_resilience | SSD wear, unjustified swap, swappiness |
 | `desktop_apps.py` | 152 | health_resilience | GUI app process detection (Brave, VSCode, ExpressVPN…) |
 | `ntp.py` | 209 | health_resilience | systemd-timesyncd/chronyd/ntpd active + synced |
-| `auditd.py` | 464 | detection | Linux Audit Framework, loaded rules, sensitive file watches |
+| `auditd.py` | 452 | detection | Linux Audit Framework, loaded rules, sensitive file watches |
 | `secure_boot.py` | 196 | system_hardening | UEFI state via mokutil/efivars/bootctl |
 | `grub.py` | 193 | system_hardening | GRUB bootloader — grub.cfg perms + superuser password (CIS §1.4) |
 | `cups.py` | 258 | exposure_services | CUPS print service — cupsd.conf listen address + Browsing (network exposure) |
@@ -502,7 +502,7 @@ These are the **integration points**. They're the entry/orchestration layer.
 |---:|---|---|
 | 1658 | `bob/explain.py` | EXPLAIN_KEYS (237 keys / 62 prefixes) + alias map (emptied v0.9.0 D-3, first live entry v0.10.1) + interactive TUI |
 | 1502 | `bob/checks/_run.py` | Shared helpers every check module imports: `_run()` / `run_result()` and the timeout policy, `_C_LOCALE_ENV`, unit and OpenRC state, sysctl fix and boot-drift helpers, package ownership / installation queries and install commands, PAM stack paths, safe path probes |
-| 1289 | `bob/tui/cron.py` | Curses TUI for cron wizards (extracted v0.4.1) |
+| 1292 | `bob/tui/cron.py` | Curses TUI for cron wizards (extracted v0.4.1) |
 | 1490 | `bob/checks/services.py` | 39 services × detection paths × risk classification (32 → 38 via v0.8.0 T2, 39 in 0.31.4) |
 | 1359 | `bob/runner.py` | `_sec()` closure + unified `_SECTIONS` tuple (v0.9.0 D-2) + v0.9.0 D-1 fatal migration error path via `SECTION_RENAMES_V090` |
 | 1212 | `bob/display.py` | Renders all sections + risk context blocks + summary box + posture annotation helper (v0.7.2 M-10) + the A1 footer under the summary box (v0.8.0) |
@@ -512,7 +512,7 @@ These are the **integration points**. They're the entry/orchestration layer.
 | 985 | `bob/_sandbox.py` | v0.7.0 T3 plugin SandboxRunner (Tier 2 in-process restrictions); net −75 L vs v0.7.4 after v0.9.0 TD-1 retired `_run_legacy` + `BOB_SANDBOX_LEGACY` trap door |
 | 994 | `bob/cli.py` | `parse_args()` covers 45 long-form + 21 short options + `_VALUE_TAKING_OPTS` frozenset (v0.7.4) + `--diff [PATH]` (v0.9.0 F-2); `--json-v1` rejection branch with hardcoded EN fallback (v0.9.1 hotfix) |
 | 1051 | `bob/checks/firewall.py` | UFW state and rules, firewalld zones / policies / sources, and `resolve_firewall_posture()` — the one firewall answer every summary reads (v0.24.1) |
-| 1104 | `bob/checks/logs.py` | UFW log parser + bruteforce + GeoIP + IoT detection |
+| 1104 | `bob/checks/logs.py` | UFW log parser + repeated attempts and port scans + GeoIP + IoT detection |
 | 817 | `bob/report_markdown.py` | Markdown report + HTML email (MIME multipart) |
 | 754 | `bob/output.py` | Low-level terminal primitives (grew with v0.5.x helpers) |
 
@@ -524,16 +524,16 @@ These are the **integration points**. They're the entry/orchestration layer.
 
 | LoC | File | Covers |
 |---:|---|---|
-| 1138 | `tests/test_manage_logs.py` | curses TUI flows (heavy fixturing) |
-| 1043 | `tests/test_ssh.py` | sshd_config + host keys + user keys (covers the new ssh/ package via re-exports) |
-| 974 | `tests/test_cron.py` | massive growth post-split (was 382 L) — covers cron/ package via re-exports + new helpers |
-| 932 | `tests/test_kernel_modules.py` | risky modules + apt kernel + dpkg ii filter (v0.4.6) |
+| 1168 | `tests/test_manage_logs.py` | curses TUI flows (heavy fixturing) |
+| 1081 | `tests/test_ssh.py` | sshd_config + host keys + user keys (covers the new ssh/ package via re-exports) |
+| 1002 | `tests/test_cron.py` | massive growth post-split (was 382 L) — covers cron/ package via re-exports + new helpers |
+| 951 | `tests/test_kernel_modules.py` | risky modules + apt kernel + dpkg ii filter (v0.4.6) |
 | 930 | `tests/test_cli.py` | argv parsing + AuditConfig + alias maps |
-| 879 | `tests/test_services.py` | 39 services × detection paths × risk classification |
-| 855 | `tests/test_domain_scores.py` | per-domain attribution + ScoreCap + TestActiveDomainsIncludesOK (v0.4.6) |
-| 807 | `tests/test_logs.py` | UFW log parser + bruteforce + IoT dominance |
+| 895 | `tests/test_services.py` | 39 services × detection paths × risk classification |
+| 865 | `tests/test_domain_scores.py` | per-domain attribution + ScoreCap + TestActiveDomainsIncludesOK (v0.4.6) |
+| 807 | `tests/test_logs.py` | UFW log parser + repeated attempts and port scans + IoT dominance |
 | 738 | `tests/test_scoring.py` | ScoreEngine invariants, caps, posture API, F1 headline rule |
-| 725 | `tests/test_profiles.py` | profile inheritance + overrides + extends chain |
+| 727 | `tests/test_profiles.py` | profile inheritance + overrides + extends chain |
 
 ### Tests-to-code ratio (rough proxy for risk — source LoC against the module's main test file(s), recomputed 2026-10-16 on the 0.25.1 work tree; other guards exercise most modules too, so a low ratio is a prompt to look, not a verdict)
 
@@ -909,7 +909,7 @@ plus an emulated arm64 job (`debian:bookworm-slim` under QEMU, `ci/arm64_smoke.s
 ## Quick references
 
 - **Add a service**: edit `bob/data/services.json` (38 entries, schema in `bob/data/schemas/`). No Python code change. See [README_DEV.md § Adding a service](README_DEV.md).
-- **Add a language**: copy `bob/locales/en.json` → `bob/locales/de.json`, translate all 3212 values keeping the exact key tree, then append `"de"` to `SUPPORTED_LANGS` in `bob/i18n.py` (currently `("en", "fr")`). `cli.py` validates the *shape* since v0.14.1 (`_LANG_RE = ^[A-Za-z]{2,3}([_-][A-Za-z]{2,4})?$`, enforced by `_validate_lang`) — a well-formed but unsupported code still falls back to English, while a path-shaped value is rejected outright and `i18n.init()` falls back to `DEFAULT_LANG` if the file is missing.
+- **Add a language**: copy `bob/locales/en.json` → `bob/locales/de.json`, translate all 3220 values keeping the exact key tree, then append `"de"` to `SUPPORTED_LANGS` in `bob/i18n.py` (currently `("en", "fr")`). `cli.py` validates the *shape* since v0.14.1 (`_LANG_RE = ^[A-Za-z]{2,3}([_-][A-Za-z]{2,4})?$`, enforced by `_validate_lang`) — a well-formed but unsupported code still falls back to English, while a path-shaped value is rejected outright and `i18n.init()` falls back to `DEFAULT_LANG` if the file is missing.
 - **Add a check** (full checklist):
   1. Create `bob/checks/foo.py` with `FooSnapshot.from_system()` + `check_foo(snapshot, t)` (follow the pattern of an existing simple check, e.g. `ntp.py`).
   2. Wire in `bob/runner.py`: add the import at the top, add a `_Section` entry to the `_SECTIONS` tuple (`bob/runner.py`, v0.9.0 D-2) — `_ALL_SECTIONS` is *derived* from it (`tuple(s.name for s in _SECTIONS if not s.always_on)`) and cannot be appended to, and invoke via `_sec("foo", foo_snapshot, check_foo)` in the appropriate GROUP block.
@@ -935,12 +935,12 @@ plus an emulated arm64 job (`debian:bookworm-slim` under QEMU, `ci/arm64_smoke.s
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 53,849 LoC across 137 files (0.26.0 work tree) | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 487 test files, ~8653 functions, **20961 collected** (0.32.0) | `pytest --collect-only -q` |
+| Tests | 494 test files, ~8705 functions, **21220 collected** (0.33.0) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distro containers + 1 emulated arm64 job | `.github/workflows/integration.yml` |
 | Python versions tested | 3.10, 3.11, 3.12, 3.13, 3.14 | `.github/workflows/tests.yml` + `pyproject.toml` classifiers |
-| Locale keys | 3212 EN ↔ 3212 FR (strict parity) | `bob/locales/{en,fr}.json` |
+| Locale keys | 3220 EN ↔ 3220 FR (strict parity) | `bob/locales/{en,fr}.json` |
 | EXPLAIN_KEYS | 237 (in 62 prefixes) | `bob.explain.EXPLAIN_KEYS` |
 | CIS references | 237 primary (90 CIS Ubuntu 22.04 + 7 CIS Docker 1.6 + 7 CIS Kubernetes 2.0 + **1 CIS Red Hat 8/9** + 132 BOB-authored best-practice) + **259 cross-benchmark citations** on 94 keys (90 CIS Debian 12 + 79 CIS Debian 13 + 90 CIS Ubuntu 24.04, sourced from ComplianceAsCode/content by `scripts/gen_cis_benchmarks.py`, which also re-bases the primary Ubuntu 22.04 numbering onto CAC v2.0.0 from the rule anchor) | `bob/data/cis_refs.json` |
 | Known services | 39 | `bob/data/services.json` |
@@ -953,7 +953,7 @@ plus an emulated arm64 job (`debian:bookworm-slim` under QEMU, `ci/arm64_smoke.s
 | Doc files | 26 public markdown (20 in `DOCUMENTS/` + 6 at the repo root) + 3 man pages | `DOCUMENTS/` + `man/` |
 | JSON schema_version | `"3"` only (v1 retired v0.9.0 F-3, v2 retired v0.12.0 F9) | `bob.json_output.DEFAULT_SCHEMA_VERSION` |
 | Release-engineering CI guards | 5 — 3 workflow-level (integration-first / smoke-after-commit / smoke-plugin) + 2 pytest guards (`tests/test_version_consistency.py`, `tests/test_doc_version_consistency.py`) **plus the ruff correctness gate** (v0.13.3, `bob/` only, nothing ignored since v0.14.0) | `.github/workflows/*.yml` |
-| Version | 0.32.0, released 2026-11-12 (bare SemVer, no `v` prefix since 0.21.0) | `pyproject.toml::version` |
+| Version | 0.33.0, released 2026-11-12 (bare SemVer, no `v` prefix since 0.21.0) | `pyproject.toml::version` |
 | Supported branch | 0.26.x (everything ≤ 0.25.x is EOL — latest-minor-only policy) | `SECURITY.md` |
 | First release | v0.1.0 (2026-04-26) | `CHANGELOG.md` |
 

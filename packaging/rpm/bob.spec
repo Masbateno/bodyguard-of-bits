@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.32.0
+Version:        0.33.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,16 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Thu Nov 12 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.33.0-1
+- Minor, BREAKING for scores; no JSON-schema or CSV-column change. A DSA
+  host key costs a point only when sshd serves it; FORWARD rules beside an
+  active UFW judged per interface (a missing, unattributable interface or a
+  stopped MicroK8s' rule costs a point); IPv6-only nftables rules no longer
+  blind the IPv4 port verdict; Docker and Podman both examined, unreachable
+  runtimes and rootless containers said (upper bound); workstation keeps
+  its backup and auditd warnings; a stale Timeshift counts as installed;
+  normal-mode arrow keys read as one key.
+
 * Thu Nov 12 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.32.0-1
 - Minor, BREAKING for scores; no JSON-schema or CSV-column change, two JSON
   fields change meaning (docker_present, wireguard_present). Kubernetes

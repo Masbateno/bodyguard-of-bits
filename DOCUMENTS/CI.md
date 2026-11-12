@@ -17,13 +17,14 @@ release step.
 | Workflow | Runs on | Jobs | Token |
 |---|---|---|---|
 | `tests.yml` | every push and pull request | `lint` (ruff over `bob/`), `build-backend-pin` (the setuptools pin must bite), `mutation` (every guard must still fail when its defect returns), `pytest` on Python 3.10 – 3.14 | read |
-| `integration.yml` | a push to `main` or `unstable`, a pull request to `main`, by hand | `smoke` in a container of each distribution below, `arm64` under QEMU | read |
+| `integration.yml` | a push to `main`, `unstable` or a `v*.x` branch, a pull request to `main`, by hand | `smoke` in a container of each distribution below, `arm64` under QEMU | read |
 | `publish.yml` | a tag `X.Y.Z` | `test` (3.10 – 3.14) and `ci-green` → `build` → `publish` (PyPI) → `github-release` | read; `ci-green` reads Actions, `publish` asks `id-token: write`, `github-release` asks `contents: write` |
 
 - **Rights**: each workflow says `contents: read`; only the two jobs above ask
   for more. The repository default is read as well.
-- **Timeouts**: every job has one, 10 to 45 minutes — well above the longest
-  run measured (10 minutes, for the mutations).
+- **Timeouts**: every job has one, 10 to 60 minutes — above the longest
+  run measured (15 minutes, for the mutations, on 12 November 2026); the 60
+  is `ci-green`'s, which waits for the tagged commit's runs.
 - **Concurrency**: a newer push to the same ref cancels the older `tests` and
   `integration` runs; two publications never run at once and none is
   cancelled.
@@ -175,8 +176,8 @@ first, arm64 included.
 - **The images CI tests on** are taken by tag (`debian:13`, `alpine:3.24`…),
   not by digest. This is a choice, not an oversight: a tag follows each
   distribution's security updates, a digest would freeze them; the price is
-  that two runs on different days may not use the same image. These are the
-  9 findings zizmor still reports — static-analysis findings, not
+  that two runs on different days may not use the same image. These were the
+  9 findings zizmor 1.31.1 still reported on 30 October 2026 — static-analysis findings, not
   vulnerabilities. The QEMU image, which runs privileged, and the upload
   container, which holds the PyPI token, are pinned by digest.
 - **The runner itself** — its image (`ubuntu-latest`), its Python, its system

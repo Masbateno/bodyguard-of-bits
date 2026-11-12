@@ -6,6 +6,305 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.33.0] — 12-11-2026
+
+**Une version mineure, BREAKING pour les scores : une clé hôte SSH DSA n'est
+comptée que si sshd la sert ; les règles ACCEPT de FORWARD sont jugées par
+rapport au mécanisme qui tourne ; les règles propres à IPv6 n'aveuglent plus le
+verdict IPv4 des ports ; Docker et Podman sont tous deux examinés, et ce qui ne
+l'est pas est dit ; le profil `workstation` garde les avertissements que son
+fichier promet ; l'instantané Timeshift le plus récent est daté ; et les flèches
+sont lues comme une seule touche sur tout terminal.**
+
+BREAKING pour les scores signifie : un même hôte peut obtenir un score différent
+sous 0.32.0 et sous 0.33.0 — global, par domaine, et la tendance `--history` à
+travers la mise à jour. La formule de score est inchangée ; aucune section
+ajoutée ni retirée ; aucune option ajoutée ni retirée ; aucune clé de constat
+renommée ni retirée. Aucun changement de schéma de la sortie JSON ni de colonne
+CSV. Nouvelles clés de constat : `ssh.host_key_dsa_unused`,
+`ssh.host_key_dsa_unknown`, `docker_hardening.runtime_unreachable`,
+`docker_hardening.rootless_unexamined`, `backup.timeshift_stale`. Nouveaux
+textes, clé existante : `firewall_drivers.iptables_forward_bypass` porte
+désormais aussi deux messages, l'un pour une règle périmée, l'autre pour une
+règle que MicroK8s a laissée (§2).
+
+Scores qui bougent :
+
+| Où | 0.32.0 | 0.33.0 | § |
+|---|---|---|---|
+| Clé hôte DSA sur le disque, sshd ne la sert pas (mesuré : OpenSSH 9.6, chemin par défaut) | `ssh.host_key_dsa` WARN −1 | `ssh.host_key_dsa_unused` INFO, 0 | 1 |
+| Clé hôte DSA, sshd_config illisible | `ssh.host_key_dsa` WARN −1 | `ssh.host_key_dsa_unknown` INFO, score « ≤ » | 1 |
+| UFW actif, quelque chose route, une règle ACCEPT de FORWARD qui nomme une interface qui n'existe pas et ne peut être attribuée à aucun mécanisme en marche (mesuré : `-i bobwg0`) | `forward_routing_ok`, 0 | `iptables_forward_bypass` WARN −1 | 2 |
+| Idem, les deux règles de MicroK8s laissées alors que MicroK8s est arrêté et que Docker tourne | `forward_routing_ok`, 0 | `iptables_forward_bypass` WARN −1 chacune (−2) | 2 |
+| Jeu de règles nftables brut acceptant par défaut, une règle propre à IPv6 en entrée, un port à l'écoute sur toutes les interfaces IPv4 sans règle qui le nomme | `ports.uncovered_netfilter_unweighed` INFO, 0 | `ports.uncovered_netfilter_open` WARN −1 (local) / −2 (public) | 3 |
+| Docker en marche et Podman qui tient un conteneur privilégié | non vu, 0 | `docker_hardening.privileged` WARN −1 | 4 |
+| Docker installé, service et socket arrêtés (seul) | `docker_hardening.no_containers` OK | `docker_hardening.scan_error` INFO, score « ≤ » | 4 |
+| Conteneurs Podman sans root en marche | non mentionnés | `docker_hardening.rootless_unexamined` INFO, score « ≤ » | 4 |
+| `-p workstation`, aucun outil de sauvegarde | `backup.no_backup` INFO, 0 | WARN −1 | 5 |
+| `-p workstation`, auditd en marche sans aucune règle, ou sans les fichiers sensibles surveillés | INFO, 0 | WARN −1 | 5 |
+| Un profil personnel autre que `server`, aucun outil de sauvegarde, non assoupli dans son fichier | `backup.no_backup` INFO, 0 | WARN −1 | 5 |
+
+### 1. Une clé hôte DSA est comptée quand sshd la sert
+
+0.32.0 comptait `ssh.host_key_dsa` (WARN −1, « cryptographiquement cassé ») pour
+tout fichier DSA de `/etc/ssh`. Un fichier présent là n'est pas une clé que sshd
+sert. Mesuré avec une clé hôte DSA de 1024 bits et `ssh-keyscan -t dsa` comme
+oracle :
+
+| Configuration | OpenSSH 9.6 (Linux Mint 22.3) | OpenSSH 10.2 (Ubuntu Server 26.04.1) |
+|---|---|---|
+| clé au chemin par défaut, aucune ligne | non servie | non servie |
+| `HostKeyAlgorithms +ssh-dss` seul | non servie | `sshd -t` refuse l'option |
+| une ligne `HostKey` la nomme, algorithmes par défaut | non servie | non servie |
+| une ligne `HostKey` et `HostKeyAlgorithms +ssh-dss` | **servie** | `sshd -t` refuse l'option |
+
+Deux faits distincts : DSA ne fait pas partie des fichiers de clés hôte que sshd
+charge quand aucune ligne `HostKey` n'est écrite (mesuré ci-dessus, première
+ligne) ; et, indépendamment des fichiers chargés, OpenSSH ne propose plus
+l'algorithme `ssh-dss` par défaut depuis la 7.0 (ses notes de version). BOB ne
+compte désormais le point que si une ligne `HostKey` nomme le fichier et que
+`HostKeyAlgorithms` propose `ssh-dss` (`+`, `^`, une liste ou un motif ; `-` ne
+fait que retirer). Sinon `ssh.host_key_dsa_unused`, INFO, sans point ; avec
+sshd_config illisible, `ssh.host_key_dsa_unknown`, INFO, et le score est un
+plafond. Sur la Mint : clé sur le disque, 0.32.0 WARN −1, 0.33.0 INFO 0 ; clé
+servie, WARN −1 sous les deux. Les textes citent désormais FIPS 186-5 (le NIST
+n'approuve plus DSA pour générer des signatures) et les notes de version
+d'OpenSSH (DSA désactivé par défaut en 7.0, à la compilation en 9.8, retiré en
+10.0). La commande de correction ne génère plus de clé hôte ed25519 quand il en
+existe une : `ssh-keygen` s'arrêterait à sa question « Overwrite (y/n)? ».
+
+Les entrées `--explain` de `ssh.rsa_weak` et `ssh.dsa_key` décrivaient une clé
+hôte de serveur (« RSA host key too short (< 4096 bits) ») ; les deux constats
+portent sur les propres clés de l'utilisateur dans `~/.ssh`. Elles le disent
+désormais, donnent la base NIST (SP 800-131A pour RSA sous 2048 bits ;
+FIPS 186-5 pour DSA), et expliquent comment remplacer une clé d'utilisateur sur
+les serveurs qui l'acceptent.
+
+### 2. Les règles FORWARD sont jugées par rapport au mécanisme qui tourne
+
+À côté d'un UFW actif, une règle ACCEPT dans FORWARD contourne UFW pour le
+trafic routé (`firewall_drivers.iptables_forward_bypass`, WARN −1 chacune).
+Pendant qu'un mécanisme de routage tourne (Docker, WireGuard, libvirt,
+Kubernetes), 0.32.0 excusait toutes ces règles, quel qu'en soit l'auteur. BOB lit
+désormais FORWARD sous sa forme `-S`, qui montre les interfaces et les
+commentaires, et liste les interfaces qui existent. Il n'excuse plus deux sortes
+de règles :
+
+- une règle **périmée** : elle nomme une interface (`-i`/`-o`, non niée, hors
+  `lo`) qui n'existe pas sur l'hôte et ne peut être attribuée à aucun mécanisme
+  en marche (par son nom ou un préfixe, ci-dessous). Chaque interface est jugée
+  séparément : dans `-i unknown0 -o docker0`, le `docker0` de Docker n'excuse pas
+  le `unknown0` absent (reproduit en code, pas mesuré sur l'hôte). Elle ne filtre
+  rien aujourd'hui ; une interface créée plus tard sous ce nom contournerait UFW.
+  Message : « Règle ACCEPT dans FORWARD pour une interface qui n'existe pas sur
+  cet hôte : … — une interface créée plus tard sous ce nom contournerait UFW pour
+  le trafic routé » ;
+- une règle qui porte le commentaire de MicroK8s (« generated for MicroK8s
+  pods ») alors que `kubelite`, le processus de MicroK8s, ne tourne pas.
+  Message : « Règle ACCEPT dans FORWARD avec le commentaire de MicroK8s alors que
+  MicroK8s ne tourne pas : … — elle laisse le trafic routé contourner UFW ». Ce
+  contrôle ne s'applique qu'à une règle qui ne nomme aucune interface.
+
+Une règle que BOB ne sait pas attribuer reste excusée, comme avant : celle qui
+ne nomme aucune interface ni aucun commentaire connu, et celle qui ne nomme que
+des interfaces existantes n'appartenant à aucun mécanisme que BOB connaît (le
+`lxdbr0` de LXD, un plugin réseau Kubernetes qu'il ne liste pas) — une interface
+existante que BOB ne connaît pas est inconnue, pas la preuve d'un contournement.
+Quand les interfaces ne peuvent pas être listées, aucune règle n'est comptée
+comme périmée. Ce qui est attribuable à un mécanisme en marche : une interface
+WireGuard existante, par son nom exact ; pendant que `dockerd` tourne, tout nom
+commençant par `docker` ou `br-` ; pendant qu'un réseau libvirt dont la
+configuration route (NAT, route ou forward ouvert) est actif et que son pont
+existe, `virbr` — lu dans l'état de libvirt, pas dans le trafic ; pendant qu'un
+kubelet tourne, les noms usuels de ses plugins réseau (`cali`, `flannel`, `cni`,
+`vxlan.calico`, `cilium`, `kube-bridge`, `weave`, `tunl`). WireGuard mis à part,
+ce sont des préfixes de nom ; le joker `nom+` d'iptables est lu comme un
+préfixe. Comme une interface existante est excusée de toute façon, ils ne
+décident que pour une interface qui n'existe plus (un réseau Docker supprimé
+pendant que Docker tourne reste à Docker).
+
+Mesuré sur Ubuntu Server 26.04.1 (UFW 0.36.2 actif, MicroK8s 1.35.6, docker.io
+29.1.3, wireguard-tools) :
+
+| Cas | 0.32.0 | 0.33.0 |
+|---|---|---|
+| MicroK8s en marche, plus `-i bobwg0` (aucune interface de ce nom) | 0 | −1 (périmée) |
+| MicroK8s en marche, ses deux propres règles | 0 | 0 |
+| MicroK8s arrêté (ses deux règles laissées), Docker en marche | 0 | −2 |
+| Idem, plus `-i docker0`, Docker en marche | 0 | −2 (`docker0` excusée) |
+| WireGuard monté, une passerelle `-i bobwg0 -o enp3s0`, MicroK8s arrêté | 0 | −2 (la passerelle excusée) |
+
+Le passage sur le terrain a mesuré la première version de cette règle, qui
+comptait aussi une règle ne nommant que des interfaces existantes que BOB ne
+savait pas attribuer. Une revue a montré qu'elle comptait les règles de LXD et
+des plugins réseau non listés (reproduit en code : `-i antrea-gw0`,
+`-i lxdbr0 -o enp3s0`, −1 chacune avec un kubelet en marche) ; la règle a été
+restreinte avant la publication. Une revue suivante a montré que la règle
+restreinte laissait une interface possédée par un mécanisme en marche excuser
+une interface absente dans la même règle (`-i unknown0 -o docker0`, excusée ;
+reproduit en code) ; chaque interface est désormais jugée séparément. Les cinq
+cas ci-dessus gardent leur résultat sous la règle restreinte (le `bobwg0` du
+cas 1 n'existait pas ; vérifié en code avec les interfaces de l'hôte du banc,
+pas rejoué sur l'hôte). Non mesurés : les noms des plugins Kubernetes, `virbr`.
+
+### 3. Les règles propres à IPv6 n'aveuglent plus le verdict IPv4 des ports
+
+Un jeu de règles nftables brut contenant, dans une chaîne d'entrée `inet`, une
+règle qui ne correspond qu'à IPv6 (`meta nfproto ipv6`, `ip6 saddr …`,
+`icmpv6 type …`) laissait le verdict IPv4 de chaque port « non établi ». Aucun
+paquet IPv4 ne peut correspondre à une telle règle : BOB la met désormais de
+côté quand il pèse IPv4, et y lit `meta nfproto ipv4` comme toujours vrai. Les
+formes qu'il reconnaît sont `meta nfproto ipv6`, `ip6` suivi de `saddr`,
+`daddr`, `nexthdr`, `hoplimit`, `flowlabel`, `dscp`, `length` ou `version`, et
+`icmpv6 type` ou `code` ; une autre forme propre à IPv6 (par exemple
+`meta l3proto ipv6`) laisse toujours le verdict IPv4 inconnu, comme avant.
+Mesuré sur Linux Mint 22.3 (nftables 1.0.9) dans un espace de noms réseau,
+écouteurs sur 8099 en IPv4 et IPv6, une vraie connexion comme oracle :
+
+| Chaîne d'entrée `inet` | Oracle IPv4 | 0.32.0 IPv4 | 0.33.0 IPv4 |
+|---|---|---|---|
+| politique accept, `meta nfproto ipv6 tcp dport 8099 drop` | ouvert | inconnu | accepté par défaut |
+| politique drop, `meta nfproto ipv6 tcp dport 8099 accept` | fermé | inconnu | refusé par défaut |
+| politique drop, `ip6 saddr fd77::/64 tcp dport 8099 accept` | fermé | inconnu | refusé par défaut |
+| politique drop, `meta nfproto ipv4 tcp dport 8099 accept` | ouvert | inconnu | accepté par une règle |
+| politique accept, `icmpv6 type echo-request drop` | ouvert | inconnu | accepté par défaut |
+
+Cinq cas, cinq concordances. Le verdict IPv4 est compté (depuis 0.28.0) quand le
+jeu de règles accepte par défaut : un port à l'écoute sur toutes les interfaces
+IPv4 que la politique par défaut atteint, sans règle qui le nomme, coûte −1
+(local) ou −2 (public). 0.32.0 laissait un tel port non pesé
+(`ports.uncovered_netfilter_unweighed`, INFO) dès qu'une règle propre à IPv6 se
+trouvait en entrée ; 0.33.0 le compte, comme il le faisait déjà sans cette
+règle. Reproduit en code sur les deux versions avec le premier et le dernier jeu
+de règles ci-dessus (`ports.uncovered_netfilter_open`, WARN −1 en contexte
+local) ; pas mesuré comme score sur l'hôte. Un service du registre sur un tel
+port est pesé par le même verdict (`services.exposed.*`, selon sa criticité) :
+lu dans le code, pas reproduit. Les verdicts IPv6 sont inchangés.
+
+### 4. Docker et Podman sont tous deux examinés ; ce qui ne l'est pas est dit
+
+`docker_hardening` n'interrogeait que le premier runtime trouvé, Docker avant
+Podman. Il interroge désormais chaque runtime qu'il prend en charge (Docker,
+Podman) dont la commande est installée, et compte une seule fois un conteneur
+que deux d'entre eux signalent, par son Id — ainsi une commande `docker` qui
+lance Podman, comme celle qu'installe le paquet `podman-docker`, ne devrait pas
+le compter deux fois (ce cas n'est pas mesuré). Un `ps` qui échoue — un démon
+arrêté — était lu comme « aucun conteneur » ; c'est désormais un runtime
+injoignable. Les conteneurs Podman sans root sont vus par leur moniteur `conmon`
+dans `/proc`, qui appartient à l'utilisateur ; BOB ne lance pas Podman au nom
+d'un autre utilisateur (cela pourrait écrire dans le dossier personnel de cet
+utilisateur et dépend de sa session). Mesuré sur Fedora 44 (Podman 5.8.1,
+moby-engine installé pour le banc, un utilisateur jetable avec un conteneur sans
+root), oracle `podman ps` en root et en tant que cet utilisateur, et
+`docker ps` :
+
+| Cas | 0.32.0 | 0.33.0 |
+|---|---|---|
+| Podman seul : un conteneur root privilégié, un sans root | privileged −1 ; le sans root non mentionné | privileged −1 ; `rootless_unexamined` « 1 rootless podman container(s) running, not examined: <user> (1) », score « ≤ » |
+| + Docker en marche (un conteneur) | le conteneur Podman privilégié non vu, 0 | les deux runtimes interrogés : privileged −1 |
+| Docker arrêté (service et socket), Podman comme ci-dessus | « No running containers — nothing to audit » | `runtime_unreachable` « docker », privileged −1 |
+
+Avec Docker installé, son service et son socket arrêtés, et aucun autre runtime,
+`docker ps` échoue de la même façon : 0.33.0 dit que les conteneurs n'ont pas
+été examinés (`docker_hardening.scan_error`, un plafond) au lieu du « No running
+containers » de 0.32.0. Reproduit en code sur les deux versions, pas mesuré seul
+sur l'hôte. Les commandes qu'un constat affiche (`inspect`) nomment le runtime
+qui détient le conteneur.
+
+### 5. Le profil `workstation` garde les avertissements que son fichier promet
+
+Depuis 0.8.1, `workstation.conf`, le README, le tutoriel et `bob-profile(5)`
+disent que `workstation` garde `backup.no_backup` et `auditd.*` en WARN tout en
+assouplissant les mêmes constats SSH, ClamAV, rootkit et intégrité des fichiers
+que `desktop`. Les contrôles faisaient autrement : celui de la sauvegarde ne
+donnait son WARN qu'à un profil nommé `server`, et celui d'auditd ramenait
+`auditd.no_rules` et `auditd.missing_sensitive_rules` en INFO pour un profil
+nommé `desktop` ou `workstation`. Sous `-p workstation`, les trois constats
+étaient INFO, sans point. Trouvé par la passe de conformité de la documentation.
+
+Les contrôles émettent désormais le WARN quel que soit le profil ;
+`desktop.conf` assouplit les trois dans son propre fichier, et `container.conf`
+en hérite. Mesuré sur chaque champ des constats (niveau, message, détail,
+commande, nature, déductions), pour les quatre profils intégrés, six cas et les
+deux langues : seul `workstation` change — cinq constats passent d'INFO à
+WARN −1 ; `server`, `desktop` et `container` sont identiques. Les deux constats
+auditd s'excluent l'un l'autre, si bien qu'un hôte `workstation` perd au plus
+deux points. Un profil personnel dont le nom n'est pas `server` et dont le
+fichier n'assouplit pas `backup.no_backup` reçoit désormais lui aussi le WARN ;
+un profil nommé `desktop` ou `workstation` qui n'assouplit pas les clés auditd
+reçoit les leurs.
+
+### 6. Timeshift : l'instantané le plus récent est daté
+
+0.31.4 comptait Timeshift comme actif quand une planification était activée et
+que son répertoire d'instantanés contenait un instantané, quel que soit son âge.
+Un Timeshift dont l'instantané le plus récent a plus de deux fois sa plus
+longue planification activée (horaire 1 h, quotidienne 24 h, hebdomadaire
+168 h, mensuelle 744 h ; la planification au démarrage n'a pas de période et
+n'est pas jugée) compte désormais comme installé, pas actif, et le dit avec
+l'âge (`backup.timeshift_stale`). Aucun score ne bouge : « actif » et
+« installé seulement » ne coûtent rien ni l'un ni l'autre. Mesuré sur Linux
+Mint 22.3 : le poste de l'opérateur (hebdomadaire, instantané le plus récent
+vieux de trois jours) reste actif ; une installation de test dont l'instantané
+le plus récent avait 66 jours sous une planification hebdomadaire affichait
+« Backup solution active: timeshift » sous 0.32.0, et « installé » avec
+« 66 day(s) old — more than twice its longest schedule (weekly) » sous 0.33.0.
+
+### 7. Les flèches sont une seule touche sur tout terminal
+
+Les écrans de BOB demandent au terminal le mode keypad, dans lequel une flèche
+arrive comme une seule touche. Un terminal qui ignore la demande envoie
+`ESC [ D` ; BOB lisait Échap, puis une lettre. Dans l'aperçu de
+`--manage-logs`, ← envoyée ainsi quittait l'aperçu et atteignait l'invite de
+suppression. Chaque écran de BOB (`--explain`, `--manage-logs`, les écrans de
+planification) lit désormais les formes du mode normal des flèches, de Début et
+Fin, de Page précédente et Page suivante comme une seule touche ; les octets
+qu'il ne connaît pas sont rendus dans l'ordre. Mesuré sur Linux Mint 22.3 dans
+un pseudo-terminal (TERM=xterm, l'écran rendu par pyte) : `ESC [ D` dans
+l'aperçu, 0.32.0 « Confirm deletion below », 0.33.0 le rapport plus ancien
+(2/3, puis 3/3) ; `ESC [ C` et la forme keypad `ESC O D` se déplacent comme
+attendu ; Échap seul revient à la liste. Aucun rapport n'a été supprimé.
+
+### 8. Documentation
+
+Une passe de conformité a confronté la documentation (README, README technique,
+tutoriel, pages de manuel, CI.md, SECURITY.md, le README développeur) au code de
+cette version, en anglais et en français. L'exemple de sortie du README, qui
+montrait encore des textes retirés en 0.31.4, est remplacé par l'extrait d'une
+vraie exécution de cette version sur une Linux Mint 22.3 de test, dans les deux
+langues. Le README technique décrivait plusieurs verdicts tels qu'ils étaient
+avant 0.27.0–0.32.0 ; il énonce désormais la vérification des certificats
+Kubernetes, les tables IPv6 historiques, le barème des clés hôte SSH, les
+règles `NOPASSWD` équivalentes à root et le `PATH` de root, l'analyse des
+journaux UFW (tentatives répétées et balayages de ports, pas « détection de
+force brute »), et gagne les sections conteneurs, routage et sauvegarde qui lui
+manquaient. Corrigés aussi : le tableau des vérifications du README, le nombre
+de constats que chaque profil assouplit (36 pour `desktop`, 31 pour
+`workstation`), le nombre de clés explain et les marques de `--history` dans
+`bob(1)`, les délais de la CI dans CI.md ; et SECURITY.md nomme désormais les
+sondes Kubernetes en boucle locale, que `--offline` ne coupe pas.
+
+### Limites
+
+- §2 : une règle qui ne nomme aucune interface ni aucun commentaire connu reste
+  excusée pendant que quelque chose route, de même qu'une règle qui ne nomme que
+  des interfaces existantes que BOB ne sait pas attribuer ; les noms
+  d'interfaces sont comparés par préfixe (WireGuard mis à part) ; les noms des
+  plugins Kubernetes et le `virbr` de libvirt n'ont pas été mesurés ; la règle
+  restreinte a été vérifiée en code, pas rejouée sur l'hôte.
+- §3 : une règle `icmpv6` sans port laisse toujours le verdict IPv6 inconnu
+  (inchangé).
+- §4 : les conteneurs sans root sont comptés, pas examinés ; un `dockerd` sans
+  root n'a pas été mesuré ; un Docker dont le service est arrêté mais dont le
+  socket (`docker.socket`) reste activé n'a pas été mesuré.
+- §6 : Timeshift en mode BTRFS n'a pas été mesuré.
+- §7 : mesuré dans un seul pseudo-terminal (TERM=xterm, rendu par pyte) ; les
+  autres terminaux n'ont pas été mesurés.
+
+**Tests** 20961 → **21220**, mutations 1825 → **1868**.
+
+---
+
 ## [0.32.0] — 12-11-2026
 
 **Une version mineure, BREAKING pour les scores : BOB n'envoie aucune requête

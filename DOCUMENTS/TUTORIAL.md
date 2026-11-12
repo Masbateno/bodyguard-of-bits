@@ -65,7 +65,7 @@ sudo bob
 An audit takes from a few seconds to a few minutes: the time depends on the disk, the CPU and how many services are installed. The summary box prints the duration of the run, so you need not guess. You will see :
 
 1. **A header per domain** (`FIREWALL & NETWORK`, `EXPOSURE & SERVICES`, `ACCESS CONTROL`, …), a box per section beneath it, and one line per finding marked `✔ [OK]`, `ℹ [INFO]`, `⚠ [WARNING]` or `✖ [ALERT]`
-2. **A summary box** at the end: the score out of 10 (written `≤ N/10` when a section could not be read in full — the score is then a ceiling), the risk level (`LOW`, `MEDIUM`, `HIGH` or `CRITICAL`), the network context BOB detected, the audit profile and the duration; then the findings to handle first (*Action required*), the *Possible improvements* and the score breakdown
+2. **A summary box** at the end: the score out of 10 (written `≤ N/10` when a section could not be read in full — the score is then a ceiling — or `~ N/10` when what could not be read removes a whole domain from the average, with the span the score lies in), the risk level (`LOW`, `MEDIUM`, `HIGH` or `CRITICAL`), the network context BOB detected, the audit profile and the duration; then the findings to handle first (*Action required*), the *Possible improvements* and the score breakdown
 3. **Below the box**, a reminder that the verdict depends on the profile and network context shown above it, the score of each domain, and an attack-surface summary
 
 BOB reads UFW, firewalld, and a raw nftables or iptables ruleset. When none of them filters inbound traffic, it raises *"No active firewall"* and suggests the front-end of your distribution family — `ufw` on Debian, Ubuntu, Arch and Alpine, `firewalld` on Fedora, RHEL and openSUSE — with commands that allow SSH before the firewall starts filtering. On Alpine with awall installed, BOB names awall instead: it says which policies are enabled, or that none is, and prints no command, since choosing a policy is yours (0.26.0).
@@ -142,8 +142,8 @@ BOB ships 4 profiles :
 | Profile | When to use | What changes |
 |---|---|---|
 | `server` (default) | servers, and any host you want judged at full weight | every finding at its full severity |
-| `desktop` | personal laptop or desktop — chosen automatically when no profile is set and a display manager is active | 35 findings downgraded to INFO, among them a missing backup, auditd, AppArmor without an enforcing profile, Secure Boot, automatic updates, the freshness of rootkit / ClamAV / file-integrity scans, and SSH password authentication and forwarding; the firewall state and SSH root login keep their full severity |
-| `workstation` | shared or business workstation | the same 30 downgrades as `desktop`, without the five on backup, auditd and AppArmor enforcement, which keep their full severity |
+| `desktop` | personal laptop or desktop — chosen automatically when no profile is set and a display manager is active | 36 findings downgraded to INFO, among them a missing backup, auditd, AppArmor without an enforcing profile, Secure Boot, automatic updates, the freshness of rootkit / ClamAV / file-integrity scans, and SSH password authentication and forwarding; the firewall state and SSH root login keep their full severity |
+| `workstation` | shared or business workstation | the same 31 downgrades as `desktop`, without the five on backup, auditd and AppArmor enforcement, which keep their full severity |
 | `container` | an audit inside a container | extends `desktop` and skips 17 host-level sections: sysctl hardening, kernel modules, kernel hardening, Secure Boot, Raspberry Pi, auditd, SUID audit, Docker hardening, rootkit, file integrity, disk, memory, fail2ban, ClamAV, NTP, MAC policy and backup |
 
 Pick once per host :
@@ -352,7 +352,7 @@ sudo bob --french                           # shortcut for --lang=fr
 sudo bob --lang=fr                          # explicit
 ```
 
-All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 3212 keys × 2 locales — except three things, described below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
+All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 3220 keys × 2 locales — except three things, described below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
 
 Three things stay English on purpose, and a bilingual diff of the audit output in v0.15.4 confirmed they are the only ones: **shell commands** in remediation lines (a command is not prose), **CIS benchmark references** that carry a numbered code (v0.11.2 decision — the uncoded "Best practice" ones *are* translated), and the **38 service labels**, such as `Samba (Windows file sharing)` or `Apache Web Server`, treated as product names even when they carry English words. The labels also key the `service_risk.*` entries and go into the audit baseline, so translating them at the source would rename 114 locale entries and make `--diff` report phantom changes on a locale switch.
 

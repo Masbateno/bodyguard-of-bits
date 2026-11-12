@@ -131,7 +131,8 @@ are not backported.
 
 | Version        | Supported          |
 |----------------|--------------------|
-| 0.32.x         | ✅ current          |
+| 0.33.x         | ✅ current          |
+| 0.32.x         | ❌ end of life      |
 | 0.31.x         | ❌ end of life      |
 | 0.30.x         | ❌ end of life      |
 | 0.29.x         | ❌ end of life      |
@@ -157,15 +158,15 @@ are not backported.
 | 0.6.x          | ❌ end of life      |
 | ≤ 0.5.x        | ❌ end of life      |
 
-Patches release as `0.32.x+1`. A change to the stable contract — exit codes, the
+Patches release as `0.33.x+1`. A change to the stable contract — exit codes, the
 JSON schema, option names, finding keys ([CONVENTIONS](DOCUMENTS/CONVENTIONS.md#8-versioning))
-— bumps the minor (`0.33.0`). A patch can still move scores, when a finding is
+— bumps the minor (`0.34.0`). A patch can still move scores, when a finding is
 corrected against a measurement: its changelog entry then says *BREAKING for
 scores* and lists every penalty it newly triggers (0.31.1 to 0.31.4 did).
 
-**v0.31.x is end-of-life as of the day 0.32.0 ships**, per the "latest minor
-line only" policy above. No security fixes will be backported. Users on v0.31.x
-must `pipx upgrade bodyguard-of-bits` to v0.32.x.
+**v0.32.x is end-of-life as of the day 0.33.0 ships**, per the "latest minor
+line only" policy above. No security fixes will be backported. Users on v0.32.x
+must `pipx upgrade bodyguard-of-bits` to v0.33.x.
 
 The upgrade changes what the score *means* when BOB cannot read part of the
 host. Until v0.16.0 the score was a sum over the checks that ran, and a check
@@ -532,6 +533,13 @@ By default, BOB makes **two** outbound HTTPS calls:
 Both can be disabled with `--offline` (or `-o`). In `--offline` mode, BOB
 makes **zero** outbound network connections. This is the recommended setting
 for distro CI / build sandboxes / air-gapped environments.
+
+On a Kubernetes node (since 0.25.0) BOB also connects to the host itself, on
+127.0.0.1 only, with no credentials: the kubelet (10250, and its read-only port
+10255) and, where it reads its port, the API server. These connections do not
+leave the host and `--offline` does not turn them off. Since 0.31.0 a probe
+goes only after BOB has checked the process holding the port; since 0.32.0 a
+TLS probe sends no request before the certificate is verified.
 
 No telemetry, no analytics, no automatic update check, no remote logging:
 BOB never phones home.

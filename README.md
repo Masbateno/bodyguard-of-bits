@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.32.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.33.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -42,7 +42,7 @@ BOB is not a scanner. It does not exploit, probe, or guess. It deterministically
 
 Lynis and OpenSCAP are solid, well-established tools — if you need broad compliance coverage or formal certification workflows, they're the right choice.
 
-BOB serves a different purpose: **practical hardening for sysadmins who need to act on findings, not file them**. Every result comes with a plain-language explanation and a ready-to-run remediation command. The security score is context-aware — a machine directly exposed to the internet is held to a stricter standard than one behind NAT. Output is structured to be read in a terminal, not archived.
+BOB serves a different purpose: **practical hardening for sysadmins who need to act on findings, not file them**. Every warning comes with a plain-language explanation (`--explain`) and, when one exists, a ready-to-run remediation command. The security score is context-aware — a machine directly exposed to the internet is held to a stricter standard than one behind NAT. Output is structured to be read in a terminal, not archived.
 
 If you already run Lynis, BOB is not a replacement — it's a different lens, one that tells you what to do next.
 
@@ -138,45 +138,77 @@ bob --explain ssh.password_auth   # explain a finding (no sudo)
 
 ## Sample output
 
+An excerpt of a real run on a Linux Mint 22.3 test host (BOB 0.33.0, run as root; the `desktop` profile chosen automatically). `⋮` marks lines left out; the header box also leaves out the logo and some rows.
+
 ```
 $ sudo bob
 
+ℹ [INFO] Desktop environment detected — using the 'desktop' profile (it reports a missing backup, auditd rules, AppArmor without an enforcing profile and SSH password logins as INFO, among others). Override with --profile server.
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.32.0  │  Linux hardening auditor                                     ║
-║  System        : Linux Mint 22.3                                             ║
-║  Kernel        : 6.17.0-23-generic                                           ║
+║  BOB 0.33.0  │  Linux hardening auditor                                      ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  System        : 🌿  Linux Mint 22.3                                         ║
+║  Kernel        : 7.0.0-34-generic                                            ║
 ║  UFW           : 0.36.2                                                      ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━ SYSTEM HARDENING ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ SYSTEM HARDENING ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-✔ [OK]    SYN flood protection active (tcp_syncookies=1)
-✔ [OK]    ASLR fully enabled (randomize_va_space=2)
-⚠ [WARN]  System sends ICMP redirects — exploitable for MITM on a non-router
-   → sudo sysctl -w net.ipv4.conf.all.send_redirects=0
-   [CIS:3.3.2]
-   ? bob --explain hardening.send_redirects_enabled
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  SYSTEM HARDENING ANALYSIS                                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+ℹ [INFO] Reverse path filtering in loose mode (rp_filter=2) — consider switching to strict mode (=1)
+⚠ [WARNING] ICMP redirects accepted — risk of routing table manipulation
+ℹ [INFO] Martian packet logging disabled — spoofed packets will not be logged
+✔ [OK] ICMP broadcast echo is ignored
+✔ [OK] SYN flood protection active (tcp_syncookies=1)
+✔ [OK] IP source routing disabled (accept_source_route=0)
+⚠ [WARNING] IPv6 ICMP redirects accepted — router impersonation attack possible on the local network
+ℹ [INFO] ICMP redirect sending is on (send_redirects=1)
+✔ [OK] Hard link protection enabled (fs.protected_hardlinks=1)
+✔ [OK] Symbolic link protection enabled (fs.protected_symlinks=1)
+✔ [OK] FIFO protection enabled (fs.protected_fifos=1)
+✔ [OK] Regular-file protection enabled (fs.protected_regular=2)
+⋮
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║  Security score   : 8/10  ↑ +1                                               ║
-║  Risk level       : ✔ LOW                                                    ║
-║  Firewall & Services  10/10  ██████████                                      ║
-║  SSH                   7/10  ███████░░░                                      ║
-║  System Hardening      4/10  ████░░░░░░                                      ║
-╚══════════════════════════════════════════════════════════════════════════════╝
+║  Security score : ≤ 8/10                                                     ║
+║  Risk level : ✖ HIGH at best  (raised by posture: firewall inactive)         ║
+║  Visibility : 2 section(s) not fully read — the score is a ceiling           ║
+║  Network context : IPv4 behind NAT, public IPv6 (router filter unverified)   ║
+║  Audit profile : Desktop                                                     ║
+║  Duration : 1 min 42 s                                                       ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  ✖ Action required                                                           ║
+║    ✖  UFW firewall is disabled. Your machine is currently unprotected.       ║
+║       → sudo ufw allow 22/tcp && sudo ufw enable                             ║
+║       [CIS:4.1.3]                                                            ║
+║       ? bob --explain firewall.inactive                                      ║
+⋮
+
+  Domain Scores
+  ────────────────────────────────────────
+  Firewall & Network  ≤ 3/10  ███░░░░░░░
+  Exposure & Services   9/10  █████████░
+  Access Control       10/10  ██████████
+  System Hardening      7/10  ███████░░░
+  Health & Resilience   8/10  ████████░░
+  Threat Detection      9/10  █████████░
 ```
 
-Every WARN/ALERT shows a CIS reference (when applicable), a copy-paste remediation command, and an `--explain` hint linking to the longer rationale.
+Each item of the *Action required* list shows a CIS reference when one applies, a remediation command when one exists, and an `--explain` hint linking to the longer rationale.
 
 ---
 
 ## Security checks — 57 check sections, 6 score domains
 
-| Domain | What it covers |
-|--------|----------------|
-| **Firewall** | UFW rules, firewalld zones, iptables/nftables (when UFW is not running), IPv6 consistency, port exposure |
+| Area | What it covers |
+|------|----------------|
+| **Firewall** | UFW rules, firewalld zones, iptables/nftables (when UFW is not running), IPv6 consistency, port exposure, routing beside UFW (FORWARD rules, `ip_forward`) |
 | **SSH** | sshd_config hardening — PermitRootLogin, key strength, timeouts, forwarding |
 | **Kernel hardening** | sysctl parameters (incl. `fs.protected_*`), kernel attack surface (unprivileged eBPF, perf events, user namespaces), kernel-reported CPU vulnerabilities and IOMMU, kernel modules, Secure Boot, firmware/microcode |
 | **Boot & storage** | GRUB password/config permissions, mount options (nodev/nosuid/noexec), LUKS disk encryption, core-dump policy, kexec/kernel lockdown, `/proc` hidepid |
@@ -184,9 +216,10 @@ Every WARN/ALERT shows a CIS reference (when applicable), a copy-paste remediati
 | **File permissions** | SUID/SGID audit, file capabilities, sensitive files, sudoers, polkit rule permissions; world-writable and unowned files (`--exhaustive`) |
 | **User accounts** | Expired accounts, password policy and hashing algorithm, login.defs, PAM, account lockout (pam_faillock), su restriction (pam_wheel / su mode / BusyBox su), home and `.netrc` permissions, duplicate UIDs |
 | **System updates & detection** | pending updates (apt, dnf, zypper, pacman, apk), package authenticity (signature / repository checks), system crypto policy, package-file integrity (`--exhaustive`), auditd rules, Fail2ban, ClamAV, AppArmor/SELinux, AIDE/Tripwire integrity, rkhunter, SMART, firmware/microcode |
-| **Operations** | Log rotation, auth.log analysis, NTP sync, TLS cert expiry, systemd timers, Samba, cron jobs |
+| **Operations** | Log rotation, UFW log analysis (repeated blocked attempts, port scans), auth.log analysis, NTP sync, TLS cert expiry, systemd timers, Samba, cron jobs, backup (Timeshift included) |
 | **Network** | Public IP context, network type detection (server/LAN/VPN), GeoIP optional |
 | **Docker / Podman** | Daemon hardening, privileged containers, sensitive mounts |
+| **Kubernetes node** | Kubelet and API server asked without credentials once their certificate is verified, authorisation mode, broad `cluster-admin` bindings, pod capabilities, sensitive hostPath mounts, host namespaces |
 
 ---
 
@@ -217,7 +250,7 @@ No sudo required. Fully offline — no external calls or data collection.
 | Profile | Use case |
 |---------|----------|
 | `server` | Default — every finding at its full severity. Used when no profile is set, unless BOB finds an active display manager: it then picks `desktop` and says so in an INFO line |
-| `desktop` | Relaxed for personal machines — extends `server` and downgrades 35 findings to INFO, among them SSH password authentication and forwarding, automatic updates, a missing backup, auditd, AppArmor without an enforcing profile, Secure Boot, and the freshness of rootkit / ClamAV / file-integrity scans |
+| `desktop` | Relaxed for personal machines — extends `server` and downgrades 36 findings to INFO, among them SSH password authentication and forwarding, automatic updates, a missing backup, auditd, AppArmor without an enforcing profile, Secure Boot, and the freshness of rootkit / ClamAV / file-integrity scans |
 | `workstation` | First-class business-tier profile since v0.8.1 (no longer an alias to `desktop`) — keeps backup / auditd / MAC-enforce findings at WARN while relaxing the same SSH / clamav / rootkit / file-integrity ergonomics as `desktop` |
 | `container` | Extends `desktop` and skips 17 host-level sections: sysctl hardening, kernel modules and kernel hardening, Secure Boot, Raspberry Pi, auditd, suid_audit, Docker-in-Docker, disk and memory, fail2ban, ClamAV, NTP, MAC policy, backup, and the intrusion-detection and integrity tools (rootkit, file integrity) |
 

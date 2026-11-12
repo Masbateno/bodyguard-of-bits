@@ -487,13 +487,13 @@ def check_backup(
     Scoring:
       - active_tools non-empty:   OK
       - installed_tools only:     INFO (no deduction)
-      - nothing found, server:    WARN  −1 pt
-      - nothing found, desktop:   INFO   0 pt
+      - nothing found:            WARN  −1 pt (desktop.conf softens it to INFO)
 
     Args:
         snapshot:     BackupSnapshot from the system (or built in tests).
         t:            Translation function. Defaults to key pass-through.
-        profile_name: "server" | "desktop".
+        profile_name: unused since v0.33.0 — the profile file decides; kept
+                      because the runner passes it to every check.
 
     Returns:
         CheckResult with findings and any score deductions.
@@ -552,23 +552,19 @@ def check_backup(
     # --- No backup tool found -----------------------------------------------
     _cmd, _detail = install_fix(
         _t, _t("backup.no_backup_detail"), "borgbackup", "borgmatic")
-    if profile_name == "server":
-        result.warn_with_deduction(
-            key="backup.no_backup",
-            message=_t("backup.no_backup"),
-            reason=_t("backup.no_backup_reason"),
-            points=1,
-            detail=_detail,
-            cmd=_cmd,
-            nature="improvement",
-        )
-    else:
-        result.info(
-            message=_t("backup.no_backup"),
-            detail=_detail,
-            cmd=_cmd,
-            key="backup.no_backup",
-        )
+    # v0.33.0 — WARN whatever the profile; a profile softens it in its own
+    # file (desktop.conf, and container.conf through it). Before, only a
+    # profile named "server" got the WARN, so workstation — whose file and
+    # docs keep it since v0.8.1 — lost the point without saying so.
+    result.warn_with_deduction(
+        key="backup.no_backup",
+        message=_t("backup.no_backup"),
+        reason=_t("backup.no_backup_reason"),
+        points=1,
+        detail=_detail,
+        cmd=_cmd,
+        nature="improvement",
+    )
 
     return result
 

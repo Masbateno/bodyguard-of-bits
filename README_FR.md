@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.32.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.33.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -42,7 +42,7 @@ BOB n'est pas un scanner. Il n'exploite pas, ne sonde pas, ne devine pas. Il év
 
 Lynis et OpenSCAP sont des outils solides et éprouvés — si vous avez besoin d'une couverture de conformité large ou de workflows de certification formels, ce sont les bons choix.
 
-BOB répond à un besoin différent : **du durcissement pratique pour les admins qui ont besoin d'agir sur les résultats, pas de les archiver**. Chaque résultat est accompagné d'une explication en langage clair et d'une commande de remédiation prête à l'emploi. Le score de sécurité est contextuel — une machine directement exposée sur internet est jugée plus sévèrement qu'une machine derrière NAT. La sortie est conçue pour être lue dans un terminal, pas classée.
+BOB répond à un besoin différent : **du durcissement pratique pour les admins qui ont besoin d'agir sur les résultats, pas de les archiver**. Chaque avertissement est accompagné d'une explication en langage clair (`--explain`) et, quand il en existe une, d'une commande de remédiation prête à l'emploi. Le score de sécurité est contextuel — une machine directement exposée sur internet est jugée plus sévèrement qu'une machine derrière NAT. La sortie est conçue pour être lue dans un terminal, pas classée.
 
 Si vous utilisez déjà Lynis, BOB n'est pas un remplacement — c'est un autre angle de lecture, axé sur ce qu'il faut faire ensuite.
 
@@ -139,45 +139,78 @@ bob --explain ssh.password_auth   # expliquer un résultat (sans sudo)
 
 ## Aperçu de la sortie
 
-```
-$ sudo bob -d
+Extrait d'un vrai audit sur une Linux Mint 22.3 de test (BOB 0.33.0, lancé en root ; profil `desktop` choisi automatiquement). `⋮` marque des lignes omises ; le cadre d'en-tête omet aussi le logo et quelques lignes.
 
+```
+$ sudo bob
+
+ℹ [INFO] Environnement de bureau détecté — profil « desktop » utilisé (il rapporte en INFO l'absence de sauvegarde, les règles auditd, AppArmor sans profil en mode enforce et la connexion SSH par mot de passe, entre autres). Forcer avec --profile server.
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.32.0  │  Auditeur de durcissement Linux                              ║
-║  Système       : Linux Mint 22.3                                             ║
-║  Noyau         : 6.17.0-23-generic                                           ║
+║  BOB 0.33.0  │  Auditeur de durcissement Linux                               ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  Système       : 🌿  Linux Mint 22.3                                         ║
+║  Noyau         : 7.0.0-34-generic                                            ║
 ║  UFW           : 0.36.2                                                      ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━ DURCISSEMENT SYSTÈME ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ DURCISSEMENT SYSTÈME ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-✔ [OK]   Protection SYN flood active (tcp_syncookies=1)
-✔ [OK]   ASLR entièrement activé (randomize_va_space=2)
-⚠ [WARN] Le système envoie des redirections ICMP — exploitable pour du MITM
-   → sudo sysctl -w net.ipv4.conf.all.send_redirects=0
-   [CIS:3.3.2]
-   ? bob --explain hardening.send_redirects_enabled
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  ANALYSE DU DURCISSEMENT SYSTÈME                                             │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+ℹ [INFO] Filtrage par chemin inverse en mode permissif (rp_filter=2) — envisagez le mode strict (=1)
+⚠ [ATTENTION] Redirections ICMP acceptées — risque de manipulation de la table de routage
+ℹ [INFO] Journalisation des paquets martiens désactivée — les paquets usurpés ne seront pas tracés
+✔ [OK] L'écho de diffusion ICMP est ignoré
+✔ [OK] Protection SYN flood active (tcp_syncookies=1)
+✔ [OK] Routage source IP désactivé (accept_source_route=0)
+⚠ [ATTENTION] Redirections ICMP IPv6 acceptées — usurpation de routeur possible sur le réseau local
+ℹ [INFO] Envoi de redirections ICMP activé (send_redirects=1)
+✔ [OK] Protection des liens durs activée (fs.protected_hardlinks=1)
+✔ [OK] Protection des liens symboliques activée (fs.protected_symlinks=1)
+✔ [OK] Protection des FIFO activée (fs.protected_fifos=1)
+✔ [OK] Protection des fichiers réguliers activée (fs.protected_regular=2)
+⋮
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║  Score de sécurité : 8/10  ↑ +1                                              ║
-║  Niveau de risque  : ✔ FAIBLE                                                ║
-║  Pare-feu & Services  10/10  ██████████                                      ║
-║  SSH                   7/10  ███████░░░                                      ║
-║  Durcissement          4/10  ████░░░░░░                                      ║
-╚══════════════════════════════════════════════════════════════════════════════╝
+║  Score de sécurité : ≤ 8/10                                                  ║
+║  Niveau de risque : ✖ ÉLEVÉ au mieux  (majoré par posture : pare-feu inactif)║
+║  Visibilité : 2 section(s) non entièrement lue(s) — le score est un plafond  ║
+║  Contexte réseau : IPv4 en NAT, IPv6 publique (filtrage box non vérifié)     ║
+║  Profil d'audit : Desktop                                                    ║
+║  Durée : 47.0 s                                                              ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  ✖ À corriger                                                                ║
+║    ✖  Le pare-feu UFW est désactivé. Votre machine n'est actuellement pas    ║
+║       protégée.                                                              ║
+║       → sudo ufw allow 22/tcp && sudo ufw enable                             ║
+║       [CIS:4.1.3]                                                            ║
+║       ? bob --explain firewall.inactive                                      ║
+⋮
+
+  Scores par domaine
+  ────────────────────────────────────────
+  Pare-feu & Réseau     ≤ 3/10  ███░░░░░░░
+  Exposition & Services   9/10  █████████░
+  Contrôle d'accès       10/10  ██████████
+  Durcissement système    7/10  ███████░░░
+  Santé & Résilience      8/10  ████████░░
+  Détection des menaces   9/10  █████████░
 ```
 
-Chaque WARN/ALERT affiche une référence CIS (quand applicable), une commande de remédiation à copier-coller, et un indicateur `--explain` qui pointe vers l'explication détaillée.
+Chaque point de la liste *À corriger* affiche une référence CIS quand il y en a une, une commande de remédiation quand il en existe une, et un indicateur `--explain` qui pointe vers l'explication détaillée.
 
 ---
 
 ## Vérifications de sécurité — 57 sections de vérification, 6 domaines de score
 
-| Domaine | Ce qu'il couvre |
-|---------|----------------|
-| **Pare-feu** | Règles UFW, zones firewalld, iptables/nftables (quand UFW ne tourne pas), cohérence IPv6, exposition des ports |
+| Thème | Ce qu'il couvre |
+|-------|----------------|
+| **Pare-feu** | Règles UFW, zones firewalld, iptables/nftables (quand UFW ne tourne pas), cohérence IPv6, exposition des ports, routage à côté d'UFW (règles FORWARD, `ip_forward`) |
 | **SSH** | Durcissement sshd_config — PermitRootLogin, qualité des clés, timeouts, forwarding |
 | **Durcissement noyau** | Paramètres sysctl (dont `fs.protected_*`), surface d'attaque du noyau (eBPF non privilégié, événements perf, espaces de noms utilisateur), vulnérabilités CPU rapportées par le noyau et IOMMU, modules noyau, Secure Boot, firmware/microcode |
 | **Boot & stockage** | Mot de passe/permissions de config GRUB, options de montage (nodev/nosuid/noexec), chiffrement disque LUKS, politique de core dumps, kexec/lockdown noyau, hidepid de `/proc` |
@@ -185,9 +218,10 @@ Chaque WARN/ALERT affiche une référence CIS (quand applicable), une commande d
 | **Permissions fichiers** | Audit SUID/SGID, capabilities de fichiers, fichiers sensibles, sudoers, permissions des règles polkit ; fichiers modifiables par tous et sans propriétaire (`--exhaustive`) |
 | **Comptes utilisateurs** | Comptes expirés, politique et algorithme de hachage des mots de passe, login.defs, PAM, verrouillage de compte (pam_faillock), restriction de su (pam_wheel / mode du binaire / su de BusyBox), permissions des répertoires personnels et de `.netrc`, UID dupliqués |
 | **Mises à jour & détection** | Mises à jour en attente (apt, dnf, zypper, pacman, apk), authenticité des paquets (vérification des signatures / dépôts), politique crypto système, intégrité des fichiers de paquets (`--exhaustive`), règles auditd, Fail2ban, ClamAV, AppArmor/SELinux, intégrité AIDE/Tripwire, rkhunter, SMART, firmware/microcode |
-| **Opérations** | Rotation des logs, analyse auth.log, synchro NTP, expiration certificats TLS, timers systemd, Samba, tâches cron |
+| **Opérations** | Rotation des logs, analyse des journaux UFW (tentatives bloquées répétées, balayages de ports), analyse auth.log, synchro NTP, expiration certificats TLS, timers systemd, Samba, tâches cron, sauvegarde (Timeshift compris) |
 | **Réseau** | Contexte IP publique, détection du type de réseau (serveur/LAN/VPN), GeoIP optionnel |
 | **Docker / Podman** | Durcissement du daemon, conteneurs privilégiés, montages sensibles |
+| **Nœud Kubernetes** | Kubelet et serveur d'API interrogés sans identifiants une fois leur certificat vérifié, mode d'autorisation, liaisons `cluster-admin` trop larges, capacités des pods, montages hostPath sensibles, espaces de noms de l'hôte |
 
 ---
 
@@ -218,7 +252,7 @@ Sans sudo. Entièrement hors ligne — aucun appel externe ni collecte de donné
 | Profil | Cas d'usage |
 |--------|------------|
 | `server` | Par défaut — chaque constat à sa pleine sévérité. Utilisé quand aucun profil n'est défini, sauf si BOB trouve un gestionnaire d'affichage actif : il prend alors `desktop` et le dit dans une ligne INFO |
-| `desktop` | Assoupli pour les machines personnelles — étend `server` et ramène 35 constats en INFO, dont l'authentification SSH par mot de passe et les redirections SSH, les mises à jour automatiques, l'absence de sauvegarde, auditd, AppArmor sans profil en mode enforce, Secure Boot, et la fraîcheur des analyses rootkit / ClamAV / intégrité des fichiers |
+| `desktop` | Assoupli pour les machines personnelles — étend `server` et ramène 36 constats en INFO, dont l'authentification SSH par mot de passe et les redirections SSH, les mises à jour automatiques, l'absence de sauvegarde, auditd, AppArmor sans profil en mode enforce, Secure Boot, et la fraîcheur des analyses rootkit / ClamAV / intégrité des fichiers |
 | `workstation` | Profil business first-class depuis v0.8.1 (plus un alias vers `desktop`) — garde backup / auditd / MAC-enforce au niveau WARN tout en relâchant la même ergonomie SSH / clamav / rootkit / file-integrity que `desktop` |
 | `container` | Étend `desktop` et saute 17 sections propres à l'hôte : durcissement sysctl, modules noyau et durcissement noyau, Secure Boot, Raspberry Pi, auditd, suid_audit, Docker-in-Docker, disque et mémoire, fail2ban, ClamAV, NTP, politique MAC, sauvegarde, et les outils de détection d'intrusion et d'intégrité (rootkit, intégrité des fichiers) |
 

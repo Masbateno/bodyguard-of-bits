@@ -310,14 +310,19 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
     Findings:
       - Not installed:                   INFO  (no deduction)
       - Service not running:             WARN  −1 pt
-      - Running, no rules loaded:        WARN  −1 pt (server) / INFO (desktop)
-      - Running, sensitive files missing from rules:
-            WARN −1 pt on server ; INFO on desktop (profile_name in desktop/workstation)
+      - Running, no rules loaded:        WARN  −1 pt
+      - Running, sensitive files missing from rules: WARN −1 pt
       - Running with all sensitive files watched: OK
+
+    v0.33.0 — the WARNs are the same for every profile; a profile softens
+    them in its own file (desktop.conf, and container.conf through it).
+    Before, a profile named desktop or workstation got INFO here, so
+    workstation — whose file and docs keep auditd.* since v0.8.1 — lost two
+    points without saying so. ``profile_name`` is unused since, kept because
+    the runner passes it to every check.
     """
     _t = t if t is not None else _identity_t
     result = CheckResult()
-    is_desktop = profile_name.lower() in ("desktop", "workstation")
 
     if not snapshot.installed:
         _cmd, _detail = install_fix(
@@ -391,47 +396,30 @@ def check_auditd(snapshot: AuditdSnapshot, t: TranslationFunc | None = None,
         )
         if snapshot.immutable:
             _no_rules_cmd = _no_rules_cmd.removesuffix("\nsudo augenrules --load")
-        if is_desktop:
-            result.info(
-                message=_t("auditd.no_rules"),
-                detail=_t("auditd.no_rules_detail") + locked,
-                cmd=_no_rules_cmd,
-                cmd_type="fix",
-                key="auditd.no_rules",
-            )
-        else:
-            result.warn_with_deduction(
-                key="auditd.no_rules",
-                message=_t("auditd.no_rules"),
-                reason=_t("auditd.no_rules_reason"),
-                points=1,
-                detail=_t("auditd.no_rules_detail") + locked,
-                cmd=_no_rules_cmd,
-                nature="improvement",
-            )
+        result.warn_with_deduction(
+            key="auditd.no_rules",
+            message=_t("auditd.no_rules"),
+            reason=_t("auditd.no_rules_reason"),
+            points=1,
+            detail=_t("auditd.no_rules_detail") + locked,
+            cmd=_no_rules_cmd,
+            nature="improvement",
+        )
         return result
 
     # Check for sensitive file coverage
     missing = sorted(f for f in _SENSITIVE_FILES if not _covered(f, snapshot.watched_files))
     if missing:
         missing_str = ", ".join(missing)
-        if is_desktop:
-            result.info(
-                message=_t("auditd.missing_sensitive_rules"),
-                detail=_t("auditd.missing_sensitive_rules_detail", files=missing_str) + locked,
-                cmd=_suggest_rules_cmd(missing, snapshot.immutable),
-                key="auditd.missing_sensitive_rules",
-            )
-        else:
-            result.warn_with_deduction(
-                key="auditd.missing_sensitive_rules",
-                message=_t("auditd.missing_sensitive_rules"),
-                reason=_t("auditd.missing_sensitive_rules_reason", files=missing_str),
-                points=1,
-                detail=_t("auditd.missing_sensitive_rules_detail", files=missing_str) + locked,
-                cmd=_suggest_rules_cmd(missing, snapshot.immutable),
-                nature="improvement",
-            )
+        result.warn_with_deduction(
+            key="auditd.missing_sensitive_rules",
+            message=_t("auditd.missing_sensitive_rules"),
+            reason=_t("auditd.missing_sensitive_rules_reason", files=missing_str),
+            points=1,
+            detail=_t("auditd.missing_sensitive_rules_detail", files=missing_str) + locked,
+            cmd=_suggest_rules_cmd(missing, snapshot.immutable),
+            nature="improvement",
+        )
         return result
 
     # All sensitive files covered

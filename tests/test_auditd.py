@@ -16,6 +16,7 @@ from bob.checks.auditd import (
     _suggest_rules_cmd,
     check_auditd,
 )
+from bob.profiles import apply_profile, load_profile
 from tests.helpers import _levels, _t
 
 
@@ -33,6 +34,11 @@ def make_snap(**overrides) -> AuditdSnapshot:
     )
     defaults.update(overrides)
     return AuditdSnapshot(**defaults)
+
+
+def as_profile(snap, name: str):
+    """v0.33.0 — the check, then the profile file's overrides, as the runner does."""
+    return apply_profile(check_auditd(snap, t=_t, profile_name=name), load_profile(name))
 
 
 def has_level(result, level: str) -> bool:
@@ -133,18 +139,20 @@ class TestNoRules:
 
     def test_info_on_desktop_when_no_rules(self):
         snap = make_snap(watched_files=set(), rule_count=0)
-        result = check_auditd(snap, t=_t, profile_name="desktop")
+        result = as_profile(snap, "desktop")
         assert has_level(result, "info")
 
     def test_no_deduction_on_desktop_when_no_rules(self):
         snap = make_snap(watched_files=set(), rule_count=0)
-        result = check_auditd(snap, t=_t, profile_name="desktop")
+        result = as_profile(snap, "desktop")
         assert total_deductions(result) == 0
 
-    def test_workstation_alias_no_deduction_when_no_rules(self):
+    def test_workstation_keeps_the_deduction_when_no_rules(self):
+        # v0.33.0 — workstation is no longer desktop's alias (since v0.8.1);
+        # its file keeps auditd.* at WARN.
         snap = make_snap(watched_files=set(), rule_count=0)
-        result = check_auditd(snap, t=_t, profile_name="workstation")
-        assert total_deductions(result) == 0
+        result = as_profile(snap, "workstation")
+        assert total_deductions(result) == 1
 
     def test_fix_cmd_present_on_desktop_no_rules(self):
         snap = make_snap(watched_files=set(), rule_count=0)
@@ -170,19 +178,20 @@ class TestMissingSensitiveRules:
 
     def test_info_on_desktop_when_sensitive_missing(self):
         snap = make_snap(watched_files={"/etc/passwd"}, rule_count=1)
-        result = check_auditd(snap, t=_t, profile_name="desktop")
+        result = as_profile(snap, "desktop")
         assert has_level(result, "info")
 
     def test_no_deduction_on_desktop_when_sensitive_missing(self):
         snap = make_snap(watched_files={"/etc/passwd"}, rule_count=1)
-        result = check_auditd(snap, t=_t, profile_name="desktop")
+        result = as_profile(snap, "desktop")
         assert total_deductions(result) == 0
 
-    def test_workstation_alias_behaves_like_desktop(self):
+    def test_workstation_keeps_the_warn_when_sensitive_missing(self):
+        # v0.33.0 — see test_workstation_keeps_the_deduction_when_no_rules.
         snap = make_snap(watched_files={"/etc/passwd"}, rule_count=1)
-        result = check_auditd(snap, t=_t, profile_name="workstation")
-        assert has_level(result, "info")
-        assert total_deductions(result) == 0
+        result = as_profile(snap, "workstation")
+        assert has_level(result, "warn")
+        assert total_deductions(result) == 1
 
     def test_missing_files_in_detail(self):
         received = {}

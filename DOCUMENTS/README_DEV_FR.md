@@ -75,19 +75,19 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | Module | Ce qu'il vérifie |
 |---|---|
 | `firewall.py` | Statut UFW, politique par défaut, cohérence IPv6 ; `check_rules()` pour la détection doublons/wildcards ; `resolve_firewall_posture()` — la réponse pare-feu unique (UFW, cible de zone firewalld, ou jeu de règles brut en DROP/REJECT) que lisent toutes les synthèses (v0.24.1) |
-| `firewall_stack.py` | Contournement iptables brut, règles nftables parallèles, détection ip_forward |
-| `iptables_nftables.py` | Audit iptables/nftables quand UFW est inactif — politiques INPUT/FORWARD, règles loopback et ESTABLISHED/RELATED, détection du backend (iptables-legacy vs nftables) ; une chaîne INPUT dont la première règle accepte tout derrière une politique DROP est lue comme acceptant tout (v0.25.0) |
+| `firewall_stack.py` | Contournement iptables brut, règles nftables parallèles, détection ip_forward ; règles ACCEPT de FORWARD excusées tant qu'un mécanisme de routage tourne (v0.32.0 : un `dockerd` en marche, une interface WireGuard), sauf celles qu'aucun mécanisme en marche ne possède (v0.33.0) |
+| `iptables_nftables.py` | Audit iptables/nftables quand UFW est inactif — politiques INPUT/FORWARD, règles loopback et ESTABLISHED/RELATED, détection du backend (iptables-legacy vs nftables) ; une chaîne INPUT dont la première règle accepte tout derrière une politique DROP est lue comme acceptant tout (v0.25.0) ; le verdict par port (v0.28.0–v0.31.0 : destinations, ensembles, tables de verdicts, interfaces, chaînes avant et sur le crochet d'entrée, NAT de destination, tables legacy IPv4 ; v0.32.0 : tables legacy IPv6 dans le verdict IPv6) |
 | `ipv6.py` | Cohérence ports IPv6 / règles UFW v6 ; champ `has_global_ipv6` ; link-local/ULA uniquement → INFO (pas WARN) ; sans UFW, ports attribués au filtre qui les régit (v0.24.1) |
 | `network_context.py` | Tableau d'interfaces réseau, connexions TCP établies, ports sensibles distants |
 | `services.py` | Services réseau installés, état systemd/OpenRC (dont activé par socket, v0.18.1, et condition non remplie, v0.24.1), exposition selon le pare-feu |
 | `services_state.py` | État des services : services de sécurité activés au boot mais inactifs |
 | `ports.py` | Ports en écoute via `ss`, classification, déduplication |
-| `logs.py` | Logs UFW — tentatives bloquées, bruteforce, top IPs/ports |
+| `logs.py` | Logs UFW (le fichier et ses rotations, ou le journal) — tentatives bloquées, tentatives répétées et balayages de ports (v0.27.0), top IPs/ports |
 | `log_rotation.py` | Rotation des logs : présence config logrotate, persistance journald, SystemMaxUse, rsyslog distant |
 | `auth_log.py` | Analyse log de connexions SSH : connexions réussies, IPs sources, anomalies dans auth.log/journald |
 | `ddns.py` | Clients DDNS actifs (ddclient, inadyn, No-IP DUC, DuckDNS), domaine configuré, croisé avec les ports UFW ouverts |
 | `docker.py` | Détection install Docker, contournement iptables via chaîne DOCKER, exposition ports conteneurs |
-| `docker_audit.py` | Durcissement des conteneurs, Docker et Podman (v0.20.3) : conteneurs privilégiés, socket du runtime monté dans un conteneur (`docker.sock` / `podman.sock`), réseau de l'hôte, conteneurs lancés en root, `userns-remap` de Docker dans `daemon.json` (sa correction crée l'utilisateur dockremap et une plage d'identifiants qui lui est propre, v0.25.0) |
+| `docker_audit.py` | Durcissement des conteneurs, Docker et Podman (v0.20.3) : conteneurs privilégiés, socket du runtime monté dans un conteneur (`docker.sock` / `podman.sock`), réseau de l'hôte, conteneurs lancés en root, `userns-remap` de Docker dans `daemon.json` (sa correction crée l'utilisateur dockremap et une plage d'identifiants qui lui est propre, v0.25.0) ; chaque moteur que root peut interroger, sans doublon, et un moteur qui ne répond pas ou des conteneurs podman sans root dits, non examinés (v0.33.0) |
 | `kubernetes.py` | Nœud Kubernetes (v0.25.0) : droits des pods lus via `ctr` (containerd, MicroK8s, k3s) ou `crictl` (CRI-O) (privileged, chemins de l'hôte qui livrent le nœud, namespaces de l'hôte ; kube-system signalé, non déduit), accès anonyme au kubelet sur 10250 et port lecture seule 10255 ; le serveur d'API (v0.28.0 : fichier d'arguments de MicroK8s ; v0.31.3 : ligne du journal d'un serveur k3s) — AlwaysAllow, accès anonyme, liaisons cluster-admin larges ; ne tourne que là où tourne un kubelet |
 | `virtualization.py` | Hyperviseurs actifs (libvirt/KVM, VirtualBox, VMware, LXD/LXC) et paquets Snap réseau |
 | `samba.py` | Audit sécurité Samba : SMBv1 désactivé, rejet null-password, signing serveur, `map to guest`, `bind interfaces only` |
@@ -98,14 +98,14 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | `mac_policy.py` | Politique MAC (AppArmor / SELinux) : état framework, comptes de profils (enforce/complain/loaded), détection 0-profile |
 | `updates.py` | État des mises à jour via le gestionnaire de paquets de l'hôte (multi-distro depuis v0.19.0) : apt (`apt-get -s dist-upgrade`, détection de cache obsolète, recoupement `apt list --upgradable` — paquets en déploiement progressif et retenus comptés, v0.24.1), `dnf updateinfo list --security`, `zypper list-patches --category security` ; pacman/apk n'ont pas de canal de sécurité (paquets en attente en INFO) ; détection d'unattended-upgrades (apt) |
 | `ssh/` | Audit sécurité SSH (paquet : `_snapshot`, `_parsers`, `_directives`, `_subchecks`) : directives sshd_config, qualité clés hôte, permissions clés user, authorized_keys, known_hosts |
-| `file_perms.py` | Permissions des fichiers sensibles : /etc/passwd, /etc/shadow, sudoers (dont `NOPASSWD:ALL`), `permit nopass` dans `/etc/doas.conf` (v0.21.3), clés hôte SSH |
+| `file_perms.py` | Permissions des fichiers sensibles : /etc/passwd, /etc/shadow, sudoers (dont `NOPASSWD:ALL`), `permit nopass` dans `/etc/doas.conf` (v0.21.3), clés hôte SSH ; règles sans mot de passe pour une commande qui est root de toute façon (v0.27.0), `Defaults` dans leur portée (v0.28.0–v0.30.0) |
 | `suid_audit.py` | Audit binaires SUID/SGID avec whitelist (`config.conf`), scan targeted-roots pour la performance |
 | `user_accounts.py` | Audit des comptes : UID 0 non-root, mots de passe vides, comptes expirés ; v0.24.0 : restriction de `su` (pam_wheel, mode de `su` lui-même, `su` de BusyBox), permissions des répertoires personnels et de `.netrc`, UID et noms dupliqués |
 | `password_policy.py` | Politique de mots de passe : PAM pam_pwquality / pam_cracklib, minlen, PASS_MAX_DAYS, login.defs ; l'algorithme de hachage des mots de passe (MD5/DES/bigcrypt dans `login.defs` ou une pile `pam_unix`, v0.24.0) |
 | `umask.py` | Umask système : /etc/profile, /etc/bash.bashrc, /etc/login.defs, /etc/pam.d/common-session |
 | `cron_audit.py` | Sécurité cron : pipe-to-shell, scripts world-writable, validateur de range |
 | `disk.py` | Santé disques : SMART (smartctl), attributs critiques, utilisation partitions ; support NVMe ; skip si tous les disques sont virtuels |
-| `backup.py` | Détection des sauvegardes : binaires et leurs artefacts (borg/borgmatic, restic, timeshift, duplicati, rclone, kopia, deja-dup, duplicity, rsnapshot, tarsnap, …) et outil de sauvegarde nommé dans une tâche planifiée ; actif vs simplement installé |
+| `backup.py` | Détection des sauvegardes : binaires et leurs artefacts (borg/borgmatic, restic, timeshift, duplicati, rclone, kopia, deja-dup, duplicity, rsnapshot, tarsnap, …) et outil de sauvegarde nommé dans une tâche planifiée ; actif vs simplement installé ; planifications et instantanés de Timeshift (v0.31.4), ses exclusions (v0.32.0) et un dernier instantané trop ancien (v0.33.0) |
 | `memory.py` | Mémoire & swap : détection usure SSD, swap injustifié (swap > 0 alors que RAM libre), swappiness |
 | `desktop_apps.py` | Détection applications de bureau : applis GUI connues en cours d'exécution (Brave, kDrive, VSCode, ExpressVPN…) |
 | `ntp.py` | Synchronisation NTP : systemd-timesyncd/chronyd/ntpd actif et synchronisé ; chrony jugé sur sa ligne `Leap status` (v0.25.0) |
@@ -148,7 +148,7 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 ```
 bob/
 ├── __init__.py
-├── __main__.py          # Orchestrateur (~1009 lignes — coordination pure)
+├── __main__.py          # Orchestrateur (~1071 lignes — coordination pure)
 ├── _atomic.py           # Écritures sûres face aux crashs (atomic_write) et lectures bornées (read_text_capped)
 ├── _fs.py               # strict_is_file/dir/symlink — un chemin refusé lève au lieu d'être lu comme absent
 ├── _i18n_safe.py        # Aides de sûreté i18n — motifs de repli partagés
@@ -542,8 +542,8 @@ print(f'Same order: {en == fr}')
 
 Résultat attendu — les deux fichiers ont les mêmes clés **dans le même ordre** :
 ```
-EN keys: 3212
-FR keys: 3212
+EN keys: 3220
+FR keys: 3220
 Missing in FR: none
 Same order: True
 ```
@@ -560,7 +560,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Traduire toutes les valeurs
 
-Le fichier contient exactement 3212 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
+Le fichier contient exactement 3220 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
 
 Exemple :
 ```json

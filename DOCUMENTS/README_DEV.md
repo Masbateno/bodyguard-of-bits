@@ -75,19 +75,19 @@ This separation allows the entire business logic to be tested by instantiating s
 | Module | What it checks |
 |---|---|
 | `firewall.py` | UFW status, default policy, IPv6 consistency; `check_rules()` for duplicate/open-any detection; `resolve_firewall_posture()` — the one firewall answer (UFW, firewalld zone target, or a raw DROP/REJECT ruleset) every summary reads (v0.24.1) |
-| `firewall_stack.py` | Raw iptables bypass, nftables parallel rules, ip_forward detection |
-| `iptables_nftables.py` | iptables/nftables audit when UFW inactive — INPUT/FORWARD policy, loopback and ESTABLISHED/RELATED rules, backend detection (iptables-legacy vs nftables); an INPUT chain whose first rule accepts everything behind a DROP policy is read as accepting everything (v0.25.0) |
+| `firewall_stack.py` | Raw iptables bypass, nftables parallel rules, ip_forward detection; FORWARD ACCEPT rules excused while a routing mechanism runs (v0.32.0: a running `dockerd`, a WireGuard interface), except those no running mechanism owns (v0.33.0) |
+| `iptables_nftables.py` | iptables/nftables audit when UFW inactive — INPUT/FORWARD policy, loopback and ESTABLISHED/RELATED rules, backend detection (iptables-legacy vs nftables); an INPUT chain whose first rule accepts everything behind a DROP policy is read as accepting everything (v0.25.0); the per-port verdict (v0.28.0–v0.31.0: destinations, sets, verdict maps, interfaces, chains before and on the input hook, destination NAT, IPv4 legacy tables; v0.32.0: IPv6 legacy tables in the IPv6 verdict) |
 | `ipv6.py` | IPv6 listener/UFW-rule consistency; `has_global_ipv6` field; link-local/ULA-only → INFO (not WARN); without UFW, listeners attributed to the governing filter (v0.24.1) |
 | `network_context.py` | Network interfaces table, established TCP connections, sensitive remote ports |
 | `services.py` | Installed network services, systemd/OpenRC state (incl. socket-activated, v0.18.1, and condition-unmet, v0.24.1), exposure per firewall backend |
 | `services_state.py` | Service state: security services enabled at boot but currently inactive |
 | `ports.py` | Listening ports via `ss`, classification, deduplication |
-| `logs.py` | UFW logs — blocked attempts, bruteforce, top IPs/ports |
+| `logs.py` | UFW logs (the file and its rotations, or the journal) — blocked attempts, repeated attempts and port scans (v0.27.0), top IPs/ports |
 | `log_rotation.py` | Log rotation: logrotate config presence, journald persistence, SystemMaxUse, remote rsyslog |
 | `auth_log.py` | SSH connection log analysis: successful logins, source IPs, anomalies in auth.log/journald |
 | `ddns.py` | Active DDNS clients (ddclient, inadyn, No-IP DUC, DuckDNS), configured domain, crossed with open UFW ports |
 | `docker.py` | Docker installation detection, iptables bypass via DOCKER chain, container port exposure |
-| `docker_audit.py` | Container hardening, Docker and Podman (v0.20.3): privileged containers, the runtime socket mounted in a container (`docker.sock` / `podman.sock`), host network, containers running as root, Docker's `userns-remap` in `daemon.json` (its fix creates the dockremap user and an ID range of its own, v0.25.0) |
+| `docker_audit.py` | Container hardening, Docker and Podman (v0.20.3): privileged containers, the runtime socket mounted in a container (`docker.sock` / `podman.sock`), host network, containers running as root, Docker's `userns-remap` in `daemon.json` (its fix creates the dockremap user and an ID range of its own, v0.25.0); every runtime root can ask, deduplicated, and a runtime that does not answer or rootless podman containers said, not examined (v0.33.0) |
 | `kubernetes.py` | Kubernetes node (v0.25.0): pods' rights read through `ctr` (containerd, MicroK8s, k3s) or `crictl` (CRI-O) (privileged, node-handing host paths, host namespaces; kube-system said, not deducted), kubelet anonymous access on 10250 and read-only port 10255; the API server (v0.28.0: MicroK8s' arguments file; v0.31.3: a k3s server's journal line) — AlwaysAllow, anonymous access, broad cluster-admin bindings; runs only where a kubelet runs |
 | `virtualization.py` | Active hypervisors (libvirt/KVM, VirtualBox, VMware, LXD/LXC) and Snap network packages |
 | `samba.py` | Samba security audit: SMBv1 disabled, null-password rejection, server signing, `map to guest`, `bind interfaces only` |
@@ -98,14 +98,14 @@ This separation allows the entire business logic to be tested by instantiating s
 | `mac_policy.py` | MAC policy (AppArmor / SELinux): framework state, profile counts (enforce/complain/loaded), 0-profile detection |
 | `updates.py` | System update status through the host's package manager (cross-distro since v0.19.0): apt (`apt-get -s dist-upgrade`, stale-cache detection, `apt list --upgradable` cross-check — phased-rollout and kept-back packages counted, v0.24.1), `dnf updateinfo list --security`, `zypper list-patches --category security`; pacman/apk have no security channel (pending packages are INFO); unattended-upgrades detection (apt) |
 | `ssh/` | SSH security audit (package: `_snapshot`, `_parsers`, `_directives`, `_subchecks`): sshd_config directives, host key strength, user key permissions, authorized_keys, known_hosts |
-| `file_perms.py` | Sensitive file permissions: /etc/passwd, /etc/shadow, sudoers (incl. `NOPASSWD:ALL`), `/etc/doas.conf` `permit nopass` (v0.21.3), SSH host keys |
+| `file_perms.py` | Sensitive file permissions: /etc/passwd, /etc/shadow, sudoers (incl. `NOPASSWD:ALL`), `/etc/doas.conf` `permit nopass` (v0.21.3), SSH host keys; passwordless rules for a command that is root anyway (v0.27.0), `Defaults` in their scope (v0.28.0–v0.30.0) |
 | `suid_audit.py` | SUID/SGID binary audit with whitelist (`config.conf`), targeted-roots scan for performance |
 | `user_accounts.py` | User account audit: UID 0 non-root, empty passwords, expired accounts; v0.24.0: `su` restriction (pam_wheel, `su`'s own mode, BusyBox `su`), home directory and `.netrc` permissions, duplicate UIDs and names |
 | `password_policy.py` | Password policy: PAM pam_pwquality / pam_cracklib, minlen, PASS_MAX_DAYS, login.defs; the password hashing algorithm (MD5/DES/bigcrypt in `login.defs` or a `pam_unix` stack, v0.24.0) |
 | `umask.py` | System umask: /etc/profile, /etc/bash.bashrc, /etc/login.defs, /etc/pam.d/common-session |
 | `cron_audit.py` | Cron security: pipe-to-shell, world-writable scripts, range validator |
 | `disk.py` | Disk health: SMART health (smartctl), critical SMART attributes, partition usage; NVMe support; skip on all-virtual disks |
-| `backup.py` | Backup solution detection: binaries and their artefacts (borg/borgmatic, restic, timeshift, duplicati, rclone, kopia, deja-dup, duplicity, rsnapshot, tarsnap, …) and a backup tool named in a scheduled job; active vs installed-only |
+| `backup.py` | Backup solution detection: binaries and their artefacts (borg/borgmatic, restic, timeshift, duplicati, rclone, kopia, deja-dup, duplicity, rsnapshot, tarsnap, …) and a backup tool named in a scheduled job; active vs installed-only; Timeshift's schedules and snapshots (v0.31.4), its exclusions (v0.32.0) and a stale newest snapshot (v0.33.0) |
 | `memory.py` | Memory & swap: SSD wear detection, unjustified swap usage (swap > 0 while RAM free), swappiness tuning |
 | `desktop_apps.py` | Desktop application detection: known GUI apps running as processes (Brave, kDrive, VSCode, ExpressVPN…) |
 | `ntp.py` | NTP time synchronisation: systemd-timesyncd/chronyd/ntpd active and synchronised; chrony judged by its `Leap status` line (v0.25.0) |
@@ -148,7 +148,7 @@ This separation allows the entire business logic to be tested by instantiating s
 ```
 bob/
 ├── __init__.py
-├── __main__.py          # Orchestrator (~1009 lines — pure coordination)
+├── __main__.py          # Orchestrator (~1071 lines — pure coordination)
 ├── _atomic.py           # Crash-safe writes (atomic_write) and bounded reads (read_text_capped)
 ├── _fs.py               # strict_is_file/dir/symlink — a denied path raises instead of reading as absent
 ├── _i18n_safe.py        # i18n safety helpers — shared fallback patterns
@@ -542,8 +542,8 @@ print(f'Same order: {en == fr}')
 
 Expected output — the two files hold the same keys **in the same order**:
 ```
-EN keys: 3212
-FR keys: 3212
+EN keys: 3220
+FR keys: 3220
 Missing in FR: none
 Same order: True
 ```
@@ -560,7 +560,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Translate all values
 
-The file contains exactly 3212 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
+The file contains exactly 3220 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
 
 Example:
 ```json

@@ -92,6 +92,10 @@ class FirewallStackSnapshot:
     forward_accepts_s:   list[str] = field(default_factory=list)
     wireguard_ifaces:    list[str] = field(default_factory=list)
     microk8s_running:    bool = False
+    #: v0.33.0 — the interfaces that exist (/sys/class/net); None when they
+    #: could not be listed. A rule naming one BOB cannot attribute is unknown;
+    #: one naming an interface that does not exist is a stale rule.
+    host_ifaces:         "list[str] | None" = None
 
     @classmethod
     def from_system(cls) -> "FirewallStackSnapshot":
@@ -177,6 +181,7 @@ class FirewallStackSnapshot:
             forward_accepts_s=_parse_raw_accepts_s(_run("iptables", "-S", "FORWARD")),
             wireguard_ifaces=wireguard_ifaces,
             microk8s_running=_process_runs("kubelite"),
+            host_ifaces=_host_ifaces(),
         )
 
 
@@ -221,6 +226,14 @@ def _libvirt_routing(modes: frozenset = _LIBVIRT_ROUTING_MODES) -> bool:
 
 _PROC = Path("/proc")
 _SYS_NET = Path("/sys/class/net")
+
+
+def _host_ifaces() -> "list[str] | None":
+    """v0.33.0 — the network interfaces that exist; None when unlisted."""
+    try:
+        return sorted(i.name for i in _SYS_NET.iterdir())
+    except OSError:
+        return None
 
 
 def _dockerd_runs() -> bool:
@@ -303,20 +316,41 @@ def _owned(name: str, active: "tuple[str, ...]") -> bool:
     return name.startswith(active)
 
 
+def _named_ifaces(rule: str) -> "list[str]":
+    """The interfaces a FORWARD rule names positively (``-i``/``-o``, not
+    negated), ``lo`` aside."""
+    return [m.group(2) for m in _IFACE_ARG.finditer(rule)
+            if not m.group(1) and m.group(2) != "lo"]
+
+
+def _exists(name: str, ifaces: "list[str]") -> bool:
+    """Whether the interface *name* of a rule exists (``x+``: one starting with x)."""
+    if name.endswith("+"):
+        return any(i.startswith(name[:-1]) for i in ifaces)
+    return name in ifaces
+
+
 def _forward_orphans(snapshot: "FirewallStackSnapshot") -> "list[str]":
     """v0.33.0 — the FORWARD ACCEPT rules no running mechanism can own, while
-    something routes: one that names interfaces, none of them a running
-    mechanism's (measured, fwd0320 case 6: ``-i bobwg0`` with WireGuard down
-    and Docker up, excused by 0.32.0); one that carries MicroK8s' comment
-    while MicroK8s does not run. A rule naming no interface and no known
-    comment cannot be attributed either way: excused, as before."""
+    something routes: one that names an interface that does not exist and
+    that no running mechanism owns — a stale rule (measured, fwd0320
+    case 6: ``-i bobwg0`` with WireGuard down and Docker up, excused by
+    0.32.0); one that carries MicroK8s' comment while MicroK8s does not run.
+
+    After review: a rule naming only existing interfaces BOB cannot attribute
+    (LXD's lxdbr0, a network plugin BOB does not list) is unknown, not proof of
+    a bypass — excused, as a rule naming no interface is. So is every rule
+    when the interfaces could not be listed."""
     active = _active_ifaces(snapshot)
+    ifaces = snapshot.host_ifaces
     orphans = []
     for rule in snapshot.forward_accepts_s:
-        named = [m.group(2) for m in _IFACE_ARG.finditer(rule) if not m.group(1)]
-        named = [n for n in named if n != "lo"]
+        named = _named_ifaces(rule)
         if named:
-            if not any(_owned(n, active) for n in named):
+            # After review: each interface is judged on its own — one a running
+            # mechanism owns does not excuse another that does not exist
+            # (`-i unknown0 -o docker0` would bypass UFW once unknown0 exists).
+            if ifaces is not None and any(not _exists(n, ifaces) and not _owned(n, active) for n in named):
                 orphans.append(rule)
             continue
         if _MICROK8S_COMMENT in rule and not snapshot.microk8s_running:
@@ -392,7 +426,8 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
             for rule in _forward_orphans(snapshot):
                 result.warn_with_deduction(
                     key="firewall_drivers.iptables_forward_bypass",
-                    message=_t("firewall_drivers.iptables_forward_orphan", rule=rule),
+                    message=_t("firewall_drivers.iptables_forward_stale" if _named_ifaces(rule)
+                               else "firewall_drivers.iptables_forward_orphan", rule=rule),
                     points=1,
                     nature="action",
                 )

@@ -1,7 +1,7 @@
 .\" Manpage for bob (Bodyguard Of Bits)
 .\" Format: man-7 (groff_man). Render with: man -l man/bob.1
 .\" Contact: cedricclauzel@mailo.com to correct errors or typos.
-.TH BOB 1 "2026-11-12" "BOB 0.32.0" "User Commands"
+.TH BOB 1 "2026-11-12" "BOB 0.33.0" "User Commands"
 .SH NAME
 bob \- Bodyguard Of Bits, a Linux hardening auditor with CIS benchmark mapping
 .
@@ -243,7 +243,13 @@ a major system change to avoid noisy "new findings" lists.
 .B \-\-history
 Display a sparkline of the last 50 audit scores from
 .IR ~/.config/bob/history.jsonl ,
-then a table of the last 10.
+then a table of the last 10. A score that was a ceiling is marked
+.BR \(<= ,
+one that was a span
+.BR ~ ,
+and a line written before 0.30.0, which did not record it,
+.BR ? ;
+no trend arrow is drawn beside such a score, nor for a partial run.
 .TP
 .B \-\-breakdown ", " \-B
 Run the audit without its usual terminal output and print the complete score
@@ -279,7 +285,7 @@ Display a structured explanation for a single finding key. Pass
 .B list
 as the
 .I KEY
-to list all available explain keys (230 keys). With no
+to list all available explain keys (237 keys). With no
 .IR KEY ,
 open the interactive picker.
 .TP

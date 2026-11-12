@@ -6,6 +6,282 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.33.0] — 2026-11-12
+
+**A minor release, BREAKING for scores: a DSA SSH host key is counted only when
+sshd serves it; FORWARD ACCEPT rules are weighed against the mechanism that
+runs; IPv6-only rules no longer blind the IPv4 port verdict; Docker and Podman
+are both examined, and what is not examined is said; the `workstation` profile
+keeps the warnings its file promises; Timeshift's newest snapshot is dated; and
+arrow keys are read as one key on any terminal.**
+
+BREAKING for scores means: the same host can score differently under 0.32.0 and
+0.33.0 — global, per domain, and the `--history` trend across the upgrade. The
+scoring formula is unchanged; no section is added or removed; no option is added
+or removed; no finding key is renamed or removed. No JSON-output-schema or
+CSV-column change. New finding keys: `ssh.host_key_dsa_unused`,
+`ssh.host_key_dsa_unknown`, `docker_hardening.runtime_unreachable`,
+`docker_hardening.rootless_unexamined`, `backup.timeshift_stale`. New texts,
+existing key: `firewall_drivers.iptables_forward_bypass` now also carries two
+messages, one for a stale rule and one for a rule MicroK8s left (§2).
+
+Scores that move:
+
+| Where | 0.32.0 | 0.33.0 | § |
+|---|---|---|---|
+| DSA host key on disk, sshd does not serve it (measured: OpenSSH 9.6, default path) | `ssh.host_key_dsa` WARN −1 | `ssh.host_key_dsa_unused` INFO, 0 | 1 |
+| DSA host key, sshd_config unreadable | `ssh.host_key_dsa` WARN −1 | `ssh.host_key_dsa_unknown` INFO, score “≤” | 1 |
+| UFW active, something routing, a FORWARD ACCEPT rule naming an interface that does not exist and cannot be attributed to a running mechanism (measured: `-i bobwg0`) | `forward_routing_ok`, 0 | `iptables_forward_bypass` WARN −1 | 2 |
+| Same, MicroK8s' two rules left while MicroK8s is stopped and Docker runs | `forward_routing_ok`, 0 | `iptables_forward_bypass` WARN −1 each (−2) | 2 |
+| Raw nftables ruleset accepting by default, an IPv6-only rule in input, a port listening on every IPv4 interface with no rule naming it | `ports.uncovered_netfilter_unweighed` INFO, 0 | `ports.uncovered_netfilter_open` WARN −1 (local) / −2 (public) | 3 |
+| Docker running and Podman holding a privileged container | not seen, 0 | `docker_hardening.privileged` WARN −1 | 4 |
+| Docker installed, service and socket stopped (alone) | `docker_hardening.no_containers` OK | `docker_hardening.scan_error` INFO, score “≤” | 4 |
+| Rootless Podman containers running | not mentioned | `docker_hardening.rootless_unexamined` INFO, score “≤” | 4 |
+| `-p workstation`, no backup tool | `backup.no_backup` INFO, 0 | WARN −1 | 5 |
+| `-p workstation`, auditd running with no rules, or without the sensitive files watched | INFO, 0 | WARN −1 | 5 |
+| A custom profile other than `server`, no backup tool, not softened in its file | `backup.no_backup` INFO, 0 | WARN −1 | 5 |
+
+### 1. A DSA host key is counted when sshd serves it
+
+0.32.0 charged `ssh.host_key_dsa` (WARN −1, “cryptographically broken”) for any
+DSA file in `/etc/ssh`. A file there is not a key sshd serves. Measured with a
+1024-bit DSA host key and `ssh-keyscan -t dsa` as the oracle:
+
+| Configuration | OpenSSH 9.6 (Linux Mint 22.3) | OpenSSH 10.2 (Ubuntu Server 26.04.1) |
+|---|---|---|
+| key at the default path, no line | not served | not served |
+| `HostKeyAlgorithms +ssh-dss` only | not served | `sshd -t` refuses the option |
+| a `HostKey` line names it, default algorithms | not served | not served |
+| a `HostKey` line and `HostKeyAlgorithms +ssh-dss` | **served** | `sshd -t` refuses the option |
+
+Two separate facts: DSA is not among the host key files sshd loads when no
+`HostKey` line is written (measured above, first row); and, apart from which
+files are loaded, OpenSSH has not offered the `ssh-dss` algorithm by default
+since 7.0 (its release notes). BOB now counts the point only when a `HostKey`
+line names the file and `HostKeyAlgorithms` offers `ssh-dss` (`+`, `^`, a list
+or a pattern; `-` only removes). Otherwise `ssh.host_key_dsa_unused`, INFO, no
+point; with sshd_config unreadable, `ssh.host_key_dsa_unknown`, INFO, and the
+score is an upper bound. On the Mint: key on disk, 0.32.0 WARN −1, 0.33.0
+INFO 0; key served, WARN −1 under both. The texts now cite FIPS 186-5 (NIST no
+longer approves DSA for generating signatures) and OpenSSH's release notes (DSA
+disabled by default in 7.0, at build time in 9.8, removed in 10.0). The fix
+command no longer generates an ed25519 host key when one exists:
+`ssh-keygen` would stop at its “Overwrite (y/n)?” question.
+
+The `--explain` entries of `ssh.rsa_weak` and `ssh.dsa_key` described a server
+host key (“RSA host key too short (< 4096 bits)”); both findings are about the
+user's own keys in `~/.ssh`. They now say so, give the NIST basis (SP 800-131A
+for RSA below 2048 bits; FIPS 186-5 for DSA), and explain how to replace a user
+key on the servers that accept it.
+
+### 2. FORWARD rules are weighed against the mechanism that runs
+
+Beside an active UFW, an ACCEPT rule in FORWARD bypasses UFW for routed
+traffic (`firewall_drivers.iptables_forward_bypass`, WARN −1 each). While a
+routing mechanism runs (Docker, WireGuard, libvirt, Kubernetes), 0.32.0
+excused every such rule, whoever wrote it. BOB now reads FORWARD in its `-S`
+form, which shows interfaces and comments, and BOB lists the interfaces that
+exist. It no longer excuses two kinds of rule:
+
+- a **stale** rule: it names an interface (`-i`/`-o`, not negated, `lo`
+  aside) that does not exist on the host and cannot be attributed to a running
+  mechanism (by name or prefix, below).
+  Each interface is judged on its own: in `-i unknown0 -o docker0`, Docker's
+  `docker0` does not excuse the missing `unknown0` (reproduced in code, not
+  measured on the host). It matches nothing today; an interface created later
+  under that name would bypass UFW. Message: “ACCEPT rule in FORWARD for an
+  interface that does not exist on this host: … — an interface created later
+  under that name would bypass UFW for routed traffic”;
+- a rule carrying MicroK8s' comment (“generated for MicroK8s pods”) while
+  MicroK8s' `kubelite` does not run. Message: “ACCEPT rule in FORWARD with
+  MicroK8s' comment while MicroK8s is not running: … — it lets routed traffic
+  bypass UFW”. This check applies only to a rule that names no interface.
+
+A rule BOB cannot attribute stays excused, as before: one naming no interface
+and no known comment, and one naming only interfaces that exist but belong to no
+mechanism BOB knows (LXD's `lxdbr0`, a Kubernetes network plugin it does not
+list) — an existing interface BOB does not know is unknown, not proof of a
+bypass. When the interfaces cannot be listed, no rule is charged as stale. What
+counts as attributable to a running mechanism: an existing WireGuard interface,
+by its exact name; while `dockerd` runs, any name starting with `docker` or
+`br-`; while a libvirt network whose configuration routes (NAT, route or open
+forward) is active and its bridge exists, `virbr` — read from libvirt's state,
+not from traffic; while a kubelet runs, the usual names of its network plugins
+(`cali`, `flannel`, `cni`, `vxlan.calico`, `cilium`, `kube-bridge`, `weave`,
+`tunl`). Except for WireGuard, these are name prefixes; iptables' `name+`
+wildcard is read as a prefix. Since an existing interface is excused either way,
+they decide only for an interface that no longer exists (a Docker network
+removed while Docker runs stays Docker's).
+
+Measured on Ubuntu Server 26.04.1 (UFW 0.36.2 active, MicroK8s 1.35.6,
+docker.io 29.1.3, wireguard-tools):
+
+| Case | 0.32.0 | 0.33.0 |
+|---|---|---|
+| MicroK8s running, plus `-i bobwg0` (no such interface) | 0 | −1 (stale) |
+| MicroK8s running, its own two rules | 0 | 0 |
+| MicroK8s stopped (its two rules left), Docker running | 0 | −2 |
+| Same, plus `-i docker0`, Docker running | 0 | −2 (`docker0` excused) |
+| WireGuard up, a gateway `-i bobwg0 -o enp3s0`, MicroK8s stopped | 0 | −2 (the gateway excused) |
+
+The field run measured the first version of this rule, which also charged a
+rule naming only existing interfaces BOB could not attribute. A review found
+that it charged LXD's and unlisted network plugins' rules (reproduced in code:
+`-i antrea-gw0`, `-i lxdbr0 -o enp3s0`, −1 each with a kubelet running);
+the rule was narrowed before release. A later review found that the narrowed
+rule let one interface a running mechanism owns excuse a missing one in the
+same rule (`-i unknown0 -o docker0`, excused; reproduced in code); each
+interface is now judged on its own. The five cases above keep their result
+under the narrowed rule (case 1's `bobwg0` did not exist; checked in code with
+the bench host's interfaces, not re-run on the host). Not measured: the
+Kubernetes plugin names, `virbr`.
+
+### 3. IPv6-only rules no longer blind the IPv4 port verdict
+
+A raw nftables ruleset with a rule that matches IPv6 only in an `inet` input
+chain (`meta nfproto ipv6`, `ip6 saddr …`, `icmpv6 type …`) left the IPv4
+verdict for every port “not established”. No IPv4 packet can match such a rule:
+BOB now sets it aside when it weighs IPv4, and reads `meta nfproto ipv4` as
+always true there. The forms it recognises are `meta nfproto ipv6`, `ip6`
+followed by `saddr`, `daddr`, `nexthdr`, `hoplimit`, `flowlabel`, `dscp`,
+`length` or `version`, and `icmpv6 type` or `code`; another IPv6-only form (for
+example `meta l3proto ipv6`) still leaves the IPv4 verdict unknown, as before.
+Measured on Linux Mint 22.3 (nftables 1.0.9) in a network namespace, listeners
+on 8099 over IPv4 and IPv6, a real connection as the oracle:
+
+| `inet` input chain | Oracle IPv4 | 0.32.0 IPv4 | 0.33.0 IPv4 |
+|---|---|---|---|
+| policy accept, `meta nfproto ipv6 tcp dport 8099 drop` | open | unknown | accepted by default |
+| policy drop, `meta nfproto ipv6 tcp dport 8099 accept` | closed | unknown | dropped by default |
+| policy drop, `ip6 saddr fd77::/64 tcp dport 8099 accept` | closed | unknown | dropped by default |
+| policy drop, `meta nfproto ipv4 tcp dport 8099 accept` | open | unknown | accepted by a rule |
+| policy accept, `icmpv6 type echo-request drop` | open | unknown | accepted by default |
+
+Five cases, five matches. The IPv4 verdict is scored (since 0.28.0) where the
+ruleset accepts by default: a port listening on every IPv4 interface that the
+default reaches with no rule naming it costs −1 (local) or −2 (public). 0.32.0
+left such a port unweighed (`ports.uncovered_netfilter_unweighed`, INFO) as soon
+as one IPv6-only rule sat in input; 0.33.0 charges it, as it already did
+without that rule. Reproduced in code on both versions with the first and last
+rulesets above (`ports.uncovered_netfilter_open`, WARN −1 in a local context);
+not measured as a score on the host. A registry service on such a port is
+weighed by the same verdict (`services.exposed.*`, by its criticality): read
+in code, not reproduced. The IPv6 verdicts are unchanged.
+
+### 4. Docker and Podman are both examined; what is not examined is said
+
+`docker_hardening` asked only the first runtime it found, Docker before Podman.
+It now asks each runtime it supports (Docker, Podman) whose command is
+installed, and counts a container two of them report once, by its Id — so a
+`docker` command that runs Podman, as the `podman-docker` package installs,
+should not count it twice (that case is not measured). A `ps` that fails — a
+stopped daemon — was read as “no container”; it is now an unreachable runtime.
+Rootless Podman containers are seen through their `conmon` monitor in `/proc`,
+which belongs to the user; BOB does not run Podman as another user (it could
+write in that user's home and depends on their session). Measured on Fedora 44
+(Podman 5.8.1, moby-engine installed for the run, a throwaway user with one
+rootless container), oracle `podman ps` as root and as that user, and `docker
+ps`:
+
+| Case | 0.32.0 | 0.33.0 |
+|---|---|---|
+| Podman only: a privileged root container, one rootless | privileged −1; rootless not mentioned | privileged −1; `rootless_unexamined` “1 rootless podman container(s) running, not examined: <user> (1)”, score “≤” |
+| + Docker running (one container) | the privileged Podman container not seen, 0 | both runtimes asked: privileged −1 |
+| Docker stopped (service and socket), Podman as above | “No running containers — nothing to audit” | `runtime_unreachable` “docker”, privileged −1 |
+
+With Docker installed, its service and socket stopped, and no other runtime,
+`docker ps` fails the same way: 0.33.0 says the containers were not examined
+(`docker_hardening.scan_error`, a ceiling) instead of 0.32.0's “No running
+containers”. Reproduced in code on both versions, not measured alone on the
+host. The commands a finding shows (`inspect`) name the runtime that holds the
+container.
+
+### 5. The `workstation` profile keeps the warnings its file promises
+
+Since 0.8.1, `workstation.conf`, the README, the tutorial and `bob-profile(5)`
+say that `workstation` keeps `backup.no_backup` and `auditd.*` at WARN while
+relaxing the same SSH, ClamAV, rootkit and file-integrity findings as
+`desktop`. The checks did otherwise: the backup check gave its WARN to a
+profile named `server` only, and the auditd check turned `auditd.no_rules` and
+`auditd.missing_sensitive_rules` into INFO for a profile named `desktop` or
+`workstation`. Under `-p workstation` the three findings were INFO, with no
+point. Found by the documentation conformity pass.
+
+The checks now emit the WARN whatever the profile; `desktop.conf` softens all
+three in its own file, and `container.conf` inherits that. Measured on every
+field of the findings (level, message, detail, command, nature, deductions), for
+the four built-in profiles, six cases and both languages: only `workstation`
+changes — five findings from INFO to WARN −1; `server`, `desktop` and
+`container` are identical. The two auditd findings exclude each other, so a
+`workstation` host loses at most two points. A custom profile whose name is not
+`server` and whose file does not soften `backup.no_backup` now gets the WARN
+too; one named `desktop` or `workstation` that does not soften the auditd keys
+gets theirs.
+
+### 6. Timeshift: the newest snapshot is dated
+
+0.31.4 counted Timeshift as active when a schedule was enabled and its snapshot
+directory held a snapshot, however old. A Timeshift whose newest snapshot is
+older than twice its longest enabled schedule (hourly 1 h, daily 24 h, weekly
+168 h, monthly 744 h; boot has no period and is not judged) now counts as
+installed, not active, and says so with the age
+(`backup.timeshift_stale`). No score moves: “active” and “installed only”
+both cost nothing. Measured on Linux Mint 22.3: the operator's desktop (weekly,
+newest three days old) stays active; a test install whose newest snapshot was
+66 days old under a weekly schedule read “Backup solution active: timeshift”
+under 0.32.0 and “installed” with “66 day(s) old — more than twice its longest
+schedule (weekly)” under 0.33.0.
+
+### 7. Arrow keys are one key on any terminal
+
+BOB's screens ask the terminal for keypad mode, in which an arrow arrives as
+one key. A terminal that ignores the request sends `ESC [ D`; BOB read Esc, then
+a letter. In the `--manage-logs` preview, ← sent that way left the preview and
+reached the deletion prompt. Every BOB screen (`--explain`, `--manage-logs`, the
+schedule screens) now reads the normal-mode forms of the arrows, Home and End,
+Page Up and Page Down as one key; bytes it does not know are handed back in
+order. Measured on Linux Mint 22.3 in a pseudo-terminal (TERM=xterm, the screen
+rendered by pyte): `ESC [ D` in the preview, 0.32.0 “Confirm deletion below”,
+0.33.0 the older report (2/3, then 3/3); `ESC [ C` and the keypad form `ESC O D`
+move as expected; Esc alone returns to the list. No report was deleted.
+
+### 8. Documentation
+
+A conformity pass checked the documentation (READMEs, technical README,
+tutorial, manual pages, CI.md, SECURITY.md, the developer README) against the
+code of this release, in English and French. The README's sample output, which
+still showed texts retired in 0.31.4, is replaced by an excerpt of a real run of
+this release on a Linux Mint 22.3 test host, in both languages. The technical
+README described several verdicts as they stood before 0.27.0–0.32.0; it now
+states the Kubernetes certificate verification, the legacy IPv6 tables, the
+scoring of SSH host keys, `NOPASSWD` root-equivalent rules and root's `PATH`,
+the UFW log analysis (repeated attempts and port scans, not “brute-force
+detection”), and gains the container, routing and backup sections it lacked.
+Also corrected: the README's check table, the number of findings each profile
+softens (36 for `desktop`, 31 for `workstation`), the explain-key count and the
+`--history` marks in `bob(1)`, CI timeouts in CI.md, and SECURITY.md now names
+the loopback Kubernetes probes, which `--offline` does not turn off.
+
+### Limits
+
+- §2: a rule naming no interface and no known comment stays excused while
+  something routes, and so does one naming only existing interfaces BOB
+  cannot attribute; the interface names are matched by prefix (WireGuard
+  aside); the Kubernetes plugin names and libvirt's `virbr` were not
+  measured; the narrowed rule was checked in code, not re-run on the host.
+- §3: an `icmpv6` rule with no port still leaves the IPv6 verdict unknown
+  (unchanged).
+- §4: rootless containers are counted, not examined; a rootless `dockerd` was
+  not measured; a Docker whose service is stopped but whose socket
+  (`docker.socket`) stays enabled was not measured.
+- §6: Timeshift in BTRFS mode was not measured.
+- §7: measured in one pseudo-terminal (TERM=xterm, rendered by pyte); other
+  terminals were not measured.
+
+**Tests** 20961 → **21220**, mutations 1825 → **1868**.
+
+---
+
 ## [0.32.0] — 2026-11-12
 
 **A minor release, BREAKING for scores: BOB sends no HTTP request to a

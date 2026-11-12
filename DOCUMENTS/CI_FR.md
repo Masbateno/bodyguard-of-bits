@@ -17,14 +17,15 @@ build, en Release brouillon pour l'étape de Release.
 | Workflow | Déclenché par | Jobs | Jeton |
 |---|---|---|---|
 | `tests.yml` | chaque push et pull request | `lint` (ruff sur `bob/`), `build-backend-pin` (l'épinglage de setuptools doit mordre), `mutation` (chaque garde doit encore échouer quand son défaut revient), `pytest` sur Python 3.10 – 3.14 | lecture |
-| `integration.yml` | un push sur `main` ou `unstable`, une pull request vers `main`, à la main | `smoke` dans un conteneur de chaque distribution ci-dessous, `arm64` sous QEMU | lecture |
+| `integration.yml` | un push sur `main`, `unstable` ou une branche `v*.x`, une pull request vers `main`, à la main | `smoke` dans un conteneur de chaque distribution ci-dessous, `arm64` sous QEMU | lecture |
 | `publish.yml` | un tag `X.Y.Z` | `test` (3.10 – 3.14) et `ci-green` → `build` → `publish` (PyPI) → `github-release` | lecture ; `ci-green` lit les Actions, `publish` demande `id-token: write`, `github-release` demande `contents: write` |
 
 - **Droits** : chaque workflow déclare `contents: read` ; seuls les deux jobs
   ci-dessus demandent davantage. Le réglage par défaut du dépôt est aussi en
   lecture.
-- **Délais** : chaque job en a un, de 10 à 45 minutes — largement au-dessus du
-  run le plus long mesuré (10 minutes, pour les mutations).
+- **Délais** : chaque job en a un, de 10 à 60 minutes — au-dessus du run le
+  plus long mesuré (15 minutes, pour les mutations, le 12 novembre 2026) ; les
+  60 sont ceux de `ci-green`, qui attend les runs du commit tagué.
 - **Concurrence** : un push plus récent sur la même référence annule les runs
   `tests` et `integration` plus anciens ; deux publications ne tournent jamais
   en même temps et aucune n'est annulée.
@@ -183,7 +184,7 @@ image a d'abord passé toutes les étapes dans podman, arm64 compris.
   `alpine:3.24`…), pas par digest. C'est un choix, pas un oubli : un tag suit
   les mises à jour de sécurité de chaque distribution, un digest les figerait ;
   le prix est que deux runs à des jours différents peuvent ne pas utiliser la
-  même image. Ce sont les 9 constats que zizmor relève encore — des constats
+  même image. C'étaient les 9 constats que zizmor 1.31.1 relevait encore le 30 octobre 2026 — des constats
   d'analyse statique, pas des vulnérabilités. L'image QEMU, qui tourne en mode
   privilégié, et le conteneur d'envoi, qui détient le jeton PyPI, sont
   épinglés par digest.

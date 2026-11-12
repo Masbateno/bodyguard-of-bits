@@ -27,6 +27,7 @@ from bob.checks.backup import (
     _borgmatic_config_exists,
     check_backup,
 )
+from bob.profiles import apply_profile, load_profile
 from bob.scoring import FindingLevel
 from tests.helpers import _deduction_keys, _deduction_points, _t
 
@@ -178,14 +179,18 @@ class TestNoBackup:
         assert "backup.no_backup" in _deduction_keys(result)
 
     def test_desktop_no_backup_info(self):
+        # v0.33.0 — desktop.conf softens it; the check itself warns.
         snap = _snap()
-        result = check_backup(snap, t=_t, profile_name="desktop")
+        result = apply_profile(check_backup(snap, t=_t, profile_name="desktop"),
+                               load_profile("desktop"))
         assert "backup.no_backup" in _keys(result)
         assert _level(result, "backup.no_backup") == FindingLevel.INFO
 
     def test_desktop_no_backup_no_deduction(self):
+        # v0.33.0 — desktop.conf softens it; the check itself warns.
         snap = _snap()
-        result = check_backup(snap, t=_t, profile_name="desktop")
+        result = apply_profile(check_backup(snap, t=_t, profile_name="desktop"),
+                               load_profile("desktop"))
         assert _deduction_points(result) == 0
 
     def test_no_backup_has_install_cmd(self):

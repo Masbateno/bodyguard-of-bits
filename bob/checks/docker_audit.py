@@ -11,7 +11,8 @@ Supports **Docker and Podman**. Podman's CLI is Docker-compatible — `podman ps
 and `podman inspect` emit the same JSON shape (HostConfig.Privileged,
 NetworkMode, Mounts, Config.User) — so one parser serves both. Before v0.20.3
 this was Docker-only: on a real Fedora 44 a `podman run --privileged` container
-was completely invisible (measured). Docker is preferred when both are present.
+was completely invisible (measured). Since v0.33.0 every runtime root can
+ask is asked, and a container two of them report is counted once.
 
 The UFW bypass / iptables / exposed-port audit is handled by the existing
 docker.py (ANALYSE DOCKER section).  This check focuses on container hardening.

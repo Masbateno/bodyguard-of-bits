@@ -4526,7 +4526,7 @@
   },
   "docker_hardening": {
     "rootless_unexamined": "{count} rootless podman container(s) running, not examined: {users}",
-    "rootless_unexamined_detail": "Seen in /proc (their conmon monitor belongs to the user); BOB does not run podman as another user. A rootless container stays within its user's rights on the host, unless it is given more — a mounted root container socket (docker.sock), a device, or a host directory that user cannot otherwise reach. The user can list them: podman ps; and inspect one: podman inspect <name>.",
+    "rootless_unexamined_detail": "Seen in /proc (their conmon monitor belongs to the user); BOB does not run podman as another user. A rootless container runs with at most its user's rights on the host, not root's; if the socket of a container daemon running as root (docker.sock) is mounted into it and it can open it, it can drive that daemon, which is root-equivalent on the host. The user can list them: podman ps; and inspect one: podman inspect <name>.",
     "runtime_unreachable": "Container runtime(s) not reachable: {runtimes} — their containers were not examined",
     "scan_error": "Container runtime not reachable — container security check skipped",
     "no_containers": "No running containers — nothing to audit",
@@ -4585,7 +4585,8 @@
     "no_issues": "No conflicting parallel firewall ruleset detected",
     "iptables_bypass": "Raw iptables ACCEPT rule bypasses UFW in INPUT chain: {rule}",
     "iptables_accept_conditional": "Raw iptables ACCEPT rule in INPUT, outside UFW, that cannot let a new connection in on its own (it matches a mark or an established state): {rule} — check what sets the mark",
-    "iptables_forward_orphan": "ACCEPT rule in FORWARD that no running routing mechanism owns: {rule} — it bypasses UFW for routed traffic",
+    "iptables_forward_orphan": "ACCEPT rule in FORWARD with MicroK8s' comment while MicroK8s is not running: {rule} — it lets routed traffic bypass UFW",
+    "iptables_forward_stale": "ACCEPT rule in FORWARD for an interface that does not exist on this host: {rule} — an interface created later under that name would bypass UFW for routed traffic",
     "iptables_forward_bypass": "Raw iptables ACCEPT rule bypasses UFW in FORWARD chain: {rule}",
     "forward_routing_ok": "FORWARD chain has ACCEPT rules — consistent with Docker, VPN, KVM or Kubernetes routing",
     "nftables_parallel": "Active nftables rules detected alongside UFW — potential rule conflicts",
