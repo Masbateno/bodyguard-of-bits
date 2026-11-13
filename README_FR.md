@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.34.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.35.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -139,7 +139,7 @@ bob --explain ssh.password_auth   # expliquer un résultat (sans sudo)
 
 ## Aperçu de la sortie
 
-Extrait d'un vrai audit sur une Linux Mint 22.3 de test (BOB 0.33.0, lancé en root ; profil `desktop` choisi automatiquement). `⋮` marque des lignes omises ; le cadre d'en-tête omet aussi le logo et quelques lignes.
+Extrait d'un vrai audit sur une Linux Mint 22.3 de test (BOB 0.35.0, lancé en root ; profil `desktop` choisi automatiquement). `⋮` marque des lignes omises ; le cadre d'en-tête omet aussi le logo et quelques lignes.
 
 ```
 $ sudo bob
@@ -148,10 +148,10 @@ $ sudo bob
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.33.0  │  Auditeur de durcissement Linux                               ║
+║  BOB 0.35.0  │  Auditeur de durcissement Linux                               ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  Système       : 🌿  Linux Mint 22.3                                         ║
-║  Noyau         : 7.0.0-34-generic                                            ║
+║  Noyau         : 7.0.0-43-generic                                            ║
 ║  UFW           : 0.36.2                                                      ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
@@ -163,7 +163,7 @@ $ sudo bob
 └──────────────────────────────────────────────────────────────────────────────┘
 
 ℹ [INFO] Filtrage par chemin inverse en mode permissif (rp_filter=2) — envisagez le mode strict (=1)
-⚠ [ATTENTION] Redirections ICMP acceptées — risque de manipulation de la table de routage
+✔ [OK] L'acceptation des redirections ICMP est désactivée
 ℹ [INFO] Journalisation des paquets martiens désactivée — les paquets usurpés ne seront pas tracés
 ✔ [OK] L'écho de diffusion ICMP est ignoré
 ✔ [OK] Protection SYN flood active (tcp_syncookies=1)
@@ -182,7 +182,7 @@ $ sudo bob
 ║  Visibilité : 2 section(s) non entièrement lue(s) — le score est un plafond  ║
 ║  Contexte réseau : IPv4 en NAT, IPv6 publique (filtrage box non vérifié)     ║
 ║  Profil d'audit : Desktop                                                    ║
-║  Durée : 47.0 s                                                              ║
+║  Durée : 1 min 02 s                                                          ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  ✖ À corriger                                                                ║
 ║    ✖  Le pare-feu UFW est désactivé. Votre machine n'est actuellement pas    ║
@@ -197,7 +197,7 @@ $ sudo bob
   Pare-feu & Réseau     ≤ 3/10  ███░░░░░░░
   Exposition & Services   9/10  █████████░
   Contrôle d'accès       10/10  ██████████
-  Durcissement système    7/10  ███████░░░
+  Durcissement système    6/10  ██████░░░░
   Santé & Résilience      8/10  ████████░░
   Détection des menaces   9/10  █████████░
 ```

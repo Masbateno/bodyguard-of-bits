@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.34.0
+Version:        0.35.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,16 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sat Nov 14 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.35.0-1
+- Minor, BREAKING for scores; no JSON-schema or CSV-column change.
+  The docker group costs two points only with a root listener on its
+  socket; a socket-activated dockerd is not asked; libvirt's iptables or
+  nftables rules read (NAT an INFO, routed a warning); the lxd group
+  counted, the same power once per host, decided after the profile and
+  --ignore; rootless dockerd and containerd said; a pending reboot
+  (reboot-required, newer rpm kernel) said; the panorama names each
+  service's reach.
+
 * Fri Nov 13 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.34.0-1
 - Minor, BREAKING for scores; no JSON-schema or CSV-column change.
   DisableForwarding read; docker group members cost two points while the

@@ -1,3 +1,25 @@
+bodyguard-of-bits (0.35.0-1) unstable; urgency=medium
+
+  * Minor, BREAKING for scores (docker and lxd groups, routing check,
+    AppArmor under desktop-based profiles, upper bounds); no JSON-schema
+    or CSV-column change.
+  * The docker group costs two points only while a process holding the
+    listening Docker socket runs as root.
+  * A dockerd that only docker.socket would start is no longer asked.
+  * libvirt's own iptables or nftables rules are read: a NAT network is
+    an INFO, a routed one keeps its warning.
+  * Accounts in the lxd group cost two points while an LXD socket of the
+    group has a root listener; beside a counted docker group, nothing more.
+  * The same power counts once, decided by the score engine after the
+    profile and --ignore.
+  * A rootless dockerd no longer excuses ip_forward=1; containerd
+    containers outside Docker and Kubernetes are said (upper bound).
+  * A reboot /run/reboot-required or a newer rpm kernel waits for is said.
+  * The services panorama names each service's reach; the score breakdown
+    is grouped by domain; every UNSAFE or EXPOSED unit is named.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 14 Nov 2026 09:00:00 +0000
+
 bodyguard-of-bits (0.34.0-1) unstable; urgency=medium
 
   * Minor, BREAKING for scores through the docker group, DisableForwarding

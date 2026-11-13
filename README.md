@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.34.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.35.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -138,7 +138,7 @@ bob --explain ssh.password_auth   # explain a finding (no sudo)
 
 ## Sample output
 
-An excerpt of a real run on a Linux Mint 22.3 test host (BOB 0.33.0, run as root; the `desktop` profile chosen automatically). `⋮` marks lines left out; the header box also leaves out the logo and some rows.
+An excerpt of a real run on a Linux Mint 22.3 test host (BOB 0.35.0, run as root; the `desktop` profile chosen automatically). `⋮` marks lines left out; the header box also leaves out the logo and some rows.
 
 ```
 $ sudo bob
@@ -147,10 +147,10 @@ $ sudo bob
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.33.0  │  Linux hardening auditor                                      ║
+║  BOB 0.35.0  │  Linux hardening auditor                                      ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : 🌿  Linux Mint 22.3                                         ║
-║  Kernel        : 7.0.0-34-generic                                            ║
+║  Kernel        : 7.0.0-43-generic                                            ║
 ║  UFW           : 0.36.2                                                      ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
@@ -162,7 +162,7 @@ $ sudo bob
 └──────────────────────────────────────────────────────────────────────────────┘
 
 ℹ [INFO] Reverse path filtering in loose mode (rp_filter=2) — consider switching to strict mode (=1)
-⚠ [WARNING] ICMP redirects accepted — risk of routing table manipulation
+✔ [OK] ICMP redirect acceptance is disabled
 ℹ [INFO] Martian packet logging disabled — spoofed packets will not be logged
 ✔ [OK] ICMP broadcast echo is ignored
 ✔ [OK] SYN flood protection active (tcp_syncookies=1)
@@ -181,7 +181,7 @@ $ sudo bob
 ║  Visibility : 2 section(s) not fully read — the score is a ceiling           ║
 ║  Network context : IPv4 behind NAT, public IPv6 (router filter unverified)   ║
 ║  Audit profile : Desktop                                                     ║
-║  Duration : 1 min 42 s                                                       ║
+║  Duration : 1 min 57 s                                                       ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  ✖ Action required                                                           ║
 ║    ✖  UFW firewall is disabled. Your machine is currently unprotected.       ║
@@ -195,7 +195,7 @@ $ sudo bob
   Firewall & Network  ≤ 3/10  ███░░░░░░░
   Exposure & Services   9/10  █████████░
   Access Control       10/10  ██████████
-  System Hardening      7/10  ███████░░░
+  System Hardening      6/10  ██████░░░░
   Health & Resilience   8/10  ████████░░
   Threat Detection      9/10  █████████░
 ```

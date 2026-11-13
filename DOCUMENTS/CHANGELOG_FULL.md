@@ -6,6 +6,316 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.35.0] — 2026-11-14
+
+**A minor release, BREAKING for scores: who listens on the Docker socket is
+checked; a dockerd that only its socket unit would start is no longer asked;
+libvirt's rules are read; the `lxd` group is counted; a rootless dockerd and
+containers outside Docker are said; a reboot an rpm host's newer kernel or
+`/run/reboot-required` waits for is said; and the summary, the services
+panorama and the systemd-hardening lines say what they used to leave out.**
+
+BREAKING for scores means: the same host can score differently under 0.34.0 and
+0.35.0 — global, per domain, and the `--history` trend across the upgrade. The
+scoring formula is unchanged; no section is added or removed; no option is
+added or removed; no finding key is renamed or removed. No JSON-output-schema or
+CSV-column change; one JSON field changes meaning (`firewall_drivers.docker_present`,
+§5). New finding keys: `docker.exposed_unread`,
+`docker_hardening.docker_group_not_root`, `docker_hardening.runtime_not_started`,
+`docker_hardening.runtime_not_started_live`, `docker_hardening.runtime_not_started_unread`,
+`docker_hardening.rootless_dockerd`, `docker_hardening.containerd_unexamined`,
+`docker_hardening.lxd_group_root`, `docker_hardening.lxd_group_dormant`,
+`docker_hardening.lxd_group_unknown`, `docker_hardening.lxd_group_not_root`,
+`virt.libvirt_replies_only`, `virt.libvirt_rules_unread`, `virt.libvirt_no_inbound`,
+`kernel_modules.reboot_required`, `systemd_hardening.more_unsafe`,
+`systemd_hardening.exposed_units`. One new `--explain` entry
+(`docker_hardening.lxd_group_root`) and its best-practice reference.
+
+Scores that move:
+
+| Where | 0.34.0 | 0.35.0 | § |
+|---|---|---|---|
+| Accounts in the `docker` group, the Docker socket held by a non-root process (measured) | `docker_hardening.docker_group_root` WARN −2 | `docker_hardening.docker_group_not_root` INFO, 0 | 1 |
+| dockerd stopped, `docker.socket` active, no container running (measured) | BOB's `docker ps` started dockerd, then audited it | dockerd not asked; `docker_hardening.runtime_not_started` INFO, 0 | 2 |
+| The same, a container still running (live-restore, measured) | started dockerd, audited the container | `docker_hardening.runtime_not_started_live` INFO, score “≤” | 2 |
+| `docker ps` failing in the Docker exposure section (reproduced in code) | read as “no container” | `docker.exposed_unread` INFO, score “≤” | 2 |
+| libvirt NAT network (measured: Mint, iptables; Fedora, nftables) | `virt.bypass_risk` WARN, 0 | `virt.libvirt_replies_only` INFO, 0 | 3 |
+| Custom profile extending `desktop`, AppArmor loaded with no profile (reproduced in code) | `mac_policy.apparmor_no_profiles` WARN −1 | INFO, 0 | 4 |
+| `ip_forward=1`, a rootless dockerd the only routing mechanism detected (measured) | `firewall_drivers.ip_forward_ok` OK | `firewall_drivers.ip_forward_enabled` WARN −1, and `docker_hardening.rootless_dockerd` INFO, score “≤” | 5 |
+| A container containerd runs as root outside Docker and Kubernetes (measured) | nothing | `docker_hardening.containerd_unexamined` INFO, score “≤” | 6 |
+| `/proc` unreadable while dockerd is not asked (reproduced in code) | BOB asked dockerd | `docker_hardening.runtime_not_started_unread` INFO, score “≤” | 2 |
+| Accounts in the `lxd` group, an LXD socket of that group with a root listener (measured) | nothing | `docker_hardening.lxd_group_root` WARN −2 | 7 |
+| The same, the docker group already counted on the host (reproduced in code) | nothing | `docker_hardening.lxd_group_root` WARN, 0 | 7 |
+| Accounts in the `lxd` group, whether an LXD socket gives the group access unreadable (reproduced in code) | nothing | `docker_hardening.lxd_group_unknown` INFO, score “≤” | 7 |
+| `NOPASSWD:ALL` (or doas `permit nopass` without `cmd`) waived by `--ignore` or a profile, beside a root-equivalent rule (reproduced in code) | the rule's −2 not counted: 0 in all | `file_perms.nopass_root_equivalent` −2 | 8 |
+
+### 1. Who listens on the Docker socket
+
+0.34.0 counted the `docker` group (two points) while a Docker socket the group
+can write had a listener. Measured on the Linux Mint test host (docker.io
+29.1.3, netnsbench a10350), by reading which processes hold the listening
+socket (its inode in `/proc/net/unix`, then `/proc/*/fd`) and asking with a
+member's `docker ps`:
+
+| Case | Holders of `/run/docker.sock` | A member's `docker ps` |
+|---|---|---|
+| dockerd running | dockerd and systemd, uid 0 | works |
+| `docker.service` stopped, `docker.socket` active | systemd (PID 1), uid 0 | — (§2) |
+| a process bound the path as root, then dropped to `nobody` before listening | that process, uid 65534 | refused |
+
+In the third case the socket file looked the same as dockerd's (`srw-rw----
+root docker`), and 0.34.0 counted −2. The two points now need at least one
+root process among those holding the listening socket — found from its inode,
+not from whoever opened the file. Holding the descriptor is not proof that
+this process serves the connections: a listener held by root and by another
+account together counts — a root holder can accept on it — a cautious choice,
+not measured;
+a listener none of whose holders is root gives an INFO naming its uid
+(`docker_hardening.docker_group_not_root`); holders that cannot be found
+leave the group unknown, as an unreadable socket already did (score “≤”).
+
+The text said when nothing counted: “dockerd and its socket stopped”. That
+was one cause among several (no listener, or a socket that is not the group's);
+it now says “no Docker socket gives the group access now (nothing listens, or
+the socket is not the group's)”.
+
+### 2. A dockerd that its socket unit would start is not asked
+
+With `docker.service` stopped and `docker.socket` active (systemd holding the
+socket), root's `docker ps` started dockerd: measured on the Mint test host,
+`inactive` → `active`. 0.34.0 ran `docker ps`, `docker inspect` and `docker
+info` in two sections, so the audit started the daemon it audited. BOB now
+reads, from `/proc`, whether a dockerd runs as root and whether a system Docker
+socket is held by PID 1, and asks dockerd only when it runs. When it does not:
+
+- with no Docker container running, `docker_hardening.runtime_not_started`
+  (INFO) says Docker was not asked and why;
+- with containers running all the same — counted from their containerd shim
+  (`containerd-shim-runc-v2 -namespace moby`, owned by root; live-restore keeps
+  them across a daemon stop, measured) —
+  `docker_hardening.runtime_not_started_live` (INFO) says how many and that
+  they were not examined; the score is an upper bound;
+- `/proc` unreadable: `docker_hardening.runtime_not_started_unread`, an upper
+  bound too.
+
+The Docker exposure section read a failed `docker ps` as “no container”. It is
+now `docker.exposed_unread` (INFO, score “≤”), unless no Docker container runs
+at all.
+
+### 3. libvirt's own rules, read
+
+0.34.0 warned “virbr0 bridge interface may insert iptables rules, bypassing the
+firewall's FORWARD policy” wherever libvirt routed a network. BOB now reads the
+rules libvirt wrote and what they admit towards the VMs: the `LIBVIRT_FWI`
+chain (iptables backend) or the `guest_input` chain of `table ip
+libvirt_network` (nftables backend). Measured with fake VMs (network namespaces
+on the libvirt bridges) and a client routed through the host:
+
+| Host | Network | libvirt's accept for it | New connection from outside |
+|---|---|---|---|
+| Linux Mint 22.3, libvirt 10.0, iptables, UFW active, routing denied (a30350) | default (NAT) | `RELATED,ESTABLISHED` only | refused |
+| same | routed | no state condition | answered, past UFW |
+| Fedora 44, libvirt 12.0, nftables, firewalld (a3f0350) | default (NAT) | `ct state established,related` only | refused |
+| same | routed | no state condition | answered |
+
+A NAT network is now `virt.libvirt_replies_only` (INFO): libvirt lets the VMs'
+traffic out and only replies in. A routed network keeps `virt.bypass_risk`
+(WARN, no point, as before), naming its bridge and subnet. On iptables the text
+says libvirt's chains come first in FORWARD, ahead of the host firewall's; on
+nftables it says that every base chain on the forward hook sees the packet and
+can refuse it, the host firewall's included — libvirt's accept is one verdict
+among them — and that firewalld's `libvirt-routed-in` policy accepted the
+connection from any zone (measured). The check command follows the backend: `iptables -S
+LIBVIRT_FWI` prints nothing on an nftables host. Rules that cannot be listed
+give `virt.libvirt_rules_unread` (INFO); an empty chain gives
+`virt.libvirt_no_inbound` (INFO). Other hypervisors keep the generic warning.
+
+On Ubuntu with libvirt 10.0, `firewall_backend = "nftables"` was ignored
+(measured): the nftables format was measured on Fedora only.
+
+### 4. AppArmor findings read from the profile file
+
+`mac_policy` downgraded `apparmor_no_profiles` and `apparmor_no_enforce` to
+INFO when the profile's *name* was `desktop`. The relaxation now lives in
+`desktop.conf` (`mac_policy.apparmor_no_profiles = info`, beside the
+`apparmor_no_enforce` line it already had), so a custom profile that extends
+`desktop` inherits it. Every field of every finding was compared under the
+built-in profiles, in English and French: identical under `server`, `desktop`
+and `workstation` (the `container` profile skips the section).
+
+The fix command for “no profile in enforce mode” was still `sudo aa-enforce
+/etc/apparmor.d/*` — the command 0.31.4 removed from the complain-mode finding
+after measuring it on Ubuntu Server 26.04: not installed by default, and, with
+apparmor-utils, on a copy, it set 97 files to enforce, 74 of which ship
+`flags=(unconfined)` on purpose. It is now a check, `sudo aa-status`, and the
+detail says to enforce one profile at a time.
+
+### 5. A rootless dockerd
+
+Measured on the Mint test host (rootlesskit 1.1.1, slirp4netns, a test
+account): dockerd, containerd, rootlesskit and the container's shim all run as
+the user; the container reached the internet with the host's `ip_forward` at 0.
+A rootless dockerd routes nothing through the host. 0.34.0 counted any process
+named `dockerd` as the routing mechanism that explains `ip_forward=1`. Only a
+dockerd running as root does now, so a host whose only “reason” was a rootless
+dockerd gets `firewall_drivers.ip_forward_enabled` (WARN −1). The JSON field
+`firewall_drivers.docker_present` changes meaning accordingly: true while a
+dockerd runs **as root** (since 0.32.0 it was true while any dockerd ran).
+
+The rootless dockerd's containers are not asked about — nothing is run as
+another user, as for rootless podman since 0.33.0 —
+`docker_hardening.rootless_dockerd` (INFO) names the users and how many
+containers each runs (their shims, owned by that user); the score is an upper
+bound. A rootless container is no longer counted as a system Docker container
+(§2).
+
+### 6. containerd outside Docker and Kubernetes
+
+`ctr -n default run …` (containerd 2.2.1, measured) gave a root shim in the
+`default` namespace that no section saw. `docker_hardening.containerd_unexamined`
+(INFO, score “≤”) names each such namespace and its container count. Docker's
+namespaces (`moby` and the `moby-<uid>.<gid>` ones containerd also listed on
+the test host) and Kubernetes' `k8s.io` are left to their sections.
+
+### 7. The `lxd` group counts as root
+
+LXD's security documentation: “Local access to LXD through the Unix socket
+always grants full access to LXD. Therefore, you should only give such access
+to users who you'd trust with root access to your system”, and “The root user
+and all members of the `lxd` group can interact with the local daemon.”
+Measured on the Ubuntu Server test host (LXD 5.21 snap, a70350):
+
+| State | `/var/snap/lxd/common/lxd/unix.socket` | A member's request | A non-member's |
+|---|---|---|---|
+| after boot, daemon idle (socket-activated) | `root:lxd 0660`, held by PID 1 | “auth: trusted” | refused |
+| after `snap stop` + `snap start` of the daemon, before it ran | `root:root 0660`, held by PID 1 | refused | refused |
+| daemon running | `root:lxd 0660` | HTTP 200 | — |
+
+The group is read as the docker group is: its members (its list and the
+accounts whose primary group it is), and an LXD socket owned by the group, with
+group write and a root listener. Then `docker_hardening.lxd_group_root`
+(WARN −2, with `sudo gpasswd -d <member> lxd` for the listed members, never run
+unattended); otherwise an INFO says why it is not counted (dormant, unknown —
+score “≤” — or a non-root listener). Replayed: 0.34.0 said nothing; 0.35.0
+gave the WARN with the daemon running and the INFO in the `root:root` state.
+Decided after review: with the docker group already counted on the host, the
+lxd group is said with the same WARN and no second −2 — the same power counts
+once per host, as for sudo since 0.27.0. On that host the group also holds
+`lxd`, a system account (uid 999, primary group `lxd`, shell `/bin/false`): it
+is counted and named apart (“system account(s): lxd”), in both groups' lines —
+a uid below 1000 and a shell that allows no login. The non-snap socket
+path `/var/lib/lxd/unix.socket` is read the same way; it was not measured.
+
+### 8. The same power counts once — decided by the score engine
+
+0.27.0 decided that a passwordless rule that is root anyway costs nothing more
+beside a `NOPASSWD:ALL` or a doas `permit nopass` without `cmd`; 0.35.0 decides
+the same for the `lxd` group beside the `docker` group. Both decisions were
+taken inside the check, before the profile and `--ignore` were applied. Found
+during review: an operator who waived the first mechanism (`--ignore
+file_perms.sudoers_nopasswd_all`, or a profile setting it to `info`) also lost
+the second one's points — the power was counted nowhere. The decision now
+belongs to the score engine, after the profile and `--ignore`: each deduction
+names the power it stands for, and one that yields is dropped only while
+another of that power is counted. A waived `NOPASSWD:ALL` now leaves the
+root-equivalent rules' −2 standing; a waived docker group leaves the lxd
+group's. Nothing else moves: `NOPASSWD:ALL` and doas `permit nopass` keep their
+−2 each, as decided in 0.27.0; the findings, their keys and their texts are the
+same.
+
+### 9. A reboot that is waiting
+
+0.34.0 said “Reboot pending — running kernel … is not the latest installed …”
+on dpkg hosts only. Two cases now:
+
+- **rpm hosts.** Measured on Fedora 44 (b5f0350): kernel 7.3.3 installed while
+  6.19.10 ran; 0.34.0 said nothing. BOB reads the installed `kernel-core`
+  packages (`rpm -q kernel-core`, VERSION-RELEASE.ARCH, the form of `uname
+  -r`) and gives the same INFO when the running one is not the newest.
+- **`/run/reboot-required`.** Written when a package asks for a reboot — by
+  update-notifier-common's `notify-reboot-required` (libc6's postinst, its
+  kernel hook) or by the package itself (dbus's postinst). Measured on the Mint
+  test host: update-notifier-common is not installed there by default, and
+  libc6's postinst then writes nothing; once installed, a kernel install wrote
+  the file, listing `linux-base`. `kernel_modules.reboot_required` (INFO) names
+  the packages in `/run/reboot-required.pkgs`; it is not repeated when the
+  kernel line above already says the reboot and every listed package is a
+  `linux-*` one. The file's absence is not read as “no reboot needed”.
+
+### 10. What the summary, the panorama and the systemd lines left out
+
+From a field audit of a Linux Mint desktop under 0.34.0:
+
+- **The score breakdown** is grouped by domain, under the domain's name, in
+  the terminal summary and in the report file BOB writes.
+- **“Possible improvements” is not the free list.** A line under it says that
+  some of these cost points, and the breakdown says which — shown only when
+  one of them does.
+- **The services panorama names each service's reach.** Its last column showed
+  ✔ for any exposure but “open to everyone”, read from the raw UFW rules before
+  the firewall context: a port no rule covered was ✔ on a host with no firewall
+  at all, and at UFW's default allow. It now shows, in one word, the widest
+  reach the services section concluded for the service's ports: anyone,
+  unfiltered, accepted, unsettled, LAN, one host, this host, denied, no
+  listener. A service with no reach recorded shows “no listener” when
+  none of its ports listens (the port scan's answer), “not examined”
+  otherwise; “—” means a service that is not installed, and nothing else. The columns take the width of what they hold, and a
+  port list cut to fit ends with “…”.
+- **Every unit systemd-analyze rates UNSAFE or EXPOSED is named.** The audit
+  counted “24 UNSAFE, 4 EXPOSED” and named five units, all UNSAFE.
+- **Timeshift's mode** opens each of its lines: “Timeshift (rsync)” or
+  “Timeshift (BTRFS)”.
+- **AIDE's database** is taken on a system one trusts: the detail now says so,
+  and that `dpkg --verify` or `rpm -Va` compares installed files with their
+  packages first.
+
+### 11. Documents and their guards
+
+- The version links of `CHANGELOG.md` and `CHANGELOG_FR.md` pointed at
+  `#v0340`-style anchors that GitHub never makes (it builds an anchor from the
+  heading's text, `## [0.34.0] — 2026-11-13` → `#0340--2026-11-13`), in a file
+  that no longer holds the entries: none of the 125 links per file went
+  anywhere. They now point at the entries in `DOCUMENTS/CHANGELOG_FULL.md` and
+  `CHANGELOG_FULL_FR.md`; a guard computes each anchor as GitHub does and
+  refuses a link that lands on no heading. The release workflow, which reads
+  the version row to title the GitHub release, splits the row on `|` and is
+  unaffected (its test runs the workflow's own block).
+- Two published French entries now say what the English ones say: 0.31.4 kept
+  the measured results but not the order the settings were made in; 0.26.1
+  carried a sentence the English entry does not have.
+- Guards added: the per-profile counts in the README, the tutorial and
+  `bob-profile(5)` (desktop's 37 downgrades — 36 before §4 —, workstation's 31
+  and the six it keeps, container's 17 skipped sections) are derived from the
+  profile files; the README_TECH uniform-key count is read from its sentence
+  (the guard found it anywhere in the document, and a wrong figure in the
+  sentence passed in 0.34.0's assembly); each finding line of the README's
+  real-run excerpt must still be a line BOB prints.
+
+### Limits
+
+- The nftables form of libvirt's rules was measured on Fedora 44 with firewalld
+  only; on Ubuntu, libvirt 10.0 ignored the setting that selects it.
+- Reachability of a routed libvirt network on nftables is the host firewall's
+  call as much as libvirt's; BOB reads libvirt's side and says so.
+- The non-snap LXD socket path and Incus are not measured.
+- Rootless dockerd's and rootless podman's containers are seen, not examined.
+- The rpm kernel check reads `kernel-core` (Fedora, RHEL family); openSUSE's
+  kernel packages are named otherwise and were not measured.
+
+### Tests
+
+**Tests** 21424 → **21925**, mutations 1904 → **1990**, all killed. New test
+files: `test_v0350_docker_daemon.py`, `test_v0350_libvirt_inbound.py`,
+`test_v0350_mac_policy_by_file.py`, `test_v0350_lxd_group.py`,
+`test_v0350_breakdown_by_domain.py`, `test_v0350_panorama_scope.py`,
+`test_v0350_systemd_exposed_named.py`, `test_v0350_reboot_required.py`,
+`test_v0350_timeshift_mode.py`, `test_v0350_aide_trusted_baseline.py`,
+`test_v0350_changelog_anchors.py`, `test_v0350_profile_counts_in_docs.py`,
+`test_v0350_readme_sample_matches_locales.py`. Each guard has a mutation that
+brings its defect back.
+
+---
+
 ## [0.34.0] — 2026-11-13
 
 **A minor release, BREAKING for scores: sshd's `DisableForwarding` is read; the
