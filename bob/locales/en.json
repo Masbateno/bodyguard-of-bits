@@ -254,7 +254,19 @@
       "not_installed": "NOT INSTALLED",
       "active": "ACTIVE",
       "inactive": "INACTIVE",
-      "unknown": "UNKNOWN"
+      "unknown": "UNKNOWN",
+      "scope": {
+        "anyone": "anyone",
+        "unfiltered": "unfiltered",
+        "accepted": "accepted",
+        "unknown": "unsettled",
+        "lan": "LAN",
+        "host": "one host",
+        "this_host": "this host",
+        "denied": "denied",
+        "no_listener": "no listener",
+        "not_examined": "not examined"
+      }
     },
     "state": {
       "active_enabled": "Service active and set to start automatically at boot",
@@ -410,6 +422,7 @@
     "exposed_firewalld_strict": "rejected by firewalld (StrictForwardPorts=yes) unless the zone forwards it",
     "iptables_bypass": "Docker may bypass the host firewall (UFW, firewalld) — iptables is not disabled in daemon.json",
     "no_containers": "No running Docker container publishes a port",
+    "exposed_unread": "The ports Docker containers publish could not be listed — dockerd did not answer, or BOB did not start it to ask; containers run (their containerd shims) or could not be counted: not examined",
     "no_public_ports": "Running Docker containers detected — no publicly exposed ports",
     "exposed_ports": "Ports exposed by Docker",
     "iptables_bypass_detail1": "This is an architectural choice, not a simple fix — two options:",
@@ -466,6 +479,7 @@
     "alerts": "Corrections are needed. Address items marked 'Action required' first.",
     "block_action": "Action required",
     "block_improve": "Possible improvements",
+    "block_improve_points": "Less urgent than the list above, not free: some of these cost points — the score breakdown below says which.",
     "block_improve_disclaimer": "Commands shown are suggestions — verify and adapt to your network before running",
     "implicit_policy": "Service(s) relying on the firewall's default policy rather than explicit rules. Correct if policy is deny, but an explicit rule is more robust.",
     "implicit_svcs": "Affected service(s)",
@@ -942,6 +956,12 @@
   "virt": {
     "none_detected": "No virtualisation technology detected",
     "bypass_risk": "{name} detected — {iface} bridge interface may insert iptables rules, bypassing the firewall's FORWARD policy",
+    "libvirt_inbound_open": "libvirt: the {iface} network admits new connections from outside to its VMs ({subnet}) — a routed network; libvirt's chains come first in FORWARD, ahead of the host firewall's (measured with UFW on Linux Mint 22.3: a client outside reached the VM)",
+    "libvirt_inbound_open_nft": "libvirt: the {iface} network's own rules admit new connections from outside to its VMs ({subnet}) — a routed network. Its rules are in their own nftables table; every base chain on the forward hook sees the packet and can refuse it, the host firewall's included — libvirt's accept is one verdict among them (measured on Fedora 44: firewalld's libvirt-routed-in policy accepts them from any zone, and a client outside reached the VM)",
+    "libvirt_replies_only": "libvirt: the {iface} network ({subnet}) lets VM traffic out and only replies in — libvirt's own rules refuse new connections from outside (a NAT network)",
+    "libvirt_rules_unread": "libvirt runs a network that writes firewall rules, but its LIBVIRT_FWI chain could not be listed — what it lets in to the VMs was not weighed",
+    "libvirt_rules_nft": "libvirt keeps its firewall rules in its own nftables table (libvirt_network), and its guest_input chain could not be listed — what they let in to the VMs is not weighed",
+    "libvirt_no_inbound": "libvirt runs a NAT or routed network, but its LIBVIRT_FWI chain admits nothing towards the VMs",
     "snap_network": "Snap package '{pkg}' has active network connections — verify it does not bypass UFW"
   },
   "hardening": {
@@ -1572,6 +1592,9 @@
     "ok": "No risky kernel modules loaded",
     "kernels_reboot_pending": "Reboot pending — running kernel ({running}) is not the latest installed ({recent})",
     "kernels_reboot_pending_detail": "Installed: {installed}\nDo not remove old kernels yet. Reboot into {recent} first and verify the system works correctly.",
+    "reboot_required": "A reboot is pending — asked for by the installation of: {packages} (/run/reboot-required)",
+    "reboot_required_unlisted": "A reboot is pending — /run/reboot-required exists; the packages that asked for it are not listed",
+    "reboot_required_detail": "Until the reboot, the updated code of these packages is installed on disk while the old one keeps running in memory (the kernel, and every process that loaded the old libraries). The file is written by update-notifier-common, or by a package itself (dbus); where update-notifier-common is absent (Linux Mint, measured) a libc or kernel update writes none, and its absence says nothing.",
     "kernels_obsolete": "{count} obsolete kernel(s) detected (running: {running}, latest: {recent})",
     "kernels_obsolete_same": "{count} obsolete kernel(s) detected (running: {running})",
     "kernels_obsolete_detail": "Installed : {installed}\nObsolete  : {to_remove}\nThis command removes the kernel image only. Run sudo apt autoremove --purge afterwards to clean up associated headers and modules. Execute only after verifying the system boots correctly on {recent}.",
@@ -3410,6 +3433,11 @@
         "why": "Docker's post-install documentation: \"The docker group grants root-level privileges to the user.\" dockerd runs as root and obeys whoever can write to its socket; a member of the docker group can start a container that mounts the host's root filesystem and edit /etc/shadow or /etc/sudoers, without a password and without sudo. BOB counts it only while a Docker socket gives the group write access; with dockerd and its socket stopped the members are listed without a point.",
         "how": "1. List the members:\n   getent group docker\n2. Remove an account that must not be root:\n   sudo gpasswd -d <user> docker\n   (an account whose primary group is docker: sudo usermod -g <group> <user>)\n3. For users who only need containers, prefer rootless Docker or podman without root:\n   https://docs.docker.com/engine/security/rootless/"
       },
+      "lxd_group_root": {
+        "title": "Accounts in the lxd group (root-equivalent)",
+        "why": "LXD's security documentation: \"Local access to LXD through the Unix socket always grants full access to LXD. Therefore, you should only give such access to users who you'd trust with root access to your system\", and \"The root user and all members of the lxd group can interact with the local daemon.\" A member drives the LXD daemon, which runs as root, without a password and without sudo. BOB counts it only while an LXD socket the group can write has a root listener (the LXD daemon, or systemd holding the socket for it); otherwise (LXD stopped, or the socket not the group's — root:root after a restart of the snap's socket alone, measured) the members are listed without a point.",
+        "how": "1. List the members:\n   getent group lxd\n2. Remove an account that must not be root:\n   sudo gpasswd -d <user> lxd\n   (an account whose primary group is lxd: sudo usermod -g <group> <user>)\n3. LXD's security documentation:\n   https://canonical.com/lxd/docs/en/latest/explanation/security/"
+      },
       "socket_mounted": {
         "title": "Docker socket mounted inside a container",
         "why": "Mounting /var/run/docker.sock into a container gives it full control of the Docker daemon — and therefore the host. From inside the container, an attacker can start a new privileged container, mount the host filesystem, and escape with a single docker command. This is a complete container isolation bypass.",
@@ -4105,9 +4133,9 @@
   },
   "file_integrity": {
     "not_installed": "No file integrity monitor installed (AIDE / Tripwire)",
-    "not_installed_detail": "File integrity monitors detect unauthorised changes to system files, binaries, and configuration. Without one, an attacker who modifies a binary or config file (e.g. /etc/passwd, /usr/bin/sudo) will go undetected. Install AIDE and initialise its database.",
+    "not_installed_detail": "File integrity monitors detect unauthorised changes to system files, binaries, and configuration. Without one, an attacker who modifies a binary or config file (e.g. /etc/passwd, /usr/bin/sudo) will go undetected. Install AIDE and initialise its database. The database records the files as they are when it is taken: take it on a system you trust — a file already changed would become the reference. `dpkg --verify` (Debian family) or `rpm -Va` (RPM family) first compares installed files with their packages.",
     "no_db": "{tool} is installed but the integrity database has not been initialised",
-    "no_db_detail": "Without an initialised database, {tool} has no baseline to compare against and cannot detect any changes. Initialise the database now.",
+    "no_db_detail": "Without an initialised database, {tool} has no baseline to compare against and cannot detect any changes. Initialise the database now. The database records the files as they are when it is taken: take it on a system you trust — a file already changed would become the reference. `dpkg --verify` (Debian family) or `rpm -Va` (RPM family) first compares installed files with their packages.",
     "db_unknown": "{tool} is installed but its database directory could not be read",
     "db_unknown_detail": "The {tool} database location is root-owned and was not readable, so BOB cannot tell an initialised database from a missing one. Rather than warn that monitoring is inactive — which would be a guess, and would lower the score for a host that may be fully covered — the verdict is withheld. Run as root to settle it: sudo bob --check file_integrity",
     "no_db_reason": "{tool} installed but database not initialised — integrity monitoring inactive",
@@ -4203,10 +4231,10 @@
     "also_installed": "Also installed (not confirmed active): {tools}",
     "installed_only": "Backup tool(s) found but not confirmed active: {tools}",
     "installed_only_detail": "Nothing BOB reads confirms that it runs: no configuration found, or, for Timeshift, no schedule on or no snapshot. Verify that backups are actually scheduled and running.",
-    "timeshift_snapshots": "Timeshift: {count} snapshot(s) in {path}, the newest {newest} — schedule: {schedules}",
-    "timeshift_stale": "Timeshift: the newest of {count} snapshot(s) in {path} is {newest}, {days} day(s) old — more than twice its longest schedule ({schedules}): no scheduled snapshot since, so Timeshift is not counted as an active backup",
-    "timeshift_none": "Timeshift: no snapshot in {path} — schedule: {schedules}",
-    "timeshift_unread": "Timeshift: schedule: {schedules}; its snapshots were not read — {why}",
+    "timeshift_snapshots": "Timeshift ({mode}): {count} snapshot(s) in {path}, the newest {newest} — schedule: {schedules}",
+    "timeshift_stale": "Timeshift ({mode}): the newest of {count} snapshot(s) in {path} is {newest}, {days} day(s) old — more than twice its longest schedule ({schedules}): no scheduled snapshot since, so Timeshift is not counted as an active backup",
+    "timeshift_none": "Timeshift ({mode}): no snapshot in {path} — schedule: {schedules}",
+    "timeshift_unread": "Timeshift ({mode}): schedule: {schedules}; its snapshots were not read — {why}",
     "timeshift_excludes": "Excluded from every snapshot (timeshift.json): {paths}. What these patterns match is not backed up by Timeshift.",
     "timeshift_no_schedule": "none (snapshots only by hand)",
     "timeshift_every": {
@@ -4269,7 +4297,9 @@
     "none": "No running services to analyse for systemd hardening",
     "summary": "{total} running service(s) scored by systemd-analyze security — {unsafe} UNSAFE, {exposed} EXPOSED, {lower} OK/medium",
     "summary_detail": "systemd-analyze's exposure score is a relative hardening guide — a high score is the common default and does not by itself mean a service is vulnerable. Inspect a unit with: systemd-analyze security <unit>",
-    "worst": "Least-hardened running service(s): {units}"
+    "worst": "Least-hardened running service(s): {units}",
+    "more_unsafe": "Other running service(s) systemd-analyze rates UNSAFE ({count}): {units}",
+    "exposed_units": "Running service(s) systemd-analyze rates EXPOSED ({count}): {units}"
   },
   "container_security": {
     "detected": "Running inside a {runtime} container — auditing the container's own isolation posture",
@@ -4535,8 +4565,23 @@
     "docker_group_root": "{count} account(s) in the docker group: {users} — the group grants root-level privileges (Docker documentation), and the Docker socket gives it write access",
     "docker_group_root_reason": "docker group members are root-equivalent: {users}",
     "docker_group_root_detail": "Docker's post-install documentation: \"The docker group grants root-level privileges to the user.\" A member can start a container that mounts the host's root filesystem, without a password. Keep the group for accounts that must be root anyway, or use rootless Docker. An account whose primary group is docker is changed with usermod -g, not gpasswd.",
-    "docker_group_dormant": "{count} account(s) in the docker group: {users} — nothing listens on a Docker socket the group can write now (dockerd and its socket stopped): not counted",
+    "docker_group_dormant": "{count} account(s) in the docker group: {users} — no Docker socket gives the group access now (nothing listens, or the socket is not the group's): not counted",
     "docker_group_unknown": "{count} account(s) in the docker group: {users} — whether a Docker socket gives the group access could not be read: not counted, the score is an upper bound",
+    "docker_group_not_root": "{count} account(s) in the docker group: {users} — the process listening on the Docker socket runs as uid {uids}, not root: the group gives that account's rights, not root's; not counted",
+    "lxd_group_root": "{count} account(s) in the lxd group: {users} — local access to LXD through its socket grants full access, for users one would trust with root (LXD documentation), and the LXD socket gives the group access",
+    "lxd_group_root_counted_once": "The docker group gives the same power on this host: the two count once together — this one adds no point while the docker group's are counted (an --ignore or a profile that waives the docker group leaves this one counted)",
+    "group_system_accounts": "system account(s): {accounts}",
+    "lxd_group_root_reason": "lxd group members are root-equivalent: {users}",
+    "lxd_group_root_detail": "LXD's security documentation: \"Local access to LXD through the Unix socket always grants full access to LXD. Therefore, you should only give such access to users who you'd trust with root access to your system.\" Measured on Ubuntu Server 26.04 (LXD 5.21 snap): a member's request on the socket was answered \"auth: trusted\", a non-member's refused; while LXD is idle, systemd holds the socket and starts the daemon on the first request. An account whose primary group is lxd is changed with usermod -g, not gpasswd.",
+    "lxd_group_dormant": "{count} account(s) in the lxd group: {users} — no LXD socket gives the group access now (nothing listens, or the socket is not the group's — measured after a restart of the snap's socket alone: root:root until the daemon starts): not counted",
+    "lxd_group_unknown": "{count} account(s) in the lxd group: {users} — whether an LXD socket gives the group access could not be read: not counted, the score is an upper bound",
+    "lxd_group_not_root": "{count} account(s) in the lxd group: {users} — the process listening on the LXD socket runs as uid {uids}, not root: the group gives that account's rights, not root's; not counted",
+    "runtime_not_started": "dockerd is stopped and systemd's docker.socket would start it on the first request: BOB did not ask it, so as not to start it — no Docker container runs (no containerd shim in Docker's namespace)",
+    "runtime_not_started_live": "dockerd is stopped and systemd's docker.socket would start it on the first request: BOB did not ask it — {count} Docker container(s) run all the same (live-restore), not examined",
+    "runtime_not_started_unread": "dockerd is stopped and systemd's docker.socket would start it on the first request: BOB did not ask it, and whether Docker containers run could not be read — not examined",
+    "rootless_dockerd": "Rootless dockerd running, by user (containers): {users} — not examined",
+    "rootless_dockerd_detail": "Seen in /proc: dockerd and its containers' shims belong to the user; BOB does not run docker as another user. A rootless Docker's containers run with at most that user's rights, and its network goes through slirp4netns, not the host's IP forwarding. The user can list them: docker ps (with DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock).",
+    "containerd_unexamined": "containerd runs containers outside Docker and Kubernetes, by namespace: {namespaces} — not examined (ctr -n <namespace> tasks ls lists them)",
     "rootless_unexamined": "{count} rootless podman container(s) running, not examined: {users}",
     "rootless_unexamined_detail": "Seen in /proc (their conmon monitor belongs to the user); BOB does not run podman as another user. A rootless container runs with at most its user's rights on the host, not root's; if the socket of a container daemon running as root (docker.sock) is mounted into it and it can open it, it can drive that daemon, which is root-equivalent on the host. The user can list them: podman ps; and inspect one: podman inspect <name>.",
     "runtime_unreachable": "Container runtime(s) not reachable: {runtimes} — their containers were not examined",

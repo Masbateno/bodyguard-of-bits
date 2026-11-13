@@ -225,7 +225,7 @@ Each item of the *Action required* list shows a CIS reference when one applies, 
 
 ## CIS benchmark mapping
 
-238 entries: **90 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 7 CIS Kubernetes 2.0 · 1 CIS Red Hat 8/9 · 133 best-practice**, plus **259 cross-benchmark citations** on 94 keys (CIS Debian 12/13 and CIS Ubuntu 24.04), sourced from [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) so every control number is verifiable rather than invented.
+239 entries: **90 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 7 CIS Kubernetes 2.0 · 1 CIS Red Hat 8/9 · 134 best-practice**, plus **259 cross-benchmark citations** on 94 keys (CIS Debian 12/13 and CIS Ubuntu 24.04), sourced from [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) so every control number is verifiable rather than invented.
 
 Each finding with a formal CIS code displays `[CIS:X.Y.Z]` inline in the summary box.  
 Full reference text is shown in `--verbose` mode.  
@@ -250,8 +250,8 @@ No sudo required. Fully offline — no external calls or data collection.
 | Profile | Use case |
 |---------|----------|
 | `server` | Default — every finding at its full severity. Used when no profile is set, unless BOB finds an active display manager: it then picks `desktop` and says so in an INFO line |
-| `desktop` | Relaxed for personal machines — extends `server` and downgrades 36 findings to INFO, among them SSH password authentication and forwarding, automatic updates, a missing backup, auditd, AppArmor without an enforcing profile, Secure Boot, and the freshness of rootkit / ClamAV / file-integrity scans |
-| `workstation` | First-class business-tier profile since v0.8.1 (no longer an alias to `desktop`) — keeps backup / auditd / MAC-enforce findings at WARN while relaxing the same SSH / clamav / rootkit / file-integrity ergonomics as `desktop` |
+| `desktop` | Relaxed for personal machines — extends `server` and downgrades 37 findings to INFO, among them SSH password authentication and forwarding, automatic updates, a missing backup, auditd, AppArmor without an enforcing profile, Secure Boot, and the freshness of rootkit / ClamAV / file-integrity scans |
+| `workstation` | First-class business-tier profile since v0.8.1 (no longer an alias to `desktop`) — keeps backup / auditd / AppArmor (no profile loaded, none enforcing) findings at WARN while relaxing the same SSH / clamav / rootkit / file-integrity ergonomics as `desktop` |
 | `container` | Extends `desktop` and skips 17 host-level sections: sysctl hardening, kernel modules and kernel hardening, Secure Boot, Raspberry Pi, auditd, suid_audit, Docker-in-Docker, disk and memory, fail2ban, ClamAV, NTP, MAC policy, backup, and the intrusion-detection and integrity tools (rootkit, file integrity) |
 
 ```

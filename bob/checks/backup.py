@@ -581,6 +581,9 @@ def _timeshift_finding(snapshot: BackupSnapshot, result: CheckResult, _t) -> Non
     when = (", ".join(_t(f"backup.timeshift_every.{name}") for name in schedules)
             if schedules else _t("backup.timeshift_no_schedule"))
     snaps = snapshot.timeshift_snapshots
+    # v0.35.0 — the mode, named: a field audit (Mint desktop) asked which one
+    # ran; snapshots are listed in rsync mode only, BTRFS ones are not read.
+    mode = "BTRFS" if snapshot.timeshift_unread == "btrfs" else "rsync"
     # v0.32.0 — what no snapshot holds, beside the count: "active" must not
     # read as "my files are backed up" when the home is excluded.
     excl = (_t("backup.timeshift_excludes", paths=", ".join(snapshot.timeshift_excludes))
@@ -588,7 +591,7 @@ def _timeshift_finding(snapshot: BackupSnapshot, result: CheckResult, _t) -> Non
     if snaps and snapshot.timeshift_stale_h is not None:
         result.info(
             key="backup.timeshift_stale",
-            message=_t("backup.timeshift_stale", count=len(snaps), newest=snaps[-1],
+            message=_t("backup.timeshift_stale", mode=mode, count=len(snaps), newest=snaps[-1],
                        days=int(snapshot.timeshift_stale_h // 24),
                        path=snapshot.timeshift_dir, schedules=when),
             detail=excl,
@@ -596,20 +599,20 @@ def _timeshift_finding(snapshot: BackupSnapshot, result: CheckResult, _t) -> Non
     elif snaps:
         result.info(
             key="backup.timeshift_snapshots",
-            message=_t("backup.timeshift_snapshots", count=len(snaps), newest=snaps[-1],
+            message=_t("backup.timeshift_snapshots", mode=mode, count=len(snaps), newest=snaps[-1],
                        path=snapshot.timeshift_dir, schedules=when),
             detail=excl,
         )
     elif snaps == []:
         result.info(
             key="backup.timeshift_none",
-            message=_t("backup.timeshift_none", path=snapshot.timeshift_dir, schedules=when),
+            message=_t("backup.timeshift_none", mode=mode, path=snapshot.timeshift_dir, schedules=when),
             detail=excl,
         )
     else:
         result.info(
             key="backup.timeshift_unread",
-            message=_t("backup.timeshift_unread", schedules=when,
+            message=_t("backup.timeshift_unread", mode=mode, schedules=when,
                        why=_t(f"backup.timeshift_why.{snapshot.timeshift_unread or 'not_read'}",
                               where=snapshot.timeshift_dir)),
             detail=excl,

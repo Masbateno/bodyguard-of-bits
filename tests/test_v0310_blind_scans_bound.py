@@ -83,7 +83,7 @@ def _docker(monkeypatch, run) -> DockerAuditSnapshot:
     monkeypatch.setattr(docker_mod.subprocess, "run", run)
     # 0.34.0, found by the CI: on the GitHub runner the real docker group
     # (its account a member, dockerd listening) added a −2 to the domain.
-    monkeypatch.setattr(docker_mod, "_docker_group", lambda: ([], False, []))
+    monkeypatch.setattr(docker_mod, "_group_socket", lambda name, socks: ([], False, [], []))
     return DockerAuditSnapshot.from_system()
 
 

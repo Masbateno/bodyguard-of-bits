@@ -28,7 +28,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, run_result
+from bob.checks._docker_daemon import moby_containers, system_dockerd_state
 from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
 
@@ -81,6 +82,12 @@ class DockerSnapshot:
     #: daemon.json ``firewall-backend`` key). The nftables backend has no
     #: DOCKER-USER chain (measured on openSUSE Leap 16 and Ubuntu Server).
     firewall_backend:   str = "iptables"
+    #: v0.35.0 — False when the published ports could not be listed: a
+    #: failed `docker ps` read as "no container", and asking a dockerd its
+    #: socket unit would start starts it (measured, a10350). With dockerd not
+    #: asked or not answering, no Docker container's shim running means none
+    #: publishes a port.
+    exposed_read:       bool = True
 
     @classmethod
     def from_system(cls) -> "DockerSnapshot":
@@ -100,15 +107,21 @@ class DockerSnapshot:
             )
 
         daemon_json_exists, iptables_disabled = _check_daemon_json()
-        exposed_ports = _get_exposed_ports()
-        firewall_backend = _firewall_backend()
+        # v0.35.0 — never ask a dockerd that only its socket unit would start.
+        ask = system_dockerd_state() not in ("socket", "unknown")
+        exposed = _get_exposed_ports() if ask else None
+        exposed_read = exposed is not None
+        if exposed is None and moby_containers() == 0:
+            exposed, exposed_read = [], True      # no Docker container runs at all
+        firewall_backend = _firewall_backend(ask_daemon=ask)
 
         return cls(
             installed=True,
             iptables_disabled=iptables_disabled,
             daemon_json_exists=daemon_json_exists,
-            exposed_ports=exposed_ports,
+            exposed_ports=exposed or [],
             firewall_backend=firewall_backend,
+            exposed_read=exposed_read,
         )
 
     @classmethod
@@ -213,7 +226,9 @@ def check_docker(
 
     # Exposed container ports
 
-    if not snapshot.exposed_ports:
+    if not snapshot.exposed_read:
+        result.info(message=_t("docker.exposed_unread"), key="docker.exposed_unread")
+    elif not snapshot.exposed_ports:
         result.ok(message=_t("docker.no_containers"), key="docker.no_containers")
     elif not public_ports:
         result.ok(message=_t("docker.no_public_ports"), key="docker.no_public_ports")
@@ -296,7 +311,7 @@ def _check_daemon_json() -> tuple[bool, bool]:
 
     return True, config.get("iptables") is False
 
-def _firewall_backend() -> str:
+def _firewall_backend(ask_daemon: bool = True) -> str:
     """``"nftables"`` or ``"iptables"`` — which backend Docker writes its rules with.
 
     v0.26.0. ``docker info`` names the driver ("iptables+firewalld",
@@ -304,7 +319,7 @@ def _firewall_backend() -> str:
     an older Docker, or a daemon that does not answer, falls back to the
     daemon.json ``firewall-backend`` key, then to iptables, Docker's default.
     """
-    out = _run("docker", "info", "--format", "{{json .FirewallBackend}}")
+    out = _run("docker", "info", "--format", "{{json .FirewallBackend}}") if ask_daemon else ""
     try:
         driver = (json.loads(out) or {}).get("Driver", "") if out.strip() else ""
     except (json.JSONDecodeError, AttributeError):
@@ -320,17 +335,21 @@ def _firewall_backend() -> str:
     return "iptables"
 
 
-def _get_exposed_ports() -> list[ExposedPort]:
+def _get_exposed_ports() -> "list[ExposedPort] | None":
     """
     List ports exposed by running Docker containers.
 
     Returns:
-        List of ExposedPort objects.
+        List of ExposedPort objects; None when `docker ps` failed (v0.35.0:
+        a daemon that does not answer is not "no container").
     """
-    output = _run(
+    res = run_result(
         "docker", "ps", "--format",
         "{{.Names}}\t{{.Ports}}"
     )
+    if not res.ok:
+        return None
+    output = res.stdout
     if not output.strip():
         return []
 

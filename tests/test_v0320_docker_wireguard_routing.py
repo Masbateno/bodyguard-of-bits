@@ -21,11 +21,19 @@ from bob.checks import firewall_stack as fs
 def proc(tmp_path, monkeypatch):
     root = tmp_path / "proc"
     root.mkdir()
+    (root / "net").mkdir()
+    (root / "net" / "unix").write_text("Num RefCount Protocol Flags Type St Inode Path\n")
     monkeypatch.setattr(fs, "_PROC", root)
+    # v0.35.0 — dockerd is read by the shared module, as root (a rootless one
+    # routes nothing through the host, measured).
+    from bob.checks import _docker_daemon
+    monkeypatch.setattr(_docker_daemon, "_PROC", root)
+    monkeypatch.setattr(_docker_daemon, "_PROC_NET_UNIX", root / "net" / "unix")
 
-    def add(pid, comm):
+    def add(pid, comm, uid=0):
         (root / pid).mkdir()
         (root / pid / "comm").write_text(comm + "\n")
+        (root / pid / "status").write_text(f"Name:\t{comm}\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\n")
     return add
 
 

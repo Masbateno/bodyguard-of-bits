@@ -227,7 +227,7 @@ Chaque point de la liste *À corriger* affiche une référence CIS quand il y en
 
 ## Mapping des benchmarks CIS
 
-238 entrées : **90 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 7 CIS Kubernetes 2.0 · 1 CIS Red Hat 8/9 · 133 bonnes pratiques**, plus **259 citations inter-benchmarks** sur 94 clés (CIS Debian 12/13 et CIS Ubuntu 24.04), sourcées depuis [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) pour que chaque numéro de contrôle soit vérifiable et non inventé.
+239 entrées : **90 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 7 CIS Kubernetes 2.0 · 1 CIS Red Hat 8/9 · 134 bonnes pratiques**, plus **259 citations inter-benchmarks** sur 94 clés (CIS Debian 12/13 et CIS Ubuntu 24.04), sourcées depuis [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) pour que chaque numéro de contrôle soit vérifiable et non inventé.
 
 Chaque résultat avec un code CIS formel affiche `[CIS:X.Y.Z]` en ligne dans la boîte de synthèse.  
 Le texte de référence complet est montré en mode `--verbose`.  
@@ -252,8 +252,8 @@ Sans sudo. Entièrement hors ligne — aucun appel externe ni collecte de donné
 | Profil | Cas d'usage |
 |--------|------------|
 | `server` | Par défaut — chaque constat à sa pleine sévérité. Utilisé quand aucun profil n'est défini, sauf si BOB trouve un gestionnaire d'affichage actif : il prend alors `desktop` et le dit dans une ligne INFO |
-| `desktop` | Assoupli pour les machines personnelles — étend `server` et ramène 36 constats en INFO, dont l'authentification SSH par mot de passe et les redirections SSH, les mises à jour automatiques, l'absence de sauvegarde, auditd, AppArmor sans profil en mode enforce, Secure Boot, et la fraîcheur des analyses rootkit / ClamAV / intégrité des fichiers |
-| `workstation` | Profil business first-class depuis v0.8.1 (plus un alias vers `desktop`) — garde backup / auditd / MAC-enforce au niveau WARN tout en relâchant la même ergonomie SSH / clamav / rootkit / file-integrity que `desktop` |
+| `desktop` | Assoupli pour les machines personnelles — étend `server` et ramène 37 constats en INFO, dont l'authentification SSH par mot de passe et les redirections SSH, les mises à jour automatiques, l'absence de sauvegarde, auditd, AppArmor sans profil en mode enforce, Secure Boot, et la fraîcheur des analyses rootkit / ClamAV / intégrité des fichiers |
+| `workstation` | Profil business first-class depuis v0.8.1 (plus un alias vers `desktop`) — garde backup / auditd / AppArmor (aucun profil chargé, aucun en mode enforce) au niveau WARN tout en relâchant la même ergonomie SSH / clamav / rootkit / file-integrity que `desktop` |
 | `container` | Étend `desktop` et saute 17 sections propres à l'hôte : durcissement sysctl, modules noyau et durcissement noyau, Secure Boot, Raspberry Pi, auditd, suid_audit, Docker-in-Docker, disque et mémoire, fail2ban, ClamAV, NTP, politique MAC, sauvegarde, et les outils de détection d'intrusion et d'intégrité (rootkit, intégrité des fichiers) |
 
 ```

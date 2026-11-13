@@ -502,11 +502,16 @@ class AuditReport:
 
         if breakdown:
             self._writeln(f"[{labels.get('breakdown', 'SCORE BREAKDOWN')}]")
-            for deduction in breakdown:
-                suffix = f" ({deduction.context})" if deduction.context in ("public", "ddns") else ""
-                self._writeln(
-                    f"  {deduction.reason:<50}  -{deduction.points}{suffix}"
-                )
+            from bob.domain_scores import group_by_domain
+            names = labels.get("domains", {}) if isinstance(labels.get("domains"), dict) else {}
+            for domain, deds in group_by_domain(breakdown):
+                if domain is not None:
+                    self._writeln(f"  ▸ {names.get(domain, domain)}")    # v0.35.0 — per domain
+                for deduction in deds:
+                    suffix = f" ({deduction.context})" if deduction.context in ("public", "ddns") else ""
+                    self._writeln(
+                        f"  {deduction.reason:<50}  -{deduction.points}{suffix}"
+                    )
             self._writeln("")
 
     def write_risk_context_section(

@@ -2307,5 +2307,10 @@
     "ref": "Best practice — Docker post-install documentation: the docker group grants root-level privileges to the user; keep it to accounts that must be root, or use rootless Docker",
     "ref_fr": "Bonne pratique — documentation Docker (post-installation) : le groupe docker donne des privilèges de niveau root ; le réserver aux comptes qui doivent être root, ou utiliser Docker sans root",
     "code": null
+  },
+  "docker_hardening.lxd_group_root": {
+    "ref": "Best practice — LXD security documentation: local access to LXD through its Unix socket always grants full access; give it only to users you would trust with root access",
+    "ref_fr": "Bonne pratique — documentation de sécurité de LXD : l'accès local à LXD par son socket Unix donne toujours un accès complet ; ne le donner qu'aux utilisateurs à qui l'on confierait l'accès root",
+    "code": null
   }
 }

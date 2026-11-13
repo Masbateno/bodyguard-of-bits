@@ -254,7 +254,19 @@
       "not_installed": "NON INSTALLÉ",
       "active": "ACTIF",
       "inactive": "INACTIF",
-      "unknown": "INCONNU"
+      "unknown": "INCONNU",
+      "scope": {
+        "anyone": "tous",
+        "unfiltered": "non filtré",
+        "accepted": "admis",
+        "unknown": "non établi",
+        "lan": "réseau local",
+        "host": "un hôte",
+        "this_host": "cet hôte",
+        "denied": "refusé",
+        "no_listener": "sans écoute",
+        "not_examined": "non examiné"
+      }
     },
     "state": {
       "active_enabled": "Service actif et démarré automatiquement au démarrage",
@@ -410,6 +422,7 @@
     "exposed_firewalld_strict": "rejeté par firewalld (StrictForwardPorts=yes) sauf si la zone le transfère",
     "iptables_bypass": "Docker peut contourner le pare-feu de l'hôte (UFW, firewalld) — iptables n'est pas désactivé dans daemon.json",
     "no_containers": "Aucun conteneur Docker en cours d'exécution ne publie de port",
+    "exposed_unread": "Les ports que publient les conteneurs Docker n'ont pas pu être listés — dockerd n'a pas répondu, ou BOB ne l'a pas démarré pour le demander ; des conteneurs tournent (leurs shims containerd) ou n'ont pas pu être comptés : non examinés",
     "no_public_ports": "Containers Docker détectés — aucun port exposé publiquement",
     "exposed_ports": "Ports exposés par Docker",
     "iptables_bypass_detail1": "C'est un choix d'architecture, pas une correction simple — deux options :",
@@ -466,6 +479,7 @@
     "alerts": "Des corrections sont nécessaires. Traitez en priorité les points marqués 'À corriger'.",
     "block_action": "À corriger",
     "block_improve": "Améliorations possibles",
+    "block_improve_points": "Moins urgent que la liste ci-dessus, pas gratuit : certains de ces points coûtent des points — le détail du score ci-dessous dit lesquels.",
     "block_improve_disclaimer": "Les commandes affichées sont des suggestions — vérifiez et adaptez à votre réseau avant d'exécuter",
     "implicit_policy": "Service(s) à risque élevé s'appuient sur la politique par défaut du pare-feu plutôt que des règles explicites. C'est correct si la politique est deny, mais une règle explicite est plus robuste.",
     "implicit_svcs": "Service(s) concerné(s)",
@@ -942,6 +956,12 @@
   "virt": {
     "none_detected": "Aucune technologie de virtualisation détectée",
     "bypass_risk": "{name} détecté — l'interface bridge {iface} peut insérer des règles iptables, contournant la politique FORWARD du pare-feu",
+    "libvirt_inbound_open": "libvirt : le réseau {iface} admet de nouvelles connexions venues de l'extérieur vers ses VM ({subnet}) — un réseau routé ; les chaînes de libvirt passent en premier dans FORWARD, avant celles du pare-feu de l'hôte (mesuré avec UFW sur Linux Mint 22.3 : un client extérieur a atteint la VM)",
+    "libvirt_inbound_open_nft": "libvirt : les propres règles du réseau {iface} admettent de nouvelles connexions venues de l'extérieur vers ses VM ({subnet}) — un réseau routé. Ses règles sont dans leur propre table nftables ; chaque chaîne de base du crochet forward voit le paquet et peut le refuser, celle du pare-feu de l'hôte comprise — l'acceptation de libvirt n'est qu'un verdict parmi eux (mesuré sur Fedora 44 : la politique libvirt-routed-in de firewalld les accepte depuis toute zone, et un client extérieur a atteint la VM)",
+    "libvirt_replies_only": "libvirt : le réseau {iface} ({subnet}) laisse sortir le trafic des VM et n'en laisse entrer que les réponses — ses propres règles refusent les nouvelles connexions venues de l'extérieur (un réseau NAT)",
+    "libvirt_rules_unread": "libvirt fait tourner un réseau qui écrit des règles de pare-feu, mais sa chaîne LIBVIRT_FWI n'a pas pu être listée — ce qu'elle laisse entrer vers les VM n'a pas été pesé",
+    "libvirt_rules_nft": "libvirt garde ses règles de pare-feu dans sa propre table nftables (libvirt_network), et sa chaîne guest_input n'a pas pu être listée — ce qu'elles laissent entrer vers les VM n'est pas pesé",
+    "libvirt_no_inbound": "libvirt fait tourner un réseau NAT ou routé, mais sa chaîne LIBVIRT_FWI n'admet rien vers les VM",
     "snap_network": "Le paquet Snap '{pkg}' a des connexions réseau actives — vérifiez qu'il ne contourne pas UFW"
   },
   "hardening": {
@@ -1572,6 +1592,9 @@
     "ok": "Aucun module noyau à risque chargé",
     "kernels_reboot_pending": "Redémarrage en attente — noyau actif ({running}) ≠ dernier installé ({recent})",
     "kernels_reboot_pending_detail": "Installés : {installed}\nNe supprimez pas encore les anciens noyaux. Redémarrez sur {recent} et vérifiez le bon fonctionnement du système.",
+    "reboot_required": "Redémarrage en attente — demandé par l'installation de : {packages} (/run/reboot-required)",
+    "reboot_required_unlisted": "Redémarrage en attente — /run/reboot-required existe ; les paquets qui l'ont demandé ne sont pas listés",
+    "reboot_required_detail": "Jusqu'au redémarrage, le code mis à jour de ces paquets est installé sur le disque tandis que l'ancien continue de tourner en mémoire (le noyau, et chaque processus qui a chargé les anciennes bibliothèques). Le fichier est écrit par update-notifier-common, ou par un paquet lui-même (dbus) ; là où update-notifier-common est absent (Linux Mint, mesuré), une mise à jour de libc ou du noyau n'en écrit aucun, et son absence ne prouve rien.",
     "kernels_obsolete": "{count} noyau(x) obsolète(s) détecté(s) (actif : {running}, récent : {recent})",
     "kernels_obsolete_same": "{count} noyau(x) obsolète(s) détecté(s) (actif : {running})",
     "kernels_obsolete_detail": "Installés  : {installed}\nObsolètes  : {to_remove}\nCette commande supprime uniquement l'image noyau. Exécutez ensuite sudo apt autoremove --purge pour nettoyer les headers et modules associés. À n'exécuter qu'après avoir vérifié que le système démarre correctement sur {recent}.",
@@ -3410,6 +3433,11 @@
         "why": "Documentation Docker, post-installation : « The docker group grants root-level privileges to the user. » dockerd tourne en root et obéit à quiconque peut écrire dans son socket ; un membre du groupe docker peut lancer un conteneur qui monte le système de fichiers racine de l'hôte et modifier /etc/shadow ou /etc/sudoers, sans mot de passe et sans sudo. BOB ne le compte que tant qu'un socket Docker donne l'écriture au groupe ; dockerd et son socket arrêtés, les membres sont listés sans point.",
         "how": "1. Lister les membres :\n   getent group docker\n2. Retirer un compte qui ne doit pas être root :\n   sudo gpasswd -d <utilisateur> docker\n   (un compte dont docker est le groupe principal : sudo usermod -g <groupe> <utilisateur>)\n3. Pour les utilisateurs qui n'ont besoin que de conteneurs, préférer Docker sans root ou podman sans root :\n   https://docs.docker.com/engine/security/rootless/"
       },
+      "lxd_group_root": {
+        "title": "Comptes dans le groupe lxd (équivalents à root)",
+        "why": "Documentation de sécurité de LXD : « Local access to LXD through the Unix socket always grants full access to LXD. Therefore, you should only give such access to users who you'd trust with root access to your system », et « The root user and all members of the lxd group can interact with the local daemon. » Un membre pilote le démon LXD, qui tourne en root, sans mot de passe et sans sudo. BOB ne le compte que tant qu'un socket LXD que le groupe peut écrire a un écouteur root (le démon LXD, ou systemd qui tient le socket pour lui) ; sinon (LXD arrêté, ou le socket pas au groupe — root:root après un redémarrage du seul socket du snap, mesuré), les membres sont listés sans point.",
+        "how": "1. Lister les membres :\n   getent group lxd\n2. Retirer un compte qui ne doit pas être root :\n   sudo gpasswd -d <utilisateur> lxd\n   (un compte dont lxd est le groupe principal : sudo usermod -g <groupe> <utilisateur>)\n3. Documentation de sécurité de LXD :\n   https://canonical.com/lxd/docs/en/latest/explanation/security/"
+      },
       "socket_mounted": {
         "title": "Socket Docker monté dans un conteneur",
         "why": "Monter /var/run/docker.sock dans un conteneur lui donne le contrôle total du démon Docker — et donc de l'hôte. Depuis l'intérieur du conteneur, un attaquant peut démarrer un nouveau conteneur privilégié, monter le système de fichiers hôte et s'échapper avec une seule commande docker. C'est un contournement complet de l'isolation des conteneurs.",
@@ -4105,9 +4133,9 @@
   },
   "file_integrity": {
     "not_installed": "Aucun moniteur d'intégrité des fichiers installé (AIDE / Tripwire)",
-    "not_installed_detail": "Les moniteurs d'intégrité des fichiers détectent les modifications non autorisées des fichiers système, binaires et configurations. Sans eux, un attaquant qui modifie un binaire ou un fichier de configuration (ex : /etc/passwd, /usr/bin/sudo) passe inaperçu. Installez AIDE et initialisez sa base de données.",
+    "not_installed_detail": "Les moniteurs d'intégrité des fichiers détectent les modifications non autorisées des fichiers système, binaires et configurations. Sans eux, un attaquant qui modifie un binaire ou un fichier de configuration (ex : /etc/passwd, /usr/bin/sudo) passe inaperçu. Installez AIDE et initialisez sa base de données. La base enregistre les fichiers tels qu'ils sont au moment où elle est prise : prenez-la sur un système dont vous êtes sûr — un fichier déjà modifié deviendrait la référence. `dpkg --verify` (famille Debian) ou `rpm -Va` (famille RPM) compare d'abord les fichiers installés à leurs paquets.",
     "no_db": "{tool} est installé mais la base de données d'intégrité n'a pas été initialisée",
-    "no_db_detail": "Sans base de données initialisée, {tool} n'a aucune référence pour détecter des changements. Initialisez la base maintenant.",
+    "no_db_detail": "Sans base de données initialisée, {tool} n'a aucune référence pour détecter des changements. Initialisez la base maintenant. La base enregistre les fichiers tels qu'ils sont au moment où elle est prise : prenez-la sur un système dont vous êtes sûr — un fichier déjà modifié deviendrait la référence. `dpkg --verify` (famille Debian) ou `rpm -Va` (famille RPM) compare d'abord les fichiers installés à leurs paquets.",
     "db_unknown": "{tool} est installé mais son répertoire de base de données n'a pas pu être lu",
     "db_unknown_detail": "L'emplacement de la base {tool} appartient à root et n'était pas lisible : BOB ne peut donc pas distinguer une base initialisée d'une base absente. Plutôt que d'avertir que la surveillance est inactive — ce qui serait une supposition, et abaisserait le score d'un hôte peut-être entièrement couvert — le verdict est suspendu. À vérifier en root : sudo bob --check file_integrity",
     "no_db_reason": "{tool} installé mais base non initialisée — surveillance d'intégrité inactive",
@@ -4203,10 +4231,10 @@
     "also_installed": "Également installé (actif non confirmé) : {tools}",
     "installed_only": "Outil(s) de sauvegarde trouvé(s) mais actif non confirmé : {tools}",
     "installed_only_detail": "Rien de ce que BOB lit ne confirme qu'il tourne : aucune configuration trouvée ou, pour Timeshift, aucune planification active ou aucun instantané. Vérifiez que les sauvegardes sont réellement planifiées et exécutées.",
-    "timeshift_snapshots": "Timeshift : {count} instantané(s) dans {path}, le plus récent {newest} — planification : {schedules}",
-    "timeshift_stale": "Timeshift : le plus récent des {count} instantané(s) de {path} est {newest}, vieux de {days} jour(s) — plus de deux fois sa plus longue planification ({schedules}) : aucun instantané planifié depuis, Timeshift n'est donc pas compté comme sauvegarde active",
-    "timeshift_none": "Timeshift : aucun instantané dans {path} — planification : {schedules}",
-    "timeshift_unread": "Timeshift : planification : {schedules} ; ses instantanés n'ont pas été lus — {why}",
+    "timeshift_snapshots": "Timeshift ({mode}) : {count} instantané(s) dans {path}, le plus récent {newest} — planification : {schedules}",
+    "timeshift_stale": "Timeshift ({mode}) : le plus récent des {count} instantané(s) de {path} est {newest}, vieux de {days} jour(s) — plus de deux fois sa plus longue planification ({schedules}) : aucun instantané planifié depuis, Timeshift n'est donc pas compté comme sauvegarde active",
+    "timeshift_none": "Timeshift ({mode}) : aucun instantané dans {path} — planification : {schedules}",
+    "timeshift_unread": "Timeshift ({mode}) : planification : {schedules} ; ses instantanés n'ont pas été lus — {why}",
     "timeshift_excludes": "Exclu de chaque instantané (timeshift.json) : {paths}. Ce que ces motifs couvrent n'est pas sauvegardé par Timeshift.",
     "timeshift_no_schedule": "aucune (instantanés seulement à la main)",
     "timeshift_every": {
@@ -4269,7 +4297,9 @@
     "none": "Aucun service en cours d'exécution à analyser pour le durcissement systemd",
     "summary": "{total} service(s) en cours évalué(s) par systemd-analyze security — {unsafe} UNSAFE, {exposed} EXPOSED, {lower} OK/moyen",
     "summary_detail": "Le score d'exposition de systemd-analyze est un guide relatif de durcissement — un score élevé est le défaut courant et ne signifie pas en soi qu'un service est vulnérable. Inspectez une unit avec : systemd-analyze security <unit>",
-    "worst": "Service(s) en cours les moins durcis : {units}"
+    "worst": "Service(s) en cours les moins durcis : {units}",
+    "more_unsafe": "Autre(s) service(s) en cours que systemd-analyze classe UNSAFE ({count}) : {units}",
+    "exposed_units": "Service(s) en cours que systemd-analyze classe EXPOSED ({count}) : {units}"
   },
   "container_security": {
     "detected": "Exécution dans un conteneur {runtime} — audit de la posture d'isolation du conteneur",
@@ -4535,8 +4565,23 @@
     "docker_group_root": "{count} compte(s) dans le groupe docker : {users} — ce groupe donne des privilèges de niveau root (documentation Docker), et le socket Docker lui donne l'écriture",
     "docker_group_root_reason": "membres du groupe docker équivalents à root : {users}",
     "docker_group_root_detail": "Documentation Docker, post-installation : « The docker group grants root-level privileges to the user. » Un membre peut lancer un conteneur qui monte le système de fichiers racine de l'hôte, sans mot de passe. Garder ce groupe aux comptes qui doivent de toute façon être root, ou utiliser Docker sans root. Un compte dont docker est le groupe principal se change avec usermod -g, pas gpasswd.",
-    "docker_group_dormant": "{count} compte(s) dans le groupe docker : {users} — rien n'écoute en ce moment sur un socket Docker que ce groupe peut écrire (dockerd et son socket arrêtés) : non compté",
+    "docker_group_dormant": "{count} compte(s) dans le groupe docker : {users} — aucun socket Docker ne donne l'accès au groupe en ce moment (rien n'écoute, ou le socket n'est pas au groupe) : non compté",
     "docker_group_unknown": "{count} compte(s) dans le groupe docker : {users} — impossible de lire si un socket Docker donne l'accès au groupe : non compté, le score est un plafond",
+    "docker_group_not_root": "{count} compte(s) dans le groupe docker : {users} — le processus à l'écoute sur le socket Docker tourne sous l'uid {uids}, pas root : le groupe donne les droits de ce compte, pas ceux de root ; non compté",
+    "lxd_group_root": "{count} compte(s) dans le groupe lxd : {users} — l'accès local à LXD par son socket donne un accès complet, à réserver aux utilisateurs à qui l'on confierait root (documentation LXD), et le socket LXD donne l'accès au groupe",
+    "lxd_group_root_counted_once": "Le groupe docker donne le même pouvoir sur cet hôte : les deux comptent une fois ensemble — celui-ci n'ajoute aucun point tant que ceux du groupe docker sont comptés (un --ignore ou un profil qui écarte le groupe docker laisse celui-ci compté)",
+    "group_system_accounts": "compte(s) système : {accounts}",
+    "lxd_group_root_reason": "membres du groupe lxd équivalents à root : {users}",
+    "lxd_group_root_detail": "Documentation de sécurité de LXD : « Local access to LXD through the Unix socket always grants full access to LXD. Therefore, you should only give such access to users who you'd trust with root access to your system. » Mesuré sur Ubuntu Server 26.04 (LXD 5.21 en snap) : la requête d'un membre sur le socket a reçu « auth: trusted », celle d'un non-membre a été refusée ; tant que LXD est au repos, systemd tient le socket et démarre le démon à la première requête. Un compte dont lxd est le groupe principal se change avec usermod -g, pas gpasswd.",
+    "lxd_group_dormant": "{count} compte(s) dans le groupe lxd : {users} — aucun socket LXD ne donne l'accès au groupe en ce moment (rien n'écoute, ou le socket n'est pas au groupe — mesuré après un redémarrage du seul socket du snap : root:root jusqu'au démarrage du démon) : non compté",
+    "lxd_group_unknown": "{count} compte(s) dans le groupe lxd : {users} — impossible de lire si un socket LXD donne l'accès au groupe : non compté, le score est un plafond",
+    "lxd_group_not_root": "{count} compte(s) dans le groupe lxd : {users} — le processus à l'écoute sur le socket LXD tourne sous l'uid {uids}, pas root : le groupe donne les droits de ce compte, pas ceux de root ; non compté",
+    "runtime_not_started": "dockerd est arrêté et le docker.socket de systemd le démarrerait à la première requête : BOB ne l'a pas interrogé, pour ne pas le démarrer — aucun conteneur Docker ne tourne (aucun shim containerd dans l'espace de noms de Docker)",
+    "runtime_not_started_live": "dockerd est arrêté et le docker.socket de systemd le démarrerait à la première requête : BOB ne l'a pas interrogé — {count} conteneur(s) Docker tournent pourtant (live-restore), non examinés",
+    "runtime_not_started_unread": "dockerd est arrêté et le docker.socket de systemd le démarrerait à la première requête : BOB ne l'a pas interrogé, et il n'a pas pu lire si des conteneurs Docker tournent — non examinés",
+    "rootless_dockerd": "dockerd sans root en marche, par utilisateur (conteneurs) : {users} — non examinés",
+    "rootless_dockerd_detail": "Vu dans /proc : dockerd et les shims de ses conteneurs appartiennent à l'utilisateur ; BOB ne lance pas docker au nom d'un autre utilisateur. Les conteneurs d'un Docker sans root tournent avec au plus les droits de cet utilisateur, et son réseau passe par slirp4netns, pas par le transfert IP de l'hôte. L'utilisateur peut les lister : docker ps (avec DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock).",
+    "containerd_unexamined": "containerd fait tourner des conteneurs hors Docker et Kubernetes, par espace de noms : {namespaces} — non examinés (ctr -n <espace> tasks ls les liste)",
     "rootless_unexamined": "{count} conteneur(s) podman sans root en marche, non examiné(s) : {users}",
     "rootless_unexamined_detail": "Vus dans /proc (leur moniteur conmon appartient à l'utilisateur) ; BOB ne lance pas podman au nom d'un autre utilisateur. Un conteneur sans root a au plus les droits de son utilisateur sur l'hôte, pas ceux de root ; si le socket d'un démon de conteneurs qui tourne en root (docker.sock) est monté dedans et qu'il peut l'ouvrir, il peut piloter ce démon, ce qui équivaut à root sur l'hôte. L'utilisateur peut les lister : podman ps ; et en examiner un : podman inspect <nom>.",
     "runtime_unreachable": "Runtime(s) de conteneurs injoignable(s) : {runtimes} — leurs conteneurs n'ont pas été examinés",

@@ -153,7 +153,7 @@ is active (then
 .B desktop
 Extends
 .B server
-and downgrades 36 findings to INFO, among them SSH password authentication,
+and downgrades 37 findings to INFO, among them SSH password authentication,
 X11 and TCP forwarding, MaxAuthTries and LoginGraceTime, automatic updates, a
 missing backup, auditd, AppArmor without an enforcing profile, Secure Boot,
 the freshness of rootkit / ClamAV / file-integrity scans, and services exposed
@@ -173,7 +173,8 @@ First-class business-tier profile since v0.8.1 (no longer an alias to
 .BR desktop ).
 Loads
 .B workstation.conf ,
-which keeps backup / auditd / MAC-enforce findings at WARN while relaxing the
+which keeps backup / auditd / AppArmor (no profile loaded, none enforcing)
+findings at WARN while relaxing the
 same SSH / clamav / rootkit / file-integrity ergonomics as
 .BR desktop .
 .

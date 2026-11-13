@@ -500,22 +500,33 @@ def print_services_panorama(rows: list[dict], labels: dict) -> None:
                   label   — service name
                   status  — "active" | "inactive" | "not_installed" | "unknown"
                   ports   — port string, e.g. "22/tcp" or "—"
-                  ufw     — "ok" | "warn" | "none" | "na"
+                  ufw     — "ok" | "warn" | "na"
+                  scope   — v0.35.0: the widest reach of its ports, named
+                            (labels["scope_<reach>"]), "na" for none
         labels: Dict with translated strings for headers and status values.
     """
-    COL_SVC  = 32
-    COL_STAT = 13
-    COL_PORT = 20
+    from bob.panorama import CALM_SCOPES, WARN_SCOPES
 
     h_svc  = labels.get("header_service", "SERVICE")
     h_stat = labels.get("header_status",  "STATUS")
     h_port = labels.get("header_ports",   "PORT(S)")
-    h_ufw  = labels.get("header_ufw",     "UFW")
+    h_ufw  = labels.get("header_ufw",     "SCOPE")
+
+    l_active       = labels.get("active",        "ACTIVE")
+    l_inactive     = labels.get("inactive",      "INACTIVE")
+    l_not_inst     = labels.get("not_installed", "NOT INSTALLED")
+    l_unknown      = labels.get("unknown",       "UNKNOWN")
+
+    # v0.35.0 — the reach is a word now: columns as wide as what they hold
+    # (capped), so the line stays within the 80-column box.
+    COL_SVC  = min(32, max([len(h_svc)] + [len(r["label"]) for r in rows]))
+    COL_STAT = max(len(h_stat), len(l_active), len(l_inactive), len(l_not_inst), len(l_unknown))
+    COL_PORT = min(20, max([len(h_port)] + [len(r["ports"]) for r in rows]))
 
     sep = (
         "  " + "─" * COL_SVC + "  " +
         "─" * COL_STAT + "  " +
-        "─" * COL_PORT + "  " + "───"
+        "─" * COL_PORT + "  " + "─" * max(len(h_ufw), 3)
     )
 
     _p(
@@ -526,16 +537,12 @@ def print_services_panorama(rows: list[dict], labels: dict) -> None:
     )
     _p(sep)
 
-    l_active       = labels.get("active",        "ACTIVE")
-    l_inactive     = labels.get("inactive",      "INACTIVE")
-    l_not_inst     = labels.get("not_installed", "NOT INSTALLED")
-    l_unknown      = labels.get("unknown",       "UNKNOWN")
-
     for row in rows:
         label  = row["label"]
         status = row["status"]
         ports  = row["ports"]
         ufw    = row["ufw"]
+        scope  = row.get("scope", "na")
 
         # Status text + colour
         if status == "active":
@@ -553,19 +560,22 @@ def print_services_panorama(rows: list[dict], labels: dict) -> None:
             stat_text = l_unknown
             stat_col  = _c.dim
 
-        # UFW indicator
-        if ufw == "ok":
-            ufw_str = f"{_c.green}✔{_c.reset}"
-        elif ufw == "warn":
-            ufw_str = f"{_c.yellow_bold}⚠{_c.reset}"
-        elif ufw == "none":
-            ufw_str = f"{_c.red}✖{_c.reset}"
+        # Reach, named
+        word = labels.get(f"scope_{scope}", "—") if scope != "na" else "—"
+        if scope in WARN_SCOPES:
+            ufw_str = f"{_c.yellow_bold}⚠ {word}{_c.reset}"
+        elif scope in CALM_SCOPES:
+            ufw_str = f"{_c.green}{word}{_c.reset}"
+        elif scope in ("na", "not_examined"):
+            ufw_str = f"{_c.dim}{word}{_c.reset}"
         else:
-            ufw_str = f"{_c.dim}—{_c.reset}"
+            ufw_str = word
 
-        # Truncate to column width to prevent layout overflow
+        # Truncate to column width to prevent layout overflow; a cut port
+        # list says it was cut.
         label = label[:COL_SVC]
-        ports = ports[:COL_PORT]
+        if len(ports) > COL_PORT:
+            ports = ports[:COL_PORT - 1] + "…"
 
         # Dim everything for not-installed rows
         if status == "not_installed":

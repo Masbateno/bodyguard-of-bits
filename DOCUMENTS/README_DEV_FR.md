@@ -54,8 +54,8 @@ Cette séparation permet de tester toute la logique métier en instanciant direc
 | `sysinfo.py` | Info système — `collect_system_info()`, `detect_network_context()`, `get_user_home()` |
 | `compare.py` | Rapport comparatif — `AuditBaseline` (avec `finding_keys`), `AuditDelta` (avec `new_finding_keys`/`resolved_finding_keys`), `build_baseline()`, `save_baseline()`, `load_baseline()`, `compute_delta()`, `display_delta()` |
 | `plugin_checks.py` | Chargeur de plugins — `PluginCheck`, `load_plugin_checks()`, sanitisation ANSI |
-| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 238 clés canoniques dans 62 préfixes, prose par profil pour 74 clés (sections server, desktop et container pour 70 d'entre elles, server et desktop pour 2, container seule pour 2 — chacune affichée après le texte générique, que toute clé imprime), lookup référence CIS via `cis_refs.py` |
-| `cis_refs.py` | Lookup référence CIS — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` avec `lru_cache` ; données dans `data/cis_refs.json` (238 entrées : 91 CIS formels, 133 best-practice, 7 Docker, 7 Kubernetes) |
+| `explain.py` | `--explain KEY` — `normalize_key()`, `run_explain()`, 239 clés canoniques dans 62 préfixes, prose par profil pour 74 clés (sections server, desktop et container pour 70 d'entre elles, server et desktop pour 2, container seule pour 2 — chacune affichée après le texte générique, que toute clé imprime), lookup référence CIS via `cis_refs.py` |
+| `cis_refs.py` | Lookup référence CIS — `get_cis_ref(key)`, `get_cis_code(key)`, `_load()` avec `lru_cache` ; données dans `data/cis_refs.json` (239 entrées : 91 CIS formels, 134 best-practice, 7 Docker, 7 Kubernetes) |
 | `domain_scores.py` | Sous-scores par domaine — `compute_domain_scores()`, `render_domain_scores()`, attribution 6 domaines (`backup` → `health_resilience`) |
 | `webhook.py` | Envoi webhook — `build_generic_payload()`, `build_slack_payload()`, `send_webhook()`, auto-détection format |
 | `correlation.py` | Moteur de corrélation — `CorrelationRule` (frozensets all_of/any_of), `CorrelatedFinding`, `run_correlations()`, 6 règles de risque composé intégrées |
@@ -172,7 +172,7 @@ bob/
 ├── csv_output.py        # Formatter sortie CSV (--format csv)
 ├── display.py           # Helpers affichage terminal (display_result, print_audit_summary…)
 ├── domain_scores.py     # compute_domain_scores(), render_domain_scores() — attribution backup→health_resilience
-├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 238 clés dans 62 préfixes
+├── explain.py           # run_explain(), normalize_key(), EXPLAIN_KEYS — 239 clés dans 62 préfixes
 ├── exposure.py          # Regroupement exposition ports — portée d'interface + niveau de risque
 ├── fixes.py             # Interface du mode fix (interactif + correction automatique)
 ├── formatter.py         # bob.formatter — rendu indépendant de la locale via Finding.template_vars (v0.4.1)
@@ -205,6 +205,9 @@ bob/
 │   ├── __init__.py
 │   ├── _awall.py           # AwallStatus — awall installé, ses politiques activées
 │   │                       #   (`awall list`), lu là où ni UFW ni firewalld ne tourne (0.26.0)
+│   ├── _docker_daemon.py   # le dockerd système lu dans /proc, jamais interrogé :
+│   │                       #   détenteurs du socket, actif / activé par socket,
+│   │                       #   shims moby, dockerd sans root, autre containerd (0.35.0)
 │   ├── _firewalld.py       # FirewalldStatus — état/zone/services via firewall-cmd,
 │   │                       #   partagé par firewall, iptables_nftables, ports,
 │   │                       #   ipv6 et services pour qu'un hôte firewalld ne soit
@@ -304,7 +307,7 @@ bob/
 │   └── world_writable.py       # WorldWritableSnapshot + check_world_writable() — --exhaustive (v0.24.0)
 ├── data/
 │   ├── services.json            # Registre déclaratif des 39 services
-│   ├── cis_refs.json            # Références CIS — 238 entrées {ref, code}
+│   ├── cis_refs.json            # Références CIS — 239 entrées {ref, code}
 │   ├── profiles/                # Profils d'audit livrés : server, desktop, workstation, container (.conf)
 │   ├── schemas/                 # Schémas JSON : entrée de service, liste de services, fichier plugin
 │   └── bob.bash-completion  # Script d'autocomplétion bash
@@ -542,8 +545,8 @@ print(f'Same order: {en == fr}')
 
 Résultat attendu — les deux fichiers ont les mêmes clés **dans le même ordre** :
 ```
-EN keys: 3234
-FR keys: 3234
+EN keys: 3275
+FR keys: 3275
 Missing in FR: none
 Same order: True
 ```
@@ -560,7 +563,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Traduire toutes les valeurs
 
-Le fichier contient exactement 3234 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
+Le fichier contient exactement 3275 clés organisées en sections (vérifié par le test de stricte parité `bob/locales/en.json` vs `fr.json`). Traduire toutes les valeurs en conservant les placeholders `{variable}` intacts.
 
 Exemple :
 ```json

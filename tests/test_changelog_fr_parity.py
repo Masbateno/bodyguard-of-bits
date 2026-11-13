@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 _VERSION = r"v?\d+\.\d+\.\d+(?:[ab]\d+)?"
 _SECTION = re.compile(rf"^## \[({_VERSION})\]", re.M)
-_ROW = re.compile(rf"^\| \[({_VERSION})\]\(#[^)]*\) \|.*$", re.M)
+_ROW = re.compile(rf"^\| \[({_VERSION})\]\((?:DOCUMENTS/CHANGELOG_FULL(?:_FR)?\.md)?#[^)]*\) \|.*$", re.M)
 _MIN_RATIO = 0.9
 
 

@@ -28,6 +28,12 @@ from bob.checks.mac_policy import (
 )
 from bob.scoring import FindingLevel
 from tests.helpers import _deduction_keys, _deduction_points, _finding_level, _keys, _t
+from bob.profiles import apply_profile, load_profile
+
+
+def _as(snap, profile):
+    """v0.35.0 — the check, then the profile file's overrides, as the runner does."""
+    return apply_profile(check_mac_policy(snap, t=_t, profile_name=profile), load_profile(profile))
 
 
 # ---------------------------------------------------------------------------
@@ -176,20 +182,23 @@ class TestAppArmorNoEnforce:
 
     def test_desktop_no_enforce_returns_info(self):
         snap = _snap(aa_installed=True, aa_active=True, aa_enforcing=0, aa_complain=5)
-        result = check_mac_policy(snap, t=_t, profile_name="desktop")
+        result = _as(snap, "desktop")
         assert "mac_policy.apparmor_no_enforce" in _keys(result)
         assert _finding_level(result, "mac_policy.apparmor_no_enforce") == FindingLevel.INFO
 
     def test_desktop_no_enforce_no_deduction(self):
         snap = _snap(aa_installed=True, aa_active=True, aa_enforcing=0, aa_complain=5)
-        result = check_mac_policy(snap, t=_t, profile_name="desktop")
+        result = _as(snap, "desktop")
         assert _deduction_points(result) == 0
 
-    def test_no_enforce_has_aa_enforce_cmd(self):
+    def test_no_enforce_offers_a_check_not_aa_enforce_all(self):
+        # v0.35.0 — `aa-enforce /etc/apparmor.d/*` was measured harmful in
+        # 0.31.4 (74 files shipped unconfined on purpose set to enforce).
         snap = _snap(aa_installed=True, aa_active=True, aa_enforcing=0, aa_complain=3)
         result = check_mac_policy(snap, t=_t, profile_name="server")
         finding = next(f for f in result.findings if f.key == "mac_policy.apparmor_no_enforce")
-        assert "aa-enforce" in finding.cmd
+        assert finding.cmd == "sudo aa-status" and finding.cmd_type == "check"
+        assert "aa-enforce /etc/apparmor.d/*" not in finding.cmd
 
     def test_active_with_zero_profiles_at_all(self):
         """Active AppArmor with 0 enforce AND 0 complain → distinct "no_profiles" key.
@@ -205,7 +214,7 @@ class TestAppArmorNoEnforce:
 
     def test_no_profiles_desktop_is_info(self):
         snap = _snap(aa_installed=True, aa_active=True, aa_enforcing=0, aa_complain=0)
-        result = check_mac_policy(snap, t=_t, profile_name="desktop")
+        result = _as(snap, "desktop")
         assert "mac_policy.apparmor_no_profiles" in _keys(result)
         # Desktop profile demotes to INFO — no deduction
         assert _deduction_points(result) == 0
@@ -376,5 +385,5 @@ class TestDeductionInvariants:
         (_snap(aa_installed=True, aa_active=True, aa_enforcing=0, aa_complain=3), "desktop"),
     ])
     def test_ok_cases_have_no_deduction(self, snap, profile):
-        result = check_mac_policy(snap, t=_t, profile_name=profile)
+        result = _as(snap, profile)
         assert _deduction_points(result) == 0

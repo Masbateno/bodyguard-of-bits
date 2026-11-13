@@ -1265,6 +1265,7 @@ def check_file_perms(snapshot: FilePermsSnapshot, *, t: TranslationFunc | None =
             points=2,
             context="local",
             key="file_perms.sudoers_nopasswd_all",
+            same_power="root_without_password",
         )
 
     # ---- v0.27.0: a scoped NOPASSWD grant that is root anyway ---------------
@@ -1275,7 +1276,9 @@ def check_file_perms(snapshot: FilePermsSnapshot, *, t: TranslationFunc | None =
         # v0.27.0, decided by the user after review: the same power counts once.
         # Where NOPASSWD:ALL or doas `permit nopass` without cmd already
         # deducts its −2, these rules are said and deduct nothing more.
-        _root_already = bool(snapshot.sudoers_nopasswd_all or snapshot.doas_nopass_all)
+        # v0.35.0 — decided in the engine (Deduction.same_power), after the
+        # profile and --ignore: an ignored NOPASSWD:ALL no longer leaves these
+        # rules at 0.
         for line, command, why, what in snapshot.nopasswd_root_equivalent:
             display = line[:120] + ("…" if len(line) > 120 else "")
             result.warn(
@@ -1285,13 +1288,14 @@ def check_file_perms(snapshot: FilePermsSnapshot, *, t: TranslationFunc | None =
                 key="file_perms.nopass_root_equivalent",
                 nature="action",
             )
-        if not _root_already:
-            result.add_deduction(
-                reason=_t("file_perms.nopass_root_equivalent_reason"),
-                points=2,
-                context="local",
-                key="file_perms.nopass_root_equivalent",
-            )
+        result.add_deduction(
+            reason=_t("file_perms.nopass_root_equivalent_reason"),
+            points=2,
+            context="local",
+            key="file_perms.nopass_root_equivalent",
+            same_power="root_without_password",
+            yields=True,
+        )
 
     # ---- v0.29.0: a rule a Defaults scope BOB cannot resolve decides ---------
     # Root-equivalent if it runs as root without noexec; whether it does is not
@@ -1340,6 +1344,7 @@ def check_file_perms(snapshot: FilePermsSnapshot, *, t: TranslationFunc | None =
             points=2,
             context="local",
             key="file_perms.doas_nopass_all",
+            same_power="root_without_password",
         )
 
     # v0.27.0 — as for sudo: a doas rule found root above is not "often intentional".

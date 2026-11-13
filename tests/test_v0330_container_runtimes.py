@@ -43,7 +43,7 @@ def _env(monkeypatch, per_runtime, present=("docker", "podman")):
     # 0.34.0, found by the CI: the GitHub runner's account is in the docker
     # group and dockerd listens there — the real group reader added
     # docker_group_root to findings these tests count exactly.
-    monkeypatch.setattr(D, "_docker_group", lambda: ([], False, []))
+    monkeypatch.setattr(D, "_group_socket", lambda name, socks: ([], False, [], []))
 
 
 def test_both_runtimes_are_asked(monkeypatch):

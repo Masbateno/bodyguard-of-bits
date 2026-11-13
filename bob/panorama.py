@@ -19,10 +19,39 @@ class PanoramaRow(TypedDict):
     status: str
     ports:  str
     ufw:    str
+    #: v0.35.0 — one of bob.checks.services.PORT_SCOPES, or "na".
+    scope:  str
 
 
-def build_panorama_rows(all_snapshots) -> list[PanoramaRow]:
-    """Convert ServiceSnapshot list to display dicts for print_services_panorama()."""
+#: v0.35.0 — the reaches the panorama colours as a warning, and as calm.
+WARN_SCOPES = frozenset({"anyone", "unfiltered", "accepted"})
+CALM_SCOPES = frozenset({"this_host", "denied", "no_listener"})
+
+
+def _scope(snap, port_scopes) -> str:
+    """The widest reach the services section concluded for *snap*'s ports.
+    A service it did not examine (installed, stopped, not high-risk) gets
+    "no_listener" when none of its ports listens (measured by the port scan),
+    "not_examined" otherwise — no port included (none of the registry's
+    services lacks one). Decided after review: "—" means not installed, and
+    nothing else; a listening port of an unexamined service is the ports
+    section's."""
+    from bob.checks.services import PORT_SCOPES
+    if not snap.installed:
+        return "na"
+    seen = (port_scopes or {}).get(snap.service.id) or {}
+    if seen:
+        return min(seen.values(), key=lambda s: PORT_SCOPES.index(s) if s in PORT_SCOPES else 3)
+    exposures = snap.exposures or {}
+    if exposures and all(e == Exposure.NOT_LISTENING for e in exposures.values()):
+        return "no_listener"
+    return "not_examined"
+
+
+def build_panorama_rows(all_snapshots, port_scopes=None) -> list[PanoramaRow]:
+    """Convert ServiceSnapshot list to display dicts for print_services_panorama().
+    *port_scopes*: service id → {port: reach} as the services section
+    concluded it (ServiceSnapshot.port_scope)."""
     rows: list[PanoramaRow] = []
 
     for snap in all_snapshots:
@@ -46,14 +75,8 @@ def build_panorama_rows(all_snapshots) -> list[PanoramaRow]:
         else:
             ports_str = "—"
 
-        # UFW indicator — exposures guard prevents AttributeError on unexpected None
-        exposures = snap.exposures or {}
-        if not snap.installed or not exposures:
-            ufw = "na"
-        elif any(e == Exposure.OPEN_WORLD for e in exposures.values()):
-            ufw = "warn"
-        else:
-            ufw = "ok"
+        scope = _scope(snap, port_scopes)
+        ufw = "warn" if scope in WARN_SCOPES else ("na" if scope in ("na", "not_examined") else "ok")
 
         rows.append(PanoramaRow(
             label=snap.label,
@@ -61,6 +84,7 @@ def build_panorama_rows(all_snapshots) -> list[PanoramaRow]:
             status=status,
             ports=ports_str,
             ufw=ufw,
+            scope=scope,
         ))
 
     return sorted(rows, key=lambda r: r["label"].lower())

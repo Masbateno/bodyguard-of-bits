@@ -163,6 +163,18 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     # v0.34.0 — whether a Docker socket gives the docker group access could
     # not be read: the −2 of docker_group_root is unknown, not absent.
     "docker_hardening.docker_group_unknown",
+    # v0.35.0 — the same for the lxd group.
+    "docker_hardening.lxd_group_unknown",
+    # v0.35.0 — a dockerd its socket unit would start is not asked: its
+    # running containers (live-restore) or whether any run, unknown.
+    "docker_hardening.runtime_not_started_live",
+    "docker_hardening.runtime_not_started_unread",
+    # v0.35.0 — the ports Docker containers publish, not listed.
+    "docker.exposed_unread",
+    # v0.35.0 — a rootless dockerd's containers, not examined.
+    "docker_hardening.rootless_dockerd",
+    # v0.35.0 — containerd's own containers, not examined.
+    "docker_hardening.containerd_unexamined",
     # v0.31.0 — fwupdmgr failed (daemon unreachable, exit 1) or did not answer
     # (killed at the timeout): whether firmware is pending (−1) is unknown.
     "firmware.fwupd_error",

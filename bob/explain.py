@@ -356,6 +356,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("Docker", [
         "docker_hardening.docker_group_root",
+        "docker_hardening.lxd_group_root",
         "docker_hardening.privileged",
         "docker_hardening.root_containers",
         "docker_hardening.socket_mounted",

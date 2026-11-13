@@ -153,5 +153,17 @@ def check_service_hardening(
             message=_t("systemd_hardening.worst", count=len(worst), units=listing),
             key="systemd_hardening.worst",
         )
+    # v0.35.0 — a field audit (Mint desktop, 12 November 2026) counted
+    # "24 UNSAFE, 4 EXPOSED" and named five units, all UNSAFE: the other
+    # nineteen and the four EXPOSED were counted, never named.
+    shown = {u[0] for u in worst}
+    for pred, key in (("UNSAFE", "systemd_hardening.more_unsafe"), ("EXPOSED", "systemd_hardening.exposed_units")):
+        rest = [u for u in snapshot.units if u[2] == pred and u[0] not in shown]
+        if rest:
+            result.info(
+                message=_t(key, count=len(rest),
+                           units=", ".join(f"{unit} ({exp:.1f})" for unit, exp, _p in rest)),
+                key=key,
+            )
 
     return result

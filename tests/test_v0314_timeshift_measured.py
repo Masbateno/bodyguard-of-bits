@@ -183,12 +183,12 @@ class TestWhatItSays:
 
 
 @pytest.mark.parametrize("lang, snapshot_line, unread_line, none_line", [
-    ("en", "Timeshift: 2 snapshot(s) in /home/timeshift/snapshots, the newest 2026-11-08_19-00-02 — schedule: weekly",
+    ("en", "Timeshift (rsync): 2 snapshot(s) in /home/timeshift/snapshots, the newest 2026-11-08_19-00-02 — schedule: weekly",
      "the backup device /dev/sdz1 is not mounted, and BOB mounts nothing",
-     "Timeshift: no snapshot in /x — schedule: none (snapshots only by hand)"),
-    ("fr", "Timeshift : 2 instantané(s) dans /home/timeshift/snapshots, le plus récent 2026-11-08_19-00-02 — planification : hebdomadaire",
+     "Timeshift (rsync): no snapshot in /x — schedule: none (snapshots only by hand)"),
+    ("fr", "Timeshift (rsync) : 2 instantané(s) dans /home/timeshift/snapshots, le plus récent 2026-11-08_19-00-02 — planification : hebdomadaire",
      "le périphérique de sauvegarde /dev/sdz1 n'est pas monté, et BOB ne monte rien",
-     "Timeshift : aucun instantané dans /x — planification : aucune (instantanés seulement à la main)"),
+     "Timeshift (rsync) : aucun instantané dans /x — planification : aucune (instantanés seulement à la main)"),
 ], ids=["en", "fr"])
 def test_the_rendered_lines(lang, snapshot_line, unread_line, none_line):
     i18n.init(lang)

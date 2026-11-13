@@ -355,14 +355,24 @@ class TestTheSamePowerCountsOnce:
         snap = FilePermsSnapshot(sudoers_nopasswd_specific=[line], nopasswd_root_equivalent=found, **extra)
         return check_file_perms(snap, t=lambda k, **kw: k)
 
+    @staticmethod
+    def _counted(res, ignore=frozenset()):
+        """v0.35.0 — the same power counts once in the engine, after the
+        profile and --ignore (Deduction.same_power): what the score keeps."""
+        from bob.scoring import ScoreEngine
+        engine = ScoreEngine()
+        engine.ignore_keys = frozenset(ignore)
+        engine.apply(res, section="file_perms")
+        return engine.breakdown
+
     @pytest.mark.parametrize("extra", [{"sudoers_nopasswd_all": ["u ALL=(ALL) NOPASSWD: ALL"]},
                                        {"doas_nopass_all": ["permit nopass u"]}])
     def test_beside_a_full_grant(self, tool, extra):
         res = self._res(tool, **extra)
         assert any(f.key == "file_perms.nopass_root_equivalent" for f in res.findings)
-        keys = [d.key for d in res.deductions]
-        assert "file_perms.nopass_root_equivalent" not in keys
-        assert sum(d.points for d in res.deductions) == 2
+        kept = self._counted(res)
+        assert "file_perms.nopass_root_equivalent" not in [d.key for d in kept]
+        assert sum(d.points for d in kept) == 2
 
     def test_sudo_all_and_doas_all_keep_theirs_and_this_adds_nothing(self, tool):
         """The policy, written out after the third review: detection stays per
@@ -373,13 +383,22 @@ class TestTheSamePowerCountsOnce:
         res = self._res(tool, sudoers_nopasswd_all=["u ALL=(ALL) NOPASSWD: ALL"],
                         doas_nopass_all=["permit nopass u"])
         by_key = {}
-        for d in res.deductions:
+        for d in self._counted(res):
             by_key[d.key] = by_key.get(d.key, 0) + d.points
         assert by_key == {"file_perms.sudoers_nopasswd_all": 2, "file_perms.doas_nopass_all": 2}
         assert sum(f.key == "file_perms.nopass_root_equivalent" for f in res.findings) == 7
 
     def test_alone_it_deducts(self, tool):
-        assert [d.points for d in self._res(tool).deductions] == [2]
+        assert [d.points for d in self._counted(self._res(tool))] == [2]
+
+    @pytest.mark.parametrize("extra, waived", [
+        ({"sudoers_nopasswd_all": ["u ALL=(ALL) NOPASSWD: ALL"]}, "file_perms.sudoers_nopasswd_all"),
+        ({"doas_nopass_all": ["permit nopass u"]}, "file_perms.doas_nopass_all")])
+    def test_a_waived_full_grant_leaves_the_power_counted(self, tool, extra, waived):
+        """v0.35.0, decided by the user after review: an --ignore on the full
+        grant took the root-equivalent rules' points with it (0 in all)."""
+        kept = self._counted(self._res(tool, **extra), ignore={waived})
+        assert [(d.key, d.points) for d in kept] == [("file_perms.nopass_root_equivalent", 2)]
 
 
 class TestFileWritersAndSudoedit:

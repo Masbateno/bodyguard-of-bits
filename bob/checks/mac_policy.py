@@ -320,50 +320,39 @@ def check_mac_policy(
         else:
             _cmd, _detail = install_fix(
                 _t, _t("mac_policy.apparmor_no_profiles_detail"), "apparmor-profiles")
-        if profile_name == "desktop":
-            result.info(
-                message=_t("mac_policy.apparmor_no_profiles"),
-                detail=_detail,
-                cmd=_cmd,
-                key="mac_policy.apparmor_no_profiles",
-            )
-        else:
-            result.warn_with_deduction(
-                key="mac_policy.apparmor_no_profiles",
-                message=_t("mac_policy.apparmor_no_profiles"),
-                reason=_t("mac_policy.apparmor_no_profiles_reason"),
-                points=1,
-                detail=_detail,
-                cmd=_cmd,
-                nature="action",
-            )
+        # v0.35.0 — WARN whatever the profile; desktop.conf softens it (the
+        # name-based branch was the shape of the workstation defect of 0.33.0).
+        result.warn_with_deduction(
+            key="mac_policy.apparmor_no_profiles",
+            message=_t("mac_policy.apparmor_no_profiles"),
+            reason=_t("mac_policy.apparmor_no_profiles_reason"),
+            points=1,
+            detail=_detail,
+            cmd=_cmd,
+            nature="action",
+        )
         return result
 
     # --- AppArmor active but no profiles in enforce mode -------------------
     if snapshot.apparmor_active and snapshot.apparmor_enforcing == 0:
-        if profile_name == "desktop":
-            result.info(
-                message=_t(
-                    "mac_policy.apparmor_no_enforce",
-                    complain=snapshot.apparmor_complain,
-                ),
-                detail=_t("mac_policy.apparmor_no_enforce_detail"),
-                cmd="sudo aa-enforce /etc/apparmor.d/*",
-                key="mac_policy.apparmor_no_enforce",
-            )
-        else:
-            result.warn_with_deduction(
-                key="mac_policy.apparmor_no_enforce",
-                message=_t(
-                    "mac_policy.apparmor_no_enforce",
-                    complain=snapshot.apparmor_complain,
-                ),
-                reason=_t("mac_policy.apparmor_no_enforce_reason"),
-                points=1,
-                detail=_t("mac_policy.apparmor_no_enforce_detail"),
-                cmd="sudo aa-enforce /etc/apparmor.d/*",
-                nature="improvement",
-            )
+        # v0.35.0 — as above; desktop.conf already softened this one.
+        # v0.35.0 — the command was `sudo aa-enforce /etc/apparmor.d/*`, the
+        # one 0.31.4 measured harmful for the complain list (97 files set to
+        # enforce, 74 of them shipped unconfined on purpose): the check to
+        # run first, and the detail says how to enforce one profile at a time.
+        result.warn_with_deduction(
+            key="mac_policy.apparmor_no_enforce",
+            message=_t(
+                "mac_policy.apparmor_no_enforce",
+                complain=snapshot.apparmor_complain,
+            ),
+            reason=_t("mac_policy.apparmor_no_enforce_reason"),
+            points=1,
+            detail=_t("mac_policy.apparmor_no_enforce_detail") + " " + _t("mac_policy.apparmor_complain_detail"),
+            cmd="sudo aa-status",
+            cmd_type="check",
+            nature="improvement",
+        )
         return result
 
     # --- AppArmor built in, disabled at boot -------------------------------

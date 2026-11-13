@@ -242,6 +242,19 @@ REASON_NOT_INSTALLED   = "not_installed"    # service/component absent
 REASON_UNREADABLE      = "unreadable"       # v0.16.2: BOB could not read it
 
 
+def group_by_domain(breakdown) -> "list[tuple[str | None, list]]":
+    """v0.35.0 — the deductions grouped by the domain they cost a point in,
+    in the order of DOMAINS; a deduction with no domain first, under None.
+    A field audit read "−6" beside a "≤ 9/10" and took the headline for a
+    sum: the headline is the average of the domains, and each deduction
+    only lowers its own domain."""
+    groups: "dict[str | None, list]" = {}
+    for ded in breakdown:
+        groups.setdefault(key_to_domain(getattr(ded, "key", "")), []).append(ded)
+    order = [None] + list(DOMAINS) + sorted(d for d in groups if d not in DOMAINS and d is not None)
+    return [(d, groups[d]) for d in order if d in groups]
+
+
 def domain_inactive_reason(
     domain: str, engine: "ScoreEngine", profile=None, config=None,
 ) -> str:

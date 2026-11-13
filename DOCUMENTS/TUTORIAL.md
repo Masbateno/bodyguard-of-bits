@@ -101,7 +101,7 @@ No `sudo` needed — `--explain` is a standalone, profile-aware lookup. The outp
 You can list every explainable key :
 
 ```bash
-bob --explain list                          # 238 keys at v0.34.0, grouped by CIS family
+bob --explain list                          # 239 keys at v0.35.0, grouped by CIS family
 bob --explain                               # interactive picker (↑↓/jk, PgUp/PgDn, g/G, Enter, Esc back; l language and q quit on the first screen)
 ```
 
@@ -143,8 +143,8 @@ BOB ships 4 profiles :
 | Profile | When to use | What changes |
 |---|---|---|
 | `server` (default) | servers, and any host you want judged at full weight | every finding at its full severity |
-| `desktop` | personal laptop or desktop — chosen automatically when no profile is set and a display manager is active | 36 findings downgraded to INFO, among them a missing backup, auditd, AppArmor without an enforcing profile, Secure Boot, automatic updates, the freshness of rootkit / ClamAV / file-integrity scans, and SSH password authentication and forwarding; the firewall state and SSH root login keep their full severity |
-| `workstation` | shared or business workstation | the same 31 downgrades as `desktop`, without the five on backup, auditd and AppArmor enforcement, which keep their full severity |
+| `desktop` | personal laptop or desktop — chosen automatically when no profile is set and a display manager is active | 37 findings downgraded to INFO, among them a missing backup, auditd, AppArmor without an enforcing profile, Secure Boot, automatic updates, the freshness of rootkit / ClamAV / file-integrity scans, and SSH password authentication and forwarding; the firewall state and SSH root login keep their full severity |
+| `workstation` | shared or business workstation | the same 31 downgrades as `desktop`, without the six on backup, auditd and AppArmor (no profile loaded, none enforcing), which keep their full severity |
 | `container` | an audit inside a container | extends `desktop` and skips 17 host-level sections: sysctl hardening, kernel modules, kernel hardening, Secure Boot, Raspberry Pi, auditd, SUID audit, Docker hardening, rootkit, file integrity, disk, memory, fail2ban, ClamAV, NTP, MAC policy and backup |
 
 Pick once per host :
@@ -353,7 +353,7 @@ sudo bob --french                           # shortcut for --lang=fr
 sudo bob --lang=fr                          # explicit
 ```
 
-All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 3234 keys × 2 locales — except three things, described below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
+All output (terminal, `--help`, .log, JSON detail messages, webhook payloads, explain entries) is localised — 3275 keys × 2 locales — except three things, described below. `--help` joined the list in v0.15.3: it had returned English under `--french` since v0.1.0.
 
 Three things stay English on purpose, and a bilingual diff of the audit output in v0.15.4 confirmed they are the only ones: **shell commands** in remediation lines (a command is not prose), **CIS benchmark references** that carry a numbered code (v0.11.2 decision — the uncoded "Best practice" ones *are* translated), and the **38 service labels**, such as `Samba (Windows file sharing)` or `Apache Web Server`, treated as product names even when they carry English words. The labels also key the `service_risk.*` entries and go into the audit baseline, so translating them at the source would rename 114 locale entries and make `--diff` report phantom changes on a locale switch.
 

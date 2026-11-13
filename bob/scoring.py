@@ -133,6 +133,16 @@ class Deduction:
     context:       str  = "local"
     key:           str  = ""
     template_vars: dict = field(default_factory=dict)
+    #: v0.35.0, decided by the user after review — the same power counts
+    #: once per host. Deductions sharing a ``same_power`` name stand for one
+    #: power (root without a password; root through a daemon's group). One
+    #: that ``yields`` is dropped by the engine when another of its name has
+    #: been counted — decided after the profile and --ignore have been
+    #: applied, so a waived mechanism no longer takes the other's points with
+    #: it. Deductions that do not yield always count (NOPASSWD:ALL and doas
+    #: ``permit nopass`` keep their −2 each, decided in 0.27.0).
+    same_power:    str  = ""
+    yields:        bool = False
 
     def __post_init__(self) -> None:
         if self.points < 0:
@@ -285,12 +295,15 @@ class CheckResult:
         context: str = "local",
         key: str = "",
         template_vars: "dict | None" = None,
+        same_power: str = "",
+        yields: bool = False,
     ) -> None:
         """Convenience method to append a deduction. See Deduction docstring for template_vars contract."""
         self.deductions.append(
             Deduction(
                 reason=reason, points=points, context=context, key=key,
                 template_vars=dict(template_vars) if template_vars else {},
+                same_power=same_power, yields=yields,
             )
         )
 
@@ -422,6 +435,8 @@ class CheckResult:
         note: str = "",
         template_vars: "dict | None" = None,
         fix_action: "dict | None" = None,
+        same_power: str = "",
+        yields: bool = False,
     ) -> None:
         """Add a WARN finding and a matching deduction in one call.
 
@@ -442,6 +457,7 @@ class CheckResult:
             reason=reason if reason is not None else message,
             points=points, context=context,
             key=key, template_vars=template_vars,
+            same_power=same_power, yields=yields,
         )
 
     def alert_with_deduction(
@@ -526,6 +542,10 @@ class ScoreEngine:
         self.blinded_domains: list[str] = []
         self._score_span: "tuple[int, int] | None" = None
         self.ignore_keys: frozenset[str] = frozenset()
+        #: v0.35.0 — the same_power names already counted, and the yielding
+        #: deductions dropped because of them (see Deduction.same_power).
+        self._same_power_counted: set[str] = set()
+        self.same_power_yielded: list[Deduction] = []
         self._finalized: bool = False
         self._domain_scores: dict | None = None
         self._active_domains: frozenset | None = None
@@ -586,9 +606,18 @@ class ScoreEngine:
             # must not see it come back under its new name.
             return legacy_ignore_matches(key, ignored_keys)
 
-        for deduction in result.deductions:
-            if not _is_ignored(deduction.key):
-                self._apply_deduction(deduction)
+        # v0.35.0 — the same power counts once per host, decided here, after
+        # the profile and --ignore: those that do not yield first (a stable
+        # sort keeps every other order), then those that yield.
+        for deduction in sorted(result.deductions, key=lambda d: d.yields):
+            if _is_ignored(deduction.key):
+                continue
+            if deduction.same_power:
+                if deduction.yields and deduction.same_power in self._same_power_counted:
+                    self.same_power_yielded.append(deduction)
+                    continue
+                self._same_power_counted.add(deduction.same_power)
+            self._apply_deduction(deduction)
         kept: list[Finding] = []
         for finding in result.findings:
             if section and not finding.section:

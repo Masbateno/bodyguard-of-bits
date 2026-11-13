@@ -101,7 +101,7 @@ Pas besoin de `sudo` — `--explain` est une consultation autonome, qui tient co
 Tu peux lister toutes les clés explicables :
 
 ```bash
-bob --explain list                          # 238 clés en v0.34.0, groupées par famille CIS
+bob --explain list                          # 239 clés en v0.35.0, groupées par famille CIS
 bob --explain                               # sélecteur interactif (↑↓/jk, PgUp/PgDn, g/G, Entrée, Échap retour ; l langue et q quitter sur le premier écran)
 ```
 
@@ -144,8 +144,8 @@ BOB livre 4 profils :
 | Profil | Quand l'utiliser | Ce qui change |
 |---|---|---|
 | `server` (défaut) | serveurs, et tout hôte que tu veux juger à plein | chaque constat à sa pleine sévérité |
-| `desktop` | portable ou poste personnel — choisi automatiquement quand aucun profil n'est défini et qu'un gestionnaire d'affichage est actif | 36 constats ramenés en INFO, dont l'absence de sauvegarde, auditd, AppArmor sans profil en mode enforce, Secure Boot, les mises à jour automatiques, la fraîcheur des analyses rootkit / ClamAV / intégrité des fichiers, et l'authentification SSH par mot de passe et les redirections SSH ; l'état du pare-feu et la connexion root en SSH gardent leur pleine sévérité |
-| `workstation` | poste partagé ou professionnel | les mêmes 31 assouplissements que `desktop`, sans les cinq qui portent sur la sauvegarde, auditd et l'application d'AppArmor, qui gardent leur pleine sévérité |
+| `desktop` | portable ou poste personnel — choisi automatiquement quand aucun profil n'est défini et qu'un gestionnaire d'affichage est actif | 37 constats ramenés en INFO, dont l'absence de sauvegarde, auditd, AppArmor sans profil en mode enforce, Secure Boot, les mises à jour automatiques, la fraîcheur des analyses rootkit / ClamAV / intégrité des fichiers, et l'authentification SSH par mot de passe et les redirections SSH ; l'état du pare-feu et la connexion root en SSH gardent leur pleine sévérité |
+| `workstation` | poste partagé ou professionnel | les mêmes 31 assouplissements que `desktop`, sans les six qui portent sur la sauvegarde, auditd et AppArmor (aucun profil chargé, aucun en mode enforce), qui gardent leur pleine sévérité |
 | `container` | un audit à l'intérieur d'un conteneur | étend `desktop` et saute 17 sections propres à l'hôte : durcissement sysctl, modules noyau, durcissement du noyau, Secure Boot, Raspberry Pi, auditd, audit SUID, durcissement Docker, rootkit, intégrité des fichiers, disque, mémoire, fail2ban, ClamAV, NTP, politique MAC et sauvegarde |
 
 Choisis une fois par hôte :
@@ -359,7 +359,7 @@ sudo bob --french                           # raccourci pour --lang=fr
 sudo bob --lang=fr                          # explicite
 ```
 
-Toute la sortie (terminal, `--help`, .log, messages de détail JSON, contenus des webhooks, entrées explain) est localisée — 3234 clés × 2 locales — à trois exceptions près, décrites ci-dessous. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
+Toute la sortie (terminal, `--help`, .log, messages de détail JSON, contenus des webhooks, entrées explain) est localisée — 3275 clés × 2 locales — à trois exceptions près, décrites ci-dessous. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
 
 Trois choses restent anglaises à dessein, et un diff bilingue de la sortie d'audit en v0.15.4 a confirmé que ce sont les seules : les **commandes shell** des lignes de remédiation (une commande n'est pas de la prose), les **références CIS** portant un code numéroté (décision v0.11.2 — les références « Bonne pratique », sans code, *sont* traduites), et les **38 libellés de services**, comme `Samba (Windows file sharing)` ou `Apache Web Server`, traités comme des noms de produits même quand ils portent des mots anglais. Ces libellés servent aussi de clé aux entrées `service_risk.*` et entrent dans la ligne de base d'audit : les traduire à la source renommerait 114 entrées de locale et ferait apparaître des changements fantômes dans `--diff` au changement de langue.
 

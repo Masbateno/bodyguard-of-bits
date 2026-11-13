@@ -744,6 +744,11 @@ def _summary_findings_lines(engine, t, inner: int) -> list[tuple[str, str]]:
     if improvement_items:
         lines.append(("---", ""))
         lines.append((f"⚠ {t('summary.block_improve')}", ""))
+        # v0.35.0 — a field audit took this list for the findings that cost
+        # nothing; it is the less urgent one, and some of it costs points.
+        _scored = {d.key for d in getattr(engine, "breakdown", []) if d.points}
+        if any(item.key in _scored for item in improvement_items):
+            lines.extend(_wrap_for_box("  ℹ  ", t("summary.block_improve_points"), inner))
         for item in improvement_items:
             lines.extend(_add_finding_lines(_sev_bullet(item), item, inner))
         for content, val in _wrap_for_box("  ℹ  ", t("summary.block_improve_disclaimer"), inner):
@@ -759,11 +764,15 @@ def _summary_breakdown_lines(engine, t, inner: int) -> list[tuple[str, str]]:
         ("---", ""),
         (t("scoring.breakdown_title"), ""),
     ]
-    for ded in engine.breakdown:
-        if ded.points == 0:
-            continue
-        prefix = f"  -{ded.points}  "
-        lines.extend(_wrap_for_box(prefix, ded.reason, inner))
+    # v0.35.0 — grouped by domain: each deduction lowers its own domain, and
+    # the headline is their average (a field audit read "−6" against "≤ 9").
+    from bob.domain_scores import group_by_domain
+    for domain, deds in group_by_domain([d for d in engine.breakdown if d.points]):
+        if domain is not None:
+            lines.extend(_wrap_for_box("  ▸ ", t(f"domain_scores.{domain}"), inner))
+        for ded in deds:
+            prefix = f"  -{ded.points}  "
+            lines.extend(_wrap_for_box(prefix, ded.reason, inner))
     if engine.cap_info:
         cap_note = t("scoring.cap_note", max=engine.cap_info.maximum)
         lines.extend(_wrap_for_box("  ⚠  ", cap_note, inner))
@@ -790,6 +799,9 @@ def _summary_scope_note(config, degraded_sections, t) -> str:
     if filtered:
         parts.append(t("scoring.scope_filtered"))
     return " · ".join(parts)
+
+
+from bob.domain_scores import DOMAINS as _DOMAINS  # noqa: E402 — v0.35.0, the breakdown's groups
 
 
 def print_audit_summary(engine, network_context, public_ip, config, t,
@@ -893,6 +905,8 @@ def print_audit_summary(engine, network_context, public_ip, config, t,
         labels={
             "summary":   t("report.summary_title"),
             "breakdown": t("scoring.breakdown_title"),
+            # v0.35.0 — the domain names, to group the breakdown by domain.
+            "domains": {d: t(f"domain_scores.{d}") for d in _DOMAINS},
             # M-5 (v0.7.3): the field labels in the on-disk .txt report
             # are now translatable. Pre-v0.7.3 they were hardcoded English
             # ("OK", "Warning", "Alert", "Score", "Risk", "Context") so a
@@ -1048,7 +1062,7 @@ def display_ports_overview(ports_snapshot, config, t, report, output) -> None:
 def display_services_panorama(registry, ufw_numbered: str,
                                loopback_only_ports: set,
                                all_listening_ports: "set | None",
-                               config, t) -> None:
+                               config, t, port_scopes=None) -> None:
     """Print the compact services panorama table (all 22 known services)."""
     from bob.output import print_section, print_services_panorama
     from bob.checks.services import ServiceSnapshot
@@ -1059,7 +1073,7 @@ def display_services_panorama(registry, ufw_numbered: str,
         registry, ufw_rules=ufw_numbered, loopback_ports=loopback_only_ports,
         all_listening_ports=all_listening_ports,
     )
-    panorama_rows = build_panorama_rows(all_snaps)
+    panorama_rows = build_panorama_rows(all_snaps, port_scopes)
     panorama_labels = {
         "header_service": t("services.panorama.header_service"),
         "header_status":  t("services.panorama.header_status"),
@@ -1070,6 +1084,9 @@ def display_services_panorama(registry, ufw_numbered: str,
         "not_installed":  t("services.panorama.not_installed"),
         "unknown":        t("services.panorama.unknown"),
     }
+    from bob.checks.services import PORT_SCOPES
+    for _scope in PORT_SCOPES + ("not_examined",):
+        panorama_labels[f"scope_{_scope}"] = t(f"services.panorama.scope.{_scope}")
     print_services_panorama(panorama_rows, panorama_labels)
     print()
 

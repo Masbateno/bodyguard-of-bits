@@ -987,7 +987,8 @@ def run_checks(
 
     if not config.quiet:
         display_services_panorama(registry, ufw_network, loopback_only_ports,
-                                   all_listening_ports, config, t)
+                                   all_listening_ports, config, t,
+                                   port_scopes={s.service.id: s.port_scope for s in snapshots})
 
     # ---- CHECK 4 — Listening ports ----
     emit_section("ports")
@@ -1222,7 +1223,8 @@ def run_checks(
 
     # ---- CHECK 38 — Docker container security audit ----
     _sec("docker_hardening", DockerAuditSnapshot.from_system, check_docker_audit,
-         skip_if=lambda s: not s.runtime and not s.rootless_containers and not s.docker_group_members)
+         skip_if=lambda s: not s.runtime and not s.rootless_containers and not s.docker_group_members and not s.lxd_group_members
+         and not s.rootless_dockerd and not s.containerd_other)
 
     # ---- CHECK — Kubernetes node: pods' rights, kubelet anonymous access ----
     _sec("kubernetes", KubernetesSnapshot.from_system, check_kubernetes,

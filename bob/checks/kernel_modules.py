@@ -33,9 +33,10 @@ from __future__ import annotations
 import re
 import shlex
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Tuple
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, _run, path_exists
 from bob.scoring import CheckResult
 
 # ---------------------------------------------------------------------------
@@ -74,6 +75,14 @@ RISKY_MODULES: frozenset[str] = _RISKY_FS | _RISKY_NET
 
 # Kernel version sort key — parses Ubuntu "MAJOR.MINOR.PATCH-ABI[-flavor]"
 # and Debian "MAJOR.MINOR.PATCH+debN+N-arch" (separator is + not -)
+#: v0.35.0 — written when a package asks for a reboot: by update-notifier-
+#: common's notify-reboot-required (libc6's postinst, its kernel hook), or by
+#: the package itself (dbus's postinst touches it); the .pkgs file lists them.
+#: Measured on Linux Mint 22.3: update-notifier-common is not installed by
+#: default and libc6's postinst then writes nothing — the file's absence says
+#: nothing. With it installed, a kernel install wrote it (b50350).
+_REBOOT_REQUIRED = Path("/run/reboot-required")
+
 _KVER_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)[-+]")
 
 # Retention policy: minimum number of kernels to keep per profile
@@ -107,6 +116,13 @@ class KernelModulesSnapshot:
     apt_update_available: bool     = False
     apt_candidate_kernel: str      = ""
     apt_checked:          bool     = False
+    #: v0.35.0 — /run/reboot-required exists, and the packages its .pkgs lists.
+    reboot_required:      bool     = False
+    reboot_required_pkgs: list[str] = field(default_factory=list)
+    #: v0.35.0 — the installed ``kernel-core`` packages as rpm names them
+    #: (VERSION-RELEASE.ARCH, the form of ``uname -r`` on Fedora); [] when rpm
+    #: is absent or lists none. Read only where dpkg is not.
+    rpm_kernels:          list[str] = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "KernelModulesSnapshot":
@@ -157,7 +173,37 @@ class KernelModulesSnapshot:
         snap.apt_update_available = available
         snap.apt_candidate_kernel = candidate
 
+        # --- Installed kernels (rpm), v0.35.0 ---------------------------------
+        # Measured on Fedora 44 (b5f0350): kernel 7.3.3 installed while 6.19.10
+        # ran; 0.34.0, which read dpkg only, said nothing of the reboot.
+        if not snap.dpkg_available and _command_exists("rpm"):
+            rpm_out = _run("rpm", "-q", "kernel-core", "--qf", "%{VERSION}-%{RELEASE}.%{ARCH}\\n", timeout=10)
+            if rpm_out:
+                snap.rpm_kernels = [ln.strip() for ln in rpm_out.splitlines()
+                                    if ln.strip() and " " not in ln.strip()]
+
+        # --- Reboot asked by a package (update-notifier) -----------------------
+        snap.reboot_required, snap.reboot_required_pkgs = _read_reboot_required()
+
         return snap
+
+
+def _read_reboot_required(path: "Path | None" = None) -> "tuple[bool, list[str]]":
+    """v0.35.0 — whether *path* (/run/reboot-required) exists, and the
+    packages listed beside it in ``<path>.pkgs`` (each once, in order)."""
+    path = path or _REBOOT_REQUIRED
+    if not path_exists(path):
+        return False, []
+    try:
+        lines = path.with_name(path.name + ".pkgs").read_text(errors="replace").splitlines()
+    except OSError:
+        lines = []
+    pkgs: list[str] = []
+    for line in lines:
+        name = line.strip()
+        if name and name not in pkgs:
+            pkgs.append(name)
+    return True, pkgs
 
 # ---------------------------------------------------------------------------
 # Pure check logic
@@ -247,12 +293,55 @@ def check_kernel_modules(
 
     # --- Sub-check 2: installed kernel cleanup ------------------------------
     _check_installed_kernels(snapshot, profile_name, _t, result)
+    _check_rpm_reboot(snapshot, _t, result)
+
+    # --- Sub-check 3: a reboot a package asked for (v0.35.0) ------------------
+    # Measured on Linux Mint 22.3 (b50350): a kernel install with
+    # update-notifier-common lists "linux-base" — the reboot the line above
+    # already names; said once.
+    kernel_said = any(f.key == "kernel_modules.kernels_reboot_pending" for f in result.findings)
+    only_kernel = bool(snapshot.reboot_required_pkgs) and all(
+        p.startswith("linux-") for p in snapshot.reboot_required_pkgs)
+    if snapshot.reboot_required and not (kernel_said and only_kernel):
+        result.info(
+            message=(_t("kernel_modules.reboot_required", packages=", ".join(snapshot.reboot_required_pkgs))
+                     if snapshot.reboot_required_pkgs else _t("kernel_modules.reboot_required_unlisted")),
+            detail=_t("kernel_modules.reboot_required_detail"),
+            key="kernel_modules.reboot_required",
+        )
 
     return result
 
 # ---------------------------------------------------------------------------
 # Private helpers — kernel cleanup
 # ---------------------------------------------------------------------------
+
+def _rpm_version_key(v: str) -> tuple:
+    """Order rpm kernel names by their numbers, part by part
+    ("7.3.3-200.fc44.x86_64" after "6.19.10-300.fc44.x86_64")."""
+    return tuple((0, int(t)) if t.isdigit() else (1, t) for t in re.findall(r"\d+|[a-z]+", v))
+
+
+def _check_rpm_reboot(snapshot: KernelModulesSnapshot, _t, result: CheckResult) -> None:
+    """v0.35.0 — on an rpm host, the reboot a newer installed kernel waits
+    for: the running kernel is one rpm lists, and not the newest. Nothing
+    when the running kernel is not among them (a kernel rpm does not manage)."""
+    kernels = snapshot.rpm_kernels
+    running = snapshot.running_kernel
+    if snapshot.dpkg_available or not kernels or running not in kernels:
+        return
+    newest = max(kernels, key=_rpm_version_key)
+    if newest == running:
+        return
+    ordered = sorted(kernels, key=_rpm_version_key)
+    installed = ", ".join(f"{k} (*)" if k == running else (f"{k} (latest)" if k == newest else k)
+                          for k in ordered)
+    result.info(
+        message=_t("kernel_modules.kernels_reboot_pending", running=running, recent=newest),
+        detail=_t("kernel_modules.kernels_reboot_pending_detail", installed=installed, recent=newest),
+        key="kernel_modules.kernels_reboot_pending",
+    )
+
 
 def _query_apt_kernel_update() -> Tuple[bool, bool, str]:
     """

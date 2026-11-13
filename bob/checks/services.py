@@ -185,6 +185,10 @@ class ServiceSnapshot:
     # listening and not on loopback alone, whose rules refuse them to no one
     # else in some family: UFW's default incoming policy decides the rest.
     world_in_part: frozenset = frozenset()
+    # v0.35.0 — the reach the services section concluded for each port it
+    # examined (see _port_scope); the panorama shows it instead of reading the
+    # raw exposure again.
+    port_scope: dict[str, str] = field(default_factory=dict)
 
     @property
     def label(self) -> str:
@@ -589,6 +593,40 @@ def _port_weighed(verdict_of, port: str) -> "str | None":
     return f"ports.netfilter_port.{verdict.lower()}_{by}"
 
 
+#: v0.35.0 — the reaches of a port, widest first. The panorama shows a
+#: service's widest one.
+PORT_SCOPES = ("anyone", "unfiltered", "accepted", "unknown", "lan", "host",
+               "this_host", "denied", "no_listener")
+
+
+def _port_scope(exposure: Exposure, exp_key: str, weighed: "str | None",
+                localnet: "str | None", rest_unread: bool, single_host: bool) -> str:
+    """v0.35.0 — the reach of one port as the services section concluded it,
+    in one word for the panorama. A field audit (Mint desktop, 12 November
+    2026) read ✔ beside Samba, CUPS and Ollama; ✔ stood for any exposure but
+    OPEN_WORLD read before the firewall context — a port no rule covers on a
+    host with no firewall at all included."""
+    if exposure == Exposure.OPEN_WORLD:
+        return "anyone"
+    if exposure == Exposure.OPEN_LOCAL:
+        return "unknown" if rest_unread else ("host" if single_host else "lan")
+    if exposure == Exposure.DENY:
+        return "denied"
+    if exposure == Exposure.NOT_LISTENING:
+        return "no_listener"
+    if exposure == Exposure.NO_RULE:
+        if weighed:
+            return "denied" if ".drop" in weighed else ("accepted" if ".accept" in weighed else "unknown")
+        if exp_key == "services.exposure.no_rule":
+            return "denied"      # UFW active, default incoming deny or reject
+        if exp_key == "services.exposure.no_rule_ufw_inactive":
+            return "unfiltered"  # no firewall BOB found filters it
+        return "unknown"
+    if exposure in (Exposure.LOOPBACK, Exposure.LOOPBACK_NO_RULE):
+        return "this_host" if localnet in (None, "off") else "unknown"
+    return "unknown"
+
+
 def _check_port_exposure(
     snap: ServiceSnapshot,
     port: str,
@@ -724,6 +762,12 @@ def _check_port_exposure(
             rest_unread = True
             port_msg = _t("services.port_exposure", port=port,
                           exposure=_t("services.exposure.open_local_policy_unread", source=local))
+
+    _scopes = getattr(snap, "port_scope", None)
+    if isinstance(_scopes, dict):
+        _scopes[port] = _port_scope(
+            exposure, exp_key, weighed, localnet, rest_unread,
+            _single_host((getattr(snap, "local_sources", None) or {}).get(port, "")))
 
     if exposure == Exposure.OPEN_WORLD:
         # High/critical services exposed to internet get extra penalty in public context

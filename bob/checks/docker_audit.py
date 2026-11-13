@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t, service_restart_cmd
+from bob.checks._docker_daemon import containerd_elsewhere, moby_containers, rootless_dockerd, socket_listener, system_dockerd_state
 from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
 
@@ -97,6 +98,38 @@ class DockerAuditSnapshot:
     #: `gpasswd -d` removes those only; an account whose primary group is
     #: docker is not in that list.
     docker_group_listed:       list[str] = field(default_factory=list)
+    #: v0.35.0 — the uids of the processes listening on a group-writable
+    #: system Docker socket when none of them is root: the group then gives
+    #: that account's rights, not root's (measured, a10350).
+    docker_socket_nonroot:     list[int] = field(default_factory=list)
+    #: v0.35.0 — runtimes not asked because asking would start them: a
+    #: dockerd that is stopped while systemd's docker.socket listens (root's
+    #: `docker ps` started it, measured a10350); and the Docker containers
+    #: running all the same, counted by their containerd shim (-namespace moby).
+    not_started:               list[str] = field(default_factory=list)
+    moby_running:              "int | None" = None
+    #: v0.35.0 — users running a rootless dockerd → their containers (shims
+    #: in the moby namespace owned by them). Not asked: nothing is run as
+    #: another user, as for rootless podman (0.33.0).
+    rootless_dockerd:          dict = field(default_factory=dict)
+    #: v0.35.0 — containers containerd runs as root outside Docker and
+    #: Kubernetes (namespace → count): seen from their shims, not examined.
+    containerd_other:          dict = field(default_factory=dict)
+    #: v0.35.0 — the ``lxd`` group, read as the docker group is: LXD's
+    #: security documentation, "Local access to LXD through the Unix socket
+    #: always grants full access to LXD. Therefore, you should only give such
+    #: access to users who you'd trust with root access to your system", and
+    #: "The root user and all members of the lxd group can interact with the
+    #: local daemon". Same four values as docker_group_*.
+    lxd_group_members:         list[str] = field(default_factory=list)
+    lxd_socket_group_rw:       "bool | None" = False
+    lxd_group_listed:          list[str] = field(default_factory=list)
+    lxd_socket_nonroot:        list[int] = field(default_factory=list)
+    #: v0.35.0 — the members of each group that are system accounts (uid
+    #: below 1000 and a shell that allows no login, as the ``lxd`` account
+    #: the LXD snap creates, measured): counted, and named apart.
+    docker_group_system:       list[str] = field(default_factory=list)
+    lxd_group_system:          list[str] = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "DockerAuditSnapshot":
@@ -107,19 +140,30 @@ class DockerAuditSnapshot:
         list (podman-docker's ``docker`` runs podman) counts once, by Id."""
         runtimes = [rt for rt in _RUNTIMES if _command_exists(rt)]
         rootless = _rootless_podman()
-        members, socket_rw, listed = _docker_group()
+        rl_docker = rootless_dockerd()
+        ctrd = containerd_elsewhere()
+        members, socket_rw, listed, nonroot = _docker_group()
+        lm, lrw, ll, lnr = _group_socket("lxd", _LXD_SOCKETS)
+        lxd = dict(lxd_group_members=lm, lxd_socket_group_rw=lrw, lxd_group_listed=ll, lxd_socket_nonroot=lnr,
+                   lxd_group_system=_system_accounts(lm), docker_group_system=_system_accounts(members))
         if not runtimes:
-            return cls(runtime="", docker_installed=False, rootless_containers=rootless,
+            return cls(runtime="", docker_installed=False, rootless_containers=rootless, rootless_dockerd=rl_docker, containerd_other=ctrd,
                        docker_group_members=members, docker_socket_group_rw=socket_rw,
-                       docker_group_listed=listed)
+                       docker_group_listed=listed, docker_socket_nonroot=nonroot, **lxd)
         is_docker = "docker" in runtimes
         userns_remap = _read_userns_remap() if is_docker else False
         snap = cls(runtime=runtimes[0], docker_installed=is_docker, runtimes=runtimes,
-                   userns_remap=userns_remap, rootless_containers=rootless,
+                   userns_remap=userns_remap, rootless_containers=rootless, rootless_dockerd=rl_docker, containerd_other=ctrd,
                    docker_group_members=members, docker_socket_group_rw=socket_rw,
-                   docker_group_listed=listed)
+                   docker_group_listed=listed, docker_socket_nonroot=nonroot, **lxd)
         seen: "set[str]" = set()
         for rt in runtimes:
+            # v0.35.0 — asking a dockerd that only its socket unit would start
+            # starts it: count its containers from /proc instead.
+            if rt == "docker" and system_dockerd_state() in ("socket", "unknown"):
+                snap.not_started.append(rt)
+                snap.moby_running = moby_containers()
+                continue
             containers = _inspect(rt)
             if containers is None:
                 snap.failed_runtimes.append(rt)
@@ -147,7 +191,8 @@ class DockerAuditSnapshot:
                 if not user or user in ("root", "0", "0:0", "0:root"):
                     snap.root_containers.append(name)
         # Nothing could be listed at all: the check says so and asserts nothing.
-        snap.scan_error = len(snap.failed_runtimes) == len(runtimes)
+        asked = [rt for rt in runtimes if rt not in snap.not_started]
+        snap.scan_error = bool(asked) and len(snap.failed_runtimes) == len(asked)
         for lst in (snap.privileged_containers, snap.socket_mounted_containers,
                     snap.root_containers, snap.host_network_containers):
             lst.sort()
@@ -182,20 +227,61 @@ _PROC = Path("/proc")
 _DOCKER_SOCKETS = (Path("/var/run/docker.sock"), Path("/run/docker.sock"))
 
 
-def _docker_group() -> "tuple[list[str], bool | None, list[str]]":
+#: v0.35.0 — LXD's local socket. The snap's path was measured (Ubuntu Server
+#: 26.04, LXD 5.21 snap, a70350): srw-rw---- root lxd, held by systemd alone
+#: while the daemon is socket-activated and idle; a member's request was
+#: answered "auth: trusted", a non-member's refused. /var/lib/lxd is the
+#: non-snap path, not measured: the same checks decide there.
+_LXD_SOCKETS = (Path("/var/snap/lxd/common/lxd/unix.socket"), Path("/var/lib/lxd/unix.socket"))
+
+
+def _docker_group() -> "tuple[list[str], bool | None, list[str], list[int]]":
     """v0.34.0 — the members of the ``docker`` group (its member list and the
     accounts whose primary group it is), and whether a Docker socket is a
     socket owned by that group with group write: then each member can drive
     dockerd, which runs as root. ([], False, []) without such a group; the
     second value None when a socket could not be read; the third, the
-    members the group's own list names."""
+    members the group's own list names; the fourth (v0.35.0), the uids of a
+    listener none of whose holders is root."""
+    return _group_socket("docker", _DOCKER_SOCKETS)
+
+
+def _system_accounts(names) -> "list[str]":
+    """v0.35.0 — the accounts among *names* with a uid below 1000 and a shell
+    that allows no login (nologin, false)."""
+    import pwd
+    from bob.checks.user_accounts import _is_no_login_shell
+    out = []
+    for name in names:
+        try:
+            pw = pwd.getpwnam(name)
+        except (KeyError, OSError):
+            continue
+        if pw.pw_uid < 1000 and _is_no_login_shell(pw.pw_shell):
+            out.append(name)
+    return out
+
+
+def _members_text(members, system, _t) -> str:
+    """The members of a group, its system accounts named apart (v0.35.0)."""
+    people = [m for m in members if m not in system]
+    text = ", ".join(people)
+    if system:
+        sys_text = _t("docker_hardening.group_system_accounts", accounts=", ".join(system))
+        text = f"{text}; {sys_text}" if text else sys_text
+    return text
+
+
+def _group_socket(name: str, sockets) -> "tuple[list[str], bool | None, list[str], list[int]]":
+    """_docker_group's reading for group *name* and its daemon's *sockets*
+    (v0.35.0: also the lxd group)."""
     import grp
     import pwd
     import stat
     try:
-        group = grp.getgrnam("docker")
+        group = grp.getgrnam(name)
     except KeyError:
-        return [], False, []
+        return [], False, [], []
     listed = sorted(set(group.gr_mem))
     members = set(group.gr_mem)
     try:
@@ -203,7 +289,8 @@ def _docker_group() -> "tuple[list[str], bool | None, list[str]]":
     except OSError:
         pass
     rw: "bool | None" = False
-    for sock in _DOCKER_SOCKETS:
+    nonroot: "list[int]" = []
+    for sock in sockets:
         try:
             st = os.stat(sock)
         except FileNotFoundError:
@@ -217,10 +304,27 @@ def _docker_group() -> "tuple[list[str], bool | None, list[str]]":
             # ps` as a member is refused. Only a listener makes it a way in.
             listening = _unix_listening(str(sock))
             if listening:
-                return sorted(members), True, listed
+                # v0.35.0 — the group is root-equivalent through a root
+                # listener only (dockerd, or systemd holding docker.socket);
+                # a non-root one gives that account's rights (measured).
+                uids = _socket_uids(str(sock))
+                if uids is None:
+                    rw = None
+                    continue
+                if 0 in uids:
+                    return sorted(members), True, listed, []
+                nonroot = sorted(uids)
+                continue
             if listening is None:
                 rw = None
-    return sorted(members), rw, listed
+    return sorted(members), rw, listed, nonroot
+
+
+def _socket_uids(path: str) -> "set[int] | None":
+    """v0.35.0 — the uids of the processes holding the listening socket at
+    *path*; None when they cannot be found."""
+    listening, uids = socket_listener(path)
+    return uids if listening and uids else None
 
 
 _PROC_NET_UNIX = Path("/proc/net/unix")
@@ -332,6 +436,37 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
             key="docker_hardening.rootless_unexamined",
             template_vars={"count": sum(snapshot.rootless_containers.values()), "users": users},
         )
+    # v0.35.0 — rootless dockerd: said, its containers not examined.
+    if snapshot.rootless_dockerd:
+        users = ", ".join(f"{u} ({n})" for u, n in sorted(snapshot.rootless_dockerd.items()))
+        result.info(
+            message=_t("docker_hardening.rootless_dockerd", users=users),
+            detail=_t("docker_hardening.rootless_dockerd_detail"),
+            key="docker_hardening.rootless_dockerd",
+            template_vars={"users": users},
+        )
+    # v0.35.0 — containerd's own containers, outside Docker and Kubernetes.
+    if snapshot.containerd_other:
+        nss = ", ".join(f"{ns} ({n})" for ns, n in sorted(snapshot.containerd_other.items()))
+        result.info(
+            message=_t("docker_hardening.containerd_unexamined", namespaces=nss),
+            key="docker_hardening.containerd_unexamined",
+            template_vars={"namespaces": nss},
+        )
+    # v0.35.0 — a dockerd its socket unit would start is not asked.
+    if snapshot.not_started:
+        if snapshot.moby_running:
+            result.info(
+                message=_t("docker_hardening.runtime_not_started_live", count=snapshot.moby_running),
+                key="docker_hardening.runtime_not_started_live",
+                template_vars={"count": snapshot.moby_running},
+            )
+        elif snapshot.moby_running == 0:
+            result.info(message=_t("docker_hardening.runtime_not_started"),
+                        key="docker_hardening.runtime_not_started")
+        else:
+            result.info(message=_t("docker_hardening.runtime_not_started_unread"),
+                        key="docker_hardening.runtime_not_started_unread")
     if snapshot.failed_runtimes and not snapshot.scan_error:
         result.info(
             message=_t("docker_hardening.runtime_unreachable", runtimes=", ".join(snapshot.failed_runtimes)),
@@ -340,10 +475,11 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
         )
     # v0.34.0 — the accounts the docker group makes root-equivalent.
     if snapshot.docker_group_members:
-        users = ", ".join(snapshot.docker_group_members)
+        users = _members_text(snapshot.docker_group_members, snapshot.docker_group_system, _t)
         if snapshot.docker_socket_group_rw:
             result.warn_with_deduction(
                 key="docker_hardening.docker_group_root",
+                same_power="root_through_a_daemon_group",
                 message=_t("docker_hardening.docker_group_root",
                            count=len(snapshot.docker_group_members), users=users),
                 reason=_t("docker_hardening.docker_group_root_reason", users=users),
@@ -355,6 +491,16 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
                 cmd=" && ".join(f"sudo gpasswd -d {shlex.quote(u)} docker" for u in snapshot.docker_group_listed),
                 cmd_type="fix",
                 template_vars={"count": len(snapshot.docker_group_members), "users": users},
+            )
+        elif snapshot.docker_socket_nonroot:
+            # v0.35.0 — measured: a non-root process listening at the system
+            # path; the socket file looked the same as dockerd's.
+            uids = ", ".join(str(u) for u in snapshot.docker_socket_nonroot)
+            result.info(
+                message=_t("docker_hardening.docker_group_not_root",
+                           count=len(snapshot.docker_group_members), users=users, uids=uids),
+                key="docker_hardening.docker_group_not_root",
+                template_vars={"count": len(snapshot.docker_group_members), "users": users, "uids": uids},
             )
         elif snapshot.docker_socket_group_rw is None:
             # After review: a socket that could not be read is unknown, not
@@ -372,8 +518,45 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
                 key="docker_hardening.docker_group_dormant",
                 template_vars={"count": len(snapshot.docker_group_members), "users": users},
             )
+    # v0.35.0 — the lxd group, read as the docker group.
+    if snapshot.lxd_group_members:
+        lusers = _members_text(snapshot.lxd_group_members, snapshot.lxd_group_system, _t)
+        lvars = {"count": len(snapshot.lxd_group_members), "users": lusers}
+        # v0.35.0, decided after review — the docker group and the lxd group
+        # give the same power: it counts once per host. Decided in the engine
+        # (Deduction.same_power), after the profile and --ignore; the note
+        # says so where the docker group is live too.
+        if snapshot.lxd_socket_group_rw:
+            result.warn_with_deduction(
+                same_power="root_through_a_daemon_group",
+                yields=True,
+                note=(_t("docker_hardening.lxd_group_root_counted_once")
+                      if snapshot.docker_group_members and snapshot.docker_socket_group_rw else ""),
+                key="docker_hardening.lxd_group_root",
+                message=_t("docker_hardening.lxd_group_root", count=len(snapshot.lxd_group_members), users=lusers),
+                reason=_t("docker_hardening.lxd_group_root_reason", users=lusers),
+                points=2,
+                nature="action",
+                detail=_t("docker_hardening.lxd_group_root_detail"),
+                cmd=" && ".join(f"sudo gpasswd -d {shlex.quote(u)} lxd" for u in snapshot.lxd_group_listed),
+                cmd_type="fix",
+                template_vars=lvars,
+            )
+        elif snapshot.lxd_socket_nonroot:
+            luids = ", ".join(str(u) for u in snapshot.lxd_socket_nonroot)
+            result.info(message=_t("docker_hardening.lxd_group_not_root", count=len(snapshot.lxd_group_members), users=lusers, uids=luids),
+                        key="docker_hardening.lxd_group_not_root", template_vars=dict(lvars, uids=luids))
+        elif snapshot.lxd_socket_group_rw is None:
+            result.info(message=_t("docker_hardening.lxd_group_unknown", count=len(snapshot.lxd_group_members), users=lusers),
+                        key="docker_hardening.lxd_group_unknown", template_vars=lvars)
+        else:
+            result.info(message=_t("docker_hardening.lxd_group_dormant", count=len(snapshot.lxd_group_members), users=lusers),
+                        key="docker_hardening.lxd_group_dormant", template_vars=lvars)
     if not snapshot.runtimes and not snapshot.runtime and (snapshot.rootless_containers
-                                                           or snapshot.docker_group_members):
+                                                           or snapshot.lxd_group_members
+                                                           or snapshot.docker_group_members
+                                                           or snapshot.rootless_dockerd
+                                                           or snapshot.containerd_other):
         return result                       # no runtime root can ask: only the rootless ones were seen
 
     if snapshot.scan_error:
@@ -387,12 +570,15 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
     if snapshot.running_count == 0:
         # v0.34.0 — the runtimes asked, named: on a host with Podman only the
         # section read "Docker" beside "Docker not installed".
-        _asked = ", ".join(snapshot.runtimes or ([snapshot.runtime] if snapshot.runtime else [])) or "—"
-        result.ok(
-            message=_t("docker_hardening.no_containers", runtimes=_asked),
-            key="docker_hardening.no_containers",
-            template_vars={"runtimes": _asked},
-        )
+        _all = snapshot.runtimes or ([snapshot.runtime] if snapshot.runtime else [])
+        _asked = ", ".join(rt for rt in _all if rt not in snapshot.not_started) or "—"
+        # v0.35.0 — no "no containers" when the only runtime was not asked.
+        if not _all or any(rt not in snapshot.not_started for rt in _all):
+            result.ok(
+                message=_t("docker_hardening.no_containers", runtimes=_asked),
+                key="docker_hardening.no_containers",
+                template_vars={"runtimes": _asked},
+            )
         return result
 
     # --- Privileged containers ---

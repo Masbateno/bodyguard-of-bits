@@ -1019,8 +1019,10 @@ valeurs du tableau ; les comptes sont ceux de cette séquence :
 | actif | 1 | une autre interface (un NAT, comme pour des VM ou des conteneurs) | 0 | 5/5 |
 
 C'est la valeur `forwarding` propre à l'interface qui décide, pas conf/all
-(conf/all à 0 avec l'interface à 1 : 4 redirections ; conf/all à 1 avec
-l'interface à 0 : rien de transféré, aucune envoyée) ; `send_redirects` vaut
+(en réglant `net.ipv4.conf.all.forwarding` d'abord, puis
+`net.ipv4.conf.eth0.forwarding` : conf/all à 0 avec l'interface à 1 :
+4 redirections ; conf/all à 1 avec l'interface à 0 : rien de transféré, aucune
+envoyée) ; `send_redirects` vaut
 conf/all OU l'interface, comme BOB le lisait déjà. Mettre 0 n'a jamais arrêté le
 transfert.
 
@@ -2258,7 +2260,7 @@ Une source locale à l'origine de la plupart des blocages était « probablement
 - pour le lire tout de suite : `sudo bob --history` ;
 - pour le récupérer : sur une ligne à part, seulement quand le nom est un fichier ordinaire (pas un lien) appartenant à un autre compte — le prochain audit lancé avec `sudo bob` le rend, comme le fait désormais chaque écriture, par un descripteur vérifié (§7) ; `sudo bob --history` ne fait que le lire. Aucune commande `chown` n'est affichée : tapée avec `sudo`, elle résoudrait de nouveau le chemin, à travers tout lien qu'il contient — ce que ferme le §7.
 
-Chaque écriture rend le fichier à l'utilisateur qui a lancé `sudo` ou `doas`. Rejoué : après un `sudo bob`, le fichier était en `so6:so6` et `bob --history` le lisait.
+Rejoué : après un `sudo bob`, le fichier était en `so6:so6` et `bob --history` le lisait.
 
 ### 4. Un audit `--exhaustive` comparé à un audit normal
 

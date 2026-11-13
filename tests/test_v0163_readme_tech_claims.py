@@ -258,7 +258,16 @@ class TestTheCataloguesMatch:
         assert int(m.group(2)) == prose, (
             f"{lang}: document says {m.group(2)} prose keys; code has {prose}"
         )
-        assert str(uniform) in _doc(lang), f"{lang}: the uniform count {uniform} is not stated"
+        # v0.35.0 — the uniform count was looked for anywhere in the document;
+        # "116" stood in the sentence while 117 was the count (0.34.0
+        # assembly), and the guard passed on another 117. Read from the
+        # sentence itself.
+        um = re.search(r"and (\d+) apply equally to every profile" if lang == "en" else
+                       r"et (\d+) s'appliquent identiquement à tous les profils", _doc(lang))
+        assert um, f"{lang}: the uniform count sentence is gone or reshaped"
+        assert int(um.group(1)) == uniform, (
+            f"{lang}: document says {um.group(1)} uniform keys; code has {uniform}"
+        )
 
 # ---------------------------------------------------------------------------
 # Names and shapes the document commits to

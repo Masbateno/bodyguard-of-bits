@@ -36,6 +36,7 @@ def _fake(monkeypatch, members=("alice",), primary=(), sock_mode=None, sock_gid=
         return SimpleNamespace(st_mode=sock_mode, st_gid=sock_gid)
     monkeypatch.setattr(D.os, "stat", fake_stat)
     monkeypatch.setattr(D, "_unix_listening", lambda path: listening)
+    monkeypatch.setattr(D, "_socket_uids", lambda path: {0})   # v0.35.0: a root listener
 
 
 _LIVE = stat.S_IFSOCK | 0o660
@@ -138,5 +139,5 @@ def test_d3_listed_members_come_from_the_group_list(monkeypatch):
     monkeypatch.setattr(grp, "getgrnam", lambda n: grp.struct_group(("docker", "x", 999, ["alice"])))
     monkeypatch.setattr(pwd, "getpwall", lambda: [pwd.struct_passwd(("bob", "x", 1001, 999, "", "/home/bob", "/bin/sh"))])
     monkeypatch.setattr(da, "_DOCKER_SOCKETS", ())
-    members, rw, listed = da._docker_group()
+    members, rw, listed, _nonroot = da._docker_group()
     assert members == ["alice", "bob"] and listed == ["alice"] and rw is False

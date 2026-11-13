@@ -297,7 +297,8 @@ class TestExplainAuditInvariants:
         # 2048 bits is scored, as a user's key below 2048 has been).
         # → 238: docker_hardening.docker_group_root (v0.34.0: the docker group
         # grants root-level privileges, Docker's documentation).
-        assert len(EXPLAIN_KEYS) == 238, (
+        # → 239: docker_hardening.lxd_group_root (v0.35.0).
+        assert len(EXPLAIN_KEYS) == 239, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."

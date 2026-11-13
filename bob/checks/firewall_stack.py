@@ -247,8 +247,12 @@ def _host_ifaces() -> "list[str] | None":
 
 def _dockerd_runs() -> bool:
     """v0.32.0 — a process named ``dockerd`` runs (measured: Docker 29.1.3's
-    daemon; none once the docker service and socket are stopped)."""
-    return _process_runs("dockerd")
+    daemon; none once the docker service and socket are stopped). v0.35.0 —
+    as root: a rootless dockerd's containers reached the internet with the
+    host's ip_forward at 0 (slirp4netns, measured), so it routes nothing
+    through the host and excuses nothing here."""
+    from bob.checks._docker_daemon import system_dockerd_state
+    return system_dockerd_state() == "running"
 
 
 def _process_runs(name: str) -> bool:

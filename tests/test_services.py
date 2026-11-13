@@ -623,7 +623,10 @@ class TestExposureOverrides:
 # ---------------------------------------------------------------------------
 
 class TestPanoramaNewVariants:
-    """Verify build_panorama_rows assigns correct UFW indicator for new Exposure variants."""
+    """build_panorama_rows for a service the services section did not
+    examine. v0.35.0 — the raw exposure is no verdict: NO_RULE showed ✔
+    ("covered by the default deny policy") on hosts with no firewall at all;
+    the reach comes from the services section now (test_v0350_panorama_scope)."""
 
     def _row_for(self, exposure: Exposure) -> dict:
         from bob.panorama import build_panorama_rows
@@ -634,24 +637,19 @@ class TestPanoramaNewVariants:
         rows = build_panorama_rows([snap])
         return rows[0]
 
-    def test_loopback_no_rule_shows_ok(self):
-        assert self._row_for(Exposure.LOOPBACK_NO_RULE)["ufw"] == "ok"
+    def test_not_listening_shows_no_listener(self):
+        row = self._row_for(Exposure.NOT_LISTENING)
+        assert (row["scope"], row["ufw"]) == ("no_listener", "ok")
 
-    def test_not_listening_shows_ok(self):
-        assert self._row_for(Exposure.NOT_LISTENING)["ufw"] == "ok"
+    @pytest.mark.parametrize("exposure", [Exposure.NO_RULE, Exposure.LOOPBACK, Exposure.LOOPBACK_NO_RULE,
+                                          Exposure.OPEN_WORLD, Exposure.DENY])
+    def test_a_listening_port_not_examined_says_so(self, exposure):
+        """Decided after review (0.35.0): "not examined", not "—", which
+        stays the mark of a service that is not installed."""
+        row = self._row_for(exposure)
+        assert (row["scope"], row["ufw"]) == ("not_examined", "na")
 
-    def test_loopback_shows_ok(self):
-        assert self._row_for(Exposure.LOOPBACK)["ufw"] == "ok"
-
-    def test_open_world_shows_warn(self):
-        assert self._row_for(Exposure.OPEN_WORLD)["ufw"] == "warn"
-
-    def test_no_rule_shows_ok(self):
-        """NO_RULE is covered by the default deny policy — panorama shows ✔."""
-        assert self._row_for(Exposure.NO_RULE)["ufw"] == "ok"
-
-    def test_mixed_loopback_no_rule_and_not_listening_shows_ok(self):
-        """Service with both LOOPBACK_NO_RULE and NOT_LISTENING → ok."""
+    def test_mixed_listening_and_not_listening_is_not_examined(self):
         from bob.panorama import build_panorama_rows
         snap = make_snapshot(
             service=make_service(ports=("1883/tcp", "8883/tcp")),
@@ -663,7 +661,7 @@ class TestPanoramaNewVariants:
             },
         )
         rows = build_panorama_rows([snap])
-        assert rows[0]["ufw"] == "ok"
+        assert rows[0]["scope"] == "not_examined"
 
 
 # ---------------------------------------------------------------------------
