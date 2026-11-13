@@ -40,6 +40,10 @@ def _env(monkeypatch, per_runtime, present=("docker", "podman")):
     monkeypatch.setattr(D.subprocess, "run", run)
     monkeypatch.setattr(D, "_read_userns_remap", lambda: True)
     monkeypatch.setattr(D, "_rootless_podman", lambda: {})
+    # 0.34.0, found by the CI: the GitHub runner's account is in the docker
+    # group and dockerd listens there — the real group reader added
+    # docker_group_root to findings these tests count exactly.
+    monkeypatch.setattr(D, "_docker_group", lambda: ([], False, []))
 
 
 def test_both_runtimes_are_asked(monkeypatch):

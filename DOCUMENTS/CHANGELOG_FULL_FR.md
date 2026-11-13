@@ -6,7 +6,7 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [0.34.0] — 12-11-2026
+## [0.34.0] — 13-11-2026
 
 **Une version mineure, BREAKING pour les scores : le `DisableForwarding` de sshd
 est lu ; les comptes qui obtiennent un accès équivalent root par le groupe

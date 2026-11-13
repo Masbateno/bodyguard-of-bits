@@ -16,7 +16,7 @@ bodyguard-of-bits (0.34.0-1) unstable; urgency=medium
   * Texts: containers section names Podman, AppArmor, kexec; the recurrence
     mark is documented.
 
- -- Cédric Clauzel <cedricclauzel@mailo.com>  Thu, 12 Nov 2026 15:29:11 +0000
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 13 Nov 2026 18:44:41 +0000
 
 bodyguard-of-bits (0.33.0-1) unstable; urgency=medium
 

@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [0.34.0] — 2026-11-12
+## [0.34.0] — 2026-11-13
 
 **A minor release, BREAKING for scores: sshd's `DisableForwarding` is read; the
 accounts granted root-equivalent access through the `docker` group are

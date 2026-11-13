@@ -95,7 +95,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
-* Thu Nov 12 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.34.0-1
+* Fri Nov 13 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.34.0-1
 - Minor, BREAKING for scores; no JSON-schema or CSV-column change.
   DisableForwarding read; docker group members cost two points while the
   system Docker socket listens (dormant said, unreadable an upper bound,
