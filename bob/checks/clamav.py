@@ -125,6 +125,9 @@ class ClamAVSnapshot:
     #: v0.32.0 — the measured permissions behind it ("srw-rw-rw- clamav:clamav
     #: — /run/clamav: drwxr-xr-x"): what grounds the verdict, shown.
     clamd_socket_perms:   str            = ""
+    #: v0.37.0 — the configuration that names that socket refuses SHUTDOWN
+    #: (``EnableShutdownCommand false`` or ``no``, ClamAV 1.5).
+    clamd_shutdown_refused: bool         = False
 
     @classmethod
     def from_system(cls) -> "ClamAVSnapshot":
@@ -168,6 +171,7 @@ class ClamAVSnapshot:
             snap.clamd_socket_open = _socket_open_to_all()
             if snap.clamd_socket_open:
                 snap.clamd_socket_perms = _socket_perms(snap.clamd_socket_open)
+                snap.clamd_shutdown_refused = _shutdown_refused(snap.clamd_socket_open)
 
         # --- virus database freshness ---
         for db_path in _DB_CANDIDATES:
@@ -275,6 +279,19 @@ def check_clamav(snapshot: ClamAVSnapshot, t: TranslationFunc | None = None) -> 
             detail=_t("clamav.clamd_inactive_detail"),
             cmd=_clamd_enable_cmd(snapshot),
             key="clamav.clamd_inactive",
+        )
+    elif snapshot.clamd_socket_open and snapshot.clamd_shutdown_refused:
+        # v0.37.0 — decided with the user (14 November 2026): the point was for
+        # "any account can turn the antivirus off"; with SHUTDOWN refused by
+        # the configuration (measured), that is no longer so. Said, no point.
+        result.info(
+            key="clamav.socket_open_shutdown_refused",
+            message=_t("clamav.socket_open_shutdown_refused", path=snapshot.clamd_socket_open),
+            detail=" ".join(x for x in (
+                (_t("clamav.socket_open_perms", perms=snapshot.clamd_socket_perms)
+                 if snapshot.clamd_socket_perms else ""),
+                _t("clamav.socket_open_shutdown_refused_detail")) if x),
+            template_vars={"path": snapshot.clamd_socket_open},
         )
     elif snapshot.clamd_socket_open:
         # No command: who must keep access (a mail filter's user, a scanner's)
@@ -492,6 +509,31 @@ def _configured_sockets() -> "list[str]":
         except (OSError, ValueError):
             continue
     return paths
+
+
+#: v0.37.0 — ClamAV 1.5 takes ``EnableShutdownCommand`` (1.4 refused it as an
+#: unknown option, measured in 0.24.4), and Ubuntu 24.04's clamav-daemon 1.5.4
+#: writes it ``false``. Measured in Ubuntu 24.04 containers, an unprivileged
+#: user on the ``srw-rw-rw-`` socket: ``false`` and ``no`` → SHUTDOWN answered
+#: "COMMAND UNAVAILABLE", clamd kept running; ``true`` → clamd stopped. Only
+#: those two spellings are read as a refusal: an unmeasured one keeps the point.
+_SHUTDOWN_OPT_RE = re.compile(r"^\s*EnableShutdownCommand\s+(\S+)", re.MULTILINE)
+_SHUTDOWN_REFUSED = frozenset({"false", "no"})
+
+
+def _shutdown_refused(socket_path: str) -> bool:
+    """Whether the configuration that names *socket_path* refuses SHUTDOWN —
+    it writes ``EnableShutdownCommand``, and every time as false or no."""
+    for conf in _CLAMD_CONFS:
+        try:
+            text = read_text_capped(conf)
+        except (OSError, ValueError):
+            continue
+        if socket_path not in _LOCAL_SOCKET_RE.findall(text):
+            continue
+        values = [v.lower() for v in _SHUTDOWN_OPT_RE.findall(text)]
+        return bool(values) and all(v in _SHUTDOWN_REFUSED for v in values)
+    return False
 
 
 def _socket_open_to_all() -> str:

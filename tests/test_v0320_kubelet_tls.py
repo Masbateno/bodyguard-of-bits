@@ -29,7 +29,7 @@ from tests.helpers import _t
 class TestWhichAuthority:
     @pytest.mark.parametrize("owner, ca", [
         ("kubelite", k._MICROK8S_CA), ("k3s-server", k._K3S_SERVER_CA),
-        ("k3s-agent", None), ("k3s", None),
+        ("k3s-agent", k._K3S_AGENT_CA), ("k3s", None),  # k3s-agent: measured in v0.37.0
     ])
     def test_by_distribution(self, owner, ca):
         assert k._kubelet_ca(owner) == ca

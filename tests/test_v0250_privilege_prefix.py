@@ -62,7 +62,7 @@ def test_a_finding_carries_the_hosts_prefix(host):
     status = FirewallStatus(installed=True, active=False, incoming_policy="unknown",
                             ufw_output="", numbered_output="", ipv6_ufw_enabled=True)
     finding = next(f for f in check_firewall(status, t=_t, ssh_ports=[22]).findings if f.key == "firewall.inactive")
-    assert finding.cmd == "doas ufw allow 22/tcp && doas ufw enable"
+    assert finding.cmd == "doas ufw allow 22/tcp && doas ufw --force enable"
 
 
 def test_apply_recognises_a_doas_ufw_delete():

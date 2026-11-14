@@ -42,7 +42,28 @@ def _parse_config_file(
     Parse an sshd_config file (or drop-in) into config dict.
     First-value-wins semantics (OpenSSH behaviour).
     Handles Include directives recursively.
-    Stops at first Match block (conditional config — not parsed).
+
+    v0.37.0 — Match blocks are read, as sshd reads them (measured with
+    ``sshd -T -C`` on Linux Mint 22.3, OpenSSH 9.6p1, a10370): a block runs
+    to the next Match or the end of its file — a Match in an included file
+    ends with that file, and the including file goes on globally; inside a
+    block the first value of a directive wins. Each block is kept in
+    ``config["_match_blocks"]`` as ``{"criteria", "settings", "file"}``; an
+    Include inside a block is not followed and is recorded in
+    ``config["_match_include_unread"]``.
+
+    ``Match all`` is a block like the others, one that every connection
+    matches — not a return to the global settings (measured, same host,
+    review of 14 November 2026): a value it sets beats the global one, before
+    it, or after the Include once an included file's block ends (measured both
+    ways; inside one file, what follows a Match belongs to it) (``PasswordAuthentication no`` then ``Match all``
+    / ``PasswordAuthentication yes`` → yes for everyone); and since the first
+    matching block wins, a later block's value for that key is never applied
+    (``Match all`` / ``… no`` then ``Match Address …`` / ``… yes`` → no from that
+    address too), while an earlier block's still is. So a ``Match all`` value
+    becomes the effective setting in ``config`` itself, recorded in
+    ``config["_match_all_keys"]`` (key → file), and a later block's setting for
+    such a key is dropped.
     """
     canonical = str(path.resolve())
     if canonical in seen:
@@ -54,25 +75,29 @@ def _parse_config_file(
     except OSError:
         return
 
+    block: "dict | None" = None          # the Match block being read, None = global
     for line in lines:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        # Stop at Match blocks — conditional overrides not handled.
-        # M-8 (v0.5.5): this also stops Include parsing for any include
-        # directives appearing AFTER a Match block, which OpenSSH itself
-        # would parse. Intentional: handling conditional includes safely
-        # requires modeling the full Match context. The audit surfaces
-        # the gap via `_match_block=True` → `ssh.match_block` INFO,
-        # warning the user to review their config manually.
-        if re.match(r"^match\b", stripped, re.IGNORECASE):
+        m_match = re.match(r"^match\s+(.+)$", stripped, re.IGNORECASE)
+        if m_match or re.match(r"^match\s*$", stripped, re.IGNORECASE):
+            criteria = _strip_inline_comment(m_match.group(1)).strip() if m_match else ""
             config["_match_block"] = True
-            break
+            block = {"criteria": criteria, "settings": {}, "file": str(path)}
+            config.setdefault("_match_blocks", []).append(block)
+            continue
 
         # Include directive
         inc_match = re.match(r"^include\s+(.+)$", stripped, re.IGNORECASE)
         if inc_match:
             pattern = inc_match.group(1).strip()
+            if block is not None:
+                # An Include inside a Match applies to that block only; not
+                # followed (said by the sub-check, the section a ceiling).
+                config.setdefault("_match_include_unread", []).append(
+                    f"{block['criteria']}: Include {pattern}")
+                continue
             if not os.path.isabs(pattern):
                 pattern = str(path.parent / pattern)
             # v0.19.0: record the first glob drop-in directory. Modern OpenSSH
@@ -95,6 +120,15 @@ def _parse_config_file(
         if m:
             key   = m.group(1).lower()
             value = _strip_inline_comment(m.group(2)).strip().strip('"')
+            if block is not None:
+                match_all = config.setdefault("_match_all_keys", {})
+                if key in match_all:
+                    continue                                # an earlier Match all set it: never applied
+                block["settings"].setdefault(key, value)    # first value wins in the block
+                if block["criteria"].lower() == "all":
+                    match_all[key] = str(path)
+                    config[key] = value                     # beats the global value, before or after
+                continue
             # v0.32.0 — HostKey is the one directive here that accumulates:
             # sshd loads every key named, in order (sshd_config(5)). Kept
             # whole beside the first-value-wins entry, so the host-key check

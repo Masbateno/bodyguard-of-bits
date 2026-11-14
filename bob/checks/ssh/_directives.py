@@ -90,6 +90,11 @@ def _sshd_directive_fix(directive: str, param: str, cfg: dict) -> str:
     no longer starts. ``sshd -t`` gates the restart, so a configuration sshd
     would reject is never put into service.
     """
+    # v0.37.0 — set in a ``Match all`` block: that value beats every global
+    # one, before or after it (measured with ``sshd -T -C``), so an edit of the
+    # global settings would change nothing. No command; the section says why.
+    if param.lower() in (cfg.get("_match_all_keys") or {}):
+        return ""
     restart = service_restart_cmd(ssh_unit())
     # ``param`` is a fixed directive name (no regex metacharacters). sshd
     # keywords are case-insensitive; sed_ci says so without GNU's ``I`` flag,

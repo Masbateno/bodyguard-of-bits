@@ -117,7 +117,7 @@ class TestTheWayInIsAcceptedFirst:
     def test_a_host_with_ufw_gets_ufw(self):
         """Mint: ufw installed, off — the front-end's own enable, SSH allowed first."""
         assert _input_cmd(("iptables",), ufw_installed=True, ssh_ports=[22]) == \
-            "sudo ufw allow 22/tcp && sudo ufw enable"
+            "sudo ufw allow 22/tcp && sudo ufw --force enable"
 
 
 class TestTheOtherFixesNameTheChainToo:

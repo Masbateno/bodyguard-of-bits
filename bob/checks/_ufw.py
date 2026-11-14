@@ -536,9 +536,20 @@ def enable_cmd(ssh_ports: "list[int] | None" = None, ipv6_off: bool = False) -> 
     *ipv6_off*: ufw is set to ``IPV6=no`` and sshd answers over IPv6. ufw-init
     then drops all IPv6 (measured in v0.24.2), so an allow cannot keep an IPv6
     SSH path: IPv6 is turned on first, and the allow covers both families.
+
+    v0.37.0 — ``--force``. Under SSH (ufw walks the parent processes looking
+    for sshd), ``ufw enable`` asks "Command may disrupt existing ssh
+    connections. Proceed with operation (y|n)?". ``--fix --apply`` runs every
+    command with stdin closed: ufw read no answer, printed "Aborted", exited 0
+    and stayed inactive, and BOB said "✔ Applied". Measured on Linux Mint 22.3,
+    ufw 0.36.2 (a10370, 14 November 2026), through BOB's own runner:
+    ``['sudo','ufw','enable']`` → ``('ok', 0)``, ufw inactive;
+    ``['sudo','ufw','--force','enable']`` → ``('ok', 0)``, ufw active. The
+    question guards the session sshd carries, and the allows above have
+    already kept it open.
     """
     if ssh_ports is None:
         return None
     ports = sorted(set(ssh_ports))
     steps = [_IPV6_ON] if ipv6_off and ports else []
-    return " && ".join(steps + [f"sudo ufw allow {p}/tcp" for p in ports] + ["sudo ufw enable"])
+    return " && ".join(steps + [f"sudo ufw allow {p}/tcp" for p in ports] + ["sudo ufw --force enable"])

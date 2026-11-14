@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -157,6 +158,97 @@ def is_exec_conmon(argv: "list[bytes]") -> bool:
     return b"-e" in argv or b"--exec" in argv
 
 
+#: v0.37.0 — Docker's rule for a container name (moby: ``^/?[a-zA-Z0-9][a-zA-Z0-9_.-]+$``):
+#: a name read from a user's file is shown only if Docker could have given it.
+_DOCKER_NAME = re.compile(r"/?([a-zA-Z0-9][a-zA-Z0-9_.-]+)")
+_DOCKER_ID = re.compile(r"[0-9a-f]{64}")
+
+
+def _environ(pid: Path) -> "dict[str, str]":
+    try:
+        raw = (pid / "environ").read_bytes()
+    except OSError:
+        return {}
+    out = {}
+    for item in raw.split(b"\0"):
+        key, sep, value = item.partition(b"=")
+        if sep:
+            out[key.decode(errors="replace")] = value.decode(errors="replace")
+    return out
+
+
+def _dockerd_data_root(pid: Path, argv: "list[bytes]", uid: int) -> "Path | None":
+    """Where a rootless dockerd keeps its state, seen through its own root.
+
+    v0.37.0 — the shim carries the container's ID, not its name; the name is in
+    ``<data-root>/containers/<id>/config.v2.json`` (``"Name": "/rl-plain"``),
+    owned by the user (measured on Linux Mint 22.3, docker 29.1.3 rootless,
+    a10370). The data root is dockerd's: ``--data-root`` (or ``-g``), else
+    ``data-root`` in the user's daemon.json, else ``$XDG_DATA_HOME/docker``,
+    else ``~/.local/share/docker`` (HOME from the process's environment).
+    """
+    args = [a.decode(errors="replace") for a in argv[1:]]
+    root = None
+    for i, arg in enumerate(args):
+        if arg.startswith("--data-root="):
+            root = arg.split("=", 1)[1]
+        elif arg in ("--data-root", "-g") and i + 1 < len(args):
+            root = args[i + 1]
+    env = _environ(pid)
+    home = env.get("HOME", "")
+    if root is None:
+        conf_home = env.get("XDG_CONFIG_HOME") or (f"{home}/.config" if home else "")
+        if conf_home.startswith("/"):
+            conf = read_config(pid / "root" / conf_home.lstrip("/") / "docker" / "daemon.json", uid)
+            if conf is not None and isinstance(conf.get("data-root"), str):
+                root = conf["data-root"]
+    if root is None:
+        data_home = env.get("XDG_DATA_HOME") or (f"{home}/.local/share" if home else "")
+        root = f"{data_home}/docker" if data_home else None
+    if not root or not root.startswith("/"):
+        return None
+    return pid / "root" / root.lstrip("/")
+
+
+def _dockerd_roots() -> "dict[int, list[Path]]":
+    """Each non-root dockerd's data root, by the uid it runs as."""
+    roots: "dict[int, list[Path]]" = {}
+    try:
+        pids = [d for d in _PROC.iterdir() if d.name.isdigit()]
+    except OSError:
+        return roots
+    for pid in pids:
+        try:
+            argv = (pid / "cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        if not argv or os.path.basename(argv[0].decode(errors="replace")) != "dockerd":
+            continue
+        uid = _uid(pid)
+        if uid is None or uid == 0:
+            continue
+        root = _dockerd_data_root(pid, argv, uid)
+        if root is not None:
+            roots.setdefault(uid, []).append(root)
+    return roots
+
+
+def _docker_name(roots: "list[Path]", uid: int, full_id: str) -> "str | None":
+    """The container's name from dockerd's config.v2.json, or None: the file
+    is not the user's, names another container, or holds a name Docker would
+    not give."""
+    if not _DOCKER_ID.fullmatch(full_id):
+        return None
+    for root in roots:
+        cfg = read_config(root / "containers" / full_id / "config.v2.json", uid)
+        if cfg is None or cfg.get("ID") != full_id or not isinstance(cfg.get("Name"), str):
+            continue
+        m = _DOCKER_NAME.fullmatch(cfg["Name"])
+        if m:
+            return m.group(1)
+    return None
+
+
 def rootless_containers() -> "list[RootlessContainer]":
     """Every rootless container found in /proc, read or not. A Docker one is a
     shim in Docker's containerd namespace that does not run as root; a podman
@@ -167,6 +259,7 @@ def rootless_containers() -> "list[RootlessContainer]":
     except OSError:
         return []
     cap_total = _cap_total()
+    dockerd_roots: "dict[int, list[Path]] | None" = None
     out: "list[RootlessContainer]" = []
     for pid in pids:
         try:
@@ -180,7 +273,8 @@ def rootless_containers() -> "list[RootlessContainer]":
             ns = _arg_after(argv, b"-namespace") or ""
             if not (ns == "moby" or ns.startswith("moby-")):
                 continue
-            runtime, name = "docker", (_arg_after(argv, b"-id") or "?")[:12]
+            full_id = _arg_after(argv, b"-id") or "?"
+            runtime, name = "docker", full_id[:12]
             config = pid / "cwd" / "config.json"
         elif prog == "conmon":
             if is_exec_conmon(argv):
@@ -198,6 +292,10 @@ def rootless_containers() -> "list[RootlessContainer]":
             user = pwd.getpwuid(uid).pw_name
         except KeyError:
             user = str(uid)
+        if runtime == "docker":
+            if dockerd_roots is None:
+                dockerd_roots = _dockerd_roots()
+            name = _docker_name(dockerd_roots.get(uid, []), uid, full_id) or name
         cfg = read_config(config, uid) if config is not None else None
         if cfg is None:
             out.append(RootlessContainer(user=user, runtime=runtime, name=name, read=False))

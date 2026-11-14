@@ -45,7 +45,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from bob.checks._run import _command_exists, install_fix, _identity_t, _run, is_unit_active  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
+from bob.checks._run import _command_exists, install_fix, _identity_t, _run, is_unit_active, run_result  # noqa: F401 — `_run` kept in the module namespace as a monkeypatch seam (tests do setattr(module, "_run", ...))
 from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
 from bob._fs import strict_is_dir, strict_is_file
@@ -75,6 +75,16 @@ _TIMESHIFT_CONFIG = Path("/etc/timeshift/timeshift.json")
 #: 2026-11-01_19-00-01 and 2026-11-08_19-00-02.
 _TIMESHIFT_SCHEDULES = ("hourly", "daily", "weekly", "monthly", "boot")
 _TIMESHIFT_SNAPSHOT_RE = re.compile(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}")
+#: v0.37.0 — a Timeshift snapshot in BTRFS mode, as `btrfs subvolume list -a`
+#: prints it: a subvolume ``timeshift-btrfs/snapshots/<name>/@`` (``@home``
+#: beside it when the home is included) of the volume's top level. Measured on
+#: a Fedora 43 VM, root renamed to @/@home, Timeshift 25.12.4 (a10370, 14
+#: November 2026): ``ID 259 gen 29 top level 5 path
+#: <FS_TREE>/timeshift-btrfs/snapshots/2026-11-14_11-25-10/@``; nothing of it is
+#: mounted once Timeshift has finished.
+_TIMESHIFT_BTRFS_RE = re.compile(
+    r"^ID \d+ gen \d+ top level \d+ path (?:<FS_TREE>/)?timeshift-btrfs/snapshots/"
+    r"(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})/@(?:home)?$", re.MULTILINE)
 #: v0.33.0 — each schedule's period, in hours. Timeshift's hourly cron job
 #: takes a snapshot when one is due, so a newest snapshot older than twice the
 #: longest enabled period means no schedule produced one for that long: the
@@ -178,6 +188,9 @@ class BackupSnapshot:
     timeshift_snapshots: "list[str] | None" = None
     timeshift_unread:    str = ""
     timeshift_dir:       str = ""
+    #: v0.37.0 — timeshift.json sets BTRFS mode (snapshots read, or not, as
+    #: subvolumes: ``_read_timeshift_btrfs``).
+    timeshift_btrfs:     bool = False
     #: v0.32.0 — timeshift.json's `exclude` patterns: paths no snapshot holds
     #: (on a desktop, often the home). Shown so "active" is not read as "my
     #: files are backed up". [] when none or unread.
@@ -236,6 +249,7 @@ class BackupSnapshot:
                 (snap.timeshift_schedules, snap.timeshift_snapshots,
                  snap.timeshift_unread, snap.timeshift_dir) = _read_timeshift()
                 snap.timeshift_excludes = _timeshift_excludes()
+                snap.timeshift_btrfs = _timeshift_btrfs_mode()
                 snap.timeshift_stale_h = _timeshift_stale(snap.timeshift_schedules,
                                                           snap.timeshift_snapshots, datetime.now())
             # v0.33.0 — and a newest snapshot no older than twice the longest
@@ -310,7 +324,7 @@ def _read_timeshift() -> "tuple[list[str] | None, list[str] | None, str, str]":
     schedules = [name for name in _TIMESHIFT_SCHEDULES
                  if str(cfg.get(f"schedule_{name}", "")).lower() == "true"]
     if str(cfg.get("btrfs_mode", "")).lower() == "true":
-        return schedules, None, "btrfs", ""
+        return _read_timeshift_btrfs(schedules, cfg)
     uuid = str(cfg.get("backup_device_uuid", "") or "")
     if not uuid or "/" in uuid:
         return schedules, None, "no_device", ""
@@ -335,6 +349,32 @@ def _read_timeshift() -> "tuple[list[str] | None, list[str] | None, str, str]":
     return schedules, names, "", directory
 
 
+def _read_timeshift_btrfs(schedules, cfg) -> "tuple[list[str] | None, list[str] | None, str, str]":
+    """v0.37.0 — BTRFS mode: the snapshots are subvolumes of the volume's top
+    level, which nothing mounts between Timeshift's runs (measured). They are
+    listed, read-only, by `btrfs subvolume list -a` on any mount of the backup
+    device; nothing is mounted. Unread ("btrfs") when the btrfs command is
+    missing or does not answer; the device absent or not mounted, as in rsync
+    mode."""
+    uuid = str(cfg.get("backup_device_uuid", "") or "")
+    if not uuid or "/" in uuid:
+        return schedules, None, "no_device", ""
+    try:
+        device = os.path.realpath(_DISK_BY_UUID / uuid, strict=True)
+    except OSError:
+        return schedules, None, "device_absent", uuid
+    mountpoint = _mounted_at(device, any_root=True)
+    if mountpoint is None:
+        return schedules, None, "not_mounted", device
+    if not _command_exists("btrfs"):
+        return schedules, None, "btrfs", ""
+    res = run_result("btrfs", "subvolume", "list", "-a", mountpoint, timeout=15)
+    if not res.ok:
+        return schedules, None, "btrfs", ""
+    names = sorted(set(_TIMESHIFT_BTRFS_RE.findall(res.stdout)))
+    return schedules, names, "", f"{device}: timeshift-btrfs/snapshots"
+
+
 def _timeshift_stale(schedules, snapshots, now) -> "float | None":
     """v0.33.0 — the newest snapshot's age in hours when it exceeds twice the
     longest enabled period; None when it does not, when only "boot" is set,
@@ -348,6 +388,15 @@ def _timeshift_stale(schedules, snapshots, now) -> "float | None":
         return None
     age_h = (now - newest).total_seconds() / 3600
     return age_h if age_h > 2 * max(periods) else None
+
+
+def _timeshift_btrfs_mode() -> bool:
+    """v0.37.0 — whether timeshift.json sets BTRFS mode."""
+    try:
+        cfg = json.loads(read_text_capped(_TIMESHIFT_CONFIG, encoding="utf-8", errors="replace"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(cfg, dict) and str(cfg.get("btrfs_mode", "")).lower() == "true"
 
 
 def _timeshift_excludes() -> list:
@@ -370,9 +419,10 @@ def _timeshift_excludes() -> list:
     return [x for x in excludes if isinstance(x, str) and x]
 
 
-def _mounted_at(device: str) -> "str | None":
+def _mounted_at(device: str, any_root: bool = False) -> "str | None":
     """Where *device* is mounted with its own root, from /proc/self/mountinfo;
-    None when it is not, or when mountinfo cannot be read."""
+    None when it is not, or when mountinfo cannot be read. *any_root*
+    (v0.37.0, BTRFS): any mount of the device, a subvolume (``/@``) too."""
     try:
         lines = _MOUNTINFO.read_text(errors="replace").splitlines()
     except OSError:
@@ -382,7 +432,7 @@ def _mounted_at(device: str) -> "str | None":
         fields, post = head.split(), tail.split()
         if not sep or len(fields) < 5 or len(post) < 2:
             continue
-        if fields[3] != "/":
+        if fields[3] != "/" and not any_root:
             continue
         try:
             source = os.path.realpath(post[1])
@@ -583,7 +633,7 @@ def _timeshift_finding(snapshot: BackupSnapshot, result: CheckResult, _t) -> Non
     snaps = snapshot.timeshift_snapshots
     # v0.35.0 — the mode, named: a field audit (Mint desktop) asked which one
     # ran; snapshots are listed in rsync mode only, BTRFS ones are not read.
-    mode = "BTRFS" if snapshot.timeshift_unread == "btrfs" else "rsync"
+    mode = "BTRFS" if snapshot.timeshift_btrfs or snapshot.timeshift_unread == "btrfs" else "rsync"
     # v0.32.0 — what no snapshot holds, beside the count: "active" must not
     # read as "my files are backed up" when the home is excluded.
     excl = (_t("backup.timeshift_excludes", paths=", ".join(snapshot.timeshift_excludes))

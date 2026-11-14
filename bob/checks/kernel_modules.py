@@ -321,19 +321,26 @@ def check_kernel_modules(
 # Private helpers — kernel cleanup
 # ---------------------------------------------------------------------------
 
-_RPM_MODULE_DIR = re.compile(r"^/(?:usr/)?lib/modules/([^/\s]+)/vmlinuz$")
+#: v0.37.0 — or ``/boot/vmlinuz-<release>``: openSUSE Leap 15.6's
+#: kernel-default-base puts the image there and its module directory holds
+#: no vmlinuz (measured on a VM, 14 November 2026: 6.4.0-150600.23.100-default
+#: running, 23.103 installed beside it — 0.36.0 read no kernel and said
+#: nothing of the reboot). The bare ``/boot/vmlinuz`` link names no release.
+_RPM_MODULE_DIR = re.compile(r"^/(?:usr/)?lib/modules/([^/\s]+)/vmlinuz$|^/boot/vmlinuz-([^/\s]+)$")
 
 
 def _rpm_kernel_releases(text: str) -> "list[str]":
     """v0.36.0 — the kernel releases (``uname -r`` form) in the file lists
     of the packages that provide ``kernel``: each module directory holding a
-    vmlinuz (both measured families list one). rpm writes its "no package
-    provides kernel" on stdout (rc 1): it does not match and yields []."""
+    vmlinuz (Fedora 44, openSUSE Leap 16.0), or a ``/boot/vmlinuz-<release>``
+    (openSUSE Leap 15.6, v0.37.0). rpm writes its "no package provides kernel"
+    on stdout (rc 1): it does not match and yields []."""
     found: "list[str]" = []
     for ln in text.splitlines():
         m = _RPM_MODULE_DIR.match(ln.strip())
-        if m and m.group(1) not in found:
-            found.append(m.group(1))
+        release = m and (m.group(1) or m.group(2))
+        if release and release not in found:
+            found.append(release)
     return found
 
 

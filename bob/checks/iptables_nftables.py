@@ -489,7 +489,14 @@ _DROPS_EVERYTHING = re.compile(r"^(drop|reject(?:\s+with\s+[\w\s-]+)?)$")
 #: where x drops 8099, left 8099 closed — and BOB read "accept" (−3 for IPv4,
 #: capped at 3/10 by "no firewall"; −2 for IPv6). A jump to a chain that only
 #: accepts, an empty chain and a log rule left it open.
-_NFT_REFUSES = re.compile(r"\b(?:drop|reject|queue)\b")
+#: v0.37.0 — a verdict, not a piece of a chain's name. `\b` took the "reject"
+#: of `jump ufw6-reject-input` for a refusal: measured on Linux Mint 22.3
+#: (a10370, 14 November 2026), `ufw disable` leaves INPUT jumping to ufw's
+#: chains, now empty, and BOB read "rules refuse some traffic, not
+#: established" (INFO) where the policy accepted everything — the ALERTs
+#: "UFW firewall is disabled" and "Default INPUT policy: ACCEPT" (−3) came back
+#: only once the jumps were removed, or after a reboot.
+_NFT_REFUSES = re.compile(r"(?<![\w.-])(?:drop|reject|queue)(?![\w.-])")
 _NFT_JUMP = re.compile(r"\b(?:jump|goto)\s+([\w.-]+)")
 #: A rule that matches only invalid packets refuses no new connection.
 _NFT_INVALID_ONLY = re.compile(r"^ct\s+state\s+(?:\{\s*)?invalid(?:\s*\})?\s+drop$")

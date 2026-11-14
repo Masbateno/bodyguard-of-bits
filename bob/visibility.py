@@ -202,6 +202,7 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     # v0.32.0 — not asked: the certificate could not be checked against the
     # distribution's authority, or that authority does not sign it.
     "kubernetes.kubelet_tls_unchecked",
+    "ssh.match_block_skipped",
     "kubernetes.kubelet_tls_mismatch",
     "kubernetes.apiserver_tls_unchecked",
     "kubernetes.apiserver_tls_mismatch",
@@ -209,6 +210,7 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "kubernetes.kubelet_anonymous_inconclusive",
     # v0.29.0 — the API server is read on MicroK8s only.
     "kubernetes.apiserver_unread",
+    "kubernetes.apiserver_elsewhere",
     # v0.29.0 — samba refuses the smb.conf BOB read.
     "samba.conf_refused",
     "samba.include_per_client",

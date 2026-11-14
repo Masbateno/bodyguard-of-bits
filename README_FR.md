@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.36.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.37.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -139,7 +139,7 @@ bob --explain ssh.password_auth   # expliquer un résultat (sans sudo)
 
 ## Aperçu de la sortie
 
-Extrait d'un vrai audit sur une Linux Mint 22.3 de test (BOB 0.36.0, lancé en root ; profil `desktop` choisi automatiquement). `⋮` marque des lignes omises ; le cadre d'en-tête omet aussi le logo et quelques lignes.
+Extrait d'un vrai audit sur une Linux Mint 22.3 de test (BOB 0.37.0, lancé en root ; profil `desktop` choisi automatiquement). `⋮` marque des lignes omises ; le cadre d'en-tête omet aussi le logo et quelques lignes.
 
 ```
 $ sudo bob
@@ -148,7 +148,7 @@ $ sudo bob
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.36.0  │  Auditeur de durcissement Linux                               ║
+║  BOB 0.37.0  │  Auditeur de durcissement Linux                               ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  Système       : 🌿  Linux Mint 22.3                                         ║
 ║  Noyau         : 7.0.0-43-generic                                            ║
@@ -182,12 +182,12 @@ $ sudo bob
 ║  Visibilité : 2 section(s) non entièrement lue(s) — le score est un plafond  ║
 ║  Contexte réseau : IPv4 en NAT, IPv6 publique (filtrage box non vérifié)     ║
 ║  Profil d'audit : Desktop                                                    ║
-║  Durée : 47.6 s                                                              ║
+║  Durée : 47.4 s                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  ✖ À corriger                                                                ║
 ║    ✖  Le pare-feu UFW est désactivé. Votre machine n'est actuellement pas    ║
 ║       protégée.                                                              ║
-║       → sudo ufw allow 22/tcp && sudo ufw enable                             ║
+║       → sudo ufw allow 22/tcp && sudo ufw --force enable                     ║
 ║       [CIS:4.1.3]                                                            ║
 ║       ? bob --explain firewall.inactive                                      ║
 ⋮

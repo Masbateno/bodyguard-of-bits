@@ -169,6 +169,9 @@ class KubernetesSnapshot:
     kubelet_ca:                 str = ""
     apiserver_tls:              str = ""
     apiserver_ca:               str = ""
+    #: v0.37.0 — on a k3s agent, the API server it joins (its URL), which runs
+    #: on another node; "" elsewhere.
+    apiserver_elsewhere:        str = ""
 
     @classmethod
     def from_system(cls) -> "KubernetesSnapshot":
@@ -245,11 +248,21 @@ _PROC = Path("/proc")
 #: the kubelet self-signed by its own authority, kept beside its certificate in
 #: <cert-dir>/kubelet.crt (pki/ca.crt did not verify it). The name 127.0.0.1 is
 #: not checked: it was missing from the kubelet's certificate on MicroK8s and
-#: from both on kubeadm. A k3s agent and a kubelet with its own tlsCertFile were
-#: not measured: not checked, so not asked (serverTLSBootstrap: measured in
-#: v0.36.0, see _upstream_kubelet_ca).
+#: from both on kubeadm. A kubelet with its own tlsCertFile was not measured:
+#: not checked, so not asked (serverTLSBootstrap: measured in v0.36.0, see
+#: _upstream_kubelet_ca; a k3s agent in v0.37.0, see _K3S_AGENT).
 _MICROK8S_CA = Path("/var/snap/microk8s/current/certs/ca.crt")
 _K3S_SERVER_CA = Path("/var/lib/rancher/k3s/server/tls/server-ca.crt")
+#: v0.37.0 — a k3s agent (second node), measured on openSUSE Leap 15.6 joined to
+#: a Fedora 43 server, k3s v1.37.2+k3s1 (a10370, 14 November 2026): the kubelet
+#: runs in a root process named ``k3s-agent`` on *:10250 and serves a
+#: certificate issued by k3s-server-ca, SAN 127.0.0.1 — agent/server-ca.crt
+#: verifies it (client-ca.crt does not); anonymous GET /pods: 401. No API server
+#: on the node: 127.0.0.1:6444 is the agent's own proxy to the server's, whose
+#: address k3s keeps in k3s-agent-load-balancer.json ("ServerURL").
+_K3S_AGENT = "k3s-agent"
+_K3S_AGENT_CA = Path("/var/lib/rancher/k3s/agent/server-ca.crt")
+_K3S_AGENT_LB = Path("/var/lib/rancher/k3s/agent/etc/k3s-agent-load-balancer.json")
 _KUBELET_CERT_DIR = "/var/lib/kubelet/pki"
 TLS_UNCHECKED = "unchecked"
 TLS_MISMATCH = "mismatch"
@@ -286,6 +299,8 @@ def _read_apiserver(snap: "KubernetesSnapshot") -> None:
         _read_k3s_apiserver(snap)
         if snap.authorization_modes is None:
             _read_kube_apiserver_process(snap)
+        if snap.authorization_modes is None and snap.kubelet_listener == _K3S_AGENT:
+            snap.apiserver_elsewhere = _k3s_agent_server()
         return
     try:
         text = _MICROK8S_APISERVER_ARGS.read_text(encoding="utf-8", errors="replace")
@@ -300,6 +315,22 @@ def _read_apiserver(snap: "KubernetesSnapshot") -> None:
         res = run_result("microk8s", "kubectl", "get", "clusterrolebindings", "-o", "json", timeout=_CTR_TIMEOUT)
         if res.ok:
             snap.broad_admin_bindings = _broad_admin_bindings(res.stdout)
+
+
+def _k3s_agent_server() -> str:
+    """v0.37.0 — the API server a k3s agent joins: ``ServerURL`` in the
+    load-balancer state k3s keeps (root's, under agent/), when it is an https
+    address with no path; "" otherwise, or on a node that also runs a k3s server."""
+    if _pids_named(_K3S_SERVER):
+        return ""
+    try:
+        data = json.loads(read_text_capped(_K3S_AGENT_LB, encoding="utf-8", errors="replace"))
+    except (OSError, ValueError):
+        return ""
+    url = data.get("ServerURL") if isinstance(data, dict) else None
+    if isinstance(url, str) and re.fullmatch(r"https://[A-Za-z0-9.\-]+(?::\d{1,5})?|https://\[[0-9A-Fa-f:.]+\](?::\d{1,5})?", url):
+        return url
+    return ""
 
 
 def _probe_apiserver(snap: "KubernetesSnapshot", ca: "Path | None") -> None:
@@ -929,6 +960,8 @@ def _kubelet_ca(owner: str) -> "Path | None":
         return _MICROK8S_CA
     if owner == _K3S_SERVER:
         return _K3S_SERVER_CA
+    if owner == _K3S_AGENT:
+        return _K3S_AGENT_CA
     if owner == "kubelet":
         return _upstream_kubelet_ca()
     return None
@@ -1301,6 +1334,14 @@ def _say_tls(result: CheckResult, _t, who: str, state: str, ca: str, port: "int 
 
 def _check_apiserver(snapshot: "KubernetesSnapshot", result: CheckResult, _t) -> None:
     """v0.28.0 — the cluster beyond the node, as far as this node reads it."""
+    if snapshot.authorization_modes is None and snapshot.apiserver_elsewhere:
+        # v0.37.0 — a k3s agent: the API server is on the node it joins, said
+        # by name; still a ceiling here, as on any node whose API is unread.
+        result.info(message=_t("kubernetes.apiserver_elsewhere", server=snapshot.apiserver_elsewhere),
+                    detail=_t("kubernetes.apiserver_elsewhere_detail"),
+                    key="kubernetes.apiserver_elsewhere",
+                    template_vars={"server": snapshot.apiserver_elsewhere})
+        return
     if snapshot.authorization_modes is None:
         # v0.29.0 — not read is said, not left silent: BOB reads the API
         # server where MicroK8s keeps its arguments; on k3s (measured: its

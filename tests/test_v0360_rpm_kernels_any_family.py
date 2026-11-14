@@ -39,9 +39,11 @@ def test_a_newer_opensuse_kernel_waiting_is_said():
     assert "6.12.0-160000.44-default" in f.message
 
 
-def test_only_module_directories_name_a_kernel():
-    """Both measured families list one; /boot alone is not read (unmeasured)."""
-    text = "/boot/vmlinuz-5.14.0-427.el9.x86_64\n/usr/lib/modules/x/modules.dep\n"
+def test_only_a_kernel_image_names_a_kernel():
+    """A module directory's vmlinuz, or /boot/vmlinuz-<release> (Leap 15.6,
+    v0.37.0); not the bare /boot/vmlinuz link, not vmlinux.gz, not modules.dep."""
+    text = ("/boot/vmlinuz\n/boot/vmlinux-6.4.0-150600.23.100-default.gz\n"
+            "/usr/lib/modules/x/modules.dep\n/lib/modules/6.4.0-150600.23.100-default/kernel\n")
     assert K._rpm_kernel_releases(text) == []
 
 

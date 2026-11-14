@@ -103,7 +103,9 @@ class TestWhatItReads:
         monkeypatch.setattr(b.os, "scandir", denied)
         assert b._read_timeshift()[1:3] == (None, "unreadable")
 
-    def test_btrfs_mode(self, host):
+    def test_btrfs_mode(self, host, monkeypatch):
+        # v0.37.0 — unread in BTRFS mode only when `btrfs` cannot list them.
+        monkeypatch.setattr(b, "_command_exists", lambda name: name != "btrfs")
         host.config(schedule_daily="true", btrfs_mode="true")
         host.mount()
         assert b._read_timeshift()[1:3] == (None, "btrfs")

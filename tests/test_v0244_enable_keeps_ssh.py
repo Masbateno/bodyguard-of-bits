@@ -38,14 +38,14 @@ def _ports(*listeners, readable=True):
 class TestTheEnableCommand:
     def test_every_ssh_port_is_allowed_before_the_enable(self):
         cmd = _ufw.enable_cmd([2222, 22])
-        assert cmd == "sudo ufw allow 22/tcp && sudo ufw allow 2222/tcp && sudo ufw enable"
+        assert cmd == "sudo ufw allow 22/tcp && sudo ufw allow 2222/tcp && sudo ufw --force enable"
 
     def test_an_unknown_listening_set_gets_no_command(self):
         """A guess is not a way in: allowing 22 alone cuts an sshd on 2222."""
         assert _ufw.enable_cmd(None) is None
 
     def test_no_remote_sshd_enables_straight_away(self):
-        assert _ufw.enable_cmd([]) == "sudo ufw enable"
+        assert _ufw.enable_cmd([]) == "sudo ufw --force enable"
 
 
 class TestWhichPortsSshdAnswersOn:
@@ -105,7 +105,7 @@ class TestEveryEnableKeepsSsh:
     def test_firewall_inactive(self):
         finding = next(f for f in check_firewall(_ufw_inactive(), t=_t, ssh_ports=[2222]).findings
                        if f.key == "firewall.inactive")
-        assert finding.cmd.index("sudo ufw allow 2222/tcp") < finding.cmd.index("sudo ufw enable")
+        assert finding.cmd.index("sudo ufw allow 2222/tcp") < finding.cmd.index("sudo ufw --force enable")
 
     def test_firewall_inactive_without_ports_says_why_no_command(self):
         from bob import i18n
@@ -134,7 +134,7 @@ class TestEveryEnableKeepsSsh:
     def test_installing_ufw(self, manager):
         manager("apt")
         cmd, _ = _firewall_install_fix(_t, [2222])
-        assert cmd.index("sudo ufw allow 2222/tcp") < cmd.index("sudo ufw enable")
+        assert cmd.index("sudo ufw allow 2222/tcp") < cmd.index("sudo ufw --force enable")
 
     def test_installing_firewalld_keeps_the_ssh_service(self, manager):
         manager("dnf")
@@ -239,7 +239,7 @@ class TestEveryEnableKeepsSsh:
                                                               has_conntrack_rule=False, nft_no_input_filter=True),
                                           ufw_installed=True, t=_t, ssh_ports=[22])
         finding = next(f for f in result.findings if f.key == "firewall_iptables.nft_no_input_filter")
-        assert finding.cmd == "sudo ufw allow 22/tcp && sudo ufw enable"
+        assert finding.cmd == "sudo ufw allow 22/tcp && sudo ufw --force enable"
 
 
 def test_the_runner_hands_the_ssh_ports_to_both_checks():
@@ -260,10 +260,10 @@ class TestAnIpv6SshPath:
 
     def test_ipv6_is_turned_on_before_the_allow(self):
         cmd = _ufw.enable_cmd([22], ipv6_off=True)
-        assert cmd.index("IPV6=yes") < cmd.index("ufw allow 22/tcp") < cmd.index("ufw enable")
+        assert cmd.index("IPV6=yes") < cmd.index("ufw allow 22/tcp") < cmd.index("ufw --force enable")
 
     def test_no_remote_sshd_needs_no_ipv6_change(self):
-        assert _ufw.enable_cmd([], ipv6_off=True) == "sudo ufw enable"
+        assert _ufw.enable_cmd([], ipv6_off=True) == "sudo ufw --force enable"
 
     @pytest.mark.parametrize("listeners, expected", [
         ((_lp(22, "::"),), True),
@@ -295,7 +295,7 @@ class TestAnIpv6SshPath:
                                                               has_conntrack_rule=False, nft_no_input_filter=True),
                                           ufw_installed=True, t=_t, ssh_ports=[22], ufw_ipv6_off=True)
         cmd = next(f for f in result.findings if f.key == "firewall_iptables.nft_no_input_filter").cmd
-        assert cmd.index("IPV6=yes") < cmd.index("ufw enable")
+        assert cmd.index("IPV6=yes") < cmd.index("ufw --force enable")
 
 
 def test_the_runner_hands_the_ipv6_state_to_both_checks():

@@ -99,7 +99,7 @@ class TestNftRefusingIsNotAnAbsentBackend:
             IptablesNftSnapshot.from_system(), ufw_installed=True, ssh_ports=[22]
         )
         cmds = " ".join(f.cmd or "" for f in result.findings)
-        assert "ufw enable" in cmds
+        assert "ufw --force enable" in cmds
 
     def test_no_backend_at_all_still_deducts(self, tools):
         """The polarity twin: neither binary present is a real absence."""

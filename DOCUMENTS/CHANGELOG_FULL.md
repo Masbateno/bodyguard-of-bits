@@ -6,6 +6,228 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.37.0] — 2026-11-16
+
+**A minor release, BREAKING for scores: sshd_config Match blocks are read and
+weighed; a ufw disabled without a reboot is read as disabled; BOB's ufw enable
+fix takes effect when BOB runs it; a k3s agent's kubelet is asked and its API
+server named; Timeshift's BTRFS snapshots are listed; openSUSE Leap 15 kernels
+are read; rootless Docker containers are named; a clamd that refuses SHUTDOWN
+costs no point.**
+
+BREAKING for scores means: the same host can score differently under 0.36.0 and
+0.37.0 — global, per domain, and the `--history` trend across the upgrade. The
+scoring formula is unchanged; no section is added or removed; no option is added
+or removed; no finding key is renamed or removed. No JSON-output-schema or
+CSV-column change. New finding keys: `ssh.match_blocks_read`,
+`ssh.match_block_no_account`, `ssh.match_all_sets`, `kubernetes.apiserver_elsewhere`,
+`clamav.socket_open_shutdown_refused`. Texts that change:
+`ssh.allow_tcp_forwarding_default` (its detail said a Match block's value is not
+read; a `yes` there now costs the same point, named after the block); `ssh.match_block_skipped` (now only an `Include` inside a block, not
+followed); `backup.timeshift_why.btrfs` (what is missing to list the snapshots);
+every command BOB writes to turn ufw on — `firewall.inactive`,
+`firewall_iptables.input_accept` and the netfilter findings that offer ufw, and
+ufw's install fix — now ends with `sudo ufw --force enable`.
+
+Scores that move:
+
+| Where | 0.36.0 | 0.37.0 | § |
+|---|---|---|---|
+| ufw enabled then `ufw disable`, no reboot, iptables-nft (measured, Mint) | INFO "rules refuse some traffic, not established" ×2; risk LOW; firewall ≤ 10/10 | `firewall.inactive` ALERT (cap 3/10) + `firewall_iptables.input_accept` ALERT −3; risk HIGH (posture) | 1 |
+| A Match block reopening `PasswordAuthentication yes` for an address range (reproduced in code from `sshd -T -C`) | nothing (block not read) | `ssh.password_auth` WARN −2, naming the block | 3 |
+| `Match User root` with `PermitRootLogin yes` | nothing | `ssh.permit_root_login` −3, naming the block | 3 |
+| `Match User bobm` with `PermitRootLogin yes` (the block does not match root, measured) | nothing | nothing | 3 |
+| `PasswordAuthentication no`, then `Match all` / `PasswordAuthentication yes` (measured: yes for every session) | nothing | `ssh.password_auth` WARN −2, no command, + `ssh.match_all_sets` INFO | 3 |
+| `PasswordAuthentication yes` or unset, then `Match all` / `PasswordAuthentication no` (measured: no for every session) | `ssh.password_auth` WARN −2 | nothing | 3 |
+| k3s agent, kubelet at defaults (measured, openSUSE VM) | `kubernetes.kubelet_tls_unchecked` INFO, score "≤" | `kubernetes.kubelet_auth_ok` OK (401) | 4 |
+| k3s agent, kubelet with anonymous-auth=true and AlwaysAllow (measured: 200) | `kubernetes.kubelet_tls_unchecked` INFO, score "≤" | `kubernetes.kubelet_anonymous` ALERT −3 | 4 |
+| Timeshift BTRFS, a schedule on, no snapshot / newest 20 days old (measured, Fedora VM) | `backup.active` OK | `backup.installed_only` INFO + `backup.timeshift_none` / `backup.timeshift_stale` INFO — no point in either version | 5 |
+| clamd socket `srw-rw-rw-`, `EnableShutdownCommand false` (Ubuntu 24.04's ClamAV 1.5 package; measured: SHUTDOWN refused) | `clamav.socket_open_to_all` WARN −1 | `clamav.socket_open_shutdown_refused` INFO | 8 |
+
+### 1. A disabled ufw read as disabled again
+
+Measured on Linux Mint 22.3, ufw 0.36.2, iptables-nft (14 November 2026). After
+`ufw allow 22/tcp; ufw --force enable; ufw disable` — no reboot — the INPUT
+chains of both families still jump to ufw's chains (`ufw-before-input`,
+`ufw-reject-input`, `ufw6-track-input`…), all of them empty; the policy accepts
+everything. Since 0.27.0 BOB looks for a refusal in each rule with
+`\b(?:drop|reject|queue)\b`, which found "reject" inside `jump ufw-reject-input`.
+0.36.0 then said "No active firewall front-end … rules or chains on the way in
+refuse traffic" and "Default INPUT policy: ACCEPT, with rules that refuse some
+traffic … not established" (both INFO): risk LOW, firewall domain ≤ 10/10.
+Removing the jumps by hand, or rebooting, brought back what the kernel does:
+"UFW firewall is disabled" (ALERT, domain cap 3/10) and "Default INPUT policy:
+ACCEPT" (ALERT −3). A verdict word is now one only when it is not part of a
+name (`(?<![\w.-])…(?![\w.-])`); `tcp dport 22 drop`, `reject with …`, a
+verdict map and `queue num 1` still read as refusals.
+
+### 2. BOB's ufw enable fix takes effect when BOB runs it
+
+ufw asks "Command may disrupt existing ssh connections. Proceed with operation
+(y|n)?" when one of its parent processes is sshd (it walks them; the SSH
+environment variables play no part — measured, the question came without them).
+`--fix --apply` runs every command with stdin closed. Measured through BOB's own
+runner on the Mint, over SSH: `sudo ufw enable` returned exit code 0, ufw printed
+its cancellation and stayed inactive, and BOB counted the fix as applied;
+`sudo ufw --force enable` turned it on. BOB runs the bare form itself only when
+sshd answers on no external address; otherwise the fix — the allows first, then
+the enable — has shell operators and is shown to be run by hand. Both now end
+with `sudo ufw --force enable`: the question protects the SSH session, which the
+allows written before it already keep open.
+
+### 3. sshd_config Match blocks are read and weighed
+
+Until 0.37.0 the reader stopped at the first `Match` and said that what followed
+was not analysed: a block that reopened root logins or passwords for some
+connections cost nothing. Measured with `sshd -T -C` on copies of the Mint's
+configuration (OpenSSH 9.6p1): a `Match` in an included file ends with that
+file; everything after a `Match` belongs to the block until the next `Match`;
+within a block, the first value wins; a block's value beats an explicit global
+one, both ways, for `PasswordAuthentication`, `PermitRootLogin` and
+`MaxAuthTries` alike (measured from inside the block's address and from outside
+it). `Match all` is a block every session matches, not a return to the global
+settings: its value beats the global one, whether the global line stands before
+it or, once an included file's block has ended, after the Include (both measured),
+and, sshd keeping the value of the first matching block, a later
+block's value for the same key is never applied — while an earlier block's
+still is (twenty-three configurations measured with `sshd -T -C`). A `Match all` value is weighed as the effective setting, with no
+command — an edit of the global settings would not change it — and the section
+says which keys it sets.
+Each block's settings are laid over the global ones and judged on the global
+scale (decided with the user: a weakened setting costs as if it were global);
+each key costs once, whichever blocks reopen it, and not again if the global
+setting already cost it; the message names the block and its file, with no
+command (the global fix would not change the block). `PermitRootLogin` counts
+only in a block whose criteria can match root — measured: `Match User bobm` did not;
+`User root`, `User *`, `User !bobm,*`, `Group root` and an `Address` criterion
+did; `Group sudo` did not when root is not in sudo. A block that reaches no
+account is said (INFO). An `Include` inside a block is said and not followed,
+and the score is a ceiling.
+
+### 4. A k3s agent's kubelet is asked; its API server is named
+
+Measured with k3s v1.37.2+k3s1 (binary sha256 `265b3ee6…`): a Fedora 43 VM as
+the server, an openSUSE Leap 15.6 VM joined as an agent. On the agent, the
+kubelet runs in a root process named `k3s-agent` on port 10250, with a
+certificate issued by the cluster's server authority (SAN 127.0.0.1) that
+`/var/lib/rancher/k3s/agent/server-ca.crt` verifies (`client-ca.crt` does not).
+0.36.0 knew no authority for this process and did not ask the kubelet: "not
+asked", a ceiling — and with the agent's kubelet started with
+`anonymous-auth=true` and `authorization-mode=AlwaysAllow` (an anonymous GET
+/pods answered 200), it said exactly the same. 0.37.0 checks the certificate
+against the agent's copy of the authority, then asks: 401 → OK; anonymous requests answered (200, measured) →
+ALERT −3. The agent runs no API server (127.0.0.1:6444 is its own proxy to the
+server's): instead of "whether this node runs one … is not read", the API server
+is named by the address k3s keeps in `k3s-agent-load-balancer.json`, shown only
+when it is a plain https address; still a ceiling here. On the server node,
+0.36.0 and 0.37.0 say the same.
+
+### 5. Timeshift in BTRFS mode: the snapshots are listed
+
+Measured on a Fedora 43 VM whose subvolumes were renamed to the layout Timeshift
+requires (`@`, `@home`), Timeshift 25.12.4, its configuration written as its
+window writes it. A BTRFS snapshot is a subvolume
+`timeshift-btrfs/snapshots/<date>/@` at the top level of the volume, and nothing
+of it stays mounted once Timeshift has finished. 0.36.0 said so and stopped —
+and, a schedule being on, counted Timeshift as an active backup whatever the
+snapshots were: with every snapshot deleted, and with the newest 20 days old
+under a daily schedule, it still said "Backup solution active: timeshift".
+0.37.0 lists them read-only with `btrfs subvolume list -a` on a mount of the
+backup device — the root is mounted as `subvol=/@`, not with the volume's own
+root, so any mount of the device is used — and applies the rsync-mode rules:
+none → installed only, newest older than twice the longest schedule → installed
+only, with its age. No point is involved: the backup verdict changes, not the
+score. BOB mounts nothing; without btrfs-progs, or if it does not answer, the
+snapshots stay unread, as before.
+
+### 6. openSUSE Leap 15 kernels are read
+
+0.36.0 found installed kernels on rpm hosts by the module directory holding a
+`vmlinuz` (Fedora 44, openSUSE Leap 16.0). Measured on an openSUSE Leap 15.6 VM:
+`kernel-default-base` puts its image in `/boot/vmlinuz-<release>` only. With
+6.4.0-150600.23.100 running and 23.103 installed beside it, 0.36.0 read no kernel
+and said nothing of the reboot; 0.37.0 also reads `/boot/vmlinuz-<release>` (not
+the bare `/boot/vmlinuz` link) and says "Reboot pending" (INFO); after a reboot
+on 23.103 the line goes.
+
+### 7. Rootless Docker containers are named
+
+0.36.0 showed a rootless dockerd's containers by the first 12 characters of
+their ID: the shim carries the ID, and the OCI configuration has no name
+(measured). The name is in dockerd's state,
+`<data-root>/containers/<id>/config.v2.json`, owned by the user. Measured on the
+Mint (dockerd 29.1.3 from Ubuntu's `docker.io` package, started without root by the `dockerd-rootless.sh` script of moby v28.5.2): the data root found from `--data-root`, from the
+user's `daemon.json`, from `XDG_DATA_HOME`, or by default; each gave the name.
+The file is read like the OCI configuration (the user's regular file, no final
+symlink, ≤ 1 MiB) and kept only if its ID is the shim's and its name one Docker
+could give; otherwise the short ID stays.
+
+### 8. A clamd that refuses SHUTDOWN costs no point
+
+Since 0.25.0 a clamd socket every local account can reach costs a point, for
+"any of them can turn the antivirus off" — measured in 0.24.4 with ClamAV 1.4,
+which has no option to refuse that command. ClamAV 1.5 has one,
+`EnableShutdownCommand`, and Ubuntu 24.04's clamav-daemon 1.5.4 writes it
+`false` (as on Linux Mint 22.3, where a real audit took the point). Measured in
+Ubuntu 24.04 containers, an unprivileged user on the `srw-rw-rw-` socket: with
+`false` or `no`, PING got PONG and SHUTDOWN got COMMAND UNAVAILABLE, clamd kept
+running; with `true`, the same SHUTDOWN stopped it. BOB now reads the option in
+the configuration file that names the socket: `false` or `no` there (every time
+it is written) → `clamav.socket_open_shutdown_refused`, INFO, no point, the
+group setting still given; absent or `true` → the WARN −1, as before (measured:
+with no `EnableShutdownCommand` line, the same SHUTDOWN stopped ClamAV 1.5; ClamAV
+1.4 hosts — Debian 13 — do not change); a spelling not measured keeps the point too.
+
+### 9. Guards
+
+- New guard: the cross-benchmark CIS citation counts the README, README_FR and
+  SNAPSHOT state are read from `bob/data/cis_refs.json` (found stale while
+  assembling 0.36.0, unnoticed by any test).
+- The sshd Match reading is pinned to the measured table: each configuration's
+  value inside and outside the block, as `sshd -T -C` gave it, is the value
+  BOB weighs.
+- Each change above has its guard and its mutations. Re-anchored to the new
+  code: one mutation of 0.24.4 (the enable that keeps SSH, now `--force`), two of
+  0.35.0 (Timeshift's mode line); one of 0.36.0 re-aimed (its fixture also lists
+  `/boot/vmlinuz-<release>`, which made it inert); four more re-anchored where the
+  code they mutate moved (a rootless shim run by root, Timeshift's bind mount and
+  BTRFS branch, the documented locale-key total).
+
+### 10. Measured without a code change
+
+- fail2ban (Mint, real): an oracle in a network namespace (198.51.100.2 → the
+  host, an account that does not exist) — banned at package defaults; a jail
+  reading a file no syslog daemon writes (rsyslog masked) counted nothing, BOB
+  said so (WARN −1) and its fix (the journal backend) brought the bans back; a
+  stopped and disabled service, fixed by BOB's own runner; held after a reboot.
+- systemd: a world-writable timer script, a socket still listening with its
+  service gone, a stopped security service — each fix run by BOB's runner, each
+  finding gone at the next audit.
+
+### Limits
+
+- An `Include` inside a Match block is not followed.
+- BOB compares no criteria between Match blocks other than `Match all`: a
+  block whose sessions an earlier block already takes, for the same key —
+  through identical or merely overlapping criteria — is still counted (measured: two identical `Match Address` blocks, `no` then
+  `yes` — sshd applies `no`, BOB counts `yes`, −2; likewise a `/25` block after a
+  `/24` one). The error is on the side of
+  a deduction too many.
+- A k3s agent's API server is audited on the server node, not from the agent.
+- Timeshift's BTRFS snapshots need btrfs-progs to be listed.
+
+### Tests
+
+**Tests** 22208 → **22436**, mutations 2030 → **2070**, all killed. New test
+files: `test_v0370_chain_name_is_not_a_verdict.py`,
+`test_v0370_ufw_enable_unattended.py`, `test_v0370_sshd_match_blocks.py`,
+`test_v0370_k3s_agent.py`, `test_v0370_timeshift_btrfs.py`,
+`test_v0370_rpm_kernel_in_boot.py`, `test_v0370_rootless_docker_names.py`,
+`test_v0370_cis_citation_counts.py`, `test_v0370_clamd_shutdown_refused.py`. Each guard has a mutation that brings its
+defect back.
+
+---
+
 ## [0.36.0] — 2026-11-15
 
 **A minor release, BREAKING for scores: rootless podman and rootless-dockerd

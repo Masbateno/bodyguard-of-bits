@@ -1,3 +1,24 @@
+bodyguard-of-bits (0.37.0-1) unstable; urgency=medium
+
+  * Minor, BREAKING for scores (ufw left disabled, sshd Match blocks, k3s
+    agent kubelet); no JSON-schema or CSV-column change.
+  * After ufw disable without a reboot, a chain named ufw-reject-input is no
+    longer read as a refusal: the disabled firewall is said again.
+  * BOB's ufw enable fix is written ufw --force enable: run with stdin
+    closed under SSH, the bare form was cancelled with exit code 0.
+  * sshd_config Match blocks are read and weighed on the global scale, once
+    per key; Match all is a block every session matches; PermitRootLogin
+    counts only in a block whose criteria can match root.
+  * A k3s agent's kubelet is checked against the agent's copy of the
+    server authority and asked; its API server is named.
+  * Timeshift BTRFS snapshots are listed with btrfs subvolume list.
+  * openSUSE Leap 15 kernels are read from /boot/vmlinuz-<release>.
+  * Rootless Docker containers are shown by name.
+  * A clamd socket open to every account costs no point when its
+    configuration refuses SHUTDOWN (EnableShutdownCommand false, ClamAV 1.5).
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 16 Nov 2026 09:00:00 +0000
+
 bodyguard-of-bits (0.36.0-1) unstable; urgency=medium
 
   * Minor, BREAKING for scores (IPv6 forwarding, Incus, Samba, kubeadm,

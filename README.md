@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.36.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.37.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -138,7 +138,7 @@ bob --explain ssh.password_auth   # explain a finding (no sudo)
 
 ## Sample output
 
-An excerpt of a real run on a Linux Mint 22.3 test host (BOB 0.36.0, run as root; the `desktop` profile chosen automatically). `⋮` marks lines left out; the header box also leaves out the logo and some rows.
+An excerpt of a real run on a Linux Mint 22.3 test host (BOB 0.37.0, run as root; the `desktop` profile chosen automatically). `⋮` marks lines left out; the header box also leaves out the logo and some rows.
 
 ```
 $ sudo bob
@@ -147,7 +147,7 @@ $ sudo bob
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.36.0  │  Linux hardening auditor                                      ║
+║  BOB 0.37.0  │  Linux hardening auditor                                      ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : 🌿  Linux Mint 22.3                                         ║
 ║  Kernel        : 7.0.0-43-generic                                            ║
@@ -181,11 +181,11 @@ $ sudo bob
 ║  Visibility : 2 section(s) not fully read — the score is a ceiling           ║
 ║  Network context : IPv4 behind NAT, public IPv6 (router filter unverified)   ║
 ║  Audit profile : Desktop                                                     ║
-║  Duration : 59.4 s                                                           ║
+║  Duration : 59.5 s                                                           ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  ✖ Action required                                                           ║
 ║    ✖  UFW firewall is disabled. Your machine is currently unprotected.       ║
-║       → sudo ufw allow 22/tcp && sudo ufw enable                             ║
+║       → sudo ufw allow 22/tcp && sudo ufw --force enable                     ║
 ║       [CIS:4.1.3]                                                            ║
 ║       ? bob --explain firewall.inactive                                      ║
 ⋮

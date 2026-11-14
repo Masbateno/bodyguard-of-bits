@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.36.0
+Version:        0.37.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,14 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Mon Nov 16 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.37.0-1
+- Minor, BREAKING for scores; no JSON-schema or CSV-column change.
+  ufw left disabled read as disabled; ufw enable fix forced; sshd Match
+  blocks weighed, Match all a block; k3s agent kubelet asked and its API
+  server named; Timeshift BTRFS snapshots listed; Leap 15 kernels read
+  from /boot; rootless Docker containers named; a clamd that refuses
+  SHUTDOWN costs no point.
+
 * Sun Nov 15 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.36.0-1
 - Minor, BREAKING for scores; no JSON-schema or CSV-column change.
   Rootless containers examined from their OCI configuration; a stopped

@@ -209,6 +209,14 @@ _HELPER_DISPATCH_SITES: dict[tuple[str, str], tuple[str, ...]] = {
     ("bob/checks/services.py", "_check_port_exposure"): (
         "services.exposed.<id>",
     ),
+    # v0.37.0 — re-emits, once per key, a deduction the global sshd checks
+    # gave a Match block's merged settings (ssh.password_auth,
+    # ssh.permit_root_login…). No command on purpose: the global fix rewrites
+    # the global directive, and the block named in the message would keep
+    # overriding it; the edit is in that block.
+    ("bob/checks/ssh/_subchecks.py", "_check_match_blocks"): (
+        "ssh.<id>",
+    ),
 }
 
 

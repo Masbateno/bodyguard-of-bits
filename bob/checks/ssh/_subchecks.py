@@ -414,17 +414,147 @@ def _check_sshd_config(snapshot: SSHSnapshot, result: CheckResult, _t,
             key="ssh.no_allow_users",
         )
 
-    if cfg.get("_match_block"):
-        result.info(
-            message=_t("ssh.match_block_skipped"),
-            key="ssh.match_block_skipped",
-        )
+    # v0.37.0 — Match blocks read and weighed as the global settings are
+    # (decided with the user on 14 November 2026: same scale).
+    if _check_match_blocks(snapshot, result, _t, ssh_exposed):
+        found_issue = True
 
     if not found_issue:
         result.ok(message=_t("ssh.config_ok"), key="ssh.config_ok")
 
     if snapshot.sshd_config_drifted:
         result.qualify("ssh.config_newer_than_service", since=_directives_from)
+
+# ---------------------------------------------------------------------------
+# v0.37.0 — Match blocks
+# ---------------------------------------------------------------------------
+
+def _pattern_list_match(name: str, plist: str) -> bool:
+    """sshd's pattern-list rule (measured: ``User !bobm,*`` matched every
+    account but bobm): a negated pattern that matches refuses, else any
+    positive one that matches accepts. Wildcards ``*`` and ``?``."""
+    got = False
+    for pat in plist.split(","):
+        pat = pat.strip()
+        if not pat:
+            continue
+        neg = pat.startswith("!")
+        if neg:
+            pat = pat[1:]
+        if fnmatchcase(name, pat):
+            if neg:
+                return False
+            got = True
+    return got
+
+
+def _account_groups(user: str) -> "set[str]":
+    """The names of *user*'s groups: primary and supplementary."""
+    import grp
+    import pwd
+    out: "set[str]" = set()
+    try:
+        out.add(grp.getgrgid(pwd.getpwnam(user).pw_gid).gr_name)
+    except (KeyError, OverflowError):
+        pass
+    try:
+        out.update(g.gr_name for g in grp.getgrall() if user in g.gr_mem)
+    except OSError:
+        pass
+    return out
+
+
+def _match_reaches(criteria: str, user: str) -> bool:
+    """Whether a Match block's criteria can take a session of *user*: false
+    only when a User or Group criterion leaves that account out (measured:
+    ``Match User bobm`` left root's sessions to the global settings, ``Match
+    Group root`` took them, ``Match Group sudo`` did not). Host, Address and
+    the other criteria depend on where a session comes from: they can."""
+    words = criteria.split()
+    if len(words) == 1 and words[0].lower() == "all":
+        return True
+    for kw, value in zip(words[0::2], words[1::2], strict=False):
+        kw = kw.lower()
+        if kw == "user" and not _pattern_list_match(user, value):
+            return False
+        if kw == "group" and not any(_pattern_list_match(g, value) for g in _account_groups(user)):
+            return False
+    return True
+
+
+def _match_reaches_an_account(criteria: str) -> bool:
+    """Whether any account on this host can match the block."""
+    import pwd
+    try:
+        users = [p.pw_name for p in pwd.getpwall()]
+    except OSError:
+        return True                      # unread: assume it can
+    return any(_match_reaches(criteria, u) for u in users)
+
+
+def _check_match_blocks(snapshot: SSHSnapshot, result: CheckResult, _t, ssh_exposed: bool) -> bool:
+    """v0.37.0 — each Match block's settings over the global ones, weighed on
+    the same scale; a key already counted (globally or by an earlier block)
+    is not counted again. PermitRootLogin in a block that cannot take root's
+    sessions changes nothing for root (measured) and is left out. Returns
+    True when a block weakened a weighed setting."""
+    from dataclasses import replace
+    cfg = snapshot.sshd_config
+    unread = cfg.get("_match_include_unread") or []
+    if unread:
+        shown = "; ".join(unread[:3]) + (f" (+{len(unread) - 3})" if len(unread) > 3 else "")
+        result.info(message=_t("ssh.match_block_skipped", includes=shown),
+                    key="ssh.match_block_skipped", template_vars={"includes": shown})
+    blocks = cfg.get("_match_blocks") or []
+    if not blocks:
+        return False
+    match_all = cfg.get("_match_all_keys") or {}
+    if match_all:
+        # Already the effective values in cfg (the parser put them there): said
+        # here, so a finding judged on them without a command is explained.
+        keys = ", ".join(sorted(match_all))
+        files = ", ".join(sorted(set(match_all.values())))
+        result.info(message=_t("ssh.match_all_sets", keys=keys, file=files),
+                    key="ssh.match_all_sets", template_vars={"keys": keys, "file": files})
+    base = {k: v for k, v in cfg.items() if not k.startswith("_match")}
+    counted = {d.key for d in result.deductions}
+    weakened = False
+    for blk in blocks:
+        criteria, where = blk["criteria"], blk["file"]
+        if not _match_reaches_an_account(criteria):
+            result.info(message=_t("ssh.match_block_no_account", criteria=criteria, file=where),
+                        key="ssh.match_block_no_account", template_vars={"criteria": criteria, "file": where})
+            continue
+        settings = dict(blk["settings"])
+        if "permitrootlogin" in settings and not _match_reaches(criteria, "root"):
+            settings.pop("permitrootlogin")
+        merged = dict(base)
+        merged.update(settings)
+        scratch = CheckResult()
+        _check_sshd_config(replace(snapshot, sshd_config=merged), scratch, _t, ssh_exposed=ssh_exposed)
+        for d in scratch.deductions:
+            if d.key in counted:
+                continue
+            counted.add(d.key)
+            f = next((x for x in scratch.findings if x.key == d.key), None)
+            what = f.message if f is not None else d.key
+            vars_ = {"criteria": criteria, "file": where, "finding": what}
+            if f is not None and f.level == FindingLevel.ALERT:
+                result.alert_with_deduction(
+                    key=d.key, points=d.points, nature="action",
+                    message=_t("ssh.match_block_weakens", criteria=criteria, file=where, finding=what),
+                    detail=_t("ssh.match_block_weakens_detail"), template_vars=vars_)
+            else:
+                result.warn_with_deduction(
+                    key=d.key, points=d.points, nature="action",
+                    message=_t("ssh.match_block_weakens", criteria=criteria, file=where, finding=what),
+                    detail=_t("ssh.match_block_weakens_detail"), template_vars=vars_)
+            weakened = True
+    shown = "; ".join(f"Match {b['criteria']}" for b in blocks[:5]) + (f" (+{len(blocks) - 5})" if len(blocks) > 5 else "")
+    result.info(message=_t("ssh.match_blocks_read", count=len(blocks), blocks=shown),
+                key="ssh.match_blocks_read", template_vars={"count": len(blocks), "blocks": shown})
+    return weakened
+
 
 def _check_weak_algo(
     cfg: dict, result: "CheckResult", _t,

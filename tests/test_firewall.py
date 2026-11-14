@@ -83,7 +83,7 @@ class TestUFWInactive:
         status = make_status(active=False)
         result = check_firewall(status, ssh_ports=[22])   # v0.24.4: unknown ports get no command
         alert = next(f for f in result.findings if f.level == FindingLevel.ALERT)
-        assert "ufw enable" in alert.cmd
+        assert "ufw --force enable" in alert.cmd
 
     def test_no_further_checks_when_inactive(self):
         """Policy and IPv6 checks must not run when UFW is inactive."""
