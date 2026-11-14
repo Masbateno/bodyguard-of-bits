@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.35.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.36.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -139,7 +139,7 @@ bob --explain ssh.password_auth   # expliquer un résultat (sans sudo)
 
 ## Aperçu de la sortie
 
-Extrait d'un vrai audit sur une Linux Mint 22.3 de test (BOB 0.35.0, lancé en root ; profil `desktop` choisi automatiquement). `⋮` marque des lignes omises ; le cadre d'en-tête omet aussi le logo et quelques lignes.
+Extrait d'un vrai audit sur une Linux Mint 22.3 de test (BOB 0.36.0, lancé en root ; profil `desktop` choisi automatiquement). `⋮` marque des lignes omises ; le cadre d'en-tête omet aussi le logo et quelques lignes.
 
 ```
 $ sudo bob
@@ -148,7 +148,7 @@ $ sudo bob
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.35.0  │  Auditeur de durcissement Linux                               ║
+║  BOB 0.36.0  │  Auditeur de durcissement Linux                               ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  Système       : 🌿  Linux Mint 22.3                                         ║
 ║  Noyau         : 7.0.0-43-generic                                            ║
@@ -163,7 +163,7 @@ $ sudo bob
 └──────────────────────────────────────────────────────────────────────────────┘
 
 ℹ [INFO] Filtrage par chemin inverse en mode permissif (rp_filter=2) — envisagez le mode strict (=1)
-✔ [OK] L'acceptation des redirections ICMP est désactivée
+⚠ [ATTENTION] Redirections ICMP acceptées — risque de manipulation de la table de routage
 ℹ [INFO] Journalisation des paquets martiens désactivée — les paquets usurpés ne seront pas tracés
 ✔ [OK] L'écho de diffusion ICMP est ignoré
 ✔ [OK] Protection SYN flood active (tcp_syncookies=1)
@@ -177,12 +177,12 @@ $ sudo bob
 ⋮
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║  Score de sécurité : ≤ 8/10                                                  ║
+║  Score de sécurité : ≤ 7/10                                                  ║
 ║  Niveau de risque : ✖ ÉLEVÉ au mieux  (majoré par posture : pare-feu inactif)║
 ║  Visibilité : 2 section(s) non entièrement lue(s) — le score est un plafond  ║
 ║  Contexte réseau : IPv4 en NAT, IPv6 publique (filtrage box non vérifié)     ║
 ║  Profil d'audit : Desktop                                                    ║
-║  Durée : 1 min 02 s                                                          ║
+║  Durée : 47.6 s                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  ✖ À corriger                                                                ║
 ║    ✖  Le pare-feu UFW est désactivé. Votre machine n'est actuellement pas    ║
@@ -197,9 +197,9 @@ $ sudo bob
   Pare-feu & Réseau     ≤ 3/10  ███░░░░░░░
   Exposition & Services   9/10  █████████░
   Contrôle d'accès       10/10  ██████████
-  Durcissement système    6/10  ██████░░░░
+  Durcissement système    7/10  ███████░░░
   Santé & Résilience      8/10  ████████░░
-  Détection des menaces   9/10  █████████░
+  Détection des menaces      —  signalé, non noté
 ```
 
 Chaque point de la liste *À corriger* affiche une référence CIS quand il y en a une, une commande de remédiation quand il en existe une, et un indicateur `--explain` qui pointe vers l'explication détaillée.
@@ -227,7 +227,7 @@ Chaque point de la liste *À corriger* affiche une référence CIS quand il y en
 
 ## Mapping des benchmarks CIS
 
-239 entrées : **90 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 7 CIS Kubernetes 2.0 · 1 CIS Red Hat 8/9 · 134 bonnes pratiques**, plus **259 citations inter-benchmarks** sur 94 clés (CIS Debian 12/13 et CIS Ubuntu 24.04), sourcées depuis [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) pour que chaque numéro de contrôle soit vérifiable et non inventé.
+241 entrées : **91 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 7 CIS Kubernetes 2.0 · 1 CIS Red Hat 8/9 · 135 bonnes pratiques**, plus **262 citations inter-benchmarks** sur 95 clés (CIS Debian 12/13 et CIS Ubuntu 24.04), sourcées depuis [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) pour que chaque numéro de contrôle soit vérifiable et non inventé.
 
 Chaque résultat avec un code CIS formel affiche `[CIS:X.Y.Z]` en ligne dans la boîte de synthèse.  
 Le texte de référence complet est montré en mode `--verbose`.  
@@ -252,7 +252,7 @@ Sans sudo. Entièrement hors ligne — aucun appel externe ni collecte de donné
 | Profil | Cas d'usage |
 |--------|------------|
 | `server` | Par défaut — chaque constat à sa pleine sévérité. Utilisé quand aucun profil n'est défini, sauf si BOB trouve un gestionnaire d'affichage actif : il prend alors `desktop` et le dit dans une ligne INFO |
-| `desktop` | Assoupli pour les machines personnelles — étend `server` et ramène 37 constats en INFO, dont l'authentification SSH par mot de passe et les redirections SSH, les mises à jour automatiques, l'absence de sauvegarde, auditd, AppArmor sans profil en mode enforce, Secure Boot, et la fraîcheur des analyses rootkit / ClamAV / intégrité des fichiers |
+| `desktop` | Assoupli pour les machines personnelles — étend `server` et ramène 38 constats en INFO, dont l'authentification SSH par mot de passe et les redirections SSH, les mises à jour automatiques, l'absence de sauvegarde, auditd, AppArmor sans profil en mode enforce, Secure Boot, et la fraîcheur des analyses rootkit / ClamAV / intégrité des fichiers |
 | `workstation` | Profil business first-class depuis v0.8.1 (plus un alias vers `desktop`) — garde backup / auditd / AppArmor (aucun profil chargé, aucun en mode enforce) au niveau WARN tout en relâchant la même ergonomie SSH / clamav / rootkit / file-integrity que `desktop` |
 | `container` | Étend `desktop` et saute 17 sections propres à l'hôte : durcissement sysctl, modules noyau et durcissement noyau, Secure Boot, Raspberry Pi, auditd, suid_audit, Docker-in-Docker, disque et mémoire, fail2ban, ClamAV, NTP, politique MAC, sauvegarde, et les outils de détection d'intrusion et d'intégrité (rootkit, intégrité des fichiers) |
 

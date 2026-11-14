@@ -165,6 +165,7 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "docker_hardening.docker_group_unknown",
     # v0.35.0 — the same for the lxd group.
     "docker_hardening.lxd_group_unknown",
+    "docker_hardening.incus_admin_group_unknown",
     # v0.35.0 — a dockerd its socket unit would start is not asked: its
     # running containers (live-restore) or whether any run, unknown.
     "docker_hardening.runtime_not_started_live",

@@ -450,6 +450,24 @@
       }
     }
   },
+  "firewall_drivers.ip6_forward_enabled": {
+    "ref": "CIS Ubuntu 22.04 L1 — 3.3.1 — Ensure ip forwarding is disabled (Automated)",
+    "code": "CIS:3.3.1",
+    "benchmarks": {
+      "CIS Ubuntu 24.04": {
+        "code": "3.3.1",
+        "title": "Ensure ip forwarding is disabled (Automated)"
+      },
+      "CIS Debian 12": {
+        "code": "3.3.1",
+        "title": "Ensure ip forwarding is disabled (Automated)"
+      },
+      "CIS Debian 13": {
+        "code": "3.3.2.1",
+        "title": "Ensure net.ipv6.conf.all.forwarding is configured (Automated)"
+      }
+    }
+  },
   "firewall_drivers.iptables_bypass": {
     "ref": "Best practice — Avoid raw iptables ACCEPT rules in INPUT that bypass UFW chains",
     "ref_fr": "Bonne pratique — Éviter les règles iptables ACCEPT brutes dans INPUT qui contournent les chaînes UFW",
@@ -2311,6 +2329,11 @@
   "docker_hardening.lxd_group_root": {
     "ref": "Best practice — LXD security documentation: local access to LXD through its Unix socket always grants full access; give it only to users you would trust with root access",
     "ref_fr": "Bonne pratique — documentation de sécurité de LXD : l'accès local à LXD par son socket Unix donne toujours un accès complet ; ne le donner qu'aux utilisateurs à qui l'on confierait l'accès root",
+    "code": null
+  },
+  "docker_hardening.incus_admin_group_root": {
+    "ref": "Best practice — Incus security documentation: local access to Incus through its Unix socket always grants full access; give it only to users you would trust with root access",
+    "ref_fr": "Bonne pratique — documentation de sécurité d'Incus : l'accès local à Incus par son socket Unix donne toujours un accès complet ; ne le donner qu'aux utilisateurs à qui l'on confierait l'accès root",
     "code": null
   }
 }

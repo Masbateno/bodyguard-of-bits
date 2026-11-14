@@ -1224,7 +1224,8 @@ def run_checks(
     # ---- CHECK 38 — Docker container security audit ----
     _sec("docker_hardening", DockerAuditSnapshot.from_system, check_docker_audit,
          skip_if=lambda s: not s.runtime and not s.rootless_containers and not s.docker_group_members and not s.lxd_group_members
-         and not s.rootless_dockerd and not s.containerd_other)
+         and not s.rootless_dockerd and not s.containerd_other
+         and not s.incus_admin_members and not s.incus_user_members)
 
     # ---- CHECK — Kubernetes node: pods' rights, kubelet anonymous access ----
     _sec("kubernetes", KubernetesSnapshot.from_system, check_kubernetes,

@@ -32,6 +32,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t, service_restart_cmd
+from bob.checks._rootless_oci import is_exec_conmon as _is_exec_conmon
+from bob.checks._rootless_oci import rootless_containers as _rootless_oci
 from bob.checks._docker_daemon import containerd_elsewhere, moby_containers, rootless_dockerd, socket_listener, system_dockerd_state
 from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
@@ -107,11 +109,19 @@ class DockerAuditSnapshot:
     #: `docker ps` started it, measured a10350); and the Docker containers
     #: running all the same, counted by their containerd shim (-namespace moby).
     not_started:               list[str] = field(default_factory=list)
+    #: v0.36.0 — runtimes not asked because their daemon is stopped and none
+    #: of its containers runs: no root dockerd, nothing listening on the
+    #: system socket, no root shim in Docker's namespace (measured on Linux
+    #: Mint 22.3: `docker ps` then failed, which left the score an upper bound).
+    stopped_runtimes:          list[str] = field(default_factory=list)
     moby_running:              "int | None" = None
     #: v0.35.0 — users running a rootless dockerd → their containers (shims
     #: in the moby namespace owned by them). Not asked: nothing is run as
     #: another user, as for rootless podman (0.33.0).
     rootless_dockerd:          dict = field(default_factory=dict)
+    #: v0.36.0 — each rootless container (podman or rootless dockerd) with its
+    #: OCI configuration's shape when root could read it (_rootless_oci).
+    rootless_oci:              list = field(default_factory=list)
     #: v0.35.0 — containers containerd runs as root outside Docker and
     #: Kubernetes (namespace → count): seen from their shims, not examined.
     containerd_other:          dict = field(default_factory=dict)
@@ -130,6 +140,19 @@ class DockerAuditSnapshot:
     #: the LXD snap creates, measured): counted, and named apart.
     docker_group_system:       list[str] = field(default_factory=list)
     lxd_group_system:          list[str] = field(default_factory=list)
+    #: v0.36.0 — Incus, read as LXD is. Its security documentation: "The
+    #: root user and all members of the incus-admin group can interact with
+    #: the local daemon." / "Local access to Incus through the Unix socket
+    #: always grants full access to Incus. Therefore, you should only give such
+    #: access to users who you'd trust with root access to your system."; the
+    #: incus group is "restricted to a single project tied to their user"
+    #: (authorization page). Measured on Debian 13 (incus 6.0.4, a10360).
+    incus_admin_members:       list[str] = field(default_factory=list)
+    incus_admin_socket_rw:     "bool | None" = False
+    incus_admin_listed:        list[str] = field(default_factory=list)
+    incus_admin_nonroot:       list[int] = field(default_factory=list)
+    incus_admin_system:        list[str] = field(default_factory=list)
+    incus_user_members:        list[str] = field(default_factory=list)
 
     @classmethod
     def from_system(cls) -> "DockerAuditSnapshot":
@@ -142,27 +165,36 @@ class DockerAuditSnapshot:
         rootless = _rootless_podman()
         rl_docker = rootless_dockerd()
         ctrd = containerd_elsewhere()
+        oci = _rootless_oci() if (rootless or rl_docker) else []
         members, socket_rw, listed, nonroot = _docker_group()
         lm, lrw, ll, lnr = _group_socket("lxd", _LXD_SOCKETS)
+        im, irw, il, inr = _group_socket("incus-admin", _INCUS_SOCKETS)
         lxd = dict(lxd_group_members=lm, lxd_socket_group_rw=lrw, lxd_group_listed=ll, lxd_socket_nonroot=lnr,
-                   lxd_group_system=_system_accounts(lm), docker_group_system=_system_accounts(members))
+                   lxd_group_system=_system_accounts(lm), docker_group_system=_system_accounts(members),
+                   incus_admin_members=im, incus_admin_socket_rw=irw, incus_admin_listed=il, incus_admin_nonroot=inr,
+                   incus_admin_system=_system_accounts(im),
+                   incus_user_members=_group_socket("incus", _INCUS_USER_SOCKETS)[0])
         if not runtimes:
-            return cls(runtime="", docker_installed=False, rootless_containers=rootless, rootless_dockerd=rl_docker, containerd_other=ctrd,
+            return cls(runtime="", docker_installed=False, rootless_containers=rootless, rootless_dockerd=rl_docker, rootless_oci=oci, containerd_other=ctrd,
                        docker_group_members=members, docker_socket_group_rw=socket_rw,
                        docker_group_listed=listed, docker_socket_nonroot=nonroot, **lxd)
         is_docker = "docker" in runtimes
         userns_remap = _read_userns_remap() if is_docker else False
         snap = cls(runtime=runtimes[0], docker_installed=is_docker, runtimes=runtimes,
-                   userns_remap=userns_remap, rootless_containers=rootless, rootless_dockerd=rl_docker, containerd_other=ctrd,
+                   userns_remap=userns_remap, rootless_containers=rootless, rootless_dockerd=rl_docker, rootless_oci=oci, containerd_other=ctrd,
                    docker_group_members=members, docker_socket_group_rw=socket_rw,
                    docker_group_listed=listed, docker_socket_nonroot=nonroot, **lxd)
         seen: "set[str]" = set()
         for rt in runtimes:
             # v0.35.0 — asking a dockerd that only its socket unit would start
             # starts it: count its containers from /proc instead.
-            if rt == "docker" and system_dockerd_state() in ("socket", "unknown"):
+            state = system_dockerd_state() if rt == "docker" else ""
+            if state in ("socket", "unknown"):
                 snap.not_started.append(rt)
                 snap.moby_running = moby_containers()
+                continue
+            if state == "stopped" and moby_containers() == 0:
+                snap.stopped_runtimes.append(rt)
                 continue
             containers = _inspect(rt)
             if containers is None:
@@ -191,7 +223,7 @@ class DockerAuditSnapshot:
                 if not user or user in ("root", "0", "0:0", "0:root"):
                     snap.root_containers.append(name)
         # Nothing could be listed at all: the check says so and asserts nothing.
-        asked = [rt for rt in runtimes if rt not in snap.not_started]
+        asked = [rt for rt in runtimes if rt not in snap.not_started and rt not in snap.stopped_runtimes]
         snap.scan_error = bool(asked) and len(snap.failed_runtimes) == len(asked)
         for lst in (snap.privileged_containers, snap.socket_mounted_containers,
                     snap.root_containers, snap.host_network_containers):
@@ -233,6 +265,15 @@ _DOCKER_SOCKETS = (Path("/var/run/docker.sock"), Path("/run/docker.sock"))
 #: answered "auth: trusted", a non-member's refused. /var/lib/lxd is the
 #: non-snap path, not measured: the same checks decide there.
 _LXD_SOCKETS = (Path("/var/snap/lxd/common/lxd/unix.socket"), Path("/var/lib/lxd/unix.socket"))
+#: v0.36.0 — measured on Debian 13 (LXD 5.0.2 from the Debian package): the
+#: second path above, srw-rw---- root lxd, held by systemd and lxd (root); a
+#: member "auth: trusted", a non-member refused. Incus 6.0.4: unix.socket is
+#: root:incus-admin 660, held by systemd and incusd (root), a member trusted,
+#: anyone else refused; unix.socket.user is root:incus 660, served by
+#: incus-user (root), which put an incus member in a project of their own
+#: (restricted: disks under their home, their own uid only).
+_INCUS_SOCKETS = (Path("/var/lib/incus/unix.socket"),)
+_INCUS_USER_SOCKETS = (Path("/var/lib/incus/unix.socket.user"),)
 
 
 def _docker_group() -> "tuple[list[str], bool | None, list[str], list[int]]":
@@ -367,6 +408,15 @@ def _rootless_podman() -> "dict[str, int]":
         try:
             if (pid / "comm").read_text(errors="replace").strip() != "conmon":
                 continue
+            # v0.36.0 — `podman exec` runs a conmon of its own for the session
+            # (flags -e / --exec, the container's name): measured on Fedora 44,
+            # podman 5.8.1, it was counted as one more container.
+            try:
+                argv = (pid / "cmdline").read_bytes().split(b"\0")
+            except OSError:
+                argv = []                   # unreadable: counted, as before
+            if _is_exec_conmon(argv):
+                continue
             uid_line = next(ln for ln in (pid / "status").read_text(errors="replace").splitlines()
                             if ln.startswith("Uid:"))
             uid = int(uid_line.split()[1])
@@ -426,19 +476,69 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
     _t = t if t is not None else _identity_t
     result = CheckResult()
 
-    # v0.33.0 — what was not examined, said first and whatever follows.
-    if snapshot.rootless_containers:
-        users = ", ".join(f"{u} ({n})" for u, n in sorted(snapshot.rootless_containers.items()))
+    # v0.36.0 — rootless containers whose OCI configuration root read: said
+    # with their shape, no point (each runs with at most its user's rights,
+    # measured), and no longer an upper bound. The others stay unexamined.
+    read_by: "dict[tuple[str, str], int]" = {}
+    for c in snapshot.rootless_oci:
+        if c.read:
+            read_by[(c.runtime, c.user)] = read_by.get((c.runtime, c.user), 0) + 1
+    podman_unread = {u: n - read_by.get(("podman", u), 0) for u, n in snapshot.rootless_containers.items()
+                     if n - read_by.get(("podman", u), 0) > 0}
+    docker_unread = {u: n - read_by.get(("docker", u), 0) for u, n in snapshot.rootless_dockerd.items()
+                     if n - read_by.get(("docker", u), 0) > 0}
+    examined = [c for c in snapshot.rootless_oci if c.read]
+    idle_dockerd = sorted(u for u, n in snapshot.rootless_dockerd.items() if n == 0)
+    if examined or idle_dockerd:
+        per: "dict[tuple[str, str], int]" = dict(read_by)
+        for u in idle_dockerd:
+            per.setdefault(("docker", u), 0)
+        users = ", ".join(f"{u} ({rt}, {n})" for (rt, u), n in sorted(per.items(), key=lambda kv: (kv[0][1], kv[0][0])))
+        result.info(
+            message=_t("docker_hardening.rootless_examined", count=len(examined), users=users),
+            detail=_t("docker_hardening.rootless_examined_detail"),
+            key="docker_hardening.rootless_examined",
+            template_vars={"count": len(examined), "users": users},
+        )
+        wide = [c for c in examined if c.privileged or c.sys_admin or c.host_net or c.host_pid or c.host_paths]
+        if wide:
+            def _shape(c) -> str:
+                parts = []
+                if c.privileged:
+                    parts.append(_t("docker_hardening.rootless_shape_privileged"))
+                elif c.sys_admin:
+                    parts.append(_t("docker_hardening.rootless_shape_sys_admin"))
+                if c.host_net:
+                    # Keys spelled out: the orphan-key guard reads them so.
+                    parts.append(_t("docker_hardening.rootless_shape_host_net_docker") if c.runtime == "docker"
+                                 else _t("docker_hardening.rootless_shape_host_net_podman"))
+                if c.host_pid:
+                    parts.append(_t("docker_hardening.rootless_shape_host_pid"))
+                if c.host_paths:
+                    parts.append(_t("docker_hardening.rootless_shape_host_paths", paths=", ".join(c.host_paths[:3])
+                                    + (f" (+{len(c.host_paths) - 3})" if len(c.host_paths) > 3 else "")))
+                return f"{c.name} ({c.user}, {c.runtime}: {'; '.join(parts)})"
+            shown = " · ".join(_shape(c) for c in wide[:5]) + (f" (+{len(wide) - 5})" if len(wide) > 5 else "")
+            result.info(
+                message=_t("docker_hardening.rootless_shapes", count=len(wide), containers=shown),
+                detail=_t("docker_hardening.rootless_shapes_detail"),
+                key="docker_hardening.rootless_shapes",
+                template_vars={"count": len(wide), "containers": shown},
+            )
+    # v0.33.0 — what was not examined, said whatever follows.
+    if podman_unread:
+        users = ", ".join(f"{u} ({n})" for u, n in sorted(podman_unread.items()))
         result.info(
             message=_t("docker_hardening.rootless_unexamined",
-                       count=sum(snapshot.rootless_containers.values()), users=users),
+                       count=sum(podman_unread.values()), users=users),
             detail=_t("docker_hardening.rootless_unexamined_detail"),
             key="docker_hardening.rootless_unexamined",
-            template_vars={"count": sum(snapshot.rootless_containers.values()), "users": users},
+            template_vars={"count": sum(podman_unread.values()), "users": users},
         )
-    # v0.35.0 — rootless dockerd: said, its containers not examined.
-    if snapshot.rootless_dockerd:
-        users = ", ".join(f"{u} ({n})" for u, n in sorted(snapshot.rootless_dockerd.items()))
+    # v0.35.0 — rootless dockerd: said, its containers not examined
+    # (v0.36.0: those whose configuration could not be read).
+    if docker_unread:
+        users = ", ".join(f"{u} ({n})" for u, n in sorted(docker_unread.items()))
         result.info(
             message=_t("docker_hardening.rootless_dockerd", users=users),
             detail=_t("docker_hardening.rootless_dockerd_detail"),
@@ -467,6 +567,11 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
         else:
             result.info(message=_t("docker_hardening.runtime_not_started_unread"),
                         key="docker_hardening.runtime_not_started_unread")
+    # v0.36.0 — a stopped dockerd with no container left running: said, not asked.
+    if snapshot.stopped_runtimes:
+        result.info(message=_t("docker_hardening.runtime_stopped", runtimes=", ".join(snapshot.stopped_runtimes)),
+                    key="docker_hardening.runtime_stopped",
+                    template_vars={"runtimes": ", ".join(snapshot.stopped_runtimes)})
     if snapshot.failed_runtimes and not snapshot.scan_error:
         result.info(
             message=_t("docker_hardening.runtime_unreachable", runtimes=", ".join(snapshot.failed_runtimes)),
@@ -552,7 +657,46 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
         else:
             result.info(message=_t("docker_hardening.lxd_group_dormant", count=len(snapshot.lxd_group_members), users=lusers),
                         key="docker_hardening.lxd_group_dormant", template_vars=lvars)
+    # v0.36.0 — the incus-admin group, read as the lxd group; the incus
+    # group is confined to a project of each member's own: said, not counted.
+    if snapshot.incus_admin_members:
+        iusers = _members_text(snapshot.incus_admin_members, snapshot.incus_admin_system, _t)
+        ivars = {"count": len(snapshot.incus_admin_members), "users": iusers}
+        if snapshot.incus_admin_socket_rw:
+            other = ((snapshot.docker_group_members and snapshot.docker_socket_group_rw)
+                     or (snapshot.lxd_group_members and snapshot.lxd_socket_group_rw))
+            result.warn_with_deduction(
+                same_power="root_through_a_daemon_group",
+                yields=True,
+                note=_t("docker_hardening.incus_admin_group_root_counted_once") if other else "",
+                key="docker_hardening.incus_admin_group_root",
+                message=_t("docker_hardening.incus_admin_group_root", count=len(snapshot.incus_admin_members), users=iusers),
+                reason=_t("docker_hardening.incus_admin_group_root_reason", users=iusers),
+                points=2,
+                nature="action",
+                detail=_t("docker_hardening.incus_admin_group_root_detail"),
+                cmd=" && ".join(f"sudo gpasswd -d {shlex.quote(u)} incus-admin" for u in snapshot.incus_admin_listed),
+                cmd_type="fix",
+                template_vars=ivars,
+            )
+        elif snapshot.incus_admin_nonroot:
+            iuids = ", ".join(str(u) for u in snapshot.incus_admin_nonroot)
+            result.info(message=_t("docker_hardening.incus_admin_group_not_root", count=len(snapshot.incus_admin_members), users=iusers, uids=iuids),
+                        key="docker_hardening.incus_admin_group_not_root", template_vars=dict(ivars, uids=iuids))
+        elif snapshot.incus_admin_socket_rw is None:
+            result.info(message=_t("docker_hardening.incus_admin_group_unknown", count=len(snapshot.incus_admin_members), users=iusers),
+                        key="docker_hardening.incus_admin_group_unknown", template_vars=ivars)
+        else:
+            result.info(message=_t("docker_hardening.incus_admin_group_dormant", count=len(snapshot.incus_admin_members), users=iusers),
+                        key="docker_hardening.incus_admin_group_dormant", template_vars=ivars)
+    if snapshot.incus_user_members:
+        uusers = ", ".join(snapshot.incus_user_members)
+        result.info(message=_t("docker_hardening.incus_user_group", count=len(snapshot.incus_user_members), users=uusers),
+                    key="docker_hardening.incus_user_group",
+                    template_vars={"count": len(snapshot.incus_user_members), "users": uusers})
     if not snapshot.runtimes and not snapshot.runtime and (snapshot.rootless_containers
+                                                           or snapshot.incus_admin_members
+                                                           or snapshot.incus_user_members
                                                            or snapshot.lxd_group_members
                                                            or snapshot.docker_group_members
                                                            or snapshot.rootless_dockerd
@@ -571,9 +715,11 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
         # v0.34.0 — the runtimes asked, named: on a host with Podman only the
         # section read "Docker" beside "Docker not installed".
         _all = snapshot.runtimes or ([snapshot.runtime] if snapshot.runtime else [])
-        _asked = ", ".join(rt for rt in _all if rt not in snapshot.not_started) or "—"
-        # v0.35.0 — no "no containers" when the only runtime was not asked.
-        if not _all or any(rt not in snapshot.not_started for rt in _all):
+        _skipped = snapshot.not_started + snapshot.stopped_runtimes
+        _asked = ", ".join(rt for rt in _all if rt not in _skipped) or "—"
+        # v0.35.0 — no "no containers" when the only runtime was not asked
+        # (v0.36.0: nor when it was stopped — runtime_stopped says so).
+        if not _all or any(rt not in _skipped for rt in _all):
             result.ok(
                 message=_t("docker_hardening.no_containers", runtimes=_asked),
                 key="docker_hardening.no_containers",

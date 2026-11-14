@@ -29,7 +29,7 @@ import subprocess
 from dataclasses import dataclass, field
 
 from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t, run_result
-from bob.checks.firewall_stack import _libvirt_routing
+from bob.checks.firewall_stack import _libvirt_routing, _process_runs
 from bob.scoring import CheckResult
 
 #: v0.31.3 — the libvirt forward modes that write firewall rules (NAT, routed).
@@ -85,7 +85,8 @@ class VirtSnapshot:
           - libvirt/KVM  — virsh or libvirtd + virbr* interfaces
           - VirtualBox   — vboxmanage or vboxdrv + vboxnet* interfaces
           - VMware       — vmware binary + vmnet* interfaces
-          - LXD/LXC      — lxd or lxc binary + lxdbr* interfaces
+          - LXD/LXC      — lxd or lxc binary, or an lxdbr*/lxcbr* bridge while lxd runs
+          - Incus        — incus binary, or an incusbr* bridge while incusd runs (v0.36.0)
           - Snap network — snaps with active network interfaces
         """
         snap = cls()
@@ -125,13 +126,26 @@ class VirtSnapshot:
                 risk_note="creates virtual network interfaces that may bypass UFW via iptables",
             ))
 
-        # LXD / LXC
+        # LXD / LXC — v0.36.0: a bridge alone no longer names it. Measured on
+        # Debian 13: lxdbr0 (and the inet lxd table) stayed after the LXD
+        # package was purged, and the section went on naming LXD/LXC.
         lxdbr = [i for i in ifaces if i.startswith("lxdbr") or i.startswith("lxcbr")]
-        if _command_exists("lxd") or _command_exists("lxc") or lxdbr:
+        if _command_exists("lxd") or _command_exists("lxc") or (lxdbr and _process_runs("lxd")):
             snap.technologies.append(VirtTechnology(
                 name="LXD/LXC",
                 iface=lxdbr[0] if lxdbr else "lxdbr0",
                 risk_note="creates bridge interfaces with iptables rules that may bypass UFW",
+            ))
+
+        # Incus — v0.36.0: LXD's fork, measured on Debian 13 (Incus 6.0.4):
+        # incusd and its NAT bridge incusbr0 (and incusbr-<uid> per confined
+        # user); the section did not name it.
+        incusbr = [i for i in ifaces if i.startswith("incusbr")]
+        if _command_exists("incus") or (incusbr and _process_runs("incusd")):
+            snap.technologies.append(VirtTechnology(
+                name="Incus",
+                iface=incusbr[0] if incusbr else "incusbr0",
+                risk_note="creates bridge interfaces with firewall rules that may bypass UFW",
             ))
 
         # Snap network packages
@@ -261,31 +275,52 @@ def _libvirt_rules() -> "tuple[dict | None, str]":
     (a NAT network), "open" when one admits new connections (a routed
     network, measured reached from outside past UFW). None when the chain
     cannot be listed; {"": "nft"} when libvirt's own nftables table exists
-    and its guest_input chain could not be read."""
+    and its guest_input chain could not be read.
+
+    v0.36.0 — both backends are read. Measured on Debian 13 (libvirt 11.3,
+    a10360): after switching firewall_backend to nftables, an empty
+    LIBVIRT_FWI chain stayed in iptables (`-N LIBVIRT_FWI`, no rule) while
+    the rules lived in `table ip libvirt_network`; 0.35.0 read the empty
+    chain, said "admits nothing", and the routed network's VM was reached
+    from outside. A bridge named by one backend takes its rules; named by
+    both, it is "open" only if both admit new connections — each base chain
+    of the forward hook sees the packet and can refuse it."""
     res = run_result("iptables", "-S", "LIBVIRT_FWI")
-    if not res.ok:
-        # Measured on Fedora 44 (libvirt 12.0, nftables backend, firewalld
-        # 2.x, a3f0350): the same rules in `table ip libvirt_network`, chain
-        # guest_input — the NAT network refused from outside, the routed one
-        # reached (firewalld's libvirt-routed-in policy accepts from any zone).
-        chain = run_result("nft", "list", "chain", "ip", "libvirt_network", "guest_input")
-        if chain.ok:
-            return _libvirt_inbound_nft(chain.stdout), "nftables"
-        nft = run_result("nft", "list", "table", "ip", "libvirt_network")
-        return ({"": "nft"} if nft.ok else None), ""
-    out: "dict" = {}
-    for line in res.stdout.splitlines():
-        if not _FWI_ACCEPT.search(line):
-            continue
-        m_if = re.search(r"\s-o\s+(\S+)", line)
-        if not m_if:
-            continue
-        m_net = re.search(r"\s-d\s+(\S+)", line)
-        kind = "replies" if re.search(r"--ctstate\s+\S*ESTABLISHED", line) else "open"
-        prev = out.get(m_if.group(1), ("", "replies"))
-        out[m_if.group(1)] = (m_net.group(1) if m_net else prev[0],
-                              "open" if "open" in (kind, prev[1]) else "replies")
-    return out, "iptables"
+    ipt: "dict | None" = None
+    if res.ok:
+        ipt = {}
+        for line in res.stdout.splitlines():
+            if not _FWI_ACCEPT.search(line):
+                continue
+            m_if = re.search(r"\s-o\s+(\S+)", line)
+            if not m_if:
+                continue
+            m_net = re.search(r"\s-d\s+(\S+)", line)
+            kind = "replies" if re.search(r"--ctstate\s+\S*ESTABLISHED", line) else "open"
+            prev = ipt.get(m_if.group(1), ("", "replies"))
+            ipt[m_if.group(1)] = (m_net.group(1) if m_net else prev[0],
+                                  "open" if "open" in (kind, prev[1]) else "replies")
+    # Measured on Fedora 44 (libvirt 12.0, nftables backend, firewalld 2.x,
+    # a3f0350): the same rules in `table ip libvirt_network`, chain
+    # guest_input — the NAT network refused from outside, the routed one
+    # reached (firewalld's libvirt-routed-in policy accepts from any zone).
+    chain = run_result("nft", "list", "chain", "ip", "libvirt_network", "guest_input")
+    nft = _libvirt_inbound_nft(chain.stdout) if chain.ok else None
+    if ipt is None and nft is None:
+        table = run_result("nft", "list", "table", "ip", "libvirt_network")
+        return ({"": "nft"} if table.ok else None), ""
+    if not nft:
+        return (ipt if ipt is not None else {}), ("iptables" if ipt is not None else "nftables")
+    if not ipt:
+        return nft, "nftables"
+    merged = dict(ipt)
+    for bridge, (net, kind) in nft.items():
+        if bridge in merged:
+            pnet, pkind = merged[bridge]
+            merged[bridge] = (net or pnet, "open" if kind == "open" and pkind == "open" else "replies")
+        else:
+            merged[bridge] = (net, kind)
+    return merged, "nftables"
 
 
 def _libvirt_inbound_nft(text: str) -> "dict":

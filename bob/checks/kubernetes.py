@@ -245,8 +245,9 @@ _PROC = Path("/proc")
 #: the kubelet self-signed by its own authority, kept beside its certificate in
 #: <cert-dir>/kubelet.crt (pki/ca.crt did not verify it). The name 127.0.0.1 is
 #: not checked: it was missing from the kubelet's certificate on MicroK8s and
-#: from both on kubeadm. A k3s agent and a kubelet with its own tlsCertFile or
-#: serverTLSBootstrap were not measured: not checked, so not asked.
+#: from both on kubeadm. A k3s agent and a kubelet with its own tlsCertFile were
+#: not measured: not checked, so not asked (serverTLSBootstrap: measured in
+#: v0.36.0, see _upstream_kubelet_ca).
 _MICROK8S_CA = Path("/var/snap/microk8s/current/certs/ca.crt")
 _K3S_SERVER_CA = Path("/var/lib/rancher/k3s/server/tls/server-ca.crt")
 _KUBELET_CERT_DIR = "/var/lib/kubelet/pki"
@@ -283,6 +284,8 @@ def _read_apiserver(snap: "KubernetesSnapshot") -> None:
     ALERT −2 for a stopped API server while k3s's ran Node,RBAC."""
     if not _microk8s_runs():
         _read_k3s_apiserver(snap)
+        if snap.authorization_modes is None:
+            _read_kube_apiserver_process(snap)
         return
     try:
         text = _MICROK8S_APISERVER_ARGS.read_text(encoding="utf-8", errors="replace")
@@ -329,6 +332,77 @@ def _read_k3s_apiserver(snap: "KubernetesSnapshot") -> None:
         # The kubeconfig is named: a KUBECONFIG in BOB's environment would
         # otherwise point k3s's kubectl at another cluster.
         res = run_result(kubectl, f"--kubeconfig={_K3S_KUBECONFIG}", "get", "clusterrolebindings",
+                         "-o", "json", timeout=_CTR_TIMEOUT)
+        if res.ok:
+            snap.broad_admin_bindings = _broad_admin_bindings(res.stdout)
+
+
+#: v0.36.0 — kubeadm: the API server is a ``kube-apiserver`` process of its
+#: own (a static pod), its flags readable in /proc. Measured on kubeadm 1.37.2
+#: (Debian 13, a10360): one process, uid 0, `--authorization-mode=Node,RBAC`,
+#: `--secure-port=6443`; its certificate on 6443 verified by the file its
+#: `--client-ca-file` names (/etc/kubernetes/pki/ca.crt) — a setting that
+#: authenticates clients; that the same cluster authority signs the serving
+#: certificate is what was measured on kubeadm (a mismatch leaves the API
+#: server said and not asked, as for MicroK8s and k3s); an anonymous GET of
+#: /api/v1/namespaces answered 403; `kubectl --kubeconfig=/etc/kubernetes/
+#: admin.conf get clusterrolebindings` read the bindings.
+_KUBEADM_ADMIN_CONF = Path("/etc/kubernetes/admin.conf")
+
+
+def _cmdline_args(pid: str) -> "dict[str, str] | None":
+    """``--name=value`` / ``--name value`` of a process's command line."""
+    try:
+        raw = (_PROC / pid / "cmdline").read_bytes()
+    except OSError:
+        return None
+    words = [w.decode("utf-8", "replace") for w in raw.split(b"\0") if w]
+    args: "dict[str, str]" = {}
+    for i, word in enumerate(words):
+        if word.startswith("--"):
+            name, eq, value = word.partition("=")
+            if not eq and i + 1 < len(words) and not words[i + 1].startswith("--"):
+                value = words[i + 1]
+            args[name] = value
+    return args
+
+
+def _proc_uid(pid: str) -> "int | None":
+    """0 when every user id of the process is root (the four of ``Uid:``, as
+    _owner reads them), else the real one; None when unread or when BOB does
+    not see the host's user ids."""
+    if not _host_user_ids():
+        return None
+    try:
+        status = (_PROC / pid / "status").read_text(errors="replace")
+    except OSError:
+        return None
+    m = re.search(r"^Uid:\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*$", status, re.MULTILINE)
+    if not m:
+        return None
+    return 0 if m.groups() == ("0", "0", "0", "0") else int(m.group(1)) or -1
+
+
+def _read_kube_apiserver_process(snap: "KubernetesSnapshot") -> None:
+    """v0.36.0 — the one ``kube-apiserver`` process running as root (kubeadm):
+    its authorization mode and port from its command line, its certificate
+    checked against the authority its ``--client-ca-file`` names (measured to
+    sign the serving certificate on kubeadm; a mismatch: not asked), the bindings through
+    ``kubectl`` with kubeadm's admin.conf. Two such processes, or one not run
+    by root, are not read."""
+    pids = [p for p in _pids_named("kube-apiserver") if _proc_uid(p) == 0]
+    if len(pids) != 1:
+        return
+    args = _cmdline_args(pids[0])
+    if args is None:
+        return
+    snap.authorization_modes = _modes(args)
+    port = args.get("--secure-port", "")
+    snap.apiserver_port = int(port) if port.isdigit() else None
+    ca = args.get("--client-ca-file")
+    _probe_apiserver(snap, Path(ca) if ca else None)
+    if "RBAC" in snap.authorization_modes and _command_exists("kubectl") and path_exists(_KUBEADM_ADMIN_CONF):
+        res = run_result("kubectl", f"--kubeconfig={_KUBEADM_ADMIN_CONF}", "get", "clusterrolebindings",
                          "-o", "json", timeout=_CTR_TIMEOUT)
         if res.ok:
             snap.broad_admin_bindings = _broad_admin_bindings(res.stdout)
@@ -865,8 +939,11 @@ def _upstream_kubelet_ca() -> "Path | None":
     self-signed by (kubeadm 1.37.2, measured): ``<cert-dir>/kubelet.crt``, the
     directory from ``--cert-dir`` (default /var/lib/kubelet/pki). None when the
     one kubelet process or its configuration cannot be read, or when it serves
-    another certificate (``--tls-cert-file``, ``tlsCertFile``,
-    ``serverTLSBootstrap``) — not measured."""
+    another certificate (``--tls-cert-file``, ``tlsCertFile``) — not
+    measured. v0.36.0 — under ``serverTLSBootstrap: true``, the kubelet's
+    ``clientCAFile``: a client-authentication setting, used because the
+    authority it names signed the serving certificate on kubeadm (measured);
+    a mismatch leaves the kubelet unasked."""
     pids = _pids_named("kubelet")
     if len(pids) != 1:
         return None
@@ -888,8 +965,22 @@ def _upstream_kubelet_ca() -> "Path | None":
         config = read_text_capped(Path(args["--config"]), encoding="utf-8", errors="replace")
     except OSError:
         return None
-    if re.search(r"^\s*(tlsCertFile|serverTLSBootstrap)\s*:", config, re.MULTILINE):
+    if re.search(r"^\s*tlsCertFile\s*:", config, re.MULTILINE):
         return None
+    # v0.36.0 — serverTLSBootstrap: true, measured on kubeadm 1.37.2 (Debian
+    # 13, a10360): no kubelet.crt; until its CSR is approved the kubelet
+    # refuses the TLS handshake on 10250, then serves a certificate issued by
+    # the cluster's authority (CN=kubernetes). The file the kubelet's
+    # authentication.x509.clientCAFile names (/etc/kubernetes/pki/ca.crt) is
+    # that authority's certificate and verified it — the parameter's role is to
+    # authenticate clients; that the same authority signs the serving
+    # certificate is what was measured on kubeadm, not what the parameter
+    # means. Where another authority signs it, the check fails (TLS_MISMATCH)
+    # and the kubelet is said and not asked — never read as answered.
+    boot = re.search(r"^\s*serverTLSBootstrap\s*:\s*(\S+)", config, re.MULTILINE)
+    if boot and boot.group(1).strip("\"'").lower() == "true":
+        ca = re.search(r"^\s*clientCAFile\s*:\s*(\S+)", config, re.MULTILINE)
+        return Path(ca.group(1).strip("\"'")) if ca else None
     return Path(args.get("--cert-dir") or _KUBELET_CERT_DIR) / "kubelet.crt"
 
 

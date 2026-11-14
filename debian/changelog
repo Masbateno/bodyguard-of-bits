@@ -1,3 +1,24 @@
+bodyguard-of-bits (0.36.0-1) unstable; urgency=medium
+
+  * Minor, BREAKING for scores (IPv6 forwarding, Incus, Samba, kubeadm,
+    AllowTcpForwarding default, upper bounds); no JSON-schema or CSV-column
+    change.
+  * Rootless podman and rootless-dockerd containers are examined from their
+    OCI configuration, read as root; their shapes named, no point, no upper
+    bound. A podman exec session no longer counts as a container.
+  * A stopped system dockerd with no root shim is not asked.
+  * net.ipv6.conf.all.forwarding is read and judged as IPv4's forwarding.
+  * LXD and Incus count as routing mechanisms; the incus-admin group costs
+    two points once per host with docker and lxd; the incus group is said.
+  * libvirt's rules are read in both firewall backends.
+  * smb.conf synonyms and [global] share defaults read as samba reads them.
+  * kubeadm: a kubelet under serverTLSBootstrap is checked and asked; the
+    API server is read from its process.
+  * Installed kernels read from the rpm packages that provide kernel.
+  * AllowTcpForwarding absent from sshd_config is an INFO, not a point.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 15 Nov 2026 09:00:00 +0000
+
 bodyguard-of-bits (0.35.0-1) unstable; urgency=medium
 
   * Minor, BREAKING for scores (docker and lxd groups, routing check,

@@ -298,7 +298,8 @@ class TestExplainAuditInvariants:
         # → 238: docker_hardening.docker_group_root (v0.34.0: the docker group
         # grants root-level privileges, Docker's documentation).
         # → 239: docker_hardening.lxd_group_root (v0.35.0).
-        assert len(EXPLAIN_KEYS) == 239, (
+        # → 241: firewall_drivers.ip6_forward_enabled, docker_hardening.incus_admin_group_root (v0.36.0).
+        assert len(EXPLAIN_KEYS) == 241, (
             f"EXPLAIN_KEYS length drifted from the v0.8.0 baseline 168 "
             f"to {len(EXPLAIN_KEYS)}. If intentional, update the audit "
             f"document and bump the constant in this test."

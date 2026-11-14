@@ -21,7 +21,9 @@ import pytest
 from bob.checks.ssh import check_ssh
 from tests.test_ssh import base_snapshot
 
-_KEYS = {"ssh.x11.forwarding.server", "ssh.allow_tcp_forwarding"}
+# v0.36.0 — AllowTcpForwarding absent (its default, yes) is said under its own
+# INFO key, without a point (decision C1); DisableForwarding still silences it.
+_KEYS = {"ssh.x11.forwarding.server", "ssh.allow_tcp_forwarding_default"}
 
 
 def _found(cfg):

@@ -166,8 +166,9 @@ class SambaSnapshot:
         # both spellings to the same effective protocol. The `client`-side
         # parameters are deliberately not consulted: they govern what this host
         # will speak *to* a server, not what it accepts as one.
-        min_proto = _section_get(glb, "server min protocol", "min protocol").lower()
-        max_proto = _section_get(glb, "server max protocol", "max protocol").lower()
+        # v0.36.0 — the synonyms are folded into these names by _Params.
+        min_proto = _section_get(glb, "server min protocol").lower()
+        max_proto = _section_get(glb, "server max protocol").lower()
         # SMB1 if max_protocol is an SMB1 value, or if min_protocol is SMB1
         # and max_protocol is not set (defaults to NT1 on many systems)
         if max_proto in _SMB1_PROTOCOLS:
@@ -210,8 +211,8 @@ class SambaSnapshot:
         for section_name, opts in conf.items():
             if section_name.lower() in _META_SECTIONS:
                 continue
-            # guest ok = yes  OR  public = yes
-            is_guest = _is_yes(opts, "guest ok") or _is_yes(opts, "public")
+            # guest ok = yes (public is its synonym, folded in by _Params)
+            is_guest = _is_yes(opts, "guest ok")
             if not is_guest:
                 continue
             # v0.15.4: ``writeable`` was missing from this set. samba accepts
@@ -220,18 +221,15 @@ class SambaSnapshot:
             # guest share written with the "e" was reported as read-only:
             # samba.guest_readonly (WARN, 1 point) instead of
             # samba.guest_writable (ALERT, 2 points).
-            writable = (
-                _is_yes(opts, "writable")
-                or _is_yes(opts, "writeable")
-                or _is_yes(opts, "write ok")
-                or _section_get(opts, "read only").lower() in ("no", "false", "0")
-            )
+            # v0.36.0 — writable, writeable and write ok are read only's
+            # inverted synonyms, folded in by _Params: the last one written wins.
+            writable = _section_get(opts, "read only").lower() in ("no", "false", "0")
             share = GuestShare(
                 name=section_name,
                 # ``directory`` is samba's synonym for ``path`` (testparm
                 # resolves it to ``path``); reading only the latter left the
                 # finding naming an empty directory.
-                path=_section_get(opts, "path", "directory"),
+                path=_section_get(opts, "path"),
                 writable=writable,
             )
             snap.guest_shares.append(share)
@@ -393,19 +391,48 @@ def check_samba(snapshot: SambaSnapshot, t: TranslationFunc | None = None) -> Ch
 # Helpers
 # ---------------------------------------------------------------------------
 
+#: v0.36.0 — the smb.conf(5) synonyms of the parameters BOB reads, folded
+#: into the one samba stores: measured with testparm 4.19.5 (a10360,
+#: 14 November 2026), the last assignment wins whatever its spelling —
+#: `server min protocol = SMB2` then `min protocol = NT1` serves NT1 (BOB read
+#: SMB2: it took the first spelling present), `path` then `directory` keeps the
+#: directory, `guest ok = yes` then `public = no` is not a guest share,
+#: `writeable = yes` then `read only = yes` is read-only, and `protocol`
+#: sets the server's maximum (BOB did not read it).
+_SYNONYMS = {"minprotocol": "serverminprotocol", "maxprotocol": "servermaxprotocol",
+             "protocol": "servermaxprotocol", "directory": "path", "public": "guestok",
+             "writable": "readonly", "writeable": "readonly", "writeok": "readonly"}
+#: The synonyms that mean the opposite of the parameter they set.
+_INVERTED = frozenset({"writable", "writeable", "writeok"})
+#: v0.36.0 — share parameters a [global] section gives the shares declared
+#: after it (measured: `guest ok = yes` and `read only = no` in [global] made
+#: a share without either a writable guest share; a share declared before
+#: [global] kept the defaults).
+_SHARE_DEFAULTS = ("guestok", "readonly")
+
+
 class _Params(dict):
     """A section's parameters, looked up as samba matches names (v0.28.0):
     case and whitespace in a parameter name do not matter (smb.conf(5):
     "internal whitespace in section and parameter names is irrelevant"). An
     underscore does: measured with testparm 4.22.11, `serverminprotocol = NT1`
     read NT1 and `server_min_protocol = NT1` was ignored (SMB2_02, the
-    default) — reading it as NT1 would claim an SMB1 samba does not run."""
+    default) — reading it as NT1 would claim an SMB1 samba does not run.
+    v0.36.0 — a synonym is stored under the parameter it sets (_SYNONYMS),
+    inverted for writeable and its kin, so the last assignment wins as in
+    samba."""
 
     @staticmethod
     def _norm(key: object) -> object:
-        return re.sub(r"\s+", "", key).lower() if isinstance(key, str) else key
+        if not isinstance(key, str):
+            return key
+        name = re.sub(r"\s+", "", key).lower()
+        return _SYNONYMS.get(name, name)
 
     def __setitem__(self, key, value):
+        if isinstance(key, str) and re.sub(r"\s+", "", key).lower() in _INVERTED and isinstance(value, str):
+            low = value.strip().lower()
+            value = "no" if low in ("yes", "true", "1") else "yes" if low in ("no", "false", "0") else value
         super().__setitem__(self._norm(key), value)
 
     def __getitem__(self, key):
@@ -467,7 +494,15 @@ def _read_smb_conf(path: Path, refused: "list[str] | None" = None, included: "li
                 continue
             if line.startswith("["):
                 name = " ".join(line[1:].split("]", 1)[0].split()).lower()
-                state["current"] = result.setdefault(name, _Params())
+                if name not in result:
+                    fresh = _Params()
+                    glb = result.get("global")
+                    if name != "global" and glb is not None:
+                        for param in _SHARE_DEFAULTS:
+                            if param in glb:
+                                dict.__setitem__(fresh, param, glb[param])
+                    result[name] = fresh
+                state["current"] = result[name]
                 continue
             current = state["current"]
             if current is None or "=" not in line:

@@ -176,11 +176,16 @@ class KernelModulesSnapshot:
         # --- Installed kernels (rpm), v0.35.0 ---------------------------------
         # Measured on Fedora 44 (b5f0350): kernel 7.3.3 installed while 6.19.10
         # ran; 0.34.0, which read dpkg only, said nothing of the reboot.
+        # v0.36.0 — any rpm family: the packages that provide "kernel"
+        # (kernel-core on Fedora, kernel-default on openSUSE), read by the
+        # module directory each installs, whose name is the running kernel's
+        # `uname -r` (measured in containers, 14 November 2026: openSUSE Leap
+        # 16.0's kernel-default 6.12.0-160000.41.1.x86_64 installs
+        # /usr/lib/modules/6.12.0-160000.41-default/vmlinuz — its package
+        # version never matched uname, so 0.35.0 said nothing there).
         if not snap.dpkg_available and _command_exists("rpm"):
-            rpm_out = _run("rpm", "-q", "kernel-core", "--qf", "%{VERSION}-%{RELEASE}.%{ARCH}\\n", timeout=10)
-            if rpm_out:
-                snap.rpm_kernels = [ln.strip() for ln in rpm_out.splitlines()
-                                    if ln.strip() and " " not in ln.strip()]
+            rpm_out = _run("rpm", "-q", "--whatprovides", "kernel", "--qf", "[%{FILENAMES}\\n]", timeout=10)
+            snap.rpm_kernels = _rpm_kernel_releases(rpm_out or "")
 
         # --- Reboot asked by a package (update-notifier) -----------------------
         snap.reboot_required, snap.reboot_required_pkgs = _read_reboot_required()
@@ -315,6 +320,22 @@ def check_kernel_modules(
 # ---------------------------------------------------------------------------
 # Private helpers — kernel cleanup
 # ---------------------------------------------------------------------------
+
+_RPM_MODULE_DIR = re.compile(r"^/(?:usr/)?lib/modules/([^/\s]+)/vmlinuz$")
+
+
+def _rpm_kernel_releases(text: str) -> "list[str]":
+    """v0.36.0 — the kernel releases (``uname -r`` form) in the file lists
+    of the packages that provide ``kernel``: each module directory holding a
+    vmlinuz (both measured families list one). rpm writes its "no package
+    provides kernel" on stdout (rc 1): it does not match and yields []."""
+    found: "list[str]" = []
+    for ln in text.splitlines():
+        m = _RPM_MODULE_DIR.match(ln.strip())
+        if m and m.group(1) not in found:
+            found.append(m.group(1))
+    return found
+
 
 def _rpm_version_key(v: str) -> tuple:
     """Order rpm kernel names by their numbers, part by part

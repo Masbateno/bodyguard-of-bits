@@ -85,6 +85,12 @@ class FirewallStackSnapshot:
     docker_present:      bool = False
     wireguard_present:   bool = False
     libvirt_present:     bool = False
+    #: v0.36.0 — LXD or Incus routes through the host: its daemon runs (lxd,
+    #: incusd) and one of its bridges exists. Measured on Debian 13 (Incus
+    #: 6.0.4, a10360): with net.ipv4.ip_forward and net.ipv6.conf.all.forwarding
+    #: set back to 0, starting Incus set both to 1 again for its NAT bridge
+    #: incusbr0 — as libvirt does, and BOB charged a point for each.
+    lxd_incus_present:   bool = False
     kubernetes_running:  bool = False
     #: v0.33.0 — the ``-A FORWARD … -j ACCEPT`` lines in ``-S`` form (``-L``
     #: prints neither interfaces nor ``-i``/``-o``), to tell whose a rule is;
@@ -103,6 +109,14 @@ class FirewallStackSnapshot:
     #: WireGuard gateway routing its client to a LAN counts each datagram.
     forwarded_v4:        "int | None" = None
     uptime_s:            "float | None" = None
+    #: v0.36.0 — net.ipv6.conf.all.forwarding is 1, and the IPv6 datagrams
+    #: forwarded since boot (/proc/net/snmp6, ``Ip6OutForwDatagrams``; None
+    #: when unread). Measured in network namespaces (a10360): all.forwarding=1
+    #: routes IPv6 between interfaces, 0 refuses it on every interface — the
+    #: per-interface knobs alone do not route; a WireGuard client with IPv6
+    #: traffic in its tunnel stays at 0, its gateway counts each datagram.
+    ip6_forward:         bool = False
+    forwarded_v6:        "int | None" = None
 
     @classmethod
     def from_system(cls) -> "FirewallStackSnapshot":
@@ -158,6 +172,7 @@ class FirewallStackSnapshot:
         )
 
         ip_forward = _read_ip_forward()
+        ip6_forward = _read_ip6_forward()
 
         # v0.32.0 — Docker and WireGuard while they run, not because they are
         # installed (libvirt went the same way in v0.31.3). Measured on Ubuntu
@@ -172,6 +187,7 @@ class FirewallStackSnapshot:
         # libvirt/KVM also requires ip_forward and manages FORWARD rules —
         # v0.31.3: while one of its networks routes, not because it is installed.
         libvirt_present = _libvirt_routing()
+        lxd_incus_present = _lxd_incus_routing()
 
         return cls(
             input_raw_accepts=input_raw,
@@ -184,6 +200,7 @@ class FirewallStackSnapshot:
             docker_present=docker_present,
             wireguard_present=wireguard_present,
             libvirt_present=libvirt_present,
+            lxd_incus_present=lxd_incus_present,
             kubernetes_running=kubelet_running(),
             forward_accepts_s=_parse_raw_accepts_s(_run("iptables", "-S", "FORWARD")),
             wireguard_ifaces=wireguard_ifaces,
@@ -191,6 +208,8 @@ class FirewallStackSnapshot:
             host_ifaces=_host_ifaces(),
             forwarded_v4=_forwarded_v4(),
             uptime_s=_uptime_s(),
+            ip6_forward=ip6_forward,
+            forwarded_v6=_forwarded_v6(),
         )
 
 
@@ -270,6 +289,23 @@ def _process_runs(name: str) -> bool:
     return False
 
 
+#: v0.36.0 — the bridges LXD and Incus create (lxdbr0, incusbr0, and Incus's
+#: per-user incusbr-<uid>, measured), and their daemons' names (comm of the
+#: process holding their socket, measured: lxd, incusd).
+_LXD_INCUS_IFACES = ("lxdbr", "incusbr")
+_LXD_INCUS_DAEMONS = ("lxd", "incusd")
+
+
+def _lxd_incus_routing() -> bool:
+    """v0.36.0 — LXD or Incus runs with a bridge of its own. A bridge left
+    by a removed LXD (measured: lxdbr0 and the inet lxd table stayed after
+    the package was purged) does not count without its daemon."""
+    ifaces = _host_ifaces() or []
+    if not any(i.startswith(_LXD_INCUS_IFACES) for i in ifaces):
+        return False
+    return any(_process_runs(d) for d in _LXD_INCUS_DAEMONS)
+
+
 def _wireguard_interface() -> bool:
     """v0.32.0 — a WireGuard interface exists (``_wireguard_ifaces``)."""
     return bool(_wireguard_ifaces())
@@ -314,6 +350,8 @@ def _active_ifaces(snapshot: "FirewallStackSnapshot") -> "tuple[str, ...]":
     out += snapshot.wireguard_ifaces
     if snapshot.libvirt_present:
         out += _LIBVIRT_IFACES
+    if snapshot.lxd_incus_present:
+        out += _LXD_INCUS_IFACES
     if snapshot.kubernetes_running:
         out += _CNI_IFACES
     return tuple(out)
@@ -374,7 +412,8 @@ def _forward_orphans(snapshot: "FirewallStackSnapshot") -> "list[str]":
 def _routing_daemon(snapshot: "FirewallStackSnapshot") -> bool:
     """Something that legitimately routes and writes FORWARD rules."""
     return (snapshot.docker_present or snapshot.wireguard_present
-            or snapshot.libvirt_present or snapshot.kubernetes_running)
+            or snapshot.libvirt_present or snapshot.kubernetes_running
+            or snapshot.lxd_incus_present)
 
 
 # ---------------------------------------------------------------------------
@@ -474,7 +513,8 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
         # forwarded nothing since boot, say so (INFO, no point, no fix — a
         # counter is not a reason to switch routing off unattended).
         wireguard_only = (snapshot.wireguard_present and not snapshot.docker_present
-                          and not snapshot.libvirt_present and not snapshot.kubernetes_running)
+                          and not snapshot.libvirt_present and not snapshot.kubernetes_running
+                          and not snapshot.lxd_incus_present)
         if (wireguard_only and snapshot.forwarded_v4 == 0
                 and snapshot.uptime_s is not None):
             result.info(
@@ -492,6 +532,35 @@ def check_firewall_stack(snapshot: FirewallStackSnapshot, t: TranslationFunc | N
                 message=_t("firewall_drivers.ip_forward_enabled"),
                 points=1,
                 **sysctl_fix("net.ipv4.ip_forward=0"),
+                nature="improvement",
+            )
+            found_issue = True
+
+    # --- IPv6 forwarding (v0.36.0) ---
+    # Judged as IPv4's is: a routing mechanism running excuses it, WireGuard
+    # alone with nothing forwarded since boot is said, otherwise −1. Before
+    # 0.36.0 net.ipv6.conf.all.forwarding was not read at all.
+    if snapshot.ip6_forward:
+        wireguard_only = (snapshot.wireguard_present and not snapshot.docker_present
+                          and not snapshot.libvirt_present and not snapshot.kubernetes_running
+                          and not snapshot.lxd_incus_present)
+        if (wireguard_only and snapshot.forwarded_v6 == 0
+                and snapshot.uptime_s is not None):
+            result.info(
+                message=_t("firewall_drivers.ip6_forward_wireguard_idle",
+                           ifaces=", ".join(snapshot.wireguard_ifaces) or "wg",
+                           since=_since_boot(snapshot.uptime_s, _t)),
+                detail=_t("firewall_drivers.ip6_forward_wireguard_idle_detail"),
+                key="firewall_drivers.ip6_forward_wireguard_idle",
+            )
+        elif _routing_daemon(snapshot):
+            result.ok(message=_t("firewall_drivers.ip6_forward_ok"), key="firewall_drivers.ip6_forward_ok")
+        else:
+            result.warn_with_deduction(
+                key="firewall_drivers.ip6_forward_enabled",
+                message=_t("firewall_drivers.ip6_forward_enabled"),
+                points=1,
+                **sysctl_fix("net.ipv6.conf.all.forwarding=0"),
                 nature="improvement",
             )
             found_issue = True
@@ -853,6 +922,8 @@ def _has_user_nft_rules(nft_output: str) -> bool:
 
 
 _PROC_SNMP = Path("/proc/net/snmp")
+_PROC_SNMP6 = Path("/proc/net/snmp6")
+_IP6_FORWARD = Path("/proc/sys/net/ipv6/conf/all/forwarding")
 _PROC_UPTIME = Path("/proc/uptime")
 
 
@@ -866,6 +937,29 @@ def _forwarded_v4() -> "int | None":
         return int(values[names.index("ForwDatagrams")])
     except (OSError, IndexError, ValueError):
         return None
+
+
+def _forwarded_v6() -> "int | None":
+    """v0.36.0 — ``Ip6OutForwDatagrams`` of /proc/net/snmp6 (one ``name
+    value`` pair per line); None when unread (no IPv6, or no such line)."""
+    try:
+        for ln in _PROC_SNMP6.read_text(encoding="ascii", errors="ignore").splitlines():
+            parts = ln.split()
+            if len(parts) == 2 and parts[0] == "Ip6OutForwDatagrams":
+                return int(parts[1])
+    except (OSError, ValueError):
+        return None
+    return None
+
+
+def _read_ip6_forward() -> bool:
+    """v0.36.0 — True if net.ipv6.conf.all.forwarding is 1: the knob that
+    decides whether IPv6 is routed (measured: the per-interface ones alone
+    do not route). False when IPv6 is absent or the file unreadable."""
+    try:
+        return _IP6_FORWARD.read_text(encoding="ascii", errors="ignore").strip() == "1"
+    except OSError:
+        return False
 
 
 def _uptime_s() -> "float | None":

@@ -1412,6 +1412,8 @@
     "no_allow_users": "Aucune restriction AllowUsers/AllowGroups — tout utilisateur valide peut tenter une connexion SSH",
     "allow_tcp_forwarding": "AllowTcpForwarding est activé — le tunneling TCP peut exposer des services internes",
     "allow_tcp_forwarding_detail": "Définir AllowTcpForwarding no pour empêcher le tunneling de ports (la commande ci-dessous l'écrit là où sshd le lit en premier).",
+    "allow_tcp_forwarding_default": "AllowTcpForwarding n'est pas réglé dans sshd_config — la valeur par défaut d'OpenSSH (yes) laisse les clients ouvrir des tunnels TCP à travers ce serveur",
+    "allow_tcp_forwarding_default_detail": "Pas un choix écrit dans le fichier : la valeur par défaut de sshd s'applique (`sshd -T` affiche allowtcpforwarding yes). Seule une valeur écrite à yes coûte un point. Si personne ne passe de tunnel par ce serveur, écrire AllowTcpForwarding no (la commande ci-dessous l'écrit là où sshd le lit en premier). Une valeur réglée dans un bloc Match n'est pas lue.",
     "pubkey_auth_disabled": "PubkeyAuthentication est désactivé — seule l'authentification par mot de passe est possible",
     "pubkey_auth_disabled_detail": "Activer l'authentification par clé : définir PubkeyAuthentication yes (la commande ci-dessous l'écrit là où sshd le lit en premier).",
     "config_ok": "Configuration sshd : aucun problème critique détecté",
@@ -3438,6 +3440,11 @@
         "why": "Documentation de sécurité de LXD : « Local access to LXD through the Unix socket always grants full access to LXD. Therefore, you should only give such access to users who you'd trust with root access to your system », et « The root user and all members of the lxd group can interact with the local daemon. » Un membre pilote le démon LXD, qui tourne en root, sans mot de passe et sans sudo. BOB ne le compte que tant qu'un socket LXD que le groupe peut écrire a un écouteur root (le démon LXD, ou systemd qui tient le socket pour lui) ; sinon (LXD arrêté, ou le socket pas au groupe — root:root après un redémarrage du seul socket du snap, mesuré), les membres sont listés sans point.",
         "how": "1. Lister les membres :\n   getent group lxd\n2. Retirer un compte qui ne doit pas être root :\n   sudo gpasswd -d <utilisateur> lxd\n   (un compte dont lxd est le groupe principal : sudo usermod -g <groupe> <utilisateur>)\n3. Documentation de sécurité de LXD :\n   https://canonical.com/lxd/docs/en/latest/explanation/security/"
       },
+      "incus_admin_group_root": {
+        "title": "Comptes dans le groupe incus-admin (équivalents à root)",
+        "why": "Documentation de sécurité d'Incus : « Local access to Incus through the Unix socket always grants full access to Incus. Therefore, you should only give such access to users who you'd trust with root access to your system », et « The root user and all members of the incus-admin group can interact with the local daemon. » Un membre pilote le démon Incus, qui tourne en root, sans mot de passe et sans sudo. Le groupe incus est différent : ses membres sont « restricted to a single project tied to their user » et ne sont pas comptés. BOB ne compte incus-admin que tant que le socket Incus que le groupe peut écrire a un écouteur root (incusd, ou systemd qui tient le socket pour lui) ; sinon, les membres sont listés sans point. Si le groupe docker ou lxd est actif aussi, le même pouvoir compte une fois par hôte.",
+        "how": "1. Lister les membres :\n   getent group incus-admin\n2. Retirer un compte qui ne doit pas être root :\n   sudo gpasswd -d <utilisateur> incus-admin\n   (un compte dont incus-admin est le groupe principal : sudo usermod -g <groupe> <utilisateur>)\n3. Pour un accès restreint, préférer le groupe incus (un projet propre à l'utilisateur)\n4. Documentation de sécurité d'Incus :\n   https://linuxcontainers.org/incus/docs/main/explanation/security/"
+      },
       "socket_mounted": {
         "title": "Socket Docker monté dans un conteneur",
         "why": "Monter /var/run/docker.sock dans un conteneur lui donne le contrôle total du démon Docker — et donc de l'hôte. Depuis l'intérieur du conteneur, un attaquant peut démarrer un nouveau conteneur privilégié, monter le système de fichiers hôte et s'échapper avec une seule commande docker. C'est un contournement complet de l'isolation des conteneurs.",
@@ -3657,6 +3664,21 @@
         "container": {
           "why": "ip_forward est un paramètre noyau hôte ; il ne peut pas être changé depuis un container par défaut. Appliquer sur l'hôte.",
           "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv4.ip_forward=0\n   grep -qxF 'net.ipv4.ip_forward=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv4.ip_forward=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf"
+        }
+      },
+      "ip6_forward_enabled": {
+        "title": "Transfert IPv6 activé mais aucun daemon de routage détecté (Docker / libvirt / WireGuard absents)",
+        "why": "net.ipv6.conf.all.forwarding=1 transforme l'hôte en routeur IPv6 : il transfère les paquets IPv6 entre interfaces selon sa table de routage (mesuré : à 0, la même route est refusée ; les réglages par interface seuls ne routent pas). Docker, libvirt/KVM et WireGuard peuvent en avoir besoin pour le trafic guest / VPN, mais aucun ne tourne. Le transfert IPv6 est un réglage distinct de net.ipv4.ip_forward : couper l'un laisse l'autre tel quel.",
+        "how": "1. Désactiver le transfert IPv6 immédiatement :\n   sudo sysctl -w net.ipv6.conf.all.forwarding=0\n2. Rendre permanent — dans un fichier sous /etc/sysctl.d/ mettre :\n   net.ipv6.conf.all.forwarding=0\n3. Re-appliquer les paramètres sysctl :\n   sudo sysctl --system\nNote : écrire le réglage `all` fixe la valeur de chaque interface et celle par défaut des nouvelles interfaces (mesuré).",
+        "server": {
+          "why": "Sur un serveur non-routeur, le transfert IPv6 sans daemon est une surface d'attaque dormante. Soit faites tourner le daemon qui en a besoin, soit désactivez-le."
+        },
+        "desktop": {
+          "why": "Un desktop n'est virtuellement jamais un routeur IPv6. Le transfert activé sans daemon VPN ou de virtualisation est un état résiduel — désactivez-le."
+        },
+        "container": {
+          "why": "Le transfert IPv6 est un paramètre noyau de l'espace réseau de l'hôte ; un container a le sien. Appliquer sur l'hôte.",
+          "how": "Appliquer sur le système hôte :\n   sudo sysctl -w net.ipv6.conf.all.forwarding=0\n   grep -qxF 'net.ipv6.conf.all.forwarding=0' /etc/sysctl.d/99-hardening.conf 2>/dev/null || echo 'net.ipv6.conf.all.forwarding=0' | sudo tee -a /etc/sysctl.d/99-hardening.conf"
         }
       }
     },
@@ -4541,8 +4563,8 @@
     "kubelet_readonly_port": "Le port lecture seule 10255 du kubelet répond sans authentification (demandé depuis cet hôte) — les spécifications des pods, y compris les valeurs d'environnement écrites en clair, et les détails du nœud sont lisibles",
     "kubelet_readonly_port_reason": "port lecture seule du kubelet ouvert",
     "kubelet_readonly_port_detail": "Réglez --read-only-port=0 (readOnlyPort: 0 dans la configuration du kubelet) et redémarrez le kubelet. Voir : bob --explain kubernetes.kubelet_readonly_port",
-    "apiserver_unread": "Nœud Kubernetes : le serveur d'API n'est pas lu — BOB lit ses arguments sous MicroK8s, et sur un serveur k3s dans son journal ; que ce nœud en fasse tourner un, comment il autorise les requêtes et s'il répond aux requêtes anonymes n'est pas établi",
-    "apiserver_unread_detail": "BOB lit les arguments du serveur d'API là où MicroK8s les range (/var/snap/microk8s/current/args/kube-apiserver) tant que MicroK8s tourne (un processus kubelite), et sous k3s dans la ligne que le serveur k3s en cours a écrite dans le journal systemd en démarrant le serveur d'API (« Running kube-apiserver »). Un serveur k3s dont la ligne de démarrage n'est pas dans le journal (lancé à la main : mesuré ; un autre système d'init), un agent k3s, kubeadm et les autres distributions ne sont pas lus. Sur le nœud qui fait tourner le serveur d'API, vérifier son --authorization-mode (RBAC,Node, pas AlwaysAllow) et son --anonymous-auth. Le score est un plafond.",
+    "apiserver_unread": "Nœud Kubernetes : le serveur d'API n'est pas lu — BOB lit ses arguments sous MicroK8s, sur un serveur k3s dans son journal, et dans un processus kube-apiserver (kubeadm) ; que ce nœud en fasse tourner un, comment il autorise les requêtes et s'il répond aux requêtes anonymes n'est pas établi",
+    "apiserver_unread_detail": "BOB lit les arguments du serveur d'API là où MicroK8s les range (/var/snap/microk8s/current/args/kube-apiserver) tant que MicroK8s tourne (un processus kubelite), et sous k3s dans la ligne que le serveur k3s en cours a écrite dans le journal systemd en démarrant le serveur d'API (« Running kube-apiserver »), et ailleurs dans la ligne de commande du seul processus kube-apiserver lancé par root (kubeadm : mesuré, v0.36.0). Un serveur k3s dont la ligne de démarrage n'est pas dans le journal (lancé à la main : mesuré ; un autre système d'init), un agent k3s, un serveur d'API qui n'est pas sur ce nœud et les autres distributions ne sont pas lus. Sur le nœud qui fait tourner le serveur d'API, vérifier son --authorization-mode (RBAC,Node, pas AlwaysAllow) et son --anonymous-auth. Le score est un plafond.",
     "apiserver_anonymous": "Le serveur d'API sur :{port} laisse des requêtes anonymes lister les namespaces (GET /api/v1/namespaces, 2xx) — ce qu'elles peuvent faire d'autre n'est pas établi",
     "apiserver_anonymous_reason": "liste anonyme des namespaces sur le serveur d'API",
     "apiserver_anonymous_refused": "Lecture anonyme du serveur d'API refusée ({status} sur :{port})",
@@ -4576,14 +4598,33 @@
     "lxd_group_dormant": "{count} compte(s) dans le groupe lxd : {users} — aucun socket LXD ne donne l'accès au groupe en ce moment (rien n'écoute, ou le socket n'est pas au groupe — mesuré après un redémarrage du seul socket du snap : root:root jusqu'au démarrage du démon) : non compté",
     "lxd_group_unknown": "{count} compte(s) dans le groupe lxd : {users} — impossible de lire si un socket LXD donne l'accès au groupe : non compté, le score est un plafond",
     "lxd_group_not_root": "{count} compte(s) dans le groupe lxd : {users} — le processus à l'écoute sur le socket LXD tourne sous l'uid {uids}, pas root : le groupe donne les droits de ce compte, pas ceux de root ; non compté",
+    "incus_admin_group_root": "{count} compte(s) dans le groupe incus-admin : {users} — l'accès local à Incus par son socket donne un accès complet, à réserver aux utilisateurs à qui l'on confierait root (documentation Incus), et le socket Incus donne l'accès au groupe",
+    "incus_admin_group_root_counted_once": "Le groupe docker ou lxd donne le même pouvoir sur cet hôte : ils comptent une fois ensemble — celui-ci n'ajoute aucun point tant qu'un autre est compté (un --ignore ou un profil qui écarte l'autre laisse celui-ci compté)",
+    "incus_admin_group_root_reason": "membres du groupe incus-admin équivalents à root : {users}",
+    "incus_admin_group_root_detail": "Documentation de sécurité d'Incus : « Local access to Incus through the Unix socket always grants full access to Incus. Therefore, you should only give such access to users who you'd trust with root access to your system », et « The root user and all members of the incus-admin group can interact with the local daemon. » Mesuré sur Debian 13 (Incus 6.0.4) : la requête d'un membre sur /var/lib/incus/unix.socket a reçu « auth: trusted », celle de tout autre compte a été refusée ; tant qu'Incus est au repos, systemd tient le socket et démarre le démon à la première requête. Un compte dont incus-admin est le groupe principal se change avec usermod -g, pas gpasswd.",
+    "incus_admin_group_dormant": "{count} compte(s) dans le groupe incus-admin : {users} — aucun socket Incus ne donne l'accès au groupe en ce moment (rien n'écoute, ou le socket n'est pas au groupe) : non compté",
+    "incus_admin_group_unknown": "{count} compte(s) dans le groupe incus-admin : {users} — impossible de lire si le socket Incus donne l'accès au groupe : non compté, le score est un plafond",
+    "incus_admin_group_not_root": "{count} compte(s) dans le groupe incus-admin : {users} — le processus à l'écoute sur le socket Incus tourne sous l'uid {uids}, pas root : le groupe donne les droits de ce compte, pas ceux de root ; non compté",
+    "incus_user_group": "{count} compte(s) dans le groupe incus : {users} — chacun est « restricted to a single project tied to their user » (documentation Incus ; mesuré : disques sous son home, son seul uid) : non compté",
     "runtime_not_started": "dockerd est arrêté et le docker.socket de systemd le démarrerait à la première requête : BOB ne l'a pas interrogé, pour ne pas le démarrer — aucun conteneur Docker ne tourne (aucun shim containerd dans l'espace de noms de Docker)",
     "runtime_not_started_live": "dockerd est arrêté et le docker.socket de systemd le démarrerait à la première requête : BOB ne l'a pas interrogé — {count} conteneur(s) Docker tournent pourtant (live-restore), non examinés",
     "runtime_not_started_unread": "dockerd est arrêté et le docker.socket de systemd le démarrerait à la première requête : BOB ne l'a pas interrogé, et il n'a pas pu lire si des conteneurs Docker tournent — non examinés",
+    "runtime_stopped": "Non interrogé : {runtimes} — aucun dockerd root ne tourne, rien n'écoute sur le socket Docker du système, et aucun de ses conteneurs ne tourne (aucun shim root)",
     "rootless_dockerd": "dockerd sans root en marche, par utilisateur (conteneurs) : {users} — non examinés",
     "rootless_dockerd_detail": "Vu dans /proc : dockerd et les shims de ses conteneurs appartiennent à l'utilisateur ; BOB ne lance pas docker au nom d'un autre utilisateur. Les conteneurs d'un Docker sans root tournent avec au plus les droits de cet utilisateur, et son réseau passe par slirp4netns, pas par le transfert IP de l'hôte. L'utilisateur peut les lister : docker ps (avec DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock).",
     "containerd_unexamined": "containerd fait tourner des conteneurs hors Docker et Kubernetes, par espace de noms : {namespaces} — non examinés (ctr -n <espace> tasks ls les liste)",
     "rootless_unexamined": "{count} conteneur(s) podman sans root en marche, non examiné(s) : {users}",
     "rootless_unexamined_detail": "Vus dans /proc (leur moniteur conmon appartient à l'utilisateur) ; BOB ne lance pas podman au nom d'un autre utilisateur. Un conteneur sans root a au plus les droits de son utilisateur sur l'hôte, pas ceux de root ; si le socket d'un démon de conteneurs qui tourne en root (docker.sock) est monté dedans et qu'il peut l'ouvrir, il peut piloter ce démon, ce qui équivaut à root sur l'hôte. L'utilisateur peut les lister : podman ps ; et en examiner un : podman inspect <nom>.",
+    "rootless_examined": "{count} conteneur(s) sans root examiné(s) d'après leur configuration OCI, par utilisateur (moteur, conteneurs) : {users} — chacun tourne au plus avec les droits de son utilisateur",
+    "rootless_examined_detail": "Lue en root dans la configuration que garde chaque moteur (le shim d'un dockerd sans root, le conmon de podman sans root) ; rien n'est lancé au nom de l'utilisateur. Mesuré avec Docker et podman : les processus du conteneur tournent sous l'utilisateur sur l'hôte, dans l'espace de noms utilisateur du moteur ; ce que le conteneur peut faire sur l'hôte, c'est ce que peut son utilisateur.",
+    "rootless_shapes": "{count} conteneur(s) sans root de forme plus large, chacun dans les droits de son utilisateur : {containers}",
+    "rootless_shapes_detail": "Mesuré : un conteneur sans root privilégié a toutes les capacités dans son espace de noms utilisateur, mais les périphériques de l'hôte gardent leurs droits (un disque et /dev/mem ont été refusés) et un sysctl global du noyau est refusé ; un chemin de l'hôte monté se lit en tant que l'utilisateur (/etc/shadow a été refusé) ; l'espace PID de l'hôte montre les processus que l'utilisateur voit déjà ; le réseau hôte d'un dockerd sans root est celui de rootlesskit, celui de podman est le réseau de l'hôte, où un port ouvert par le conteneur appartient à l'utilisateur (la section des ports le liste).",
+    "rootless_shape_privileged": "privilégié dans son espace de noms utilisateur",
+    "rootless_shape_sys_admin": "CAP_SYS_ADMIN dans son espace de noms utilisateur",
+    "rootless_shape_host_net_docker": "réseau de rootlesskit (--network host)",
+    "rootless_shape_host_net_podman": "réseau de l'hôte",
+    "rootless_shape_host_pid": "espace PID de l'hôte",
+    "rootless_shape_host_paths": "chemins de l'hôte : {paths}",
     "runtime_unreachable": "Runtime(s) de conteneurs injoignable(s) : {runtimes} — leurs conteneurs n'ont pas été examinés",
     "scan_error": "Runtime de conteneurs inaccessible — vérification de sécurité des conteneurs ignorée",
     "no_containers": "Aucun conteneur en cours d'exécution ({runtimes}) — rien à auditer",
@@ -4647,10 +4688,14 @@
     "iptables_forward_bypass": "Règle iptables ACCEPT brute contourne UFW dans la chaîne FORWARD : {rule}",
     "forward_routing_ok": "La chaîne FORWARD contient des règles ACCEPT — cohérent avec le routage Docker, VPN, KVM ou Kubernetes",
     "nftables_parallel": "Règles nftables actives détectées en parallèle d'UFW — conflits potentiels",
-    "ip_forward_ok": "Transfert IP activé — démon de routage détecté (Docker, VPN, KVM ou Kubernetes)",
+    "ip_forward_ok": "Transfert IP activé — démon de routage détecté (Docker, VPN, KVM, LXD/Incus ou Kubernetes)",
     "ip_forward_enabled": "Transfert IP activé sans VPN/Docker détecté — vérifiez que c'est intentionnel",
     "ip_forward_wireguard_idle": "Transfert IP activé ; le seul mécanisme de routage détecté est WireGuard ({ifaces}), et le noyau n'a transféré aucun paquet IPv4 depuis le démarrage, il y a {since}",
     "ip_forward_wireguard_idle_detail": "Un client WireGuard envoie et reçoit son propre trafic par le tunnel et ne transfère rien ; une passerelle qui route pour d'autres transfère chacun de ces paquets. Si cet hôte ne route pour personne, net.ipv4.ip_forward=0 suffit. Le compte repart de zéro à chaque démarrage : une passerelle qui n'a porté aucun trafic depuis son dernier démarrage se lit de la même façon.",
+    "ip6_forward_ok": "Transfert IPv6 activé — démon de routage détecté (Docker, VPN, KVM, LXD/Incus ou Kubernetes)",
+    "ip6_forward_enabled": "Transfert IPv6 activé (net.ipv6.conf.all.forwarding=1) sans VPN/Docker détecté — vérifiez que c'est intentionnel",
+    "ip6_forward_wireguard_idle": "Transfert IPv6 activé ; le seul mécanisme de routage détecté est WireGuard ({ifaces}), et le noyau n'a transféré aucun paquet IPv6 depuis le démarrage, il y a {since}",
+    "ip6_forward_wireguard_idle_detail": "Un client WireGuard envoie et reçoit son propre trafic par le tunnel et ne transfère rien ; une passerelle qui route pour d'autres transfère chacun de ces paquets. Si cet hôte ne route pour personne, net.ipv6.conf.all.forwarding=0 suffit. Le compte repart de zéro à chaque démarrage : une passerelle qui n'a porté aucun trafic depuis son dernier démarrage se lit de la même façon.",
     "since_boot_days": "{days} jour(s)",
     "since_boot_hours": "{hours} h",
     "rules_unreadable": "Impossible de lister les règles des pilotes de pare-feu",

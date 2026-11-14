@@ -106,7 +106,11 @@ def test_from_system_reads_rpm_where_dpkg_is_absent(monkeypatch):
     from bob.checks import kernel_modules as K
     monkeypatch.setattr(K, "_command_exists", lambda n: n == "rpm")
     outs = {("uname", "-r"): "6.19.10-300.fc44.x86_64\n",
-            ("rpm", "-q", "kernel-core"): "6.19.10-300.fc44.x86_64\n7.3.3-200.fc44.x86_64\n"}
+            # v0.36.0 — the file lists of the packages that provide "kernel"
+            ("rpm", "-q", "--whatprovides"): ("/boot/vmlinuz-6.19.10-300.fc44.x86_64\n"
+                                              "/lib/modules/6.19.10-300.fc44.x86_64/vmlinuz\n"
+                                              "/boot/vmlinuz-7.3.3-200.fc44.x86_64\n"
+                                              "/lib/modules/7.3.3-200.fc44.x86_64/vmlinuz\n")}
     monkeypatch.setattr(K, "_run", lambda *a, **kw: outs.get(a[:3] if a[0] == "rpm" else a[:2], ""))
     monkeypatch.setattr(K, "_query_apt_kernel_update", lambda: (False, False, ""))
     monkeypatch.setattr(K, "_read_reboot_required", lambda: (False, []))

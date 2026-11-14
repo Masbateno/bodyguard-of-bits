@@ -44,6 +44,9 @@ def _env(monkeypatch, per_runtime, present=("docker", "podman")):
     # group and dockerd listens there — the real group reader added
     # docker_group_root to findings these tests count exactly.
     monkeypatch.setattr(D, "_group_socket", lambda name, socks: ([], False, [], []))
+    # 0.36.0 — these describe a dockerd that runs (and answers or fails): the
+    # host's own state no longer decides (a stopped one is not asked).
+    monkeypatch.setattr(D, "system_dockerd_state", lambda: "running")
 
 
 def test_both_runtimes_are_asked(monkeypatch):

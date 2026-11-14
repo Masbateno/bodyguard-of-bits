@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.35.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.36.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -138,7 +138,7 @@ bob --explain ssh.password_auth   # explain a finding (no sudo)
 
 ## Sample output
 
-An excerpt of a real run on a Linux Mint 22.3 test host (BOB 0.35.0, run as root; the `desktop` profile chosen automatically). `⋮` marks lines left out; the header box also leaves out the logo and some rows.
+An excerpt of a real run on a Linux Mint 22.3 test host (BOB 0.36.0, run as root; the `desktop` profile chosen automatically). `⋮` marks lines left out; the header box also leaves out the logo and some rows.
 
 ```
 $ sudo bob
@@ -147,7 +147,7 @@ $ sudo bob
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                            — Bodyguard Of Bits —                             ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.35.0  │  Linux hardening auditor                                      ║
+║  BOB 0.36.0  │  Linux hardening auditor                                      ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : 🌿  Linux Mint 22.3                                         ║
 ║  Kernel        : 7.0.0-43-generic                                            ║
@@ -162,7 +162,7 @@ $ sudo bob
 └──────────────────────────────────────────────────────────────────────────────┘
 
 ℹ [INFO] Reverse path filtering in loose mode (rp_filter=2) — consider switching to strict mode (=1)
-✔ [OK] ICMP redirect acceptance is disabled
+⚠ [WARNING] ICMP redirects accepted — risk of routing table manipulation
 ℹ [INFO] Martian packet logging disabled — spoofed packets will not be logged
 ✔ [OK] ICMP broadcast echo is ignored
 ✔ [OK] SYN flood protection active (tcp_syncookies=1)
@@ -176,12 +176,12 @@ $ sudo bob
 ⋮
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║  Security score : ≤ 8/10                                                     ║
+║  Security score : ≤ 7/10                                                     ║
 ║  Risk level : ✖ HIGH at best  (raised by posture: firewall inactive)         ║
 ║  Visibility : 2 section(s) not fully read — the score is a ceiling           ║
 ║  Network context : IPv4 behind NAT, public IPv6 (router filter unverified)   ║
 ║  Audit profile : Desktop                                                     ║
-║  Duration : 1 min 57 s                                                       ║
+║  Duration : 59.4 s                                                           ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  ✖ Action required                                                           ║
 ║    ✖  UFW firewall is disabled. Your machine is currently unprotected.       ║
@@ -195,9 +195,9 @@ $ sudo bob
   Firewall & Network  ≤ 3/10  ███░░░░░░░
   Exposure & Services   9/10  █████████░
   Access Control       10/10  ██████████
-  System Hardening      6/10  ██████░░░░
+  System Hardening      7/10  ███████░░░
   Health & Resilience   8/10  ████████░░
-  Threat Detection      9/10  █████████░
+  Threat Detection         —  reported, not scored
 ```
 
 Each item of the *Action required* list shows a CIS reference when one applies, a remediation command when one exists, and an `--explain` hint linking to the longer rationale.
@@ -225,7 +225,7 @@ Each item of the *Action required* list shows a CIS reference when one applies, 
 
 ## CIS benchmark mapping
 
-239 entries: **90 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 7 CIS Kubernetes 2.0 · 1 CIS Red Hat 8/9 · 134 best-practice**, plus **259 cross-benchmark citations** on 94 keys (CIS Debian 12/13 and CIS Ubuntu 24.04), sourced from [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) so every control number is verifiable rather than invented.
+241 entries: **91 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 7 CIS Kubernetes 2.0 · 1 CIS Red Hat 8/9 · 135 best-practice**, plus **262 cross-benchmark citations** on 95 keys (CIS Debian 12/13 and CIS Ubuntu 24.04), sourced from [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) so every control number is verifiable rather than invented.
 
 Each finding with a formal CIS code displays `[CIS:X.Y.Z]` inline in the summary box.  
 Full reference text is shown in `--verbose` mode.  
@@ -250,7 +250,7 @@ No sudo required. Fully offline — no external calls or data collection.
 | Profile | Use case |
 |---------|----------|
 | `server` | Default — every finding at its full severity. Used when no profile is set, unless BOB finds an active display manager: it then picks `desktop` and says so in an INFO line |
-| `desktop` | Relaxed for personal machines — extends `server` and downgrades 37 findings to INFO, among them SSH password authentication and forwarding, automatic updates, a missing backup, auditd, AppArmor without an enforcing profile, Secure Boot, and the freshness of rootkit / ClamAV / file-integrity scans |
+| `desktop` | Relaxed for personal machines — extends `server` and downgrades 38 findings to INFO, among them SSH password authentication and forwarding, automatic updates, a missing backup, auditd, AppArmor without an enforcing profile, Secure Boot, and the freshness of rootkit / ClamAV / file-integrity scans |
 | `workstation` | First-class business-tier profile since v0.8.1 (no longer an alias to `desktop`) — keeps backup / auditd / AppArmor (no profile loaded, none enforcing) findings at WARN while relaxing the same SSH / clamav / rootkit / file-integrity ergonomics as `desktop` |
 | `container` | Extends `desktop` and skips 17 host-level sections: sysctl hardening, kernel modules and kernel hardening, Secure Boot, Raspberry Pi, auditd, suid_audit, Docker-in-Docker, disk and memory, fail2ban, ClamAV, NTP, MAC policy, backup, and the intrusion-detection and integrity tools (rootkit, file integrity) |
 

@@ -69,6 +69,7 @@ MAP = {
  "kernel_hardening.kptr_exposed": ["sysctl_kernel_kptr_restrict"],
  "kernel_hardening.suid_dump_all": ["sysctl_fs_suid_dumpable"],
  "firewall_drivers.ip_forward_enabled": ["sysctl_net_ipv4_ip_forward"],
+ "firewall_drivers.ip6_forward_enabled": ["sysctl_net_ipv6_conf_all_forwarding"],
  # ---- SSH daemon ----
  "ssh.permit_root_login": ["sshd_disable_root_login"],
  "ssh.permit_empty_passwords": ["sshd_disable_empty_passwords"],

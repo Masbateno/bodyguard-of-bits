@@ -131,6 +131,12 @@ class _BadDirective:
     #: ``DisableForwarding yes`` turns off X11 and TCP forwarding whatever
     #: X11Forwarding and AllowTcpForwarding say (sshd_config(5)).
     off_when: "tuple[str, str] | None" = None
+    #: v0.36.0 — when set, the directive absent from sshd_config (its default
+    #: in force) is said under this key as an INFO, without a point; only a
+    #: value written in the file costs ``points``. Decided with the user on
+    #: 14 November 2026 for AllowTcpForwarding (OpenSSH's default is yes).
+    absent_key: str = ""
+    absent_detail_key: str = ""
 
     def __post_init__(self) -> None:
         if bool(self.bad_values) == bool(self.safe_values):
@@ -207,6 +213,10 @@ _BAD_DIRECTIVES: tuple[_BadDirective, ...] = (
         points=1, detail_key="ssh.allow_tcp_forwarding_detail",
         fix="AllowTcpForwarding no",
         off_when=("disableforwarding", "yes"),
+        # v0.36.0 — absent (measured on Linux Mint 22.3, OpenSSH 9.6p1: only
+        # "#AllowTcpForwarding yes" commented, `sshd -T` prints yes): INFO.
+        absent_key="ssh.allow_tcp_forwarding_default",
+        absent_detail_key="ssh.allow_tcp_forwarding_default_detail",
     ),
     _BadDirective(
         name="pubkeyauthentication", default="yes",
@@ -227,6 +237,16 @@ def _apply_bad_directive(rule: _BadDirective, cfg: dict, result: CheckResult, _t
         return False
     if rule.off_when and str(cfg.get(rule.off_when[0], "")).lower() == rule.off_when[1]:
         return False                        # overridden: the directive has no effect
+    if rule.absent_key and rule.name not in cfg:
+        # v0.36.0 — the default in force, not a choice written in the file:
+        # said, with the line to write, and no point (not an issue either).
+        result.info(
+            message=_t(rule.absent_key),
+            detail=_t(rule.absent_detail_key) if rule.absent_detail_key else "",
+            cmd=_sshd_directive_fix(rule.fix, rule.fix.split()[0], cfg) if rule.fix else "",
+            key=rule.absent_key,
+        )
+        return False
 
     kwargs = {
         "key": rule.key,

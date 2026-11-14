@@ -288,8 +288,9 @@ class TestSshdConfig:
         assert not _has_finding(result, "ssh.no_allow_users", FindingLevel.INFO)
 
     def test_allow_tcp_forwarding_enabled_warn(self):
-        """AllowTcpForwarding not set (default yes) → WARN + deduction."""
-        snap = base_snapshot(sshd_config={})
+        """AllowTcpForwarding written yes → WARN + deduction (v0.36.0: absent is
+        an INFO, test_v0360_allow_tcp_forwarding_default)."""
+        snap = base_snapshot(sshd_config={"allowtcpforwarding": "yes"})
         result = check_ssh(snap)
         assert _has_finding(result, "ssh.allow_tcp_forwarding", FindingLevel.WARN)
         assert "ssh.allow_tcp_forwarding" in _deduction_keys(result)

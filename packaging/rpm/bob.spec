@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.35.0
+Version:        0.36.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,15 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun Nov 15 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.36.0-1
+- Minor, BREAKING for scores; no JSON-schema or CSV-column change.
+  Rootless containers examined from their OCI configuration; a stopped
+  dockerd with no root shim not asked; IPv6 forwarding read; LXD/Incus
+  routing and the incus-admin group; libvirt read in both backends;
+  smb.conf synonyms and [global] defaults; kubeadm kubelet and API server
+  read; rpm kernels by what provides kernel; AllowTcpForwarding default
+  an INFO.
+
 * Sat Nov 14 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.35.0-1
 - Minor, BREAKING for scores; no JSON-schema or CSV-column change.
   The docker group costs two points only with a root listener on its

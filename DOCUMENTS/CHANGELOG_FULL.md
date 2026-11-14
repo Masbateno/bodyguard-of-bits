@@ -6,6 +6,308 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.36.0] — 2026-11-15
+
+**A minor release, BREAKING for scores: rootless podman and rootless-dockerd
+containers are examined from their OCI configuration; IPv6 forwarding is read; LXD and Incus count as routing
+mechanisms and the `incus-admin` group as root; libvirt's rules are read in both
+firewall backends; smb.conf synonyms and `[global]` share defaults are read as
+samba reads them; kubeadm's kubelet and API server are read; installed kernels
+are read from the packages that provide `kernel` on rpm hosts; an AllowTcpForwarding left at OpenSSH's default no
+longer costs a point.**
+
+BREAKING for scores means: the same host can score differently under 0.35.0 and
+0.36.0 — global, per domain, and the `--history` trend across the upgrade. The
+scoring formula is unchanged; no section is added or removed; no option is added
+or removed; no finding key is renamed or removed. No JSON-output-schema or
+CSV-column change. New finding keys: `docker_hardening.rootless_examined`,
+`docker_hardening.rootless_shapes`, `docker_hardening.runtime_stopped`,
+`docker_hardening.incus_admin_group_root`, `docker_hardening.incus_admin_group_dormant`,
+`docker_hardening.incus_admin_group_unknown`, `docker_hardening.incus_admin_group_not_root`,
+`docker_hardening.incus_user_group`, `firewall_drivers.ip6_forward_ok`,
+`firewall_drivers.ip6_forward_enabled`, `firewall_drivers.ip6_forward_wireguard_idle`,
+`ssh.allow_tcp_forwarding_default`.
+Two new `--explain` entries (`firewall_drivers.ip6_forward_enabled`, with its CIS
+reference from ComplianceAsCode, and `docker_hardening.incus_admin_group_root`,
+with its best-practice reference). Texts that change: `firewall_drivers.ip_forward_ok`
+names LXD/Incus among the mechanisms; `kubernetes.apiserver_unread` names
+kubeadm's process among what is read; the virtualisation section names Incus
+(`virt.bypass_risk`, no point) and no longer names LXD for a bridge left without
+its daemon.
+
+Scores that move:
+
+| Where | 0.35.0 | 0.36.0 | § |
+|---|---|---|---|
+| Rootless podman containers running, their configuration readable (measured, Fedora) | `docker_hardening.rootless_unexamined` INFO, score “≤” | `docker_hardening.rootless_examined` INFO (+ `rootless_shapes`), 0, no upper bound | 1 |
+| A rootless dockerd's containers, readable (measured, Mint) | `docker_hardening.rootless_dockerd` INFO, score “≤” | `docker_hardening.rootless_examined` INFO, 0, no upper bound | 1 |
+| A `podman exec` session beside rootless containers (measured, Fedora) | counted as one more container, score “≤” | not counted | 1 |
+| System dockerd stopped, no root shim, `docker` installed (measured, Mint) | `docker_hardening.scan_error` INFO, score “≤” | `docker_hardening.runtime_stopped` INFO, 0, no upper bound | 2 |
+| `net.ipv6.conf.all.forwarding=1`, no routing mechanism (measured, Mint) | nothing | `firewall_drivers.ip6_forward_enabled` WARN −1 (INFO under desktop and workstation) | 3 |
+| The same, WireGuard the only mechanism, no IPv6 packet forwarded since boot (measured, Mint) | nothing | `firewall_drivers.ip6_forward_wireguard_idle` INFO, 0 | 3 |
+| `ip_forward=1` on a host running Incus with its bridge (measured, Debian) | `firewall_drivers.ip_forward_enabled` WARN −1 | `firewall_drivers.ip_forward_ok` OK, 0 | 4 |
+| Accounts in `incus-admin`, the Incus socket with a root listener (measured, Debian) | nothing | `docker_hardening.incus_admin_group_root` WARN −2 | 5 |
+| The same, the docker or lxd group already counted (reproduced in code) | nothing | `docker_hardening.incus_admin_group_root` WARN, 0 | 5 |
+| Accounts in `incus` (measured, Debian) | nothing | `docker_hardening.incus_user_group` INFO, 0 | 5 |
+| libvirt on nftables, an empty `LIBVIRT_FWI` left in iptables, a routed network (measured, Debian) | `virt.libvirt_no_inbound` INFO, 0 | `virt.bypass_risk` WARN, 0 | 6 |
+| `server min protocol = SMB2`, then `min protocol = NT1` (measured, Mint) | `samba.smb1_disabled` OK | `samba.smb1_enabled` ALERT −2 | 7 |
+| `server max protocol = SMB3`, then `protocol = NT1` (reproduced in code from testparm) | `samba.smb1_disabled` OK | `samba.smb1_enabled` ALERT −2 | 7 |
+| `[global]` `guest ok = yes` and `read only = no`, a share declared after it (measured, Mint) | nothing | `samba.guest_writable` ALERT −2 | 7 |
+| A share: `guest ok = yes`, then `public = no` (reproduced in code from testparm) | `samba.guest_readonly` WARN −1 | nothing | 7 |
+| A guest share: `writeable = yes`, then `read only = yes` (reproduced in code from testparm) | `samba.guest_writable` ALERT −2 | `samba.guest_readonly` WARN −1 | 7 |
+| kubeadm, kubelet under `serverTLSBootstrap` (measured, Debian) | `kubernetes.kubelet_tls_unchecked` INFO, score “≤” | the kubelet asked: `kubernetes.kubelet_auth_ok` OK (measured, 401), or what it answers — `kubernetes.kubelet_anonymous` up to ALERT −3 | 8 |
+| kubeadm's API server (measured, Debian) | `kubernetes.apiserver_unread` INFO, score “≤” | read: `apiserver_anonymous_refused` and `cluster_admin_ok` OK (measured), or `apiserver_always_allow` ALERT −2, `apiserver_anonymous` WARN −1, `cluster_admin_broad` ALERT −3 | 8 |
+| openSUSE, a newer installed kernel than the running one (reproduced in code from a container's file list) | nothing | `kernel_modules.kernels_reboot_pending` INFO, 0 | 9 |
+| AllowTcpForwarding absent from sshd_config, server profile (measured, Mint) | `ssh.allow_tcp_forwarding` WARN −1 | `ssh.allow_tcp_forwarding_default` INFO, 0 | 10 |
+
+### 1. Rootless containers, examined
+
+0.33.0 (podman) and 0.35.0 (a rootless dockerd) counted rootless containers and
+said they were not examined; the score stayed an upper bound. Nothing is run as
+the user (decided with the user on 11 November 2026), but every runtime keeps
+the OCI `config.json` it started the container from, and root can read it:
+
+| Host, runtime | Where root reads `config.json` | Owner |
+|---|---|---|
+| Linux Mint 22.3, docker 29.1.3 + rootlesskit 1.1.1 | `/proc/<shim>/cwd/config.json` — the bundle path exists only in rootlesskit's mount namespace | the user |
+| Fedora 44, podman 5.8.1 | conmon's `-b <bundle>`, in the user's home, through `/proc/<conmon>/root` | the user |
+
+The file is opened without following a final symlink and kept only when it is a
+regular file the container's user owns, under 1 MiB: a user cannot make root read
+a file that is not theirs through it.
+
+What each shape is worth, measured on both hosts with one container of each:
+
+| Shape | In `config.json` | On the host |
+|---|---|---|
+| plain | 14 capabilities (Docker), 11 (podman) | runs as the user (uid 1001), in the runtime's user namespace |
+| `--privileged` | 41 capabilities (`cap_last_cap` + 1); podman binds the host's devices | a disk and `/dev/mem` refused; a kernel-wide sysctl refused; a network sysctl written in the container's own namespace only |
+| `--network host` | no network namespace | Docker: rootlesskit's network (tap0); podman: the host's — a port opened there is listed by `ss` as the user's |
+| `--pid host` | no PID namespace | the host's PID namespace, which the user sees anyway |
+| `-v /:/host` | a bind of `/` | `/host/etc/shadow` refused |
+
+Every shape measured stayed within the user's rights — which does not make every
+rootless configuration harmless: BOB names the wider shapes it reads, charges
+none, and keeps an unreadable configuration unexamined. Lifting the upper bound
+does not rest on interpreting every OCI field: it rests on the runtime itself —
+the shim or conmon — running as the user (measured, and checked by BOB: a
+container of a runtime run by root is not taken for a rootless one), which
+bounds every process of the container to that user's rights whatever its
+`config.json` says; the shapes are read to be named. The containers read are said
+(`docker_hardening.rootless_examined`), their wider shapes named
+(`docker_hardening.rootless_shapes`: privileged, `CAP_SYS_ADMIN`, the host's or
+rootlesskit's network, the host's PID namespace, host paths mounted), INFO
+without a point, and the score is no longer an upper bound for them. A container
+whose configuration cannot be read stays unexamined, as before.
+
+A defect found while measuring, present since 0.33.0: `podman exec` runs a
+conmon of its own for the session (flags `-e`/`--exec`, the container's name),
+and BOB counted it as one more rootless container — “6” for 5. It is no longer
+counted.
+
+### 2. A stopped dockerd with nothing left running
+
+On a host where docker is installed and its daemon stopped — no root `dockerd`,
+nothing listening on the system socket, no root shim in Docker's namespace —
+root's `docker ps` failed, and 0.35.0 read that as a runtime that did not
+answer: the section not fully read, the score an upper bound, for a Docker with
+nothing running (measured on Mint, the system Docker disabled beside a rootless
+one). It is no longer asked; `docker_hardening.runtime_stopped` says why. A root
+shim still running (a container kept by live-restore), or a count that could not
+be read, keeps the question open, as before.
+
+### 3. IPv6 forwarding, read
+
+Before 0.36.0 BOB read `net.ipv4.ip_forward` only. Measured in network
+namespaces on Mint (documentation prefixes):
+
+| Router namespace | IPv6 routed | `Ip6OutForwDatagrams` |
+|---|---|---|
+| `net.ipv6.conf.all.forwarding=0` | refused | 0 |
+| `all.forwarding=1` | yes | 6 |
+| the fix, `all.forwarding=0` (every interface and the default set back to 0) | refused | — |
+| `all.forwarding=0`, the two interfaces' `forwarding=1` | refused | — |
+| WireGuard client, IPv6 traffic in its tunnel | — | 0 (client) |
+| WireGuard gateway routing the client to a LAN | yes | 6 → 16 (gateway) |
+
+`all.forwarding` is the knob that routes, and the counter tells a client from a
+gateway as `ForwDatagrams` does for IPv4. It is judged as IPv4's forwarding is:
+a running mechanism excuses it (`firewall_drivers.ip6_forward_ok`), WireGuard
+alone with nothing forwarded since boot is said without a point or a command
+(`firewall_drivers.ip6_forward_wireguard_idle`), otherwise WARN −1
+(`firewall_drivers.ip6_forward_enabled`, with `sysctl -w
+net.ipv6.conf.all.forwarding=0`; INFO under the desktop and workstation
+profiles, as for IPv4). Each family is judged on its own: a host forwarding both
+without a mechanism costs a point for each. Replayed on the Mint host:
+`all.forwarding=1` alone — 0.35.0 nothing, 0.36.0 the WARN; with a WireGuard
+interface added, the INFO.
+
+### 4. LXD and Incus route
+
+Measured on Debian 13 (Incus 6.0.4): `incusbr0` is a NAT bridge (`ipv4.nat` and
+`ipv6.nat` true); with Incus stopped and both forwarding knobs set back to 0,
+starting Incus set both to 1 again — as libvirt does. BOB did not count LXD or
+Incus as a routing mechanism: a host running either had
+`firewall_drivers.ip_forward_enabled` (−1), and with § 3 its IPv6 twin. An LXD
+or Incus daemon (`lxd`, `incusd`) running with a bridge of its own (`lxdbr*`,
+`incusbr*`) now counts, for both families and for FORWARD rules naming its
+bridges. The rule rests on the daemon and its bridge being there, whatever the
+bridge's NAT setting: BOB does not check that traffic is routed through it. A
+bridge left behind without its daemon does not count (measured:
+`lxdbr0` and the `inet lxd` table stayed after the LXD package was purged).
+Replayed: 0.35.0 the WARN, 0.36.0 OK for both families.
+
+### 5. Incus's groups
+
+Incus's security documentation: “Local access to Incus through the Unix socket
+always grants full access to Incus. Therefore, you should only give such access
+to users who you'd trust with root access to your system”, and “The root user and
+all members of the incus-admin group can interact with the local daemon”; the
+`incus` group is “restricted to a single project tied to their user”. The
+documentation does not name the sockets; measured on Debian 13 (Incus 6.0.4):
+
+| Socket | Held by | `incus-admin` member | `incus` member | Other |
+|---|---|---|---|---|
+| `/var/lib/incus/unix.socket`, root:incus-admin 660 | systemd, `incusd` (root) | answered, `auth: trusted` | refused | refused |
+| `/var/lib/incus/unix.socket.user`, root:incus 660 | systemd, `incus-user` (root) | refused | answered: a project of its own (restricted: disks under its home, its own uid) | refused |
+
+The `incus-admin` group is read as the `lxd` group is (0.35.0): WARN −2 while the
+socket the group can write has a root listener (`docker_hardening.incus_admin_group_root`),
+the same power as the docker and lxd groups, so it counts once per host,
+decided by the score engine after the profile and `--ignore`; dormant, not root,
+or unreadable as for lxd (the last one an upper bound). The `incus` group is said
+and not counted (`docker_hardening.incus_user_group`). LXD from the Debian
+package (5.0.2) was measured too: `/var/lib/lxd/unix.socket`, root:lxd 660, a
+member trusted — 0.35.0 already read that path and counted the member; nothing
+changes there.
+
+### 6. libvirt's rules, in both backends
+
+Measured on Debian 13 (libvirt 11.3, no firewalld): with `firewall_backend`
+unset, libvirt chose iptables (`network.conf`: “the first available backend from
+the following list: [iptables, nftables]”); set to nftables, the rules moved to
+`table ip libvirt_network`, while an empty `LIBVIRT_FWI` chain (`-N LIBVIRT_FWI`,
+no rule) stayed in iptables. From a namespace routed through the host, the NAT
+network's VM refused, the routed network's VM was reached — and 0.35.0, which
+read nftables only when iptables had no such chain, read the empty one and said
+libvirt admitted nothing. Both backends are now read, per bridge: a bridge one
+backend names takes its rules; one both name is open only if both admit new
+connections — each base chain of the forward hook sees the packet and can
+refuse it. Replayed: 0.36.0 says the NAT network replies only and warns on the
+routed one, as the probe found.
+
+### 7. smb.conf as samba reads it, synonyms and `[global]`
+
+0.28.0 replaced configparser with samba's own reading rules. Two of samba's
+rules were still missing; measured with testparm 4.19.5 on Mint (`--section-name`,
+`--parameter-name` for the effective value):
+
+| smb.conf | testparm | 0.35.0 |
+|---|---|---|
+| `server min protocol = SMB2`, then `min protocol = NT1` | NT1 | SMB2 (the first spelling present) |
+| `server max protocol = SMB3`, then `protocol = NT1` | maximum NT1 | SMB3 (`protocol` not read) |
+| `path = /srv/a`, then `directory = /srv/b` | /srv/b | /srv/a |
+| `guest ok = yes`, then `public = no` | not a guest share | a guest share |
+| `writeable = yes`, then `read only = yes` (or `write ok`) | read-only | writable |
+| `[global]` `guest ok = yes`, `read only = no`; a share with a path only | a writable guest share | nothing |
+| a share declared before that `[global]` | the defaults | nothing (right) |
+
+A synonym now sets the parameter it stands for — `writeable`, `writable` and
+`write ok` inverted onto `read only` — so the last assignment wins whatever its
+spelling, and a share declared after `[global]` takes the `guest ok` and
+`read only` written there. Replayed on the Mint host with the first and sixth
+cases written into its smb.conf (restored afterwards): testparm NT1, a writable
+guest share; 0.35.0 “SMBv1 is disabled” and nothing on the share; 0.36.0 ALERT
+SMBv1 and ALERT guest-writable share.
+
+### 8. kubeadm: the kubelet under `serverTLSBootstrap`, and the API server
+
+Measured on kubeadm 1.37.2 (Debian 13, containerd 1.7.24), KubeletConfiguration
+`serverTLSBootstrap: true`: no self-signed `kubelet.crt`; while its signing
+request is pending the kubelet refuses the TLS handshake on 10250; approved, it
+serves a certificate issued by the cluster's authority (CN=kubernetes). The file
+the kubelet's `authentication.x509.clientCAFile` names (`/etc/kubernetes/pki/ca.crt`)
+holds that authority and verified the certificate. Two facts, kept apart: that
+parameter's role is to authenticate the kubelet's clients; that the same
+authority signs its serving certificate is what was measured on kubeadm.
+0.32.0 to 0.35.0 did not ask such a kubelet (“not measured”); it is now checked
+against that file and asked. Where another authority signs the serving
+certificate, the check fails and the kubelet is said and not asked
+(`kubernetes.kubelet_tls_mismatch`, 0.32.0) — never read as answered. A kubelet with its own `tlsCertFile` still is
+not: nothing says which authority signed it.
+
+On the same node, kubeadm's API server is a `kube-apiserver` process of its own:
+its flags are in `/proc` (`--authorization-mode=Node,RBAC`, `--secure-port=6443`,
+`--client-ca-file`); the file `--client-ca-file` names — a setting that
+authenticates clients — holds the cluster authority, which verified the serving
+certificate on 6443 (a mismatch would leave the API server said and not asked); an anonymous
+read answered 403; `kubectl --kubeconfig=/etc/kubernetes/admin.conf` listed the
+cluster role bindings. BOB read the API server on MicroK8s and on a k3s server
+only, and said “not read” here; the one `kube-apiserver` process run by root is
+now read the same way. Replayed: 0.35.0 the kubelet not asked and the API server
+not read, two sections not fully read; 0.36.0 the kubelet refuses anonymous
+requests (401), the API server's anonymous read refused (403), cluster-admin not
+bound broadly.
+
+The virtualisation section, measured on the same host: with Incus running
+(incusd, `incusbr0`), 0.35.0 said “No virtualisation technology detected” and
+0.36.0 names Incus (`virt.bypass_risk`, no point); with Incus purged and its
+bridge left, and with an `lxdbr0` left without `lxd`, 0.35.0 named “LXD/LXC”
+for the latter and 0.36.0 names nothing — a bridge names LXD or Incus only
+while its daemon runs, or while its binary is installed.
+
+Cilium, another CNI, was measured on the same node (Cilium 1.20.3): its FORWARD
+rules are a jump to its own chain, like flannel's on k3s (0.34.0); nothing
+changes.
+
+### 9. Installed kernels from the packages that provide `kernel`
+
+0.35.0 read `rpm -q kernel-core --qf %{VERSION}-%{RELEASE}.%{ARCH}`, which is
+`uname -r` on Fedora and the limit it wrote for openSUSE. Measured in containers:
+openSUSE Leap 16.0's `kernel-default` 6.12.0-160000.41.1.x86_64 installs
+`/usr/lib/modules/6.12.0-160000.41-default/vmlinuz`; Fedora 44's `kernel-core`,
+`/lib/modules/7.3.3-200.fc44.x86_64/vmlinuz`. The installed kernels are now the
+module directories in the file lists of the packages that provide `kernel` —
+named as `uname -r` names the running one, on both.
+
+### 10. AllowTcpForwarding at OpenSSH's default
+
+Decided with the user on 14 November 2026. OpenSSH's default for
+`AllowTcpForwarding` is yes, and BOB charged a point on every host whose
+sshd_config does not set it — every stock install (measured on Mint, OpenSSH
+9.6p1: only `#AllowTcpForwarding yes`, commented; `sshd -T` prints yes). The
+default in force is now said as an INFO (`ssh.allow_tcp_forwarding_default`),
+with the line to write; only a value written `yes` in sshd_config or a drop-in
+costs the point (`ssh.allow_tcp_forwarding`, WARN −1, as before). `DisableForwarding
+yes` silences both (0.34.0). A value set inside a `Match` block is not read (the
+reader stops at the first one, as before). Replayed on Mint: server profile,
+0.35.0 WARN −1, 0.36.0 INFO; desktop profile, INFO under both.
+
+### Limits
+
+- The kernel comparison on openSUSE was reproduced from a container's file list,
+  not on a running openSUSE (a container shares its host's kernel).
+- A k3s agent and Timeshift in BTRFS mode are still not measured; a kubelet with
+  its own `tlsCertFile` is still not asked.
+- The serving-certificate authority of a kubelet under `serverTLSBootstrap` and
+  of the API server was measured on kubeadm only; elsewhere, a certificate that
+  authority does not sign leaves the service said and not asked.
+- Rootless containers are named by the runtime's name for them: podman's
+  container name, a rootless dockerd's container id (its shim carries no name).
+
+### Tests
+
+**Tests** 21925 → **22208**, mutations 1990 → **2030**, all killed. New test
+files: `test_v0360_rootless_oci.py`, `test_v0360_docker_stopped.py`,
+`test_v0360_ipv6_forwarding.py`, `test_v0360_lxd_incus_routing.py`,
+`test_v0360_incus_groups.py`, `test_v0360_libvirt_both_backends.py`,
+`test_v0360_samba_synonyms.py`, `test_v0360_kubelet_server_bootstrap.py`,
+`test_v0360_kubeadm_apiserver.py`, `test_v0360_rpm_kernels_any_family.py`,
+`test_v0360_allow_tcp_forwarding_default.py`, `test_v0360_virt_lxd_incus.py`. Each
+guard has a mutation that brings its defect back.
+
+---
+
 ## [0.35.0] — 2026-11-14
 
 **A minor release, BREAKING for scores: who listens on the Docker socket is

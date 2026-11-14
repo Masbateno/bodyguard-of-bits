@@ -165,6 +165,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
         "firewall_drivers.iptables_forward_bypass",
         "firewall_drivers.nftables_parallel",
         "firewall_drivers.ip_forward_enabled",
+        "firewall_drivers.ip6_forward_enabled",
     ]),
     ("Docker", [
         "docker.iptables_bypass",
@@ -357,6 +358,7 @@ _EXPLAIN_GROUPS: list[tuple[str, list[str]]] = [
     ("Docker", [
         "docker_hardening.docker_group_root",
         "docker_hardening.lxd_group_root",
+        "docker_hardening.incus_admin_group_root",
         "docker_hardening.privileged",
         "docker_hardening.root_containers",
         "docker_hardening.socket_mounted",

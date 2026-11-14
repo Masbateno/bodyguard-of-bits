@@ -46,8 +46,8 @@ def test_the_score_reads_as_a_ceiling():
     assert not res.deductions
 
 
-@pytest.mark.parametrize("lang, words", [("en", "BOB reads its arguments on MicroK8s, and on a k3s server from its journal"),
-                                         ("fr", "BOB lit ses arguments sous MicroK8s, et sur un serveur k3s dans son journal")])
+@pytest.mark.parametrize("lang, words", [("en", "BOB reads its arguments on MicroK8s, on a k3s server from its journal, and from a kube-apiserver process (kubeadm)"),
+                                         ("fr", "BOB lit ses arguments sous MicroK8s, sur un serveur k3s dans son journal, et dans un processus kube-apiserver (kubeadm)")])
 def test_what_is_said(lang, words):
     i18n.init(lang)
     try:
