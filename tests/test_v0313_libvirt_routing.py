@@ -132,10 +132,22 @@ class TestWhenItDoesNot:
         host({"n.xml": _NAT.replace("name='virbr0' ", "")}, bridges=["virbr0"])
         assert fs._libvirt_routing() is False
 
-    def test_a_broken_state_file_is_skipped(self, host):
+    def test_a_broken_state_file_is_skipped(self, host, monkeypatch):
+        """Read in both listing orders (16 November 2026): this guard bit only
+        when the broken file was listed before the valid one. iterdir() order
+        varies from one directory to the next, and one CI run of 0.37.0 listed
+        default.xml first — the mutation that stops at a broken file survived
+        (proved on a copy with the order forced; BOB's verdict is the same
+        either way)."""
+        from pathlib import Path
         host({"a.xml": "<networkstatus><network>", "default.xml": _NAT}, bridges=["virbr0"])
-        assert fs._libvirt_routing() is True
-        assert fs._LIBVIRT_NETWORK_STATE.joinpath("default.xml").unlink() is None
+        state, real = fs._LIBVIRT_NETWORK_STATE, Path.iterdir
+        for broken_last in (False, True):
+            monkeypatch.setattr(Path, "iterdir", lambda self, r=broken_last:
+                                iter(sorted(real(self), reverse=r)) if self == state else real(self))
+            assert fs._libvirt_routing() is True, f"broken file listed {'last' if broken_last else 'first'}"
+        monkeypatch.setattr(Path, "iterdir", real)
+        assert state.joinpath("default.xml").unlink() is None
         assert fs._libvirt_routing() is False
 
     def test_libvirt_not_there(self, tmp_path, monkeypatch):
