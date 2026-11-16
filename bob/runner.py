@@ -946,7 +946,7 @@ def run_checks(
                                  context_note=_risk_note,
                                  is_local=(shown_network_context(
                                      network_context, ipv6_snapshot.has_global_ipv6) == "local"),
-                                 quiet=config.quiet)
+                                 quiet=config.quiet, running=snap.is_active)
             if _port_note and not config.quiet:
                 print_info(_port_note)
         svc_result = check_single_service_display(

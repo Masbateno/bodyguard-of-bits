@@ -1,3 +1,21 @@
+bodyguard-of-bits (0.38.0-1) unstable; urgency=medium
+
+  * Minor, BREAKING for scores (sshd Match blocks covered or included,
+    Linux Mint automatic updates); no JSON-schema or CSV-column change.
+  * Security: a rootless container's configuration file, read as root
+    through the user's own mount namespace, is inspected with O_PATH
+    before it is opened for reading; 0.36.0 and 0.37.0 opened it first,
+    so a plain account could make BOB open a device node.
+  * sshd: a setting in a Match block an earlier block certainly covers is
+    no longer counted; an Include inside a Match block is followed.
+  * Linux Mint's Update Manager automation counts as automatic updates.
+  * After ufw enable returns 0, --fix --apply reads ufw status back before
+    saying applied.
+  * Texts that said more than BOB measures are made precise (behind NAT, a
+    risk card for a service that does not run, the UFW log criterion).
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Tue, 17 Nov 2026 14:00:00 +0000
+
 bodyguard-of-bits (0.37.0-1) unstable; urgency=medium
 
   * Minor, BREAKING for scores (ufw left disabled, sshd Match blocks, k3s

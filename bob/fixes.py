@@ -194,6 +194,38 @@ def _run_fix_command(argv, timeout):
     return ("ok" if proc.returncode == 0 else "failed"), proc.returncode, stderr
 
 
+#: v0.38.0 — a command whose exit status does not prove its effect. `ufw
+#: enable` asked "Proceed with operation (y|n)?" under SSH, read no answer on
+#: the closed stdin, printed "Aborted", exited 0 and stayed inactive; BOB said
+#: "✔ Applied" (measured, Linux Mint 22.3, ufw 0.36.2, 14 November 2026).
+#: `--force` (0.37.0) removed that case; this removes the class: after an
+#: enable that exited 0, BOB asks ufw itself.
+_UFW_ENABLE = re.compile(r"(?<![\w-])ufw\s+(?:--force\s+)?enable(?![\w-])", re.IGNORECASE)
+_PRIVILEGE = ("sudo", "doas")
+
+
+def _ufw_read_back(argv) -> "bool | None":
+    """Whether ufw now says it is active: True, False, or None (not read).
+
+    Asked with the same privilege tool the fix used, non-interactively: the
+    fix has just authenticated, and a prompt here would hang on closed stdin.
+    Only an explicit "Status: active" / "Status: inactive" counts — anything
+    else (no answer, a refusal, a translated line) is not a reading.
+    """
+    from bob.checks._run import run_result
+
+    tool = argv[0] if argv else ""
+    prefix = [tool, "-n"] if tool.rsplit("/", 1)[-1] in _PRIVILEGE else []
+    res = run_result(*prefix, "ufw", "status", timeout=_TIMEOUT_DEFAULT)
+    if not res.ok:
+        return None
+    if re.search(r"^Status:\s+active\s*$", res.stdout, re.MULTILINE):
+        return True
+    if re.search(r"^Status:\s+inactive\s*$", res.stdout, re.MULTILINE):
+        return False
+    return None
+
+
 def _apply_native(action: dict):
     """Carry out a structured fix in BOB's own code, and report it like a run.
 
@@ -391,9 +423,20 @@ def run_fixes(engine, config, t) -> None:
                     argv = shlex.split(cmd)
                     timeout = _timeout_for(argv)
                     status, rc, err = _run_fix_command(argv, timeout)
+                    if status == "ok" and _UFW_ENABLE.search(cmd):
+                        state = _ufw_read_back(argv)
+                        if state is False:
+                            status, err = "failed", t("fixes.ufw_still_inactive").encode()
+                        elif state is None:
+                            status = "unconfirmed"
                 if status == "ok":
                     print(f"  ✔ {t('fixes.applied')}")
                     applied_cmds.append(cmd)
+                elif status == "unconfirmed":
+                    # It ran and exited 0, but the effect could not be read
+                    # back: neither applied nor failed.
+                    print(f"  ⚠ {t('fixes.ufw_unconfirmed')}")
+                    unknown_cmds.append(cmd)
                 elif status == "timeout":
                     # Not "not applied" — BOB stopped waiting on a command it
                     # had already started, so the system may be halfway

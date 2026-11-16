@@ -516,6 +516,14 @@ def _check_match_blocks(snapshot: SSHSnapshot, result: CheckResult, _t, ssh_expo
         files = ", ".join(sorted(set(match_all.values())))
         result.info(message=_t("ssh.match_all_sets", keys=keys, file=files),
                     key="ssh.match_all_sets", template_vars={"keys": keys, "file": files})
+    # v0.38.0 — settings an earlier block takes first for every session of
+    # this one (measured, a10380): never applied by sshd, so not weighed; said.
+    for blk in blocks:
+        for key, earlier in sorted((blk.get("shadowed") or {}).items()):
+            vars_ = {"criteria": blk["criteria"], "file": blk["file"], "directive": key, "earlier": earlier}
+            result.info(message=_t("ssh.match_block_shadowed", criteria=blk["criteria"], file=blk["file"],
+                                   directive=key, earlier=earlier),
+                        key="ssh.match_block_shadowed", template_vars=vars_)
     base = {k: v for k, v in cfg.items() if not k.startswith("_match")}
     counted = {d.key for d in result.deductions}
     weakened = False

@@ -645,10 +645,16 @@ class TestLogsSnapshotFromSystem:
 
     def test_journald_fallback_when_no_logfile(self, tmp_path):
         missing = tmp_path / "ufw.log"  # does not exist
-        # Use log_days=365 so _JOURNALD_SAMPLE's hardcoded date stays in window.
+        # v0.38.0 — the sample is dated an hour ago. Its fixed date (13 April
+        # 2026) relied on log_days=365 and would have left the window on
+        # 13 April 2027 (found by running the suite with the clock moved ahead).
+        from datetime import datetime, timedelta
+        recent = (datetime.now().astimezone() - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S%z")
+        sample = _JOURNALD_SAMPLE.replace("2026-04-13T18:20:08+0200", recent, 1)
+        assert sample != _JOURNALD_SAMPLE
         with patch("bob.checks.logs._read_from_journald",
-                   return_value=(_JOURNALD_SAMPLE, True)):
-            snap = LogsSnapshot.from_system(log_days=365, log_path=missing)
+                   return_value=(sample, True)):
+            snap = LogsSnapshot.from_system(log_days=7, log_path=missing)
         assert snap.log_found
         assert snap.log_source == "journald"
         assert len(snap.entries) == 1

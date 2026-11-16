@@ -135,7 +135,10 @@ class TestWriteFinding:
     def test_contains_timestamp(self, report):
         report.write_finding("OK", "message")
         content = read_report(report)
-        assert "2026" in content  # year in timestamp
+        # v0.38.0 — the timestamp's shape, not a year: "2026" would have
+        # failed from 1 January 2027 (found with the clock moved ahead).
+        import re
+        assert re.search(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ", content, re.M), content
 
     def test_detail_appended(self, report):
         report.write_finding("WARN", "main message", "extra detail")

@@ -272,6 +272,11 @@ class TestEveryCommandOnScreenWearsTheConvention:
         import types
         from bob import fixes, i18n, output
         monkeypatch.setattr(output, "_c", output._COLOURS_ON)
+        # v0.38.0 — the apply case ran the real `sudo ufw enable` (seen by a
+        # Popen spy): denied on a workstation, run on a runner whose sudo asks
+        # no password. This test is about colours, not about the firewall.
+        monkeypatch.setattr(fixes, "_run_fix_command", lambda argv, timeout: ("ok", 0, b""))
+        monkeypatch.setattr(fixes, "_ufw_read_back", lambda argv: True)
         i18n.init(cfg.pop("lang", "en"))
         buf, old = io.StringIO(), _sys.stdout
         _sys.stdout = buf

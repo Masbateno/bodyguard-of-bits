@@ -68,12 +68,13 @@ class TestTheRenderedLabels:
     def test_the_glance_names_the_public_ipv6(self, fr):
         text = _glance(fr, "local_v6")
         assert "adresse IPv6 publique directe" in text
-        assert "pas d'IP publique directe" not in text
+        assert "aucune adresse publique sur l'hôte" not in text
         assert "⚠" in text.split("Exposition internet")[0].splitlines()[-1]
 
     def test_the_glance_without_ipv6_still_says_nat(self, fr):
-        """Polarity twin: a host with no global IPv6 keeps the old line."""
-        assert "derrière NAT / pas d'IP publique directe" in _glance(fr, "local")
+        """Polarity twin: a host with no global IPv6 keeps the NAT line (its
+        wording made precise in v0.38.0: no green check, router not checked)."""
+        assert "aucune adresse publique sur l'hôte (NAT)" in _glance(fr, "local")
 
     def test_the_summary_label_resolves(self, fr):
         label = fr("scoring.context.local_v6")

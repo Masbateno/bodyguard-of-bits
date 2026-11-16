@@ -64,6 +64,10 @@ class IPv6Snapshot:
     listeners_readable:  bool       = True
     ufw_ipv6_enabled:    "bool | None" = True
     ipv6_listeners:      list[str]  = field(default_factory=list)
+    #: v0.38.0 — wildcard IPv6 listeners of the internal processes left out of
+    #: ``ipv6_listeners`` (avahi, the stub resolver…): never told to open, but
+    #: counted where BOB says the IPv6 inbound is closed.
+    ipv6_internal_listeners: list[str] = field(default_factory=list)
     ufw_v6_covered:      list[str]  = field(default_factory=list)
     #: v0.31.2 — covered listeners whose own (v6) rules neither refuse them
     #: from every source nor admit them from any (``_ufw.rules_leave_rest_open``).
@@ -125,6 +129,8 @@ class IPv6Snapshot:
 
         ss = run_result("ss", "-tulnp")
         ipv6_listeners = sorted(_extract_ipv6_listeners(ss.stdout))
+        ipv6_internal_listeners = sorted(_extract_ipv6_listeners(ss.stdout, include_internal=True)
+                                         - set(ipv6_listeners))
 
         # v0.31.3 — the rules as the network meets them (_ufw.network_rules).
         ufw_out = _ufw.network_rules(_run("ufw", "status", "numbered") or "", _ufw.read_outward_interfaces())
@@ -148,6 +154,7 @@ class IPv6Snapshot:
             listeners_readable=ss.ok,
             ufw_ipv6_enabled=ufw_ipv6_enabled,
             ipv6_listeners=ipv6_listeners,
+            ipv6_internal_listeners=ipv6_internal_listeners,
             ufw_v6_covered=ufw_v6_covered,
             ufw_v6_in_part=_v6_rules_in_part(ufw_out, ufw_v6_covered, _ufw.read_app_profiles()),
             ufw_v6_admits=ufw_v6_admits,
@@ -474,13 +481,17 @@ def _check_ipv6_body(snapshot: IPv6Snapshot, ufw_active: bool = True, t: Transla
                 _jumped = list(dict.fromkeys(m.group(1) for r in snapshot.ip6_input_rules or []
                                              for m in [_V6_TARGET.search(r)]
                                              if m and m.group(1) in (snapshot.ip6_user_chains or ())))
+                # v0.38.0 — "closed" holds for every listener, the internal
+                # ones too (avahi on [::]:5353 was left out of the count on a
+                # real Mint, 14 November 2026); they are only never told to open.
+                _closed = sorted(set(snapshot.ipv6_listeners) | set(snapshot.ipv6_internal_listeners))
                 result.info(
                     message=_t("ipv6.ufw_v6_off_blocked_chains" if _chains else "ipv6.ufw_v6_off_blocked",
-                               count=len(snapshot.ipv6_listeners),
+                               count=len(_closed),
                                followed=(" " + _t("ipv6.ufw_v6_off_chains_followed", chains=", ".join(_jumped))
                                          if _jumped else "")),
                     detail=_t("ipv6.ufw_v6_off_blocked_chains_detail" if _chains
-                              else "ipv6.ufw_v6_off_blocked_detail", ports=listeners_str),
+                              else "ipv6.ufw_v6_off_blocked_detail", ports=", ".join(_closed)),
                     key="ipv6.ufw_v6_off_blocked",
                 )
             elif snapshot.has_global_ipv6:
@@ -747,7 +758,7 @@ _INTERNAL_PROCESSES: frozenset[str] = frozenset({
 _SS_PROC_RE = re.compile(r'users:\(\("([^"]+)"')
 
 
-def _extract_ipv6_listeners(ss_output: str) -> set[str]:
+def _extract_ipv6_listeners(ss_output: str, include_internal: bool = False) -> set[str]:
     """
     Parse `ss -tulnp` and return the set of 'port/proto' strings for services
     that bind to the IPv6 wildcard address [::] — shown as ``[::]`` when
@@ -783,7 +794,7 @@ def _extract_ipv6_listeners(ss_output: str) -> set[str]:
         port_proto = f"{m.group(1)}/{proto}"
         # Filter out known internal processes (only when -p info is present)
         proc_m = _SS_PROC_RE.search(line)
-        if proc_m and proc_m.group(1) in _INTERNAL_PROCESSES:
+        if proc_m and proc_m.group(1) in _INTERNAL_PROCESSES and not include_internal:
             continue
         listeners.add(port_proto)
     return listeners

@@ -79,6 +79,10 @@ class UpdatesSnapshot:
     pending_regular:        list[str] = field(default_factory=list)
     unattended_installed:   bool = False
     unattended_enabled:     bool = False
+    #: v0.38.0 — Linux Mint's Update Manager automation is on: its marker
+    #: file AND its timer's link (measured: `mintupdate-automation upgrade
+    #: enable` writes both, `disable` removes both).
+    mint_auto_upgrades:     bool = False
     apt_cache_age_days:     int | None = None
     upgradable_count:       int | None = None
     #: v0.24.1 — packages ``apt-get -s dist-upgrade`` lists but will not install
@@ -120,6 +124,7 @@ class UpdatesSnapshot:
             (snap.pending_security, snap.pending_regular,
              snap.apt_phased, snap.apt_kept_back) = _scan_dist_upgrade()
             snap.unattended_installed, snap.unattended_enabled = _check_unattended()
+            snap.mint_auto_upgrades = _mint_auto_upgrades()
             snap.apt_cache_age_days = _apt_cache_age_days()
             snap.upgradable_count = _count_upgradable()
             # A rolling apt distro (Kali) ships no -security suite; only then is
@@ -471,6 +476,19 @@ def _strip_apt_comments(text: str) -> str:
     return "\n".join(out)
 
 
+#: v0.38.0 — what `mintupdate-automation upgrade enable` writes (measured on
+#: Linux Mint 22.3, mintupdate 7.1.4 and its container image, 16 November 2026).
+_MINT_AUTO_MARKER = Path("/var/lib/linuxmint/mintupdate-automatic-upgrades-enabled")
+_MINT_AUTO_TIMER = Path("/etc/systemd/system/timers.target.wants/mintupdate-automation-upgrade.timer")
+
+
+def _mint_auto_upgrades() -> bool:
+    """Both the marker and the timer's link: the service exits at once without
+    the marker, and nothing starts it without the timer. One of the two alone
+    is not counted (the earlier finding stands)."""
+    return path_exists(_MINT_AUTO_MARKER) and (_MINT_AUTO_TIMER.is_symlink() or path_exists(_MINT_AUTO_TIMER))
+
+
 def _check_unattended() -> tuple[bool, bool]:
     """
     Return (installed, enabled) for unattended-upgrades.
@@ -642,7 +660,15 @@ def check_updates(
     # --- unattended-upgrades (apt / Debian concept only) --------------------
     uu_ok = snapshot.unattended_installed and snapshot.unattended_enabled
 
-    if mgr == "apt" and not uu_ok:
+    # v0.38.0 — decided with the user (16 November 2026): Linux Mint's own
+    # automation installs every update daily (security included, not on
+    # battery) and counts as automatic updates. Before, BOB read only
+    # unattended-upgrades and took a point under the server profile.
+    if mgr == "apt" and not uu_ok and snapshot.mint_auto_upgrades:
+        result.ok(message=_t("updates.mint_automation_on"),
+                  detail=_t("updates.mint_automation_on_detail"),
+                  key="updates.mint_automation_on")
+    elif mgr == "apt" and not uu_ok:
         if security and profile_name not in ("workstation", "desktop"):
             # Compound risk: security gap + no automation (server/default only)
             # Unattended upgrades are a Debian package *and* a Debian concept:

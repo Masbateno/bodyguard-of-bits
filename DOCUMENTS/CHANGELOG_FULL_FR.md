@@ -6,6 +6,246 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.38.0] — 17-11-2026
+
+**Une version mineure, BREAKING pour les scores : le fichier de configuration
+d'un conteneur sans root est examiné avant que root ne l'ouvre en lecture ; les blocs Match
+sshd couverts par un bloc antérieur sont écartés, et un Include dans un bloc
+Match est suivi ; les mises à jour automatiques de Linux Mint sont comptées ;
+ufw est relu après que BOB l'a activé ; les textes qui disaient plus que ce que
+BOB mesure sont précisés.**
+
+BREAKING pour les scores : un même hôte peut obtenir un score différent sous
+0.37.0 et 0.38.0 — global, par domaine, et la tendance `--history` à travers la
+mise à jour. Formule inchangée ; aucune section, aucune option ajoutée ou
+retirée ; aucune clé de constat renommée ou retirée. Aucun changement de schéma
+JSON ni de colonne CSV. Clés de constat nouvelles : `ssh.match_block_shadowed`,
+`updates.mint_automation_on`. Textes nouveaux hors constats :
+`fixes.ufw_still_inactive`, `fixes.ufw_unconfirmed`, `risk_context.not_running`.
+Textes modifiés : `ssh.match_block_skipped` (désormais seulement un fichier
+inclus illisible), `ssh.match_block_weakens_detail`,
+`exposure.internet_facing_local`, `exposure.ssh_ok_password_on`,
+`logs.brute_title`, `logs.brute_none`, `clamav.scan_recent`, `clamav.scan_old`,
+`clamav.scan_very_old`, `secure_boot.disabled_detail`,
+`firmware.fwupd_dbx_sb_off_detail`, `log_rotation.cmd_comment_maxuse`,
+`compare.no_changes`.
+
+Scores qui bougent :
+
+| Où | 0.37.0 | 0.38.0 | § |
+|---|---|---|---|
+| Deux blocs Match, le second couvert par le premier (`/25` après `/24`, même User, `User *`…), le second règle `PasswordAuthentication yes` (mesuré : jamais appliqué) | `ssh.password_auth` ATTENTION −2, nommant le second bloc | rien pour cette clé + `ssh.match_block_shadowed` INFO | 2 |
+| Idem avec `AllowTcpForwarding yes` (cas 10b/10c de la 0.37.0) | ATTENTION −1 | rien + INFO | 2 |
+| `Match Address 192.0.2.0/24` / `Include extra.conf`, le fichier réglant `PasswordAuthentication yes` (mesuré : yes dans la plage, no hors) | `ssh.match_block_skipped` INFO, score plafond | `ssh.password_auth` ATTENTION −2, nommant le bloc ; plus de plafond | 3 |
+| Linux Mint, automatisation du gestionnaire de mises à jour active, mises à jour de sécurité en attente, profil server (mesuré sur une Mint 22.3 : 8/10 → 9/10 avec UFW actif) | `updates.unattended_not_configured` ATTENTION −1 | `updates.mint_automation_on` OK | 4 |
+
+### 1. Le fichier de configuration d'un conteneur sans root est examiné avant que root ne l'ouvre en lecture
+
+Depuis la 0.36.0, BOB lit en root la configuration des conteneurs sans root :
+`/proc/<shim>/cwd/config.json` pour les shims d'un dockerd sans root,
+`config.v2.json` et `daemon.json` de dockerd sous `/proc/<dockerd>/root/…`, le
+bundle de podman sous `/proc/<conmon>/root/…`. Ces chemins passent par l'espace
+de montage de l'utilisateur. Le fichier était ouvert
+(`O_RDONLY|O_NONBLOCK|O_NOFOLLOW`) et refusé ensuite seulement s'il n'était pas
+un fichier régulier de l'utilisateur.
+
+Mesuré sur la Linux Mint 22.3 de test (16 novembre 2026), où les espaces de
+noms utilisateur non privilégiés sont permis
+(`kernel.apparmor_restrict_unprivileged_userns = 0`) : un compte ordinaire
+jetable, sans Docker installé, lance `unshare -Urm`, monte `/dev/null` sur
+`~/bundle/config.json`, puis depuis ce répertoire démarre un processus nommé
+`containerd-shim-runc-v2 … -namespace moby -id <64 hex>`. strace de BOB en
+root : `openat("/proc/<pid>/cwd/config.json",
+O_RDONLY|O_NONBLOCK|O_NOFOLLOW|O_CLOEXEC) = 3` — BOB ouvrait un nœud de
+périphérique choisi par l'utilisateur. L'ouverture d'un périphérique peut avoir
+ses propres effets (un watchdog s'arme à l'ouverture ; aucun n'a été ouvert
+pendant la mesure, la cible était `/dev/null`). La lecture restait refusée :
+c'est l'open() qui posait problème.
+
+Désormais le fichier est d'abord ouvert en `O_PATH|O_NOFOLLOW` — open(2) : le
+fichier lui-même n'est pas ouvert, la routine d'ouverture d'aucun pilote ne
+s'exécute — et vérifié par ce descripteur : fichier régulier, appartenant à
+l'utilisateur du conteneur, ≤ 1 Mio. Seulement ensuite il est rouvert pour
+lecture par `/proc/self/fd/<ce descripteur>`, qui reste ouvert jusqu'à la fin
+de la réouverture ; le descripteur lu est vérifié comme le même objet
+(`st_dev` et `st_ino` égaux), donc le propriétaire et la taille vérifiés sont
+ceux du fichier lu, et la lecture s'arrête au-delà de 1 Mio s'il a grossi
+entre-temps. Le contrôle du propriétaire dit à qui est le fichier, pas que son
+contenu est digne de confiance : l'utilisateur l'écrit, et BOB le traite comme
+sa donnée (un nom seulement si Docker aurait pu le donner, champs JSON par type).
+Le contrôle d'inode ne fige pas non plus le contenu : il lie la lecture à l'objet
+examiné ; l'utilisateur peut encore changer ce que ce fichier contient. strace de la 0.38.0 sur le même banc : un seul
+`openat(…, O_PATH)` pour le périphérique, rien d'autre ; pour un fichier
+régulier, `O_PATH` puis `/proc/self/fd/3`, lu comme avant.
+
+Le défaut demande que BOB tourne en root, et qu'un utilisateur puisse monter
+dans un espace de noms utilisateur non privilégié — permis sur la Mint de test
+(mesuré ci-dessus) ; là où ces espaces sont restreints (Ubuntu le fait par
+AppArmor ; non mesuré ici), le montage est refusé.
+
+Le même banc a vérifié les noms Docker sans root ajoutés en 0.37.0 : un
+répertoire `containers/<id>`, ou le répertoire `containers` lui-même, remplacé
+par un lien vers un répertoire de root contenant un nom planté → l'ID court ; le
+fichier remplacé en boucle (bon nom, ID d'un autre conteneur, JSON tronqué)
+pendant 200 lectures → le bon nom ou l'ID court, jamais celui de l'autre
+conteneur ; le répertoire du conteneur supprimé → l'ID court. Ce sont les
+remplacements essayés sur ce banc, pas une preuve générale d'absence de course.
+Limite, mesurée : un compte
+ordinaire peut faire passer un de ses processus pour le shim d'un conteneur sans
+root — une entrée d'inventaire falsifiée. Il ne peut qu'ajouter : une ligne, et
+le constat que la forme de sa configuration appelle, à son propre nom ; sur le
+banc, il n'a pu ni masquer ni changer ce que BOB rapporte pour un autre compte
+ou pour root.
+
+### 2. sshd : un bloc Match couvert par un bloc antérieur est écarté
+
+sshd garde la première valeur lue pour une clé. La 0.37.0 comptait tout bloc qui
+affaiblit une clé, même quand un bloc antérieur, réglant la même clé, prend
+toutes les sessions que le suivant pourrait prendre — la valeur suivante n'est
+alors jamais appliquée. Cette limite était dite en 0.37.0. Mesuré avec
+`sshd -T -C` (OpenSSH 9.6p1, 15 novembre 2026, 13 cas) : le bloc suivant n'est
+jamais appliqué quand l'antérieur a les mêmes critères, une plage d'adresses qui
+contient la sienne (`/25` après `/24`), les mêmes utilisateurs dans un autre
+ordre, un sur-ensemble d'utilisateurs, un motif qui les couvre (`ali*`,
+`User *`), ou quand le bloc suivant a un critère de plus ; il est appliqué
+quelque part quand la plage antérieure est la plus étroite, quand le bloc
+suivant déborde, quand le bloc antérieur a un critère de plus, et quand le bloc
+antérieur contient une négation.
+
+BOB écarte désormais un réglage qu'un bloc antérieur prend certainement en
+premier et le dit (`ssh.match_block_shadowed`, INFO, nommant les deux blocs). Il
+ne tranche que ce dont il est sûr : chaque mot-clé du bloc antérieur présent
+dans le suivant (User, Group, Host, Address, LocalAddress, LocalPort), chaque
+entrée du suivant couverte (plages d'adresses par inclusion, motifs comme sshd
+les compare : `*` et `?` seulement — mesuré, sshd lit `[…]` littéralement, donc
+`User a[lb]ice` ne couvre pas `alice` ; les noms d'utilisateur respectent la
+casse), aucune négation dans le bloc antérieur. sshd compare les noms d'hôte
+sans tenir compte de la casse, BOB si : `Host WEB.example.org` avant
+`Host web.example.org` est compté (mesuré, un point de trop). Les différences
+connues sont celles mesurées (`[`, casse des noms d'hôte) ; les cas mesurés sont
+ceux qui sont tranchés, et le comparateur de BOB ne prétend pas reproduire
+toutes les règles de correspondance d'OpenSSH. Tout le reste est encore
+compté — un point de trop, comme c'est dit, plutôt qu'un de moins.
+
+### 3. sshd : un Include dans un bloc Match est suivi
+
+La 0.37.0 ne suivait pas un `Include` placé dans un bloc Match et le disait
+(score plafond). Mesuré avec `sshd -T -C` (7 cas) : ce que règle le fichier
+inclus appartient au bloc (yes dans la plage, no hors) ; la première valeur lue
+reste prioritaire, de part et d'autre de l'Include ; un `Match` dans le fichier
+inclus ajoute ses critères à ceux du bloc externe (alice depuis la plage
+seulement), et ce qui le précède dans le fichier appartient encore au bloc
+externe ; le bloc externe reprend après l'Include ; un même fichier inclus dans
+deux blocs vaut pour les deux. BOB le lit ainsi. Un fichier inclus illisible
+garde `ssh.match_block_skipped` (désormais « n'a pas pu être lu ») et le plafond.
+Mesuré : les sept cas ci-dessus ; les Include imbriqués, plusieurs motifs par
+Include et les erreurs d'analyse de sshd ne sont pas revendiqués au-delà.
+
+### 4. L'automatisation du gestionnaire de mises à jour de Linux Mint compte
+
+BOB ne lisait que unattended-upgrades. Sur Linux Mint, « Appliquer les mises à
+jour automatiquement » (`mintupdate-automation upgrade enable`) écrit un fichier
+témoin, `/var/lib/linuxmint/mintupdate-automatic-upgrades-enabled`, et active le
+`mintupdate-automation-upgrade.timer` (un lien sous `timers.target.wants/`) ;
+`disable` retire les deux (mesuré dans l'image `linuxmintd/mint22.3-amd64` et sur
+une Mint 22.3). Chaque jour, le service lance `mintupdate-cli upgrade
+--refresh-cache --yes`, rien sur batterie, et sort aussitôt sans le témoin.
+
+Les deux présents, BOB rapporte `updates.mint_automation_on` (OK, sans point).
+Mesuré sur la Mint 22.3 de test (profil server, 140 mises à jour de sécurité en
+attente), 0.37.0 / 0.38.0 : automatisation éteinte → ATTENTION −1 dans les deux ;
+active → 0.37.0 ATTENTION −1, 0.38.0 OK ; éteinte à nouveau → 0.38.0
+ATTENTION −1. UFW actif, le score passait de 8/10 à 9/10 ; UFW inactif, le
+plafond du domaine pare-feu absorbait le point. Un fichier sans l'autre ne
+compte pas. Décidé avec l'utilisateur : l'automatisation, ce sont des mises à
+jour automatiques. BOB lit que le mécanisme est actif, pas que chaque passage a
+réussi (le détail du constat renvoie à `/var/log/mintupdate.log`). Linux Mint
+seulement : le témoin et le timer sont propres à Mint ; aucune autre
+distribution ni aucun autre outil de mise à jour n'est lu ainsi.
+
+### 5. ufw relu après que BOB l'a activé
+
+La 0.37.0 a écrit le correctif de BOB `ufw --force enable`, parce qu'ufw demande
+avant de perturber SSH, ne lisait rien sur l'entrée standard fermée, affichait
+« Aborted » et rendait 0, et BOB comptait le correctif appliqué. Le code de
+retour décidait encore. Désormais, après une activation qui a rendu 0,
+`--fix --apply` demande `ufw status` avec l'outil de privilège du correctif lui-même, sans
+interaction (`sudo -n`) : « inactive » → non appliqué (« mais `ufw status` dit
+toujours inactif ») ; non relu → résultat inconnu, dans cette liste. Mesuré sur
+la Mint 22.3 de test (ufw 0.36.2, locale française, par SSH), par l'exécuteur de
+BOB : `sudo ufw enable` → rendu 0, relu inactif, « 0 correction(s) sur 1
+appliquée(s) » ; `sudo ufw --force enable` → relu actif, « Appliqué » ;
+`sudo -n ufw status` répondait en anglais sous la locale française ; en
+`nobody`, non relu dans les deux formes. La relecture demande que l'outil de
+privilège du correctif réponde sans invite (il vient de s'authentifier) ; ce
+qu'elle rapporte est l'état d'ufw à ce moment, pas la garantie qu'il le reste.
+BOB ne lance lui-même l'activation que si sshd n'écoute sur aucune adresse
+externe ; sinon le correctif autorise d'abord les ports de sshd, contient des
+opérateurs shell et est affiché pour être lancé à la main ; si les ports en
+écoute n'ont pas pu être lus, aucune commande n'est proposée (0.24.4, 0.37.0 —
+inchangé).
+
+### 6. Les textes qui disaient plus que ce que BOB mesure
+
+Aucun verdict ni aucun point ne change ici ; chacun vient de la relecture d'un
+audit réel en 0.37.0 (Linux Mint 22.3, 14 novembre 2026).
+
+- Surface d'attaque, exposition à Internet : « derrière NAT / pas d'IP publique
+  directe » était une coche verte. L'hôte ne porte pas d'adresse publique ; les
+  redirections, la DMZ, l'UPnP et l'IPv6 du routeur ne sont pas vérifiés depuis
+  lui. Désormais une ligne ℹ neutre qui le dit.
+- Surface d'attaque, SSH : authentification par mot de passe « tolérée dans ce
+  contexte — les clés restent préférables », plus « OK ».
+- La fiche de risque d'un service installé mais arrêté dit « ne tourne pas »
+  sur sa ligne de niveau (Telnet était « CRITIQUE » alors que rien n'écoutait).
+- Journal UFW, rapport détaillé : le titre de la section et sa ligne « aucune »
+  disent le critère — plus de 10 tentatives d'une même adresse vers un même port
+  en 60 s, lu dans les constantes du détecteur. L'audit réel disait « aucune
+  tentative répétée » à côté de 9390 blocages d'une seule adresse répartis sur
+  2705 ports.
+- IPv6 coupé dans UFW, le compte des services IPv6 injoignables inclut les
+  services internes (avahi sur `[::]:5353`).
+- ClamAV : la dernière analyse est « la dernière trouvée dans les journaux de
+  ClamAV ».
+- Secure Boot : l'accès physique ou root ne sont pas les seules voies ; il ne
+  remplace ni le chiffrement du disque ni un mot de passe du micrologiciel.
+- dbx UEFI : `fwupdmgr update` applique toutes les mises à jour de micrologiciel
+  en attente — les lister d'abord.
+- journald : `SystemMaxUse=500M` est un exemple, à dimensionner selon le disque.
+- « Aucun changement depuis le dernier audit » nomme ce que la comparaison compare.
+
+### 7. Tests et documentation
+
+- Un test de rendu (`test_v0164_command_convention`, son cas apply) lançait un
+  vrai `sudo ufw enable` depuis la 0.16.4 : refusé sur un poste (pas de
+  terminal), exécutable sur une machine dont sudo ne demande pas de mot de passe.
+  Vu par un espion de création de processus ; le test est hermétique. La suite
+  entière a ensuite tourné sous un audit hook (hors du dépôt) qui liste chaque
+  `sudo`/`doas` qu'elle lance : aucun.
+- Quatre tests comparaient l'horloge réelle à des dates figées et auraient
+  échoué avec le seul passage du temps : des instantanés Timeshift des 14 et
+  15 novembre 2026 (dès le 17 novembre 2026), un instantané hebdomadaire du
+  8 novembre 2026 (dès le 22 novembre), l'année « 2026 » dans l'horodatage d'un
+  rapport (dès le 1er janvier 2027), une ligne de journald d'avril 2026 (dès le
+  13 avril 2027). Leur horloge est désormais figée ou leur date relative ; ce
+  qu'ils vérifient ne change pas. Trouvé en lançant toute la suite avec
+  l'horloge du système avancée de 30 et 365 jours sur la Mint de test.
+- README_TECH disait qu'un pare-feu inactif « plafonne le score à 3/10 » : il
+  plafonne le domaine Pare-feu et réseau ; le score global est une moyenne
+  pondérée et le niveau de risque reçoit un plancher. Formulation corrigée.
+
+Mesuré sur : Linux Mint 22.3 (poste, lecture seule) et la Linux Mint 22.3 de
+test (ufw 0.36.2, mintupdate 7.1.4) ; OpenSSH 9.6p1 (`sshd -T -C`) ; image de
+conteneur `linuxmintd/mint22.3-amd64`.
+
+### Tests
+
+**Tests** 22436 → **22668**, mutations 2070 → **2106**, toutes tuées. Nouveaux
+fichiers de test : `test_v0380_rootless_config_not_opened.py`, `test_v0380_sshd_match_cover.py`, `test_v0380_mint_auto_updates.py`, `test_v0380_ufw_enable_read_back.py`, `test_v0380_precise_texts.py`, `test_v0380_risk_card_not_running.py`, `test_v0380_logs_repeat_criterion.py`, `test_v0380_ipv6_closed_counts_all.py`. Chaque garde a une mutation qui ramène son
+défaut.
+
+---
+
 ## [0.37.0] — 16-11-2026
 
 **Une version mineure, BREAKING pour les scores : les blocs Match de sshd_config

@@ -91,6 +91,13 @@ def test_the_mode_is_named_when_read():
 def test_from_system_reads_them_and_counts_none_as_not_active(vm):
     _dev, _calls, mp, R = vm
     mp.setattr(b, "_command_exists", lambda name: name in ("timeshift", "btrfs"))
+    # v0.38.0 — "now" pinned an hour after the newest measured snapshot. The
+    # test read the real clock: from 17 November 2026 the snapshot was over
+    # 48 h old and Timeshift was (rightly) no longer counted active — a test
+    # that could pass for two days only.
+    from datetime import datetime
+    _stale = b._timeshift_stale
+    mp.setattr(b, "_timeshift_stale", lambda sched, snaps, now: _stale(sched, snaps, datetime(2026, 11, 15, 12, 0)))
     snap = b.BackupSnapshot.from_system()
     assert snap.timeshift_btrfs is True and snap.timeshift_snapshots == ["2026-11-14_11-25-10", "2026-11-15_11-00-01"]
     assert "timeshift" in snap.active_tools

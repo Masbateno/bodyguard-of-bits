@@ -159,7 +159,8 @@ def display_result(
 
 def display_risk_context(label: str, lang: str, t, report,
                          context_note: str | None = None,
-                         is_local: bool = False, quiet: bool = False) -> None:
+                         is_local: bool = False, quiet: bool = False,
+                         running: bool = True) -> None:
     """Display two-axis risk context for a high/critical service.
 
     ``quiet`` silences the *screen* only, never the archive — the same
@@ -190,6 +191,11 @@ def display_risk_context(label: str, lang: str, t, report,
         risk_tier = "low"
 
     level_display = f"{level} • LAN" if is_local else level
+    # v0.38.0 — the card is also shown for a high-risk service installed but
+    # not running (on purpose: a dormant danger); it now says so itself. A
+    # real audit showed Telnet "CRITICAL" while nothing listened.
+    if not running:
+        level_display = f"{level_display} • {t('risk_context.not_running')}"
 
     if not quiet:
         from bob.output import print_risk_context, print_info
@@ -415,7 +421,10 @@ def display_log_results(logs_result, snapshot, log_report, config, t, report) ->
         for port, count in log_report.top_ports:
             report.write_raw(f"  {port:<12} {count} {t('logs.attempts')}")
         report.write_raw("")
-        report.write_raw(f"--- {t('logs.brute_title')} ---")
+        # v0.38.0 — the criterion said (a real audit read "no repeated
+        # attempts" beside 9390 blocks from one LAN address on 2705 ports).
+        from bob.checks.logs import BRUTEFORCE_THRESHOLD, BRUTEFORCE_WINDOW_S
+        report.write_raw(f"--- {t('logs.brute_title', threshold=BRUTEFORCE_THRESHOLD, window=BRUTEFORCE_WINDOW_S)} ---")
         if log_report.brute_hits:
             for hit in log_report.brute_hits:
                 geo = get_ip_geo(hit.src_ip, lang=config.lang)
@@ -425,7 +434,7 @@ def display_log_results(logs_result, snapshot, log_report, config, t, report) ->
                     f" {hit.port_proto:<12} {hit.count} {t('logs.attempts')}"
                 )
         else:
-            report.write_raw(f"  {t('logs.brute_none')}")
+            report.write_raw(f"  {t('logs.brute_none', threshold=BRUTEFORCE_THRESHOLD, window=BRUTEFORCE_WINDOW_S)}")
         report.write_raw("")
         report.write_raw(f"--- {t('logs.svc_hits')} ---")
         if log_report.svc_hits:
@@ -1205,6 +1214,8 @@ def print_exposure(items, t, output_mod) -> None:
             color = _c.green
         elif item.color == "alert":
             color = _c.red
+        elif item.color == "info":
+            color = _c.cyan
         else:
             color = _c.yellow
         print(f"  {color}{item.icon}{_c.reset}  {_c.dim}{label}{_c.reset}  {item.detail}")

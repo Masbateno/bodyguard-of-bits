@@ -123,8 +123,8 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  bob 0.37.0     ~62.9 kLoC Python · 0 runtime deps outside stdlib        │
-│                 22436 unit tests · 28 doc files · 7+ distros field-tested │
+│  bob 0.38.0     ~63.1 kLoC Python · 0 runtime deps outside stdlib        │
+│                 22668 unit tests · 28 doc files · 7+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -172,7 +172,7 @@ LAYER (top→bottom = imports flow down)
     bob/json_output.py + html_output.py + csv_output.py + markdown_output.py + report_markdown.py
         ← export formatters
     bob/formatter.py + bob/i18n.py + bob/_i18n_safe.py + bob/locales/{en,fr}.json
-        ← locale-independent reconstruction + i18n (3319 keys per language;
+        ← locale-independent reconstruction + i18n (3325 keys per language;
           _i18n_safe.py since v0.8.2 = shared make_fallback_t + t_or_hardcoded)
 
 DATA (read-only at runtime, shipped in the package)
@@ -238,15 +238,15 @@ bodyguard-of-bits/
 │   │   ├── _awall.py          ← **NEW 0.26.0** `AwallStatus.from_system()` — awall installed, enabled policies (`awall list`), unreadable kept apart; read only where neither UFW nor firewalld is active (39 L)
 │   │   ├── _docker_daemon.py  ← **NEW 0.35.0** the system Docker daemon as /proc shows it, without asking it: `socket_listener` (holders of a Unix socket and their uids), `system_dockerd_state` (running / socket-activated by PID 1 / stopped / unknown — a `docker ps` started a socket-activated dockerd, measured), `moby_containers`, `rootless_dockerd`, `containerd_elsewhere`; used by `docker`, `docker_audit`, `firewall_stack` — 234 L
 │   │   ├── _firewalld.py      ← **NEW v0.20.2** `FirewalldStatus.from_system()` — `firewall-cmd` state/default-zone/services/ports, shared by `firewall`, `iptables_nftables`, `ports`, `ipv6` and `services` so a firewalld host (Fedora/RHEL/openSUSE) is not read as "wide open / UFW not installed" — 936 L
-│   │   ├── _rootless_oci.py   ← **NEW 0.36.0** rootless containers examined from their OCI `config.json`: `rootless_containers` (a rootless dockerd's shims through `/proc/<pid>/cwd`, rootless podman's conmon through `/proc/<pid>/root` + `-b`; a `podman exec` session's conmon skipped), `read_config` (no final symlink, regular file of the container's user, ≤ 1 MiB), `shape` (privileged, CAP_SYS_ADMIN, host network/PID, host paths); used by `docker_audit` — 304 L
+│   │   ├── _rootless_oci.py   ← **NEW 0.36.0** rootless containers examined from their OCI `config.json`: `rootless_containers` (a rootless dockerd's shims through `/proc/<pid>/cwd`, rootless podman's conmon through `/proc/<pid>/root` + `-b`; a `podman exec` session's conmon skipped), `read_config` (looked at through `O_PATH` before it is opened for reading — v0.38.0; no final symlink, regular file of the container's user, ≤ 1 MiB, the same inode reopened through `/proc/self/fd`), `shape` (privileged, CAP_SYS_ADMIN, host network/PID, host paths); used by `docker_audit` — 324 L
 │   │   ├── _run.py            ← shared subprocess helper with _C_LOCALE_ENV (centrality anchor — see Dependency graph)
 │   │   ├── _ufw.py            ← **v0.15.0** one parser for `ufw status numbered`, shared by `ports` and `services` — their two matchers disagreed, and `ALLOW IN 192.168.1.22` made port 22 look covered by a rule for port 80; `parse_rule`, `expand_port_spec`, `ranges_cover`, `read_app_profiles` — 555 L
 │   │   └── ssh/               ← split package since v0.6.0 (was 1296 L monolith)
 │   │       ├── __init__.py    ← public re-exports for backwards-compat (64 L)
 │   │       ├── _directives.py ← _BadDirective table + _BAD_DIRECTIVES + _WEAK_CIPHERS/_WEAK_MACS/_WEAK_KEX sets (284 L)
 │   │       ├── _snapshot.py   ← 5 dataclasses + SSHSnapshot + from_system (356 L)
-│   │       ├── _parsers.py    ← pure parsers, key-type helpers, collect_host_keys (530 L)
-│   │       └── _subchecks.py  ← check_ssh entry point + per-area _check_* helpers, incl. v0.10.1 client-side ForwardX11 detection (920 L)
+│   │       ├── _parsers.py    ← pure parsers, key-type helpers, collect_host_keys (643 L)
+│   │       └── _subchecks.py  ← check_ssh entry point + per-area _check_* helpers, incl. v0.10.1 client-side ForwardX11 detection (928 L)
 │   ├── cron/                  ← split package since v0.6.0 (was 1204 L monolith)
 │   │   ├── __init__.py        ← public re-exports incl. datetime + _EMAIL_RE (114 L)
 │   │   ├── _crontab.py        ← **NEW 0.26.0** BusyBox crond: BOB jobs as `# BEGIN/END BOB cron bob-<slug>` blocks of `/etc/crontabs/root`, then `root` to `cron.update` (108 L)
@@ -261,13 +261,13 @@ bodyguard-of-bits/
 │   │   ├── _palette.py        ← v0.16.1 THE curses colour chart, single source for all 3 screens (128 L)
 │   │   ├── _chrome.py         ← v0.16.3 THE bottom chrome: reserved context line + orange key banner (135 L)
 │   │   └── cron.py            ← curses wizard for --install-cron / --manage-cron (1292 L)
-│   ├── display.py             ← terminal output helpers + _compute_posture_annotation single helper (v0.7.2 M-10), 1229 L
+│   ├── display.py             ← terminal output helpers + _compute_posture_annotation single helper (v0.7.2 M-10), 1240 L
 │   ├── output.py              ← low-level terminal primitives, 764 L
 │   ├── panorama.py            ← services panorama table builder
 │   ├── breakdown.py           ← --breakdown score computation transparency
 │   ├── exposure.py            ← attack-surface table (compute_exposure)
 │   ├── formatter.py           ← locale-independent reconstruction (v0.4.1)
-│   ├── i18n.py                ← t(key, **vars), 3319 keys per locale (strict parity)
+│   ├── i18n.py                ← t(key, **vars), 3325 keys per locale (strict parity)
 │   ├── locales/
 │   │   ├── en.json            ← English translation keys
 │   │   └── fr.json            ← French translation keys (strict parity)
@@ -302,7 +302,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 535 test files, ~8971 functions, 22436 collected (0.37.0)
+├── tests/                     ← 543 test files, ~9013 functions, 22668 collected (0.38.0)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -340,19 +340,19 @@ bodyguard-of-bits/
 | `_fs.py` | 65 | **NEW v0.18.0** version-proof path predicates. Python 3.14 made `Path.is_file()`/`exists()`/`is_symlink()` return False on a denial (3.13 raised), silently turning *off-limits* into *absent* at every call site that caught the raise. Imported by 10 modules, among them `profiles` (`lookup_profile_file`), `services` (`_is_safe_service_config`), `log_rotation` (`_count_logrotate_rules`), `plugin_checks` (`_load_one`) |
 | `explain.py` | 1662 | `--explain` TUI + `EXPLAIN_KEYS` (241 keys, 62 prefixes) + `EXPLAIN_KEY_ALIASES` map (emptied v0.9.0 D-3; **first live entry v0.10.1** mapping the old `ssh.x11_forwarding` umbrella to the D-4 Rank 1 server/client split). v0.8.0 drift batch added 51 entries to cover WARN/ALERT findings previously emitted without --explain content; v0.10.1 added `ssh.x11.forwarding.client`. |
 | `cis_refs.py` | 168 | CIS lookup with `lru_cache(maxsize=1)`, reads `data/cis_refs.json` (241 entries); **v0.18.1** `cis_family()` (distro-level) + `split_benchmark()` + `benchmark_labels()` + `benchmark_refs()` + `cis_family_sort_key()` drive the three-level `--explain` tree (distro → benchmark version → type) and the per-key **Also cited in** block; `CIS_BENCHMARK_URLS` + `cis_benchmark_url()` link each CIS family to its online benchmark page — all derived from the canonical English ref so grouping is locale-stable |
-| `display.py` | 1229 | Terminal output: section boxes, finding emission, summary box, score bar; `_LEVEL_DISPATCH` table + `print_audit_summary` split into 3 helpers (v0.5.x); `_compute_posture_annotation` single helper (v0.7.2 M-10); A1 footer under the summary box — the verdict is conditioned by the profile and network context shown above (v0.8.0) |
+| `display.py` | 1240 | Terminal output: section boxes, finding emission, summary box, score bar; `_LEVEL_DISPATCH` table + `print_audit_summary` split into 3 helpers (v0.5.x); `_compute_posture_annotation` single helper (v0.7.2 M-10); A1 footer under the summary box — the verdict is conditioned by the profile and network context shown above (v0.8.0) |
 | `output.py` | 764 | Low-level primitives: `print_ok/warn/alert/info/section/banner` |
 | `panorama.py` | 90 | Services panorama table builder (after-audit summary) |
 | `breakdown.py` | 187 | `--breakdown` / `-B` score computation transparency display |
-| `exposure.py` | 299 | `compute_exposure()` — attack-surface table for the audit summary (synthesises firewall state + ports + network context + finding keys) |
+| `exposure.py` | 302 | `compute_exposure()` — attack-surface table for the audit summary (synthesises firewall state + ports + network context + finding keys) |
 | `formatter.py` | 119 | `format_finding()`, `format_deduction()` — locale-independent via `template_vars` |
-| `i18n.py` | 309 | `t(key, **vars)`, locale auto-detect (POSIX), 3319 keys EN/FR |
+| `i18n.py` | 309 | `t(key, **vars)`, locale auto-detect (POSIX), 3325 keys EN/FR |
 | `compare.py` | 754 | `AuditBaseline`, `AuditDelta`, `build_baseline()`, `compute_delta()`, `display_delta()`. **v0.9.0 F-2**: `AuditBaseline.hostname` field + `BaselineLoadError` + strict-mode `load_baseline(path, strict=True)` for `--diff [PATH]` cross-machine compare. **v0.9.2**: `load_baseline` calls `bob._v090_renames.remap_finding_key` per entry to remap legacy section prefixes at load + `BaselineLoadError` raise sites use `_i18n_safe.t_or_hardcoded` for 4 new `compare.baseline_load.*` keys. |
 | `correlation.py` | 161 | 6 compound-risk rules (`CorrelationRule` with frozensets) |
 | `recurrence.py` | 101 | Recurring finding tracker: consecutive-audit counters |
 | `history.py` | 345 | `--history` sparkline, JSONL append at `~/.config/bob/history.jsonl`, rotate@1000 |
 | `ignore.py` | 201 | Persistent ignore list `~/.config/bob/ignore.yml`; canonical key regex validation (v0.7.1 M-3); `--unignore` symmetric helper (v0.8.1 T57). v0.10.0 D-4 back-compat for legacy umbrella entries is centralised in `scoring.py::ScoreEngine.apply`, not here. |
-| `fixes.py` | 439 | `--fix` interactive UI with [y/N] prompts; `_run_fix_command()` runs each fix in its own session so a timeout stops the whole tree (v0.17.1), `_timeout_for()` gives package transactions minutes rather than seconds |
+| `fixes.py` | 482 | `--fix` interactive UI with [y/N] prompts; `_run_fix_command()` runs each fix in its own session so a timeout stops the whole tree (v0.17.1), `_timeout_for()` gives package transactions minutes rather than seconds; an `ufw enable` that exited 0 is read back with `ufw status` before it counts as applied (v0.38.0) |
 | `cron/` (package) | **1738** | Split in v0.6.0 from 1204 L monolith. `__init__.py` (114) re-exports the public surface incl. `datetime` + `_EMAIL_RE` · `_parse.py` (419) CronEntry + parsing + validators + MTA detection + day helpers · `_io.py` (233) delegates to `bob/_atomic.py` (v0.6.1) + `build_script_content(notify_email, log_dir, audit_options="")` + `apply_cron_schedule` / `apply_cron_email` · `_options.py` (94) **v0.16.1** `CRON_PROFILES` / `CRON_LANGS` / `build_audit_options` / `default_dimensions` — the profile, language and network dimensions a scheduled audit pins, built from closed sets only because the result lands in a root-owned script · `_install.py` (426) prompt_emails/prompt_email + `_prompt_choice` + plain wizard + `run_install_cron` · `_manage.py` (452) `_manage_email_store` + edit_cron_email/schedule + plain wizard + `run_manage_cron` |
 | `tui/_keys.py` | 216 | **v0.16.3** the key contract every curses screen obeys. Action constants (`MOVE`/`PAGE`/`EDGE`/`SELECT`/`BACK`/`QUIT`/`LANG` + per-screen ones), `NAVIGATION` (the floor every list gets), `LANDING_EXIT` vs `NESTED_EXIT`, `resolve()` / `direction()` / `is_top()` for the dispatch, `footer_lines()` which composes the translated hint line and wraps it rather than truncating, `conflicts()`, and `toggle_language()`. A screen declares its actions once and both the footer and the dispatch derive from that, so the line and the bindings cannot drift apart. Never imports curses — the constants are resolved against a module passed in — so `bob-core` stays importable. **Do not spell key hints out anywhere else**; a guard rejects it |
 | `tui/_palette.py` | 128 | **v0.16.1** the five curses colour pairs, defined once. `SELECTION` / `ACCENT` / `NORMAL` / `NOTICE` / `BANNER` + `init_palette(curses, notice=)` + `selection_background(curses)`. Before it, `explain.py`, `manage_logs.py` and `tui/cron.py` each called `init_pair` themselves with the same chart — they agreed, which is why the cursor row and the banner shared a cyan background on all three screens. Selection is now orange (xterm-256 index 208, falling back to `COLOR_YELLOW` on an 8-colour terminal). `notice` is the one per-screen slot: red for a warning list, cyan for `--explain`'s detail heading. **Do not call `init_pair` outside this module** — a guard rejects it. **v0.16.3** adds `marked_attr(curses, has_color)`: a row toggled with Space reads red bold, or underlined without colour, on every screen — it was red in `--manage-logs`, yellow in `--manage-cron` and uncoloured in both e-mail screens. **v0.16.3** also adds three pairs: `PROFILE` (the `[ profile ]` heading in `--explain`), `FOOTER` (white on orange — the key banner) and `CONTEXT` (white on black — the line reserved above it). All three take their orange from the same `selection_background()` call as the cursor row, so the chart cannot disagree with itself |
@@ -385,7 +385,7 @@ bodyguard-of-bits/
 | `firewall.py` | 1051 | firewall_network | UFW state, `check_rules()` for duplicates / open-any (section name `firewall_rules` since v0.9.0 D-1; file still `firewall.py`); `FirewallPosture` / `resolve_firewall_posture()` — the one answer every summary reads: UFW, firewalld (zone target) or a raw DROP/REJECT ruleset (v0.24.1) |
 | `firewall_stack.py` | 989 | firewall_network | Docker iptables bypass, nftables parallel rules (section name `firewall_drivers` since v0.9.0 D-1) |
 | `iptables_nftables.py` | 2246 | firewall_network | Fallback audit when UFW inactive (INPUT/FORWARD policy) (section name `firewall_iptables` since v0.9.0 D-1) |
-| `ipv6.py` | 830 | firewall_network | IPv6 listener vs UFW v6 rule consistency; on a host without UFW, listeners attributed to the governing filter, no address-family claim (v0.24.1) |
+| `ipv6.py` | 841 | firewall_network | IPv6 listener vs UFW v6 rule consistency; on a host without UFW, listeners attributed to the governing filter, no address-family claim (v0.24.1) |
 | `network_context.py` | 355 | firewall_network | Interface table, established TCP, sensitive remote ports |
 | `services.py` | 1534 | exposure_services | 39 known services, risk context, exposure classification; `_PRIVATE_ADDR` constant retired (v0.7.4 M) — now delegates to `sysinfo._is_private_or_loopback_ipv4`; +6 modern services in v0.8.0 T2 (32 → 38); states include socket-activated (v0.18.1) and condition-unmet — skipped by its own Condition…/ExecCondition (v0.24.1); a single-host UFW source named as such (v0.24.1) |
 | `services_state.py` | 243 | health_resilience | Boot-enabled but currently inactive security services (section name `services_health` since v0.9.0 D-1) |
@@ -408,7 +408,7 @@ bodyguard-of-bits/
 | `root_path.py` | 206 | system_hardening | root PATH integrity — configured PATH (login.defs ENV_SUPATH, sudoers secure_path) free of world-writable / '.' / relative components |
 | `package_integrity.py` | 283 | system_hardening | packaged files that differ from the manager's recorded digest — rpm -Va / debsums -c / apk audit / pacman -Qkk, config-filtered (INFO-only, `--exhaustive` only) |
 | `mac_policy.py` | 569 | system_hardening | AppArmor / SELinux state; the 0-profile case is read from securityfs (v0.17.1), because `aa-status` cannot tell "not allowed to look" from "nothing loaded" |
-| `updates.py` | 703 | health_resilience | `apt-get -s dist-upgrade`, stale cache, cross-check (since v0.4.4); cache-age INFO option C when no security/regular finding (v0.5.3+); phased-rollout and kept-back counts read from the simulation instead of an "inconsistent" verdict (v0.24.1) |
+| `updates.py` | 729 | health_resilience | `apt-get -s dist-upgrade`, stale cache, cross-check (since v0.4.4); cache-age INFO option C when no security/regular finding (v0.5.3+); phased-rollout and kept-back counts read from the simulation instead of an "inconsistent" verdict (v0.24.1) |
 | `ssh/` (package) | **1817** | access_control | **Split in v0.6.0** from 1296 L monolith. `__init__.py` (64) re-exports for backwards-compat · `_directives.py` (250) `_BadDirective` + `_BAD_DIRECTIVES` + `_apply_bad_directive` + `_WEAK_CIPHERS/_WEAK_MACS/_WEAK_KEX` · `_snapshot.py` (355) 5 dataclasses (HostKeyInfo, PrivateKeyInfo, AuthorizedKeyEntry, KnownHostEntry, ClientConfigEntry) + SSHSnapshot · `_parsers.py` (490) pure parsers + RSA-bits + collect_host_keys + install probe · `_subchecks.py` (658) `check_ssh` + all `_check_*` helpers + v0.10.1 D-4 Rank 1 client-side `ForwardX11` detection (`ssh.x11.forwarding.client`) |
 | `file_perms.py` | 1374 | access_control | /etc/passwd, /etc/shadow, sudoers, SSH host keys |
 | `suid_audit.py` | 428 | system_hardening | SUID/SGID with whitelist (config.conf), targeted-roots scan |
@@ -507,7 +507,7 @@ These are the **integration points**. They're the entry/orchestration layer.
 | 1292 | `bob/tui/cron.py` | Curses TUI for cron wizards (extracted v0.4.1) |
 | 1534 | `bob/checks/services.py` | 39 services × detection paths × risk classification (32 → 38 via v0.8.0 T2, 39 in 0.31.4) |
 | 1362 | `bob/runner.py` | `_sec()` closure + unified `_SECTIONS` tuple (v0.9.0 D-2) + v0.9.0 D-1 fatal migration error path via `SECTION_RENAMES_V090` |
-| 1229 | `bob/display.py` | Renders all sections + risk context blocks + summary box + posture annotation helper (v0.7.2 M-10) + the A1 footer under the summary box (v0.8.0) |
+| 1240 | `bob/display.py` | Renders all sections + risk context blocks + summary box + posture annotation helper (v0.7.2 M-10) + the A1 footer under the summary box (v0.8.0) |
 | 1327 | `bob/manage_logs.py` | Full curses TUI: folder picker (tracked dirs) → per-directory list + preview + score chart |
 | 1095 | `bob/scoring.py` | ScoreEngine + Finding + Deduction + posture API (v0.7.0 T1) + v0.10.0 D-4 legacy-ignore shim wiring + v0.10.2 I-1 firewall_iptables literal fix |
 | 1071 | `bob/__main__.py` | Orchestrator: argv → AuditConfig → snapshots → run_checks() → display |
@@ -911,7 +911,7 @@ plus an emulated arm64 job (`debian:bookworm-slim` under QEMU, `ci/arm64_smoke.s
 ## Quick references
 
 - **Add a service**: edit `bob/data/services.json` (38 entries, schema in `bob/data/schemas/`). No Python code change. See [README_DEV.md § Adding a service](README_DEV.md).
-- **Add a language**: copy `bob/locales/en.json` → `bob/locales/de.json`, translate all 3319 values keeping the exact key tree, then append `"de"` to `SUPPORTED_LANGS` in `bob/i18n.py` (currently `("en", "fr")`). `cli.py` validates the *shape* since v0.14.1 (`_LANG_RE = ^[A-Za-z]{2,3}([_-][A-Za-z]{2,4})?$`, enforced by `_validate_lang`) — a well-formed but unsupported code still falls back to English, while a path-shaped value is rejected outright and `i18n.init()` falls back to `DEFAULT_LANG` if the file is missing.
+- **Add a language**: copy `bob/locales/en.json` → `bob/locales/de.json`, translate all 3325 values keeping the exact key tree, then append `"de"` to `SUPPORTED_LANGS` in `bob/i18n.py` (currently `("en", "fr")`). `cli.py` validates the *shape* since v0.14.1 (`_LANG_RE = ^[A-Za-z]{2,3}([_-][A-Za-z]{2,4})?$`, enforced by `_validate_lang`) — a well-formed but unsupported code still falls back to English, while a path-shaped value is rejected outright and `i18n.init()` falls back to `DEFAULT_LANG` if the file is missing.
 - **Add a check** (full checklist):
   1. Create `bob/checks/foo.py` with `FooSnapshot.from_system()` + `check_foo(snapshot, t)` (follow the pattern of an existing simple check, e.g. `ntp.py`).
   2. Wire in `bob/runner.py`: add the import at the top, add a `_Section` entry to the `_SECTIONS` tuple (`bob/runner.py`, v0.9.0 D-2) — `_ALL_SECTIONS` is *derived* from it (`tuple(s.name for s in _SECTIONS if not s.always_on)`) and cannot be appended to, and invoke via `_sec("foo", foo_snapshot, check_foo)` in the appropriate GROUP block.
@@ -937,12 +937,12 @@ plus an emulated arm64 job (`debian:bookworm-slim` under QEMU, `ci/arm64_smoke.s
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 53,849 LoC across 137 files (0.26.0 work tree) | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 535 test files, ~8971 functions, **22436 collected** (0.37.0) | `pytest --collect-only -q` |
+| Tests | 543 test files, ~9013 functions, **22668 collected** (0.38.0) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distro containers + 1 emulated arm64 job | `.github/workflows/integration.yml` |
 | Python versions tested | 3.10, 3.11, 3.12, 3.13, 3.14 | `.github/workflows/tests.yml` + `pyproject.toml` classifiers |
-| Locale keys | 3319 EN ↔ 3319 FR (strict parity) | `bob/locales/{en,fr}.json` |
+| Locale keys | 3325 EN ↔ 3325 FR (strict parity) | `bob/locales/{en,fr}.json` |
 | EXPLAIN_KEYS | 241 (in 62 prefixes) | `bob.explain.EXPLAIN_KEYS` |
 | CIS references | 241 primary (91 CIS Ubuntu 22.04 + 7 CIS Docker 1.6 + 7 CIS Kubernetes 2.0 + **1 CIS Red Hat 8/9** + 135 BOB-authored best-practice) + **262 cross-benchmark citations** on 95 keys (91 CIS Debian 12 + 80 CIS Debian 13 + 91 CIS Ubuntu 24.04, sourced from ComplianceAsCode/content by `scripts/gen_cis_benchmarks.py`, which also re-bases the primary Ubuntu 22.04 numbering onto CAC v2.0.0 from the rule anchor) | `bob/data/cis_refs.json` |
 | Known services | 39 | `bob/data/services.json` |
@@ -955,7 +955,7 @@ plus an emulated arm64 job (`debian:bookworm-slim` under QEMU, `ci/arm64_smoke.s
 | Doc files | 26 public markdown (20 in `DOCUMENTS/` + 6 at the repo root) + 3 man pages | `DOCUMENTS/` + `man/` |
 | JSON schema_version | `"3"` only (v1 retired v0.9.0 F-3, v2 retired v0.12.0 F9) | `bob.json_output.DEFAULT_SCHEMA_VERSION` |
 | Release-engineering CI guards | 5 — 3 workflow-level (integration-first / smoke-after-commit / smoke-plugin) + 2 pytest guards (`tests/test_version_consistency.py`, `tests/test_doc_version_consistency.py`) **plus the ruff correctness gate** (v0.13.3, `bob/` only, nothing ignored since v0.14.0) | `.github/workflows/*.yml` |
-| Version | 0.37.0, released 2026-11-16 (bare SemVer, no `v` prefix since 0.21.0) | `pyproject.toml::version` |
+| Version | 0.38.0, released 2026-11-17 (bare SemVer, no `v` prefix since 0.21.0) | `pyproject.toml::version` |
 | Supported branch | 0.26.x (everything ≤ 0.25.x is EOL — latest-minor-only policy) | `SECURITY.md` |
 | First release | v0.1.0 (2026-04-26) | `CHANGELOG.md` |
 

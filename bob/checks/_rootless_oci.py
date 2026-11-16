@@ -86,14 +86,34 @@ def _cap_total() -> "int | None":
 
 def read_config(path: Path, uid: int) -> "dict | None":
     """The container's config.json, or None: not a regular file, not owned by
-    *uid*, a final symlink, over 1 MiB, or not a JSON object."""
+    *uid*, a final symlink, over 1 MiB, or not a JSON object.
+
+    v0.38.0 — looked at before it is opened. The path runs through the user's
+    own mount namespace (``/proc/<pid>/cwd``, ``/proc/<pid>/root``), where an
+    unprivileged user can bind-mount a device node over ``config.json``.
+    0.36.0-0.37.0 opened it ``O_RDONLY`` first and refused it after: measured
+    on Linux Mint 22.3 (a10380, 16 November 2026), a fake shim started by a
+    plain account (no Docker installed) made BOB, as root, open ``/dev/null``
+    — any device's open() side effects were the user's to choose (a watchdog
+    arms on open). Now ``O_PATH`` (no open() reaches the file), the checks on
+    that, then the same inode reopened for reading through ``/proc/self/fd``.
+    """
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+        pfd = os.open(path, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC)
     except OSError:
         return None
     try:
-        st = os.fstat(fd)
+        st = os.fstat(pfd)
         if not stat.S_ISREG(st.st_mode) or st.st_uid != uid or st.st_size > _MAX_CONFIG:
+            return None
+        fd = os.open(f"/proc/self/fd/{pfd}", os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+    except OSError:
+        return None
+    finally:
+        os.close(pfd)
+    try:
+        again = os.fstat(fd)
+        if (again.st_dev, again.st_ino) != (st.st_dev, st.st_ino):
             return None
         chunks, size = [], 0
         while size <= _MAX_CONFIG:

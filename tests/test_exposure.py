@@ -94,11 +94,13 @@ class TestInternetFacing:
         assert item.color == "alert"
         assert item.icon == "✖"
 
-    def test_local_is_ok(self):
+    def test_local_is_info_not_ok(self):
+        """v0.38.0 — no public address on the host is measured; the router's
+        forwards are not: a neutral line, not a green check."""
         items = _call(network_context="local")
         item = _item(items, "internet_facing")
-        assert item.color == "ok"
-        assert item.icon == "✔"
+        assert item.color == "info"
+        assert item.icon == "ℹ"
 
     def test_ddns_warn_is_warn(self):
         engine = _make_engine(("ddns.warn", FindingLevel.WARN))
@@ -436,12 +438,12 @@ class TestExposureStructure:
     def test_all_items_have_valid_color(self):
         items = _call()
         for item in items:
-            assert item.color in ("ok", "warn", "alert")
+            assert item.color in ("ok", "info", "warn", "alert")
 
     def test_all_items_have_valid_icon(self):
         items = _call()
         for item in items:
-            assert item.icon in ("✔", "✖", "⚠")
+            assert item.icon in ("✔", "ℹ", "✖", "⚠")
 
 
 # ---------------------------------------------------------------------------
@@ -499,11 +501,11 @@ class TestEdgeCases:
         assert "firewall_policy_unread" in item.detail
         assert "firewall_allow_all" not in item.detail
 
-    def test_network_context_unknown_is_ok(self):
+    def test_network_context_unknown_is_info(self):
         items = _call(network_context="weird_value")
         item = _item(items, "internet_facing")
-        assert item.color == "ok"
-        assert item.icon == "✔"
+        assert item.color == "info"
+        assert item.icon == "ℹ"
 
 
 # ---------------------------------------------------------------------------

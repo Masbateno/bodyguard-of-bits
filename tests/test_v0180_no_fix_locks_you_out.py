@@ -88,7 +88,9 @@ class TestAccessIsGrantedBeforeItIsWithdrawn:
             ran.append(" ".join(argv))
             return "ok", 0, b""
 
+        # v0.38.0 — an enable is read back with `sudo -n ufw status`; not here.
         with patch.object(fx, "_run_fix_command", side_effect=record), \
+             patch.object(fx, "_ufw_read_back", return_value=True), \
              patch("builtins.input", return_value="y"), \
              redirect_stdout(io.StringIO()):
             fx.run_fixes(make_engine(*findings), make_config(), _t)

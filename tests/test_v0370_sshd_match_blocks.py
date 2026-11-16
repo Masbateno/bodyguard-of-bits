@@ -63,8 +63,9 @@ def test_a_dropin_match_ends_with_its_file(tmp_path):
 def test_match_all_applies_to_every_session(tmp_path):
     cfg = _parse(tmp_path, "Match User bobm\n    PermitRootLogin yes\nMatch all\nMaxAuthTries 3\n")
     assert cfg["maxauthtries"] == "3"
-    assert cfg["_match_blocks"][0] == {"criteria": "User bobm", "settings": {"permitrootlogin": "yes"},
-                                       "file": str(tmp_path / "sshd_config")}
+    blk = cfg["_match_blocks"][0]
+    assert (blk["criteria"], blk["settings"], blk["file"]) == (
+        "User bobm", {"permitrootlogin": "yes"}, str(tmp_path / "sshd_config"))
 
 
 def test_without_match_all_what_follows_is_the_blocks(tmp_path):
@@ -73,10 +74,13 @@ def test_without_match_all_what_follows_is_the_blocks(tmp_path):
     assert cfg["_match_blocks"][0]["settings"]["maxauthtries"] == "3"
 
 
-def test_an_include_inside_a_block_is_said_not_followed(tmp_path):
+def test_an_include_inside_a_block_is_followed_into_that_block(tmp_path):
+    """0.37.0 said it and left it unread; 0.38.0 follows it (measured, a10380):
+    its settings belong to the block, never to the global settings."""
     cfg = _parse(tmp_path, "Match User bobm\n    Include @D@/*.conf\n", dropin="PasswordAuthentication yes\n")
     assert "passwordauthentication" not in cfg
-    assert cfg["_match_include_unread"] == [f"User bobm: Include {tmp_path / 'sshd_config.d'}/*.conf"]
+    assert cfg["_match_blocks"][0]["settings"] == {"passwordauthentication": "yes"}
+    assert not cfg.get("_match_include_unread")
 
 
 def test_the_measured_reach_of_criteria(monkeypatch):

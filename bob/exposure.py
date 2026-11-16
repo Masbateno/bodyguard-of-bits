@@ -81,9 +81,12 @@ def compute_exposure(
             detail=t("exposure.internet_facing_local_v6"),
         ))
     else:
+        # v0.38.0 — no public address on the host is what BOB measures; the
+        # router's forwards (port forwarding, DMZ, UPnP) it does not see. The
+        # green check read as "not exposed" (review of a real 0.37.0 audit).
         items.append(ExposureItem(
             label=t("exposure.internet_facing"),
-            icon="✔", color="ok",
+            icon="ℹ", color="info",
             detail=t("exposure.internet_facing_local"),
         ))
 

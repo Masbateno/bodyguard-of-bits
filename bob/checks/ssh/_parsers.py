@@ -37,6 +37,7 @@ def _parse_config_file(
     path: Path,
     config: dict[str, str],
     seen: set[str],
+    outer: "dict | None" = None,
 ) -> None:
     """
     Parse an sshd_config file (or drop-in) into config dict.
@@ -64,18 +65,37 @@ def _parse_config_file(
     becomes the effective setting in ``config`` itself, recorded in
     ``config["_match_all_keys"]`` (key → file), and a later block's setting for
     such a key is dropped.
+
+    v0.38.0 — an Include inside a block is followed (measured with ``sshd -T
+    -C``, a10380, 15 November 2026): what it brings belongs to that block, the
+    first value winning across the file boundary; a Match inside the included
+    file opens a block that takes a session only when the including block
+    does too (both criteria); the including block goes on after the Include.
+    *outer* is that including block. A file it names that cannot be read keeps
+    the section a ceiling (``_match_include_unread``).
+
+    v0.38.0 — a block whose sessions an earlier block already takes, for a
+    key that earlier block set first, never applies that key (measured: a
+    ``/25`` after a ``/24``, the same user list in any order or case, ``User
+    *``…). Such a setting is dropped and recorded in the block's ``shadowed``
+    (key → the earlier block's criteria) — only where the cover is certain
+    (`_criteria_cover`); otherwise it is still counted, as before.
     """
     canonical = str(path.resolve())
-    if canonical in seen:
+    seen_key = canonical if outer is None else f"{canonical}@{id(outer)}"
+    if seen_key in seen:
         return
-    seen.add(canonical)
+    seen.add(seen_key)
 
     try:
         lines = read_text_capped(path, encoding="utf-8", errors="ignore").splitlines()
     except OSError:
+        if outer is not None:
+            config.setdefault("_match_include_unread", []).append(
+                f"{outer['criteria']}: Include {path}")
         return
 
-    block: "dict | None" = None          # the Match block being read, None = global
+    block: "dict | None" = outer         # the Match block being read, None = global
     for line in lines:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
@@ -83,6 +103,8 @@ def _parse_config_file(
         m_match = re.match(r"^match\s+(.+)$", stripped, re.IGNORECASE)
         if m_match or re.match(r"^match\s*$", stripped, re.IGNORECASE):
             criteria = _strip_inline_comment(m_match.group(1)).strip() if m_match else ""
+            if outer is not None:
+                criteria = _both_criteria(outer["criteria"], criteria)
             config["_match_block"] = True
             block = {"criteria": criteria, "settings": {}, "file": str(path)}
             config.setdefault("_match_blocks", []).append(block)
@@ -92,14 +114,13 @@ def _parse_config_file(
         inc_match = re.match(r"^include\s+(.+)$", stripped, re.IGNORECASE)
         if inc_match:
             pattern = inc_match.group(1).strip()
-            if block is not None:
-                # An Include inside a Match applies to that block only; not
-                # followed (said by the sub-check, the section a ceiling).
-                config.setdefault("_match_include_unread", []).append(
-                    f"{block['criteria']}: Include {pattern}")
-                continue
             if not os.path.isabs(pattern):
                 pattern = str(path.parent / pattern)
+            if block is not None:
+                # Read in place, its lines the block's (measured, a10380).
+                for inc in sorted(_glob.glob(pattern)):
+                    _parse_config_file(Path(inc), config, seen, outer=block)
+                continue
             # v0.19.0: record the first glob drop-in directory. Modern OpenSSH
             # ships ``Include /etc/ssh/sshd_config.d/*.conf`` at the very top of
             # sshd_config, so a directive set in a drop-in (e.g. cloud-init's
@@ -124,7 +145,15 @@ def _parse_config_file(
                 match_all = config.setdefault("_match_all_keys", {})
                 if key in match_all:
                     continue                                # an earlier Match all set it: never applied
-                block["settings"].setdefault(key, value)    # first value wins in the block
+                if key in block["settings"]:
+                    continue                                # first value wins in the block
+                # Only values already read sit in the other blocks: an earlier
+                # block that set this key did so before this line (reading order).
+                cover = _earlier_cover(config.get("_match_blocks", []), block, key)
+                if cover is not None:
+                    block.setdefault("shadowed", {})[key] = cover
+                    continue                                # an earlier block takes every session first
+                block["settings"][key] = value
                 if block["criteria"].lower() == "all":
                     match_all[key] = str(path)
                     config[key] = value                     # beats the global value, before or after
@@ -136,6 +165,90 @@ def _parse_config_file(
             if key == "hostkey":
                 config.setdefault("_hostkeys", []).append(value)
             config.setdefault(key, value)  # first-value-wins
+
+
+def _both_criteria(outer: str, inner: str) -> str:
+    """The criteria of a Match read inside a block's Include: a session must
+    match both (measured, a10380 C1d). ``all`` adds nothing."""
+    if outer.strip().lower() == "all":
+        return inner
+    if inner.strip().lower() == "all":
+        return outer
+    return f"{outer} {inner}"
+
+
+#: v0.38.0 — the Match criteria whose cover can be decided from the text.
+_COVERABLE = frozenset({"user", "group", "host", "address", "localaddress", "localport"})
+
+
+def _parse_criteria(criteria: str) -> "dict[str, list[str]] | None":
+    """``User a,b Address x`` → {"user": ["a", "b"], "address": ["x"]};
+    None when it cannot be read as keyword / pattern-list pairs."""
+    words = criteria.split()
+    if len(words) % 2:
+        return None
+    out: "dict[str, list[str]]" = {}
+    for kw, value in zip(words[0::2], words[1::2], strict=True):
+        kw = kw.lower()
+        if kw in out:
+            return None
+        out[kw] = [p for p in value.split(",") if p]
+    return out
+
+
+def _entry_covered(kw: str, entry: str, patterns: "list[str]") -> bool:
+    """One positive entry of the later block lies inside the earlier list."""
+    from fnmatch import fnmatchcase
+    if kw in ("address", "localaddress"):
+        import ipaddress
+        try:
+            inner = ipaddress.ip_network(entry, strict=False)
+        except ValueError:
+            return entry in patterns
+        for p in patterns:
+            try:
+                outer = ipaddress.ip_network(p, strict=False)
+            except ValueError:
+                continue
+            if inner.version == outer.version and inner.subnet_of(outer):
+                return True
+        return False
+    if any(c in entry for c in "*?"):
+        return entry in patterns or "*" in patterns
+    # v0.38.0 (review 1, m12) — sshd's patterns know `*` and `?` only: a `[` is
+    # a literal there (measured: `User a[lb]ice` does not take alice), a class
+    # for fnmatch, which then called alice covered and dropped a deduction sshd
+    # applies. `[[]` is fnmatch's literal `[`.
+    return any(fnmatchcase(entry, p.replace("[", "[[]")) for p in patterns)
+
+
+def _criteria_cover(earlier: str, later: str) -> bool:
+    """Whether every session *later* takes is certainly taken by *earlier*
+    (measured cases, a10380): each keyword of *earlier* is in *later*, every
+    positive entry of *later* lies inside *earlier*'s list, and *earlier* has
+    no negation. Anything this cannot decide is False — the setting is then
+    counted, as before 0.38.0."""
+    a, b = _parse_criteria(earlier), _parse_criteria(later)
+    if a is None or b is None or not a or not set(a) <= _COVERABLE:
+        return False
+    for kw, patterns in a.items():
+        if any(p.startswith("!") for p in patterns) or kw not in b:
+            return False
+        positives = [e for e in b[kw] if not e.startswith("!")]
+        if not positives or not all(_entry_covered(kw, e, patterns) for e in positives):
+            return False
+    return True
+
+
+def _earlier_cover(blocks: "list[dict]", block: dict, key: str) -> "str | None":
+    """The criteria of another block that already set *key* and takes every
+    session *block* takes; None when there is none. Called as *key* is read,
+    so whatever the other blocks hold was read before it."""
+    for other in blocks:
+        if other is not block and key in other["settings"] and _criteria_cover(other["criteria"], block["criteria"]):
+            return other["criteria"]
+    return None
+
 
 def _strip_inline_comment(value: str) -> str:
     """Cut an sshd_config value at an unquoted ``#``, as OpenSSH does.

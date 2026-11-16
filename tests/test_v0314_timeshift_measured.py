@@ -148,6 +148,14 @@ class TestTheVerdict:
     ], ids=["snapshots", "unread", "scheduled-none-there", "no-schedule", "config-unread"])
     def test_active_or_installed(self, monkeypatch, only_timeshift, read, active):
         monkeypatch.setattr(b, "_read_timeshift", lambda: read)
+        # v0.38.0 — "now" pinned a day after the measured snapshot. The test
+        # read the real clock: a weekly snapshot of 8 November 2026 turns stale
+        # (twice the period) on 22 November, and "snapshots" would have failed
+        # from then on (found by running the suite with the clock moved ahead).
+        from datetime import datetime
+        _stale = b._timeshift_stale
+        monkeypatch.setattr(b, "_timeshift_stale",
+                            lambda sched, snaps, now: _stale(sched, snaps, datetime(2026, 11, 9, 19, 0)))
         snap = b.BackupSnapshot.from_system()
         assert ("timeshift" in snap.active_tools) is active
         assert ("timeshift" in snap.installed_tools) is not active

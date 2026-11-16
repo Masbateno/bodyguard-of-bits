@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.37.0
+Version:        0.38.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,13 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Tue Nov 17 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.38.0-1
+- Minor, BREAKING for scores; no JSON-schema or CSV-column change.
+  Security: a rootless container's configuration file inspected with
+  O_PATH before root opens it for reading; sshd Match blocks an earlier
+  block covers left out, an Include inside a Match block followed; Linux
+  Mint automatic updates counted; ufw read back after BOB enables it.
+
 * Mon Nov 16 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.37.0-1
 - Minor, BREAKING for scores; no JSON-schema or CSV-column change.
   ufw left disabled read as disabled; ufw enable fix forced; sshd Match
