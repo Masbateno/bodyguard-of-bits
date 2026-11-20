@@ -182,6 +182,11 @@ class AuditConfig:
     show_history: bool = False
     """--history: display score history sparkline and exit."""
 
+    fix_journal: bool = False
+    """--fix-journal (v0.40.0): print the journal of --fix --apply, whether it
+    is the one BOB wrote first, and exit — 0 intact, 2 falsified, 4 not
+    demonstrated."""
+
     check_only: frozenset[str] = frozenset()
     """--check=LIST: run only the named checks (comma-separated section names)."""
 
@@ -647,6 +652,9 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
         elif arg == "--history":
             config.show_history = True
 
+        elif arg == "--fix-journal":
+            config.fix_journal = True
+
         elif arg.startswith("--check="):
             value = arg.split("=", 1)[1].strip()
             if not value:
@@ -929,6 +937,7 @@ def print_help(t, version: str) -> None:
     opt("    --unignore=KEY",    "help.opt.unignore")
     opt("    --show-ignored",    "help.opt.show_ignored")
     opt("    --history",         "help.opt.history")
+    opt("    --fix-journal",     "help.opt.fix_journal")
 
     section("standalone")
     opt("-e, --explain [KEY]",   "help.opt.explain")

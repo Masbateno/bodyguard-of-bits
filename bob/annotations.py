@@ -215,10 +215,12 @@ class Journal:
 _UNREADABLE_KEYS = ("link", "denied", "not_regular", "too_large")
 
 
-def _read_raw(path: Path) -> "tuple[str | None, str | None, int | None]":
+def _read_raw(path: Path, limit: "int | None" = None) -> "tuple[str | None, str | None, int | None]":
     """The journal's text, or (None, reason), with its owner's uid. The
     reason is one of _UNREADABLE_KEYS, else the system's own message.
-    Absent → ("", None, None)."""
+    Absent → ("", None, None). *limit* bounds the size read (MAX_FILE by
+    default; the journal of --fix --apply, never purged, reads further)."""
+    limit = MAX_FILE if limit is None else limit
     try:
         fd = os.open(str(path), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
     except FileNotFoundError:
@@ -233,9 +235,18 @@ def _read_raw(path: Path) -> "tuple[str | None, str | None, int | None]":
         st = os.fstat(fd)
         if not stat.S_ISREG(st.st_mode):
             return None, "not_regular", st.st_uid
-        if st.st_size > MAX_FILE:
+        if st.st_size > limit:
             return None, "too_large", st.st_uid
-        data = os.read(fd, MAX_FILE + 1)
+        chunks, size = [], 0
+        while size <= limit:
+            chunk = os.read(fd, limit + 1 - size)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+        if size > limit:
+            return None, "too_large", st.st_uid
+        data = b"".join(chunks)
     except OSError as exc:
         return None, exc.strerror or str(exc), None
     finally:

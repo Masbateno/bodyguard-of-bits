@@ -776,13 +776,17 @@ def state_path(report: Path) -> Path:
     return report.with_name(report.name + STATE_SUFFIX)
 
 
-def save_report_state(report: Path, baseline: AuditBaseline, history_line: dict) -> None:
+def save_report_state(report: Path, baseline: AuditBaseline, history_line: dict,
+                      breakdown: "dict | None" = None) -> None:
     """Write *report*'s state beside it, as the report itself is written (0600,
     handed to the invoking user, the directory checked). Best effort: the audit
-    is not lost for a state that could not be written."""
+    is not lost for a state that could not be written. Since 0.40.0 it also
+    holds the score's computation (bob.breakdown.breakdown_state)."""
     dest = state_path(report)
     data = asdict(baseline)
     data["history"] = history_line
+    if breakdown is not None:
+        data["breakdown"] = breakdown
     try:
         atomic_write(dest, json.dumps(data, ensure_ascii=False, indent=2), mode=0o600)
         chown_to_sudo_user(dest)
@@ -803,6 +807,26 @@ def load_report_state(report: Path) -> "tuple[AuditBaseline | None, dict | None]
     line = raw.get("history") if isinstance(raw, dict) else None
     from bob.history import _readable_entry
     return baseline, (_readable_entry(line) if isinstance(line, dict) else None)
+
+
+def breakdown_block(report: Path, t) -> "list[str]":
+    """v0.40.0 (B-032) — the breakdown block for *report*: the computation of
+    its score as ``--breakdown`` printed it, from its state; a report with no
+    state, or written before 0.40.0, says it has no such detail."""
+    from bob.breakdown import breakdown_lines
+    path = state_path(report)
+    try:
+        raw = json.loads(read_text_capped(path))
+    except FileNotFoundError:
+        return [t("manage_logs.breakdown_no_state")]
+    except (OSError, ValueError):
+        return [t("manage_logs.breakdown_unreadable")]
+    if not isinstance(raw, dict):
+        return [t("manage_logs.breakdown_unreadable")]
+    if "breakdown" not in raw:
+        return [t("manage_logs.breakdown_older")]
+    lines = breakdown_lines(raw["breakdown"], t)
+    return lines if lines is not None else [t("manage_logs.breakdown_unreadable")]
 
 
 def _reports_of(directory: Path) -> "list[Path]":
@@ -826,7 +850,7 @@ class _Lines:
     """Collects what :func:`display_delta` prints, as plain lines — so the
     block --manage-logs shows says exactly what ``--diff`` says."""
 
-    _GLYPHS = {"ok": "✔ ", "warn": "⚠ ", "info": "ℹ ", "dim": "", "section": ""}
+    _GLYPHS = {"ok": "✔ ", "warn": "⚠ ", "info": "ℹ ", "alert": "✖ ", "dim": "", "section": ""}
 
     def __init__(self) -> None:
         self.lines: "list[str]" = []
@@ -848,6 +872,9 @@ class _Lines:
 
     def print_info(self, text: str) -> None:
         self._add("info", text)
+
+    def print_alert(self, text: str) -> None:
+        self._add("alert", text)
 
 
 def comparison_lines(report: Path, t) -> "list[str]":

@@ -46,6 +46,10 @@ CONTEXT_PROMPT = 10
 CONTEXT_OK     = 11
 CONTEXT_ERROR  = 12
 CONTEXT_INFO   = 13
+#: v0.40.0 — each key in the bottom banner sits in its own cap, black on white,
+#: so a key cannot run into its neighbour's label (decided with the user,
+#: 20 November 2026: on the plain orange line the keys were hard to tell apart).
+KEYCAP         = 14
 
 #: xterm-256 index for orange. Used only when the terminal advertises 256
 #: colours; see the module docstring for the fallback.
@@ -110,6 +114,7 @@ def init_palette(curses, *, notice: "int | None" = None) -> bool:
         curses.init_pair(CONTEXT_OK,     curses.COLOR_GREEN,  curses.COLOR_BLACK)
         curses.init_pair(CONTEXT_ERROR,  curses.COLOR_RED,    curses.COLOR_BLACK)
         curses.init_pair(CONTEXT_INFO,   curses.COLOR_CYAN,   curses.COLOR_BLACK)
+        curses.init_pair(KEYCAP,         curses.COLOR_BLACK,  curses.COLOR_WHITE)
         # Violet marks what must be reproduced exactly — a command to run
         # or a directive to write. The same lines read as ordinary prose
         # inside a wizard until v0.16.4: the convention stopped at the

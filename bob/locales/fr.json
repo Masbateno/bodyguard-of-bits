@@ -590,7 +590,29 @@
       "none_left": "aucune note ne reste pour cette action",
       "empty_range": "aucune note entre {low} et {high} pour cette action"
     },
-    "note_foreign_owner": "⚠ ce fichier de notes appartient à {owner}, pas à root : il n'a pas été écrit par BOB — son propriétaire a pu en écrire chaque ligne, chaîne comprise"
+    "note_foreign_owner": "⚠ ce fichier de notes appartient à {owner}, pas à root : il n'a pas été écrit par BOB — son propriétaire a pu en écrire chaque ligne, chaîne comprise",
+    "home_header": "choisir ce qu'on regarde",
+    "home_reports": "Rapports d'audit — {count} dossier(s) suivi(s)",
+    "home_no_reports": "Rapports d'audit — aucun pour l'instant (un audit avec -d les écrit)",
+    "home_fixes": "Journal des correctifs (--fix --apply) — {count} commande(s) · {verdict}",
+    "home_verdict": {
+      "intact": "✔ intact",
+      "tampered": "✖ FALSIFIÉ",
+      "unproven": "⚠ non démontré",
+      "empty": "rien d'inscrit pour l'instant"
+    },
+    "fix_journal_title": "Journal des correctifs (--fix --apply)",
+    "fix_cut_title": "lignes retirées du journal",
+    "fix_note_prompt": "Note sur cette commande (ajoutée, jamais modifiable) : ",
+    "fix_note_cancelled": "Aucune note ajoutée.",
+    "fix_note_added": "Note ajoutée — elle ne peut plus être modifiée.",
+    "fix_note_failed": "La note n'a pas pu être écrite : {reason}",
+    "plain_fix_journal": "Le journal de --fix --apply : {cmd}",
+    "fix_note_needs_root": "Pour ajouter une note : {cmd} (seul root écrit le journal)",
+    "block_breakdown": "Calcul du score (comme --breakdown l'affiche)",
+    "breakdown_no_state": "Ce rapport n'a pas de fichier d'état à côté de lui : son calcul n'a pas été gardé.",
+    "breakdown_older": "Ce rapport a été écrit avant BOB 0.40.0, qui ne gardait pas le calcul du score.",
+    "breakdown_unreadable": "Le calcul gardé à côté de ce rapport n'a pas pu être lu."
   },
   "cron_ui": {
     "prompt_sep": " : ",
@@ -658,14 +680,16 @@
       "annotate": "annoter",
       "compare": "comparer",
       "history": "historique",
-      "numbers": "n° de ligne",
+      "numbers": "numéros",
       "note_add": "ajouter",
       "note_edit": "modifier",
       "note_withdraw": "retirer",
       "note_purge": "purger",
       "note_journal": "journal",
       "complete": "compléter",
-      "pick": "par numéro"
+      "pick": "par numéro",
+      "removed": "lignes retirées",
+      "breakdown": "calcul"
     },
     "mode_notes": "[NOTES]"
   },
@@ -800,7 +824,11 @@
     "timed_out": "délai dépassé après {seconds} s — BOB a cessé d'attendre ; le changement peut être à mi-chemin",
     "ufw_still_inactive": "mais `ufw status` dit toujours inactif",
     "ufw_unconfirmed": "exécutée avec le code 0, mais `ufw status` n'a pas pu être relu — vérifiez si le pare-feu est actif",
-    "unknown_items_title": "RÉSULTAT INCONNU — VÉRIFIEZ LE SYSTÈME AVANT DE RELANCER"
+    "unknown_items_title": "RÉSULTAT INCONNU — VÉRIFIEZ LE SYSTÈME AVANT DE RELANCER",
+    "journal_unwritable": "Le journal de --fix --apply ({path}) ne peut pas être écrit : {reason}. Aucune commande n'a été lancée : chaque commande lancée doit y laisser une entrée.",
+    "journal_start_failed": "non lancée — son entrée n'a pas pu être écrite au journal : {reason}",
+    "journal_finish_failed": "le résultat n'a pas pu être écrit au journal ({reason}) : l'entrée se lira « aucun résultat inscrit »",
+    "journal_written": "{count} commande(s) inscrite(s) dans {path} — à lire avec bob --manage-logs"
   },
   "risk_context": {
     "not_running": "ne tourne pas — risque propre au service, pas une exposition mesurée",
@@ -1249,7 +1277,8 @@
       "explain_key": "(explique une clé)",
       "version": "Affiche la version puis sort",
       "help": "Affiche cette aide",
-      "install_completion": "Installe la complétion bash dans /etc/bash_completion.d/"
+      "install_completion": "Installe la complétion bash dans /etc/bash_completion.d/",
+      "fix_journal": "Journal de --fix --apply, falsification vérifiée (sortie 0, 2 ou 4)"
     },
     "example": {
       "standard": "Audit standard",
@@ -4825,5 +4854,124 @@
     "missing": "il n'y a pas de {number} dans la liste",
     "empty_range": "rien dans la liste entre {low} et {high}",
     "none": "la liste est vide"
+  },
+  "fix_journal": {
+    "err": {
+      "needs_root": "seul root l'écrit",
+      "link": "un lien symbolique se trouve à son nom ou à celui de son dossier",
+      "foreign_owner": "il appartient à {owner}, pas à root : il n'a pas été écrit par BOB",
+      "not_regular": "ce n'est pas un fichier ordinaire à lui seul (un autre nom y mène, ou ce n'est pas un fichier ordinaire)",
+      "empty": "la note est vide",
+      "no_entry": "cette entrée n'existe pas"
+    }
+  },
+  "fixlog": {
+    "title": "Journal de --fix --apply — {path}",
+    "removed_title": "Lignes que le journal système garde et que le journal n'a plus ({count}) :",
+    "day_row": "{day} — {count} commande(s) : {applied} appliquée(s), {failed} en échec, {other} autre(s)",
+    "day_tampered": "[✖ falsifié]",
+    "day_unproven": "[⚠ non démontré]",
+    "weekday": {
+      "0": "lundi",
+      "1": "mardi",
+      "2": "mercredi",
+      "3": "jeudi",
+      "4": "vendredi",
+      "5": "samedi",
+      "6": "dimanche"
+    },
+    "status": {
+      "ok": "appliquée",
+      "failed": "en échec",
+      "timeout": "délai dépassé",
+      "unconfirmed": "non confirmée",
+      "started": "aucun résultat inscrit"
+    },
+    "unreadable": {
+      "link": "un lien symbolique se trouve à son nom",
+      "denied": "permission refusée — le lire en root ou en tant que membre du groupe adm",
+      "not_regular": "ce n'est pas un fichier ordinaire",
+      "too_large": "il dépasse ce que BOB lit"
+    },
+    "verdict": {
+      "tampered": "✖ FALSIFIÉ — ce journal a été modifié hors de BOB (preuves ci-dessous)",
+      "unproven": "⚠ NON DÉMONTRÉ — rien ne montre de falsification, mais tout n'a pas pu être vérifié",
+      "chain_only": "✔ Chaîne intacte — aucun témoin à comparer (pas de journal système quand les entrées ont été écrites)",
+      "intact": "✔ INTACT — la chaîne tient et {count} ligne(s) correspondent à leur témoin dans le journal système",
+      "empty": "Aucune commande lancée par --fix --apply n'est encore inscrite.",
+      "unreadable": "⚠ Le journal {path} n'a pas pu être lu : {reason}",
+      "chain_only_unwitnessed": "✔ Chaîne intacte — aucune ligne n'a pu être confrontée à son témoin (parti avec la rotation du journal système, ou illisible) : seule la chaîne répond du journal"
+    },
+    "finding": {
+      "foreign_owner": "le journal appartient à {owner}, pas à root : il n'a pas été écrit par BOB",
+      "chain": "ligne {line} : la chaîne casse — une ligne y a été modifiée, retirée ou déplacée",
+      "differs": "{count} ligne(s) diffèrent de leur témoin : ce qu'elles disent a été modifié",
+      "conflicting": "{count} ligne(s) ont deux témoins qui se contredisent : l'un a été forgé en root",
+      "rechained": "{count} ligne(s) disent ce qu'elles disaient mais ont été rechaînées après une ligne modifiée : la chaîne a été recalculée",
+      "removed": "{count} ligne(s) du journal système manquent au journal : coupées à sa fin, ou journal supprimé (preuves ci-dessous)",
+      "not_shown": "{count} ligne(s) n'ont pas de témoin alors que le journal système couvre leur date : non démontré",
+      "append_only_removed": "l'attribut d'ajout seul a été retiré depuis la dernière entrée (chattr -a) : un geste délibéré, que le contenu a pu suivre",
+      "witness_gone": "{count} ligne(s) sont plus anciennes que tout ce que garde le journal système : leur témoin est parti avec sa rotation",
+      "no_witness": "{count} ligne(s) ont été écrites sans journal système : seule la chaîne répond d'elles"
+    },
+    "witness": {
+      "ok": "Témoin : le journal système (journald), relu",
+      "unreadable": "Témoin : ce compte ne peut pas lire le journal système — lancer en root ou en membre du groupe adm",
+      "no_journald": "Témoin : pas de journald sur cet hôte — le témoin ne peut pas être relu ici",
+      "no_store": "Témoin : journald ne garde aucun fichier sur cet hôte (Storage=none)",
+      "failed": "Témoin : journalctl a échoué : {detail}",
+      "volatile": "Le journal système n'est gardé qu'en mémoire (/run/log/journal) : il se perd au redémarrage, et le témoin avec"
+    },
+    "sealed": {
+      "yes": "Scellement de journald (FSS) : configuré — journalctl --verify, avec la clé gardée hors de la machine, montre un journal système réécrit",
+      "no": "Scellement de journald (FSS) : non configuré — root pourrait réécrire aussi le journal système (journalctl --setup-keys)"
+    },
+    "append_only": {
+      "set": "Attribut d'ajout seul (chattr +a) : posé — le noyau refuse de réécrire le journal, root compris",
+      "unavailable": "Attribut d'ajout seul : indisponible sur ce système de fichiers",
+      "unknown": "Attribut d'ajout seul : n'a pas pu être lu"
+    },
+    "proof": {
+      "differs": "✖ modifiée",
+      "conflicting": "✖ témoin forgé",
+      "rechained": "✖ rechaînée",
+      "not_shown": "⚠ sans témoin",
+      "witness_gone": "témoin parti (rotation)",
+      "no_witness": "sans témoin",
+      "confirmed": "✔ témoin conforme",
+      "unchecked": "non vérifiée"
+    },
+    "proof_detail": {
+      "differs": "✖ Témoin : cette entrée diffère de ce que le journal système a enregistré quand elle a été écrite — elle a été modifiée",
+      "conflicting": "✖ Témoin : le journal système garde deux témoins contradictoires pour cette entrée — l'un a été forgé en root",
+      "rechained": "✖ Témoin : cette entrée dit ce qu'elle disait, mais son lien à la ligne précédente a été recalculé après une modification plus haut",
+      "not_shown": "⚠ Témoin : aucun dans le journal système, alors qu'il couvre cette date — non démontré",
+      "witness_gone": "Témoin : plus ancienne que tout ce que garde le journal système (rotation) — seule la chaîne répond d'elle",
+      "no_witness": "Témoin : aucun — écrite sans journal système ; seule la chaîne répond d'elle",
+      "confirmed": "✔ Témoin : conforme à ce que le journal système a enregistré quand elle a été écrite",
+      "unchecked": "Témoin : n'a pas pu être vérifié (journal système non lu)"
+    },
+    "detail": {
+      "when": "Lancée : {date}",
+      "who": "Par : {who}",
+      "finding": "Constat : {finding} — {message}",
+      "command": "Commande :",
+      "native": "Exécutée par le code de BOB : {action}",
+      "status": "Résultat : {status}",
+      "rc": "Code de sortie : {rc} · {seconds} s · terminée le {ended}",
+      "interrupted": "Aucun résultat inscrit : soit BOB s'est arrêté pendant la commande (session coupée, courant, arrêt forcé), soit son résultat n'a pas pu être écrit (BOB l'a dit à l'écran sur le moment) — ce que la commande a fait n'est pas connu par le journal",
+      "error": "Sortie d'erreur :",
+      "notes": "Notes ({count}) — ajoutées, jamais modifiées :",
+      "note": "{date}  {who} : {text}",
+      "no_notes": "Aucune note.",
+      "witnessed": "Ce que le journal système a enregistré quand ses lignes ont été écrites :"
+    },
+    "short": {
+      "ok": "appliquée",
+      "failed": "échec",
+      "timeout": "délai",
+      "unconfirmed": "non confirmée",
+      "started": "sans résultat"
+    }
   }
 }

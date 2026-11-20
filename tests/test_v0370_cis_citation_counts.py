@@ -48,10 +48,11 @@ def test_the_stated_citations_and_keys_are_the_files(rel, pattern):
 def test_the_snapshot_split_per_benchmark_is_the_files():
     _total, _keys, per = _live()
     text = (_ROOT / "DOCUMENTS" / "SNAPSHOT.md").read_text(encoding="utf-8")
-    m = re.search(r"\((\d+) CIS Debian 12 \+ (\d+) CIS Debian 13 \+ (\d+) CIS Ubuntu 24\.04,", text)
+    m = re.search(r"\((\d+) CIS Debian 12 \+ (\d+) CIS Debian 13 \+ (\d+) CIS Ubuntu 24\.04 \+ (\d+) CIS Ubuntu 26\.04,", text)
     assert m, "SNAPSHOT.md: the per-benchmark split of the citations is gone or reshaped"
     stated = tuple(int(g) for g in m.groups())
-    live = (per["CIS Debian 12"], per["CIS Debian 13"], per["CIS Ubuntu 24.04"])
+    live = (per["CIS Debian 12"], per["CIS Debian 13"], per["CIS Ubuntu 24.04"], per["CIS Ubuntu 26.04"])
     assert stated == live, f"SNAPSHOT.md says {stated}; the file holds {live}"
-    assert set(per) == {"CIS Debian 12", "CIS Debian 13", "CIS Ubuntu 24.04"}, (
+    # v0.40.0 — CIS Ubuntu 26.04 (ComplianceAsCode PR #15097, merged 20 November 2026).
+    assert set(per) == {"CIS Debian 12", "CIS Debian 13", "CIS Ubuntu 24.04", "CIS Ubuntu 26.04"}, (
         f"a benchmark the split does not name: {sorted(per)}")

@@ -131,7 +131,8 @@ are not backported.
 
 | Version        | Supported          |
 |----------------|--------------------|
-| 0.39.x         | ✅ current          |
+| 0.40.x         | ✅ current          |
+| 0.39.x         | ❌ end of life      |
 | 0.38.x         | ❌ end of life      |
 | 0.37.x         | ❌ end of life      |
 | 0.36.x         | ❌ end of life      |
@@ -164,15 +165,15 @@ are not backported.
 | 0.6.x          | ❌ end of life      |
 | ≤ 0.5.x        | ❌ end of life      |
 
-Patches release as `0.39.x+1`. A change to the stable contract — exit codes, the
+Patches release as `0.40.x+1`. A change to the stable contract — exit codes, the
 JSON schema, option names, finding keys ([CONVENTIONS](DOCUMENTS/CONVENTIONS.md#8-versioning))
-— bumps the minor (`0.40.0`). A patch can still move scores, when a finding is
+— bumps the minor (`0.41.0`). A patch can still move scores, when a finding is
 corrected against a measurement: its changelog entry then says *BREAKING for
 scores* and lists every penalty it newly triggers (0.31.1 to 0.31.4 did).
 
-**v0.38.x is end-of-life as of the day 0.39.0 ships**, per the "latest minor
-line only" policy above. No security fixes will be backported. Users on v0.38.x
-must `pipx upgrade bodyguard-of-bits` to v0.39.x.
+**v0.39.x is end-of-life as of the day 0.40.0 ships**, per the "latest minor
+line only" policy above. No security fixes will be backported. Users on v0.39.x
+must `pipx upgrade bodyguard-of-bits` to v0.40.x.
 
 The upgrade changes what the score *means* when BOB cannot read part of the
 host. Until v0.16.0 the score was a sum over the checks that ran, and a check
@@ -377,6 +378,17 @@ shell operators, no interactive editor. Everything else is displayed with its
 command and never run, so the count shown above the confirmation prompt is a
 promise BOB can keep. Paths interpolated into a command go through
 `shlex.quote`, and execution is `shlex.split` without a shell.
+
+Since **v0.40.0** every command `--fix --apply` launches is written to a
+journal kept for the host, `/var/log/bob/fixes.journal` (`root:adm`, `0640`,
+`chattr +a`) — before it starts, then with its outcome — and no command runs
+if that journal cannot be written. Each line is chained to the one before and
+sent to the system log as a witness, read back by `bob --fix-journal` and
+`--manage-logs`: a journal changed outside BOB is shown, with what the system
+log recorded. It is tamper-evident, not tamper-proof — root can rewrite both
+the journal and an unsealed system log. What it shows, the demonstration
+measured on a real host, and its limits:
+[DOCUMENTS/FIX_JOURNAL.md](DOCUMENTS/FIX_JOURNAL.md).
 
 ### Plugin checks (`~/.config/bob/checks.d/*.py`)
 

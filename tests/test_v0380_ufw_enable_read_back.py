@@ -64,13 +64,18 @@ def _loop(monkeypatch, capsys, cmd, state):
     asked = []
     monkeypatch.setattr(fixes, "_ufw_read_back", lambda argv: asked.append(argv) or state)
     i18n.init("en")
-    f = N(nature="action", cmd=cmd, cmd_type="fix", fix_action=None, message="Firewall off", section="firewall")
+    f = N(nature="action", cmd=cmd, cmd_type="fix", fix_action=None, message="Firewall off", section="firewall",
+          key="firewall.ufw_inactive")
     fixes.run_fixes(N(findings=[f]), N(yes=True, apply=True, check_only=None), i18n.t)
     return capsys.readouterr().out, asked
 
 
 def test_still_inactive_is_not_applied(monkeypatch, capsys):
     out, asked = _loop(monkeypatch, capsys, "sudo ufw --force enable", False)
+    from bob import fix_journal                          # v0.40.0: the journal says what was said
+    (entry,) = fix_journal.load().entries
+    assert (entry.finding, entry.command, entry.status) == (
+        "firewall.ufw_inactive", "sudo ufw --force enable", "failed")
     assert asked == [["sudo", "ufw", "--force", "enable"]]
     assert "still says inactive" in out and "0 of 1 fix(es) applied" in out
     assert "✔ Applied" not in out

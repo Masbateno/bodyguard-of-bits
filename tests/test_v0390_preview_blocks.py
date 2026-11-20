@@ -80,7 +80,9 @@ class TestTheState:
     def test_the_audit_writes_it_beside_a_d_report(self):
         import bob.__main__ as main
         src = inspect.getsource(main)
-        assert "save_report_state(report.path, curr_baseline, history_entry(**_history_args))" in src
+        # v0.40.0 (B-032) — with the computation of the score beside them.
+        assert ("save_report_state(report.path, curr_baseline, history_entry(**_history_args),\n"
+                "                                  breakdown_state(engine))") in src
         assert "save_score(**_history_args)" in src
 
     def test_no_state_no_comparison_no_history(self, tmp_path):
@@ -162,8 +164,9 @@ class TestTheCompanions:
 class TestTheView:
     def test_an_opened_preview_starts_notes_open_the_rest_closed(self):
         import bob.manage_logs as ml
+        # v0.40.0 (B-032) — the breakdown closed too (decided with the user).
         assert ml._new_view() == {"mode": "full", "notes": True, "compare": False, "history": False,
-                                  "numbers": False, "journal": False}
+                                  "breakdown": False, "numbers": False, "journal": False}
 
     def test_the_blocks_come_in_order_above_the_report(self, tmp_path):
         import bob.manage_logs as ml

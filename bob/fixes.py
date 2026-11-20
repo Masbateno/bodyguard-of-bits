@@ -12,6 +12,7 @@ import re
 import shlex
 import signal
 import subprocess
+import time
 from pathlib import Path
 
 from bob import output as _output
@@ -257,6 +258,23 @@ def _apply_native(action: dict):
     return "failed", None, result.reason.encode()
 
 
+def _journal_reason(exc, t) -> str:
+    """Why the journal of --fix --apply could not be written, in words."""
+    from bob.fix_journal import FixJournalError
+    if isinstance(exc, FixJournalError):
+        return t(f"fix_journal.err.{exc.key}", **exc.vars)
+    return exc.strerror or str(exc)
+
+
+def _journal_finish(fix_journal, entry_id, status, rc, err, seconds, t) -> None:
+    """The outcome in the journal; a failure to write it is said, and the
+    entry stays "started" — never silently lost, never blocking."""
+    try:
+        fix_journal.finish(entry_id, status=status, rc=rc, error=err, seconds=round(seconds, 3))
+    except (fix_journal.FixJournalError, OSError) as exc:
+        print(f"  ⚠ {t('fixes.journal_finish_failed', reason=_journal_reason(exc, t))}")
+
+
 def run_fixes(engine, config, t) -> None:
     """Display and optionally apply automatic fixes.
 
@@ -302,7 +320,8 @@ def run_fixes(engine, config, t) -> None:
     # displayed command looks like. The sysctl fixes (thirteen in v0.18.0) read as shell
     # one-liners because that is how a human writes a two-step change; BOB
     # applies them through its own code instead — see bob/_sysctl_apply.py.
-    auto_items   = [(f.message, f.cmd, f.fix_action) for f in actionable
+    # v0.40.0 — the finding's key travels with its command, for the journal.
+    auto_items   = [(f.message, f.cmd, f.fix_action, f.key) for f in actionable
                     if f.cmd and f.cmd_type == "fix"
                     and (f.fix_action or _can_apply_unattended(f.cmd))]
     diag_items   = [(f.message, f.cmd) for f in actionable
@@ -373,7 +392,7 @@ def run_fixes(engine, config, t) -> None:
         _output.print_dim(t('fixes.dry_run_hint',
                             cmd=_output.command('--fix --apply')))
         print()
-        for msg, cmd, _action in sorted_items:
+        for msg, cmd, _action, _key in sorted_items:
             safe_cmd = cmd.replace("\n", " ").strip()
             print(f"  ✖  {msg}")
             # The whole point of this screen is the commands; they are the
@@ -390,12 +409,26 @@ def run_fixes(engine, config, t) -> None:
         print(f"{_c.yellow_bold}  ⚠  {auto_msg}{_c.reset}")
         print()
 
+    # v0.40.0 (B-031) — no command runs without its entry in the journal of
+    # --fix --apply: the journal is asked first, and a journal that cannot be
+    # written stops everything before the first command.
+    from bob import fix_journal
+    if sorted_items:
+        try:
+            fix_journal.check_writable()
+        except (fix_journal.FixJournalError, OSError) as exc:
+            print(f"  {_c.red_bold}✖ {t('fixes.journal_unwritable', path=fix_journal.path(), reason=_journal_reason(exc, t))}{_c.reset}")
+            print()
+            _print_unapplied(diag_items, manual_items, t, _c)
+            return
+
     applied_cmds = []
     unknown_cmds = []
     skipped_cmds = 0
+    journal_entries = 0
 
     print()
-    for msg, cmd, action in sorted_items:
+    for msg, cmd, action, key in sorted_items:
         safe_cmd = cmd.replace("\n", " ").strip()
         print(f"  ✖  {msg}")
         print(f"  → {_output.command(safe_cmd)}")
@@ -417,10 +450,28 @@ def run_fixes(engine, config, t) -> None:
                 print()
                 continue
             try:
+                argv = None if action else shlex.split(cmd)
+            except ValueError as exc:
+                print(f"  ✖ {t('fixes.manual')} ({type(exc).__name__})")
+                skipped_cmds += 1
+                print()
+                continue
+            # Written before the command starts: a command during which BOB
+            # dies (the firewall fix that cuts its SSH session) still shows.
+            try:
+                entry_id = fix_journal.start(finding=key or "", message=msg, command=cmd,
+                                             how="native" if action else "shell", action=action)
+                journal_entries += 1
+            except (fix_journal.FixJournalError, OSError) as exc:
+                print(f"  ✖ {t('fixes.journal_start_failed', reason=_journal_reason(exc, t))}")
+                skipped_cmds += 1
+                print()
+                continue
+            started = time.monotonic()
+            try:
                 if action:
                     status, rc, err = _apply_native(action)
                 else:
-                    argv = shlex.split(cmd)
                     timeout = _timeout_for(argv)
                     status, rc, err = _run_fix_command(argv, timeout)
                     if status == "ok" and _UFW_ENABLE.search(cmd):
@@ -429,29 +480,34 @@ def run_fixes(engine, config, t) -> None:
                             status, err = "failed", t("fixes.ufw_still_inactive").encode()
                         elif state is None:
                             status = "unconfirmed"
-                if status == "ok":
-                    print(f"  ✔ {t('fixes.applied')}")
-                    applied_cmds.append(cmd)
-                elif status == "unconfirmed":
-                    # It ran and exited 0, but the effect could not be read
-                    # back: neither applied nor failed.
-                    print(f"  ⚠ {t('fixes.ufw_unconfirmed')}")
-                    unknown_cmds.append(cmd)
-                elif status == "timeout":
-                    # Not "not applied" — BOB stopped waiting on a command it
-                    # had already started, so the system may be halfway
-                    # through the change. Telling the operator to "apply the
-                    # command manually" here would be advice to run a second
-                    # package transaction over the wreck of the first.
-                    print(f"  ⚠ {t('fixes.timed_out', seconds=timeout)}")
-                    unknown_cmds.append(cmd)
-                else:
-                    stderr = err.decode(errors="replace").strip()
-                    detail = f" — {stderr}" if stderr else ""
-                    print(f"  ✖ {t('fixes.manual')} (exit {rc}{detail})")
             except (OSError, ValueError) as exc:
+                _journal_finish(fix_journal, entry_id, "failed", None,
+                                f"{type(exc).__name__}: {exc}", time.monotonic() - started, t)
                 print(f"  ✖ {t('fixes.manual')} ({type(exc).__name__})")
                 skipped_cmds += 1
+                print()
+                continue
+            _journal_finish(fix_journal, entry_id, status, rc, err, time.monotonic() - started, t)
+            if status == "ok":
+                print(f"  ✔ {t('fixes.applied')}")
+                applied_cmds.append(cmd)
+            elif status == "unconfirmed":
+                # It ran and exited 0, but the effect could not be read
+                # back: neither applied nor failed.
+                print(f"  ⚠ {t('fixes.ufw_unconfirmed')}")
+                unknown_cmds.append(cmd)
+            elif status == "timeout":
+                # Not "not applied" — BOB stopped waiting on a command it
+                # had already started, so the system may be halfway
+                # through the change. Telling the operator to "apply the
+                # command manually" here would be advice to run a second
+                # package transaction over the wreck of the first.
+                print(f"  ⚠ {t('fixes.timed_out', seconds=timeout)}")
+                unknown_cmds.append(cmd)
+            else:
+                stderr = err.decode(errors="replace").strip()
+                detail = f" — {stderr}" if stderr else ""
+                print(f"  ✖ {t('fixes.manual')} (exit {rc}{detail})")
         else:
             print(f"  ✖ {t('fixes.manual')}")
             skipped_cmds += 1
@@ -461,6 +517,8 @@ def run_fixes(engine, config, t) -> None:
     # noise that reads like a failure.
     if sorted_items:
         print(f"  {t('fixes.done_summary', applied=len(applied_cmds), total=len(sorted_items))}")
+    if journal_entries:
+        print(f"  {_c.dim}{t('fixes.journal_written', count=journal_entries, path=fix_journal.path())}{_c.reset}")
 
     # A command BOB stopped waiting on is neither applied nor skipped, and
     # the operator has to know before touching the machine again.

@@ -6,6 +6,213 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.40.0] — 2026-11-21
+
+**A minor release: a journal of every command `--fix --apply` launches, kept
+for the host, that shows its own falsification and hands over the proof; the
+computation of a report's score in the `--manage-logs` preview; a cap for each
+key of the bottom banner; CIS Ubuntu 26.04 cross-cited.**
+
+Not BREAKING: the same host scores the same under 0.39.0 and 0.40.0. No finding
+key, JSON-output-schema or CSV-column change. One new option, `--fix-journal`,
+which uses the existing exit codes (0, 2, 4). What changes on disk: a journal
+for the host, `/var/log/bob/fixes.journal` (`root:adm`, `0640`, directory
+`0750`), carrying the append-only attribute — removing it takes `chattr -a`
+first; and each report's `.state` gains the score's computation. What changes
+in the system log: each line of that journal is also sent there, under the
+name `bob-fix` (facility `authpriv`, level `notice`) — two lines per command,
+one per note. What changes on screen: `--manage-logs` opens on two choices,
+and the folder picker, now under them, is left with `Esc` (`q` and `l` moved to
+the landing screen); the preview gains `b`; the bottom banner draws each key in
+a black-on-white cap, its text and width unchanged; the French label of `#`
+reads « numéros » (it read « n° de ligne », one column too wide for the banner
+at 78 columns). New translation keys: 116; none removed or renamed; one French
+value changed (that label).
+
+### 1. The journal of `--fix --apply`
+
+`--fix --apply` changes the system, and BOB itself kept no record of what it
+ran beyond its own output on the terminal (sudo's log keeps what goes through
+sudo, not the finding, the outcome or the operator behind a root shell). Decided with the user: every command it
+**launches** leaves an entry, whatever came of it — applied, failed, timed out,
+or run without its effect being confirmed — with the date, the operator, the
+finding it answered, the exact command (for a fix BOB carries out in its own
+code, the action it carried out too), the exit code, the duration and the error
+output, bounded. A command the operator declines, or one BOB refuses to run, is
+not launched and leaves none.
+
+- **Who.** The same measure as the notes on a report (0.39.0): the account the
+  kernel's login uid names — it survives `sudo` — and the `SUDO_USER`/
+  `DOAS_USER` claim beside it.
+- **Two lines per command.** One before it starts, one with its outcome — two
+  writes, not a promise of two lines. When the second is missing the entry reads
+  *no outcome recorded*, for one of two reasons the journal cannot tell apart:
+  BOB stopped during the command (the firewall fix that cuts the SSH session BOB
+  runs in, a power cut), or the outcome could not be written, which BOB said on
+  screen at the time. The command still shows; what it did is not claimed.
+- **No command without its entry.** Before the first command BOB opens the
+  journal for writing; a link at its name, or a journal or a directory root does
+  not own — and nothing runs. A command whose first line cannot be written (a
+  full disk) is not run, and says why. An outcome or a note that cannot be
+  written is said, never silently lost.
+- **One journal for the host**, `/var/log/bob/fixes.journal`: root's, `0640`,
+  group `adm` (the group that reads the system's logs), opened without
+  following a link, under a lock; a journal or a directory not owned by root
+  is said not to be BOB's, and nothing is written to it.
+- **Notes**, dated and their author recorded like the entries, are added afterwards
+  (`sudo bob --manage-logs`, `a`) — never edited, never withdrawn. Without the
+  right, the screen does not offer `a` and says how to get it (found by the
+  user: nothing said a note could be added at all).
+
+### 2. How a falsification shows
+
+Decided with the user: "the moment the log has been falsified, it must be shown
+explicitly, or at least be easy to demonstrate". A journal on the machine it
+describes can always be rewritten by root; what BOB does is make a rewrite
+show. Four measures, each with its limit, all written in
+[FIX_JOURNAL.md](FIX_JOURNAL.md):
+
+- **The chain.** Each line carries the SHA-256 of the line before it. A line
+  changed, removed from the middle or moved breaks it — unless the digests are
+  recomputed, which root can do.
+- **The witness.** Each line is also sent to the system log (`/dev/log`) with
+  two digests: the whole line's, and that of what it says without its link to
+  the line before. BOB reads them back (`journalctl SYSLOG_IDENTIFIER=bob-fix`)
+  and keeps only what journald recorded as sent by root: `_UID` is set by
+  journald from the socket's credentials, not by the sender (measured: a line
+  sent with `logger -t bob-fix` by an ordinary account carries its own uid).
+  `_UID` says who sent a line — something with root's rights — not what program
+  wrote it: a line sent in BOB's name by another root process shows as a cut
+  line or as two disagreeing witnesses, both falsified. Against it: a line that differs from its witness — **falsified**, chain
+  recomputed or not; a line that says the same but was re-chained after a
+  changed line — the chain was **recomputed**; a witness with no line — lines
+  **cut** from the end, or the journal deleted; two witnesses that disagree —
+  one **forged** as root; a line without a witness though the system log covers
+  its date — **not demonstrated**; a line older than the system log's retention —
+  its witness went with the rotation, **said, never called a falsification**.
+- **The append-only attribute** (`chattr +a`), set by BOB: the kernel refuses
+  to rewrite, truncate or delete the journal, root included, until it is taken
+  off; each line records whether it was set, and its removal is said.
+- **journald's sealing** (Forward Secure Sealing): BOB says whether it is set
+  up; it never sets it up.
+
+The verdict heads the screen and the text in its colour — ✔ **intact**,
+⚠ **not demonstrated**, ✖ **FALSIFIED** — with each finding counted, and, under
+each entry the witness contradicts, the lines the system log recorded when it
+was written: only those, side by side with what the journal says now.
+
+**Measured on the test Linux Mint 22.3** (20 November 2026), two operators —
+`root` logged in directly, a second account through `sudo`, each with their own
+login uid — each applying a fix and adding a note through the screen:
+
+- rewriting the journal as root with the attribute set (`sed -i`, `truncate`,
+  `rm`) — refused by the kernel;
+- the attribute taken off, the second operator's lines rewritten as root's,
+  every digest recomputed — **FALSIFIED**, exit code 2, the system log's
+  record naming the real operator beside the forged line;
+- the last lines cut, the chain recomputed — **FALSIFIED**, the cut lines
+  readable from the system log;
+- the journal deleted — **FALSIFIED**, every line readable from the system log;
+- a witness forged by an ordinary account — left aside, **intact**;
+- a reader neither root nor in `adm` — *permission denied*, exit code 4; a
+  member of `adm` reads the journal and its witness without `sudo`;
+- the journal copied back byte for byte — **intact** again: what BOB vouches for
+  is what the journal says, against what was recorded when it was written;
+- journald rotated and its older files vacuumed — every witness gone: said as
+  gone with the rotation, never as a falsification, exit code 0;
+- journald's sealing set up (`journalctl --setup-keys`) — said *set up*, where it
+  said *not set up* before.
+
+Found on the way, before release:
+
+- by a test: a falsifier switching an entry's `witness` field to `none` made it
+  read as written without a system log; the witness is now looked up by the
+  line's id, whatever the line claims;
+- by a test: recomputing the chain changes every later line's digest, so
+  untouched entries were called changed; the second digest (what a line says)
+  tells the changed line from the re-chained ones;
+- on the test Mint: `journalctl` run by an account without the right exits 1
+  ("insufficient permissions"); BOB said *journalctl failed*, it now says the
+  system log is unreadable by this account;
+- on the test Mint: the proof under an entry listed its untouched lines too,
+  and the reader had to find the changed one; only the contradicted lines are
+  listed;
+- on the test Mint: `--fix-journal` gave the verdict without the proof; it
+  prints it, ready to be copied into a ticket;
+- on the test Mint, every witness gone with the rotation: the verdict read
+  *INTACT — … 0 line(s) match their witness*, true and misleading; it now says
+  that only the chain vouches for the journal;
+- in review: an entry without its outcome read *interrupted — outcome unknown*,
+  though it may come from a command that ran and whose outcome could not be
+  written; it reads *no outcome recorded*, both causes given.
+
+**Limits, said:** root rewriting both the journal and the system log
+consistently, or deleting both, on a host where the system log is neither
+sealed nor copied to another machine; lines older than the system log's
+retention (the chain only); a system log kept in memory only, lost at reboot;
+a host without journald, where the witness is written but cannot be read back.
+The digests prove the journal changed, not who changed it.
+
+### 3. Reading it
+
+- **`--manage-logs`** opens on two choices: `1` the audit reports (the folder
+  picker, now under the landing screen: `Esc` back), `2` the journal of fixes,
+  its row wearing its verdict. The journal opens on the verdict, then one line
+  per day, most recent first (date, commands, applied, failed); `Enter` opens a
+  day — its commands in the order they ran — then a command: its detail, what
+  the system log recorded of it, its notes. `r` lists the lines cut from the
+  journal, offered only when there are some. A host where `--fix --apply` ran
+  but no audit wrote a report opens on the same two choices.
+- **`bob --fix-journal`** prints the same in text, with the verdict as exit code:
+  0 intact, 2 falsified, 4 not demonstrated — a monitoring check. Readable as
+  root or as a member of `adm`.
+
+### 4. The score's computation in the preview
+
+Decided with the user: the preview of an audit report shows, under `b`, the
+computation `--breakdown` prints — deductions, tool caps, the engine cap, the
+domains, the average and the final score. Closed when the preview opens, kept
+as it is across `←`/`→`, like the comparison and the history. Rendered by
+`--breakdown`'s own code: what the engine held is written into the report's
+`.state` as data and handed back in the engine's shape, so the block says what
+`--breakdown` said — measured on a real `-d -B` run on the test Mint, sixteen
+lines alike, each line with its sign where the text output adds `[WARNING]`,
+`[INFO]`. A report written before 0.40.0 says it has no such detail; nothing is
+recomputed from the report's text.
+
+### 5. A cap for each key
+
+Found by the user: on the orange banner the keys ran into their labels —
+`⏎ select   1-4 by number   Esc back` read as one run of words, worse on two
+rows. Each key now sits in a black-on-white cap; the navigation keys each in
+their own, tight on the glyph; an action's key with a space on each side. The
+banner's text is the text 0.39.0 drew (compared over every screen, both
+languages, five widths): no width, wrap or announced key changes. Without
+colours the cap is plain video on the banner's reverse video.
+
+### 6. CIS Ubuntu 26.04
+
+ComplianceAsCode merged its CIS Ubuntu 26.04 controls on 20 November 2026
+(PR #15097, v1.0.0) — the case the assembly watch was waiting for. The
+generator reads it (it lives with its product, not in `controls/`), and
+`--explain` cross-cites it: **73** of the 95 keys BOB maps. The file holds
+Level 1 only (278 controls, none of Level 2) and describes the firewall through
+`ufw`: the 22 others — Level 2 controls such as auditd and AppArmor
+enforcement, the iptables rules, the GPG keys — carry no 26.04 number rather
+than a borrowed one. Cross-benchmark citations 262 → 335; no other reference
+moved.
+
+### 7. Tests and tooling
+
+**Tests** 23100 → **23517**, mutations 2170 → **2230**, all killed. New test
+files: `test_v0400_fix_journal.py`, `test_v0400_fix_witness.py`,
+`test_v0400_fix_journal_apply.py`, `test_v0400_fixlog_screens.py`,
+`test_v0400_breakdown_block.py`, `test_v0400_key_caps.py`. The suite sends the
+journal of fixes to a directory of its own and its witness to a socket that
+does not exist, whoever runs it, root included. A test screen that answered
+`q` for ever once its keys were spent looped without end when the folder picker
+stopped taking `q`; it now stops when its keys run out.
+
 ## [0.39.0] — 2026-11-20
 
 **A minor release: notes on a report, kept beside it in a journal that records

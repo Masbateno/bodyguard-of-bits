@@ -18,10 +18,10 @@ rule, not the number, is what identifies a control. From that anchor this script
   * re-bases the primary reference (`ref` + `code`) onto CAC's CIS Ubuntu 22.04
     v2.0.0 numbering + title + level, correcting any drift or mis-citation;
   * fills the `benchmarks` block with the same control's number and title in
-    CIS Ubuntu 24.04, Debian 12 and Debian 13.
+    CIS Ubuntu 24.04, Ubuntu 26.04 (since BOB 0.40.0), Debian 12 and Debian 13.
 
 Benchmarks are limited to distributions BOB officially supports that publish
-their own CIS benchmark: Ubuntu (22.04 primary + 24.04) and Debian (12, 13).
+their own CIS benchmark: Ubuntu (22.04 primary + 24.04 + 26.04) and Debian (12, 13).
 openSUSE Leap and Fedora are excluded — CIS publishes SLES and RHEL, not those;
 Alpine / Arch / Mint / Raspberry Pi OS have no CIS benchmark. The 7 CIS Docker
 and 1 CIS Red Hat keys have single-version benchmarks with nothing to cross-cite
@@ -35,10 +35,15 @@ import urllib.request
 from pathlib import Path
 
 _RAW = "https://raw.githubusercontent.com/ComplianceAsCode/content/master/controls/"
+#: The repository's root, for a benchmark kept with its product rather than in
+#: controls/ — CIS Ubuntu 26.04 lives under products/ubuntu2604/controls/
+#: (ComplianceAsCode PR #15097, merged 20 November 2026).
+_ROOT = "https://raw.githubusercontent.com/ComplianceAsCode/content/master/"
 
 #: The primary benchmark (its rule fixes ``ref``/``code``) and the cross-cited ones.
 PRIMARY = ("CIS Ubuntu 22.04", "cis_ubuntu2204.yml")
 CROSS = [("CIS Ubuntu 24.04", "cis_ubuntu2404.yml"),
+         ("CIS Ubuntu 26.04", "products/ubuntu2604/controls/cis_ubuntu2604.yml"),
          ("CIS Debian 12", "cis_debian12.yml"),
          ("CIS Debian 13", "cis_debian13.yml")]
 
@@ -241,7 +246,10 @@ def _index(text: str) -> dict:
 
 
 def _fetch(fname: str) -> dict:
-    return _index(urllib.request.urlopen(_RAW + fname, timeout=30).read().decode())
+    """A benchmark by its file name in controls/, or by its path from the
+    repository's root when it lives elsewhere."""
+    url = (_ROOT if "/" in fname else _RAW) + fname
+    return _index(urllib.request.urlopen(url, timeout=30).read().decode())
 
 
 def main() -> None:

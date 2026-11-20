@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.39.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.40.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -129,7 +129,7 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 ### Automatisation
 
 - **Rapport détaillé** — fichier log horodaté avec en-tête ASCII art, informations système, constats et recommandations ; créé avec `-d` ; nom : `bob_YYYYMMDD_HHMMSS.log`. Chaque constat porte son explication, sa commande (`→` correctif, `?` vérification) et sa clé — sans condition, et aussi sous `-q`, car une archive ne se relance pas avec `-v`
-- **`--manage-logs`** — interface interactive pour lister, prévisualiser et supprimer les rapports ; prévisualisation scrollable avec bascule résumé/complet, et ←/→ vers le rapport plus ancien/récent sans la quitter (0.32.0). S'ouvre sur un sélecteur de dossiers (📁) listant chaque répertoire de logs suivi — l'actuel et les précédents, conservés jusqu'à ce que vous en oubliiez un explicitement, pour qu'un changement de répertoire ne perde jamais de vue les anciens rapports ; choisissez un dossier pour parcourir ses rapports. Depuis la 0.39.0, l'aperçu montre au-dessus du rapport, à part, ses notes (datées, auteur enregistré à travers sudo, modifications gardées, retirées ou purgées — un journal à root, écrit par `sudo bob`, dont les empreintes chaînées montrent une modification faite hors de BOB ; qui permet de détecter certaines altérations sans les empêcher), la comparaison avec le rapport précédent du même hôte (comme la dit `--diff`) et l'historique de cet hôte (comme le dessine `--history`), à partir d'un fichier d'état écrit à côté de chaque rapport `-d` ; `#` numérote les lignes. Détails : [AUTOMATION_FR.md](AUTOMATION_FR.md#visualiseur-de-rapport)
+- **`--manage-logs`** — interface interactive pour lister, prévisualiser et supprimer les rapports ; prévisualisation scrollable avec bascule résumé/complet, et ←/→ vers le rapport plus ancien/récent sans la quitter (0.32.0). S'ouvre sur un sélecteur de dossiers (📁) listant chaque répertoire de logs suivi — l'actuel et les précédents, conservés jusqu'à ce que vous en oubliiez un explicitement, pour qu'un changement de répertoire ne perde jamais de vue les anciens rapports ; choisissez un dossier pour parcourir ses rapports. Depuis la 0.39.0, l'aperçu montre au-dessus du rapport, à part, ses notes (datées, auteur enregistré à travers sudo, modifications gardées, retirées ou purgées — un journal à root, écrit par `sudo bob`, dont les empreintes chaînées montrent une modification faite hors de BOB ; qui permet de détecter certaines altérations sans les empêcher), la comparaison avec le rapport précédent du même hôte (comme la dit `--diff`) et l'historique de cet hôte (comme le dessine `--history`), à partir d'un fichier d'état écrit à côté de chaque rapport `-d` ; `#` numérote les lignes. Depuis la 0.40.0, elle s'ouvre sur deux choix — les rapports d'audit, et le journal de `--fix --apply` (chaque commande lancée, son opérateur, son constat, la commande exacte et son résultat ; notes ajoutées, jamais modifiées ; chaîné, `chattr +a`, une ligne témoin dans le journal système relue — une falsification est montrée avec ce que le journal système a enregistré ; `bob --fix-journal` en texte, sortie 0/2/4 ; [FIX_JOURNAL_FR.md](FIX_JOURNAL_FR.md)) — et `b` montre le calcul du score d'un rapport comme `--breakdown` l'a affiché. Détails : [AUTOMATION_FR.md](AUTOMATION_FR.md#visualiseur-de-rapport)
 - **`--install-cron`** — wizard de planification : nom du cron, type de planning (quotidien / jours spécifiques / expression cron personnalisée), heure et email optionnel, puis fixation du profil, de la langue et des sondes sortantes de l'audit (v0.16.1 — un cron s'exécute en root : sans cela il lirait le profil enregistré de root et le `$LANG` nu de cron) ; détection automatique du MTA (Postfix, Exim, msmtp, ssmtp) — avertit si aucun `sendmail` trouvé ; aperçu en langage naturel ; ligne de commande résultante affichée avant écriture ; TUI curses avec repli texte ; crons nommés dans `/etc/cron.d/bob-{nom}`, ou — BusyBox crond, sans `/etc/cron.d` — un bloc repéré de `/etc/crontabs/root` (0.26.0)
 - **`--manage-cron`** — TUI en boucle : lister, modifier planning/email, supprimer des crons ; carnet d'adresses email accessible depuis le menu, même sans cron installé
 
@@ -402,7 +402,7 @@ Exemple (tronqué pour la lisibilité) :
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.39.0  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.40.0  │  Auditeur de durcissement Linux                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -550,6 +550,7 @@ Le rapport s'ouvre avec un en-tête ASCII art sur 62 caractères et contient : i
 | `--html`                | Alias long de `--format=html`                                      |
 | `--watch[=N]`           | Relancer l'audit toutes les N secondes (défaut 60) — Ctrl+C pour quitter |
 | `--history`             | Afficher la sparkline d'historique de score et la table récente, puis sortir |
+| `--fix-journal`         | Afficher le journal de `--fix --apply` et s'il a été modifié hors de BOB, puis sortir (0 intact, 2 falsifié, 4 non démontré) |
 | `--ignore=CLÉ`          | Ajouter une clé de constat à la liste d'exclusion et sortir        |
 | `--unignore=CLÉ`        | Retirer une clé de constat de la liste d'exclusion et sortir       |
 | `--show-ignored`        | Afficher en gris les constats supprimés à côté de la sortie normale |

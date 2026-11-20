@@ -100,6 +100,7 @@ cursor row and the banner shared a background unnoticed.
 | `CONTEXT_OK` | the context line saying an action took effect (`✔`) — green on black |
 | `CONTEXT_ERROR` | the context line saying an action was refused or failed (`✖`) — red on black |
 | `CONTEXT_INFO` | the context line only informing (`ℹ`, an action cancelled) — cyan on black |
+| `KEYCAP` | a key's cap in the bottom banner — black on white (v0.40.0) |
 
 **The context line says what a message means** (v0.39.0, decided with the
 user). Its colour is the text output's for the same meaning — green done, red
@@ -114,6 +115,17 @@ confirmation goes on the context line above it. Found while doing this:
 `--manage-logs` confirmations, still replaced the banner. *Guarded:* each
 glyph's tone · each tone's pair · every status built with its glyph · no write
 on the banner's row · prompts in the prompts' colour.
+
+**Each key sits in its own cap** (v0.40.0, decided with the user, 20 November
+2026: on the plain orange line the keys were hard to tell apart). In the
+bottom banner every key — `⏎`, `Esc`, `d`, `1-4` — is drawn black on white
+(`KEYCAP`), with the space on each side of it; its label stays white on orange.
+The three navigation keys (`↑↓ jk`, `PgUp/PgDn`, `g/G`) each have a cap of their
+own, tight on the key, an orange space between them: one cap over the whole
+cluster read as a single white block (the user). Without colours the cap is plain video on the banner's
+reverse video. The banner's text is the text it always was: no width moves and
+no row wraps differently (`_keys.footer_layout` gives each row its caps). *Guarded:* the caps cover each key and nothing else · they are drawn in their
+colour, and apart without colours · the text is unchanged on every screen.
 
 **Every confirmation is asked one way** (v0.39.0, decided with the user, 19
 November 2026). An action that deletes, overwrites, withdraws, purges or moves

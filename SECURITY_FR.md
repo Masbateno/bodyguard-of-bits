@@ -137,7 +137,8 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 
 | Version        | Supportée          |
 |----------------|--------------------|
-| 0.39.x         | ✅ courante         |
+| 0.40.x         | ✅ courante         |
+| 0.39.x         | ❌ fin de vie       |
 | 0.38.x         | ❌ fin de vie       |
 | 0.37.x         | ❌ fin de vie       |
 | 0.36.x         | ❌ fin de vie       |
@@ -170,17 +171,17 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 | 0.6.x          | ❌ fin de vie       |
 | ≤ 0.5.x        | ❌ fin de vie       |
 
-Les correctifs sortent en `0.39.x+1`. Un changement du contrat stable — codes de
+Les correctifs sortent en `0.40.x+1`. Un changement du contrat stable — codes de
 sortie, schéma JSON, noms d'options, clés de constat ([CONVENTIONS](DOCUMENTS/CONVENTIONS_FR.md#8-versionnage))
-— incrémente la version mineure (`0.40.0`). Un correctif peut tout de même faire
+— incrémente la version mineure (`0.41.0`). Un correctif peut tout de même faire
 bouger les scores, quand un constat est corrigé d'après une mesure : son entrée de
 changelog dit alors *BREAKING pour les scores* et liste chaque pénalité qu'il
 déclenche nouvellement (de 0.31.1 à 0.31.4, c'était le cas).
 
-**v0.38.x est en fin de vie le jour où 0.39.0 sort**, selon la politique
+**v0.39.x est en fin de vie le jour où 0.40.0 sort**, selon la politique
 « ligne minor la plus récente uniquement » ci-dessus. Aucun correctif de
-sécurité ne sera backporté. Les utilisateurs sur v0.38.x doivent
-`pipx upgrade bodyguard-of-bits` vers v0.39.x.
+sécurité ne sera backporté. Les utilisateurs sur v0.39.x doivent
+`pipx upgrade bodyguard-of-bits` vers v0.40.x.
 
 La mise à jour change ce que le score **signifie** quand BOB ne peut pas lire
 une partie de l'hôte. Jusqu'en v0.16.0, le score était une somme sur les checks
@@ -325,6 +326,17 @@ Tout le reste est affiché avec sa commande sans jamais être exécuté, de sort
 que le compteur au-dessus de l'invite de confirmation est une promesse
 tenable. Les chemins interpolés dans une commande passent par `shlex.quote`,
 et l'exécution se fait par `shlex.split`, sans shell.
+
+Depuis la **v0.40.0**, chaque commande que lance `--fix --apply` est inscrite
+dans un journal tenu pour l'hôte, `/var/log/bob/fixes.journal` (`root:adm`,
+`0640`, `chattr +a`) — avant qu'elle démarre, puis avec son résultat — et aucune
+commande ne tourne si ce journal ne peut pas être écrit. Chaque ligne est
+chaînée à la précédente et envoyée au journal système comme témoin, relu par
+`bob --fix-journal` et `--manage-logs` : un journal modifié hors de BOB est
+montré, avec ce que le journal système avait enregistré. Il rend la
+falsification visible, il ne l'empêche pas — root peut réécrire le journal et
+un journal système non scellé. Ce qu'il montre, la démonstration mesurée sur un
+vrai hôte, et ses limites : [DOCUMENTS/FIX_JOURNAL_FR.md](DOCUMENTS/FIX_JOURNAL_FR.md).
 
 ### Plugin checks (`~/.config/bob/checks.d/*.py`)
 

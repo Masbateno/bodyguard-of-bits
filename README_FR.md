@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.39.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.40.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -227,7 +227,7 @@ Chaque point de la liste *À corriger* affiche une référence CIS quand il y en
 
 ## Mapping des benchmarks CIS
 
-241 entrées : **91 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 7 CIS Kubernetes 2.0 · 1 CIS Red Hat 8/9 · 135 bonnes pratiques**, plus **262 citations inter-benchmarks** sur 95 clés (CIS Debian 12/13 et CIS Ubuntu 24.04), sourcées depuis [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) pour que chaque numéro de contrôle soit vérifiable et non inventé.
+241 entrées : **91 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 7 CIS Kubernetes 2.0 · 1 CIS Red Hat 8/9 · 135 bonnes pratiques**, plus **335 citations inter-benchmarks** sur 95 clés (CIS Debian 12/13 et CIS Ubuntu 24.04/26.04 — 26.04 depuis la 0.40.0, niveau 1 seulement, tel que ComplianceAsCode le publie), sourcées depuis [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) pour que chaque numéro de contrôle soit vérifiable et non inventé.
 
 Chaque résultat avec un code CIS formel affiche `[CIS:X.Y.Z]` en ligne dans la boîte de synthèse.  
 Le texte de référence complet est montré en mode `--verbose`.  
@@ -405,6 +405,7 @@ La même version a cessé de faire lire à BOB les noms de fichiers de Debian po
 - [Journal des modifications](CHANGELOG_FR.md)
 - [Guide développeur](DOCUMENTS/README_DEV_FR.md)
 - [Guide d'automatisation](DOCUMENTS/AUTOMATION_FR.md)
+- [Le journal de `--fix --apply`, et comment une falsification se voit](DOCUMENTS/FIX_JOURNAL_FR.md)
 
 ---
 

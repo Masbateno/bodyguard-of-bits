@@ -107,14 +107,24 @@ class _Screen:
         pass
 
     def getch(self):
-        return self._keys.pop(0) if self._keys else ord("q")
+        # v0.40.0 — never a default key: this screen answered "q" for ever, and
+        # once the directory picker became nested (q no longer leaves it) the
+        # test looped until the machine ran out of memory and crashed
+        # (20 November 2026). A screen that asks past its keys is stopped.
+        if not self._keys:
+            raise _OutOfKeys
+        return self._keys.pop(0)
+
+
+class _OutOfKeys(Exception):
+    """The screen kept reading after the last key the test gave it."""
 
 
 def _render_picker(uc, width=160):
     real = sys.modules.get("curses")
     sys.modules["curses"] = _FakeCurses
     try:
-        scr = _Screen([ord("q")])
+        scr = _Screen([27])                  # Esc: the picker is nested since v0.40.0
         scr.width = width
         ml._dir_picker(scr, uc, SimpleNamespace(no_color=True), i18n.t)
         return "\n".join(scr.rows.values())

@@ -6,6 +6,8 @@ Auto-applied fixtures here run for every test in tests/.
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 
@@ -74,3 +76,18 @@ def _no_live_ssh_session_for_fail2ban(monkeypatch):
     jail's file against. A developer's or a CI runner's own sessions must not
     decide a test: no session by default, a test that needs one sets it."""
     monkeypatch.setattr("bob.checks.fail2ban._newest_session_since_syslog", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def _fix_journal_out_of_the_host(tmp_path_factory, monkeypatch):
+    """v0.40.0 — every ``--fix --apply`` writes the journal of fixes and sends
+    its witness to the system log. No test may write the host's
+    ``/var/log/bob`` or send a line to its journald — not even a suite run as
+    root: the journal goes to a directory of its own, owned as the account
+    running the tests, and the system log socket is one that does not exist.
+    A test about the journal itself sets its own."""
+    from bob import fix_journal
+    monkeypatch.setattr(fix_journal, "DIR", tmp_path_factory.mktemp("fix-journal") / "bob")
+    monkeypatch.setattr(fix_journal, "_JOURNAL_UID", os.geteuid())
+    monkeypatch.setattr(fix_journal, "_group_id", lambda: os.getegid())
+    monkeypatch.setattr(fix_journal, "_SYSLOG_SOCKET", fix_journal.Path("/nonexistent/bob-test-log"))

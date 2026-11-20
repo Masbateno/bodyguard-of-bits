@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from bob.tui import _keys
 from bob.tui._palette import (BANNER, CONTEXT, CONTEXT_ERROR, CONTEXT_INFO, CONTEXT_OK,
-                               CONTEXT_PROMPT, FOOTER)
+                               CONTEXT_PROMPT, FOOTER, KEYCAP)
 
 #: v0.39.0 — what a context line says, and its colour (see _palette). A status
 #: carries its meaning in its first glyph, as in the text output: ✔ done,
@@ -97,6 +97,17 @@ def banner_lines(t, actions: "tuple[str, ...]", width: int) -> "list[str]":
     return _keys.footer_lines(t, actions, max(1, width - 2))
 
 
+def banner_caps(t, actions: "tuple[str, ...]", width: int) -> "list[list[tuple[int, int]]]":
+    """The key caps of :func:`banner_lines`, row by row (v0.40.0)."""
+    return [caps for _line, caps in _keys.footer_layout(t, actions, max(1, width - 2))]
+
+
+def keycap_attr(curses, has_color: bool) -> int:
+    """A key's cap in the banner: black on white; without colours, plain video
+    on the banner's reverse video, so the key still stands apart."""
+    return curses.color_pair(KEYCAP) if has_color else curses.A_NORMAL
+
+
 def chrome_height(t, actions: "tuple[str, ...]", width: int) -> int:
     """Rows the bottom chrome occupies: the banner plus its context line.
 
@@ -133,11 +144,13 @@ def draw(stdscr, curses, t, actions: "tuple[str, ...]", has_color: bool,
     disappears would move the banner under the operator's eyes.
     """
     h, w = stdscr.getmaxyx()
-    draw_text(stdscr, curses, has_color, banner_lines(t, actions, w), context=context, tone=tone)
+    draw_text(stdscr, curses, has_color, banner_lines(t, actions, w), context=context, tone=tone,
+              caps=banner_caps(t, actions, w))
 
 
 def draw_text(stdscr, curses, has_color: bool, lines: "list[str]",
-              *, context: str = "", tone: "str | None" = None) -> None:
+              *, context: str = "", tone: "str | None" = None,
+              caps: "list[list[tuple[int, int]]] | None" = None) -> None:
     """Paint arbitrary banner rows, for a screen with no declared actions.
 
     ``_curses_status_flash`` waits for any key at all; its banner says exactly
@@ -153,6 +166,14 @@ def draw_text(stdscr, curses, has_color: bool, lines: "list[str]",
 
     for i, line in enumerate(reversed(lines)):
         _safe(stdscr, curses, h - 1 - i, line.ljust(w - 1)[:w - 1], banner_attr)
+    # v0.40.0 — each key in its cap, over the line just drawn.
+    cap_attr = keycap_attr(curses, has_color)
+    for i, row_caps in enumerate(reversed(caps or [])):
+        line = lines[len(lines) - 1 - i]
+        for start, end in row_caps:
+            end = min(end, w - 1)
+            if 0 <= start < end:
+                _safe_at(stdscr, curses, h - 1 - i, start, line.ljust(w - 1)[start:end], cap_attr)
     _safe(stdscr, curses, h - 1 - len(lines),
           context.ljust(w - 1)[:w - 1], ctx_attr)
 
@@ -184,6 +205,16 @@ def draw_header(stdscr, curses, title: str, has_color: bool) -> None:
     else:
         line = left.ljust(width)
     _safe(stdscr, curses, 0, line[:width], attr)
+
+
+def _safe_at(stdscr, curses, row: int, col: int, text: str, attr: int) -> None:
+    """addstr at a column, tolerating a terminal too small for it."""
+    if row < 0:
+        return
+    try:
+        stdscr.addstr(row, col, text, attr)
+    except curses.error:
+        pass
 
 
 def _safe(stdscr, curses, row: int, text: str, attr: int) -> None:

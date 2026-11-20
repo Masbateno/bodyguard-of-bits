@@ -69,6 +69,12 @@ NOTE_JOURNAL = "note_journal"  #: v — show/hide every action on the notes
 PEER     = "peer"
 #: v0.39.0 — Tab in a text field that completes a path.
 COMPLETE = "complete"
+#: v0.40.0 — r, on the journal of --fix --apply: the lines the system log
+#: holds and the journal no longer does (the proof of a cut).
+REMOVED  = "removed"
+#: v0.40.0 (B-032) — b, in the report preview: show/hide the computation of
+#: the score, as --breakdown prints it.
+BREAKDOWN = "breakdown"
 #: v0.39.0 (user, 19 November 2026: the keys a screen accepts are exactly the
 #: keys it announces) — a numbered menu's digits, announced with the menu's own
 #: range: ``pick(4)`` is drawn "1-4" and binds 1 to 4, never 5. The digits were
@@ -140,6 +146,8 @@ _LITERAL: "dict[str, tuple[int, ...]]" = {
     NOTE_PURGE: (ord("p"), ord("P")),
     NOTE_JOURNAL: (ord("v"), ord("V")),
     COMPLETE: (9,),
+    REMOVED: (ord("r"), ord("R")),
+    BREAKDOWN: (ord("b"), ord("B")),
 }
 
 #: The glyph cluster shown for each action. Navigation is drawn without a
@@ -153,7 +161,7 @@ _GLYPH = {
     PEER: "←/→",
     NOTES: "n", ANNOTATE: "a", COMPARE: "c", HISTORY: "h", NUMBERS: "#",
     NOTE_ADD: "a", NOTE_EDIT: "e", NOTE_WITHDRAW: "r", NOTE_PURGE: "p", NOTE_JOURNAL: "v",
-    COMPLETE: "Tab",
+    COMPLETE: "Tab", REMOVED: "r", BREAKDOWN: "b",
 }
 
 
@@ -312,22 +320,55 @@ def footer_lines(t, actions: "tuple[str, ...]", width: int = 78) -> "list[str]":
     would silently eat the exit hint — the one an operator needs most, and the
     one they cannot guess.
     """
+    return [line for line, _caps in footer_layout(t, actions, width)]
+
+
+def footer_layout(t, actions: "tuple[str, ...]", width: int = 78
+                  ) -> "list[tuple[str, list[tuple[int, int]]]]":
+    """The hint lines of :func:`footer_lines`, each with its key caps.
+
+    v0.40.0 (user, 20 November 2026) — a cap is ``(start, end)``, a column span
+    of the line covering one key: each navigation key tight on its glyph (they
+    are one space apart), each action's glyph with the space on each side. The text is the
+    very text footer_lines always returned — no width moves, no wrap moves —
+    and the chrome paints the caps in their own colour so a key cannot run
+    into its neighbour's label.
+    """
     nav = [_glyph(a) for a in actions if a in NAVIGATION]
-    rest = [
-        f"{_glyph(a)} {t(_label_key(a))}"
+    # (text, its caps as spans relative to the part's start). The navigation
+    # cluster gives each of its keys a cap of its own, tight on the glyph: its
+    # keys are one space apart, and padded caps would merge into one white block
+    # (the user, 20 November 2026). An action's cap takes the space on each side.
+    nav_caps, offset = [], 0
+    for glyph in nav:
+        nav_caps.append((offset, offset + len(glyph)))
+        offset += len(glyph) + 1
+    parts = ([(" ".join(nav), nav_caps)] if nav else []) + [
+        (f"{_glyph(a)} {t(_label_key(a))}", [(-1, len(_glyph(a)) + 1)])
         for a in actions if a not in NAVIGATION
     ]
-    parts = ([" ".join(nav)] if nav else []) + rest
     sep = "   "
-    first = "  " + sep.join(parts)
-    if len(first) <= width or len(parts) < 2:
+
+    def line(chunk):
+        text, caps, col = "  ", [], 2
+        for i, (part, part_caps) in enumerate(chunk):
+            if i:
+                text += sep
+                col += len(sep)
+            caps.extend((col + start, col + end) for start, end in part_caps)
+            text += part
+            col += len(part)
+        return text, caps
+
+    first = line(parts)
+    if len(first[0]) <= width or len(parts) < 2:
         return [first]
 
     # Split on the last separator that still fits, so no cluster is broken.
     cut = len(parts) - 1
-    while cut > 1 and len("  " + sep.join(parts[:cut])) > width:
+    while cut > 1 and len(line(parts[:cut])[0]) > width:
         cut -= 1
-    return ["  " + sep.join(parts[:cut]), "  " + sep.join(parts[cut:])]
+    return [line(parts[:cut]), line(parts[cut:])]
 
 
 def footer(t, actions: "tuple[str, ...]", width: int = 78) -> str:

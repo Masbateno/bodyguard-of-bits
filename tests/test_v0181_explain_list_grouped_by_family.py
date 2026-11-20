@@ -108,7 +108,8 @@ def test_the_tree_is_distro_then_version_then_section():
     assert set(tree) == {"CIS Ubuntu", "CIS Debian", "CIS Docker", "CIS Kubernetes",
                          "CIS Red Hat", BEST_PRACTICE_FAMILY}
     ubuntu = dict(tree["CIS Ubuntu"])
-    assert set(ubuntu) == {"CIS Ubuntu 22.04", "CIS Ubuntu 24.04"}
+    # v0.40.0 — CIS Ubuntu 26.04 (ComplianceAsCode PR #15097, merged 20 November 2026).
+    assert set(ubuntu) == {"CIS Ubuntu 22.04", "CIS Ubuntu 24.04", "CIS Ubuntu 26.04"}
     debian = dict(tree["CIS Debian"])
     assert set(debian) == {"CIS Debian 12", "CIS Debian 13"}
 

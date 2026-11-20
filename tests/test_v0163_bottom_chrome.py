@@ -35,6 +35,7 @@ _WIZARDS = {
     "explain":     _ROOT / "bob" / "explain.py",
     "manage_logs": _ROOT / "bob" / "manage_logs.py",
     "cron":        _ROOT / "bob" / "tui" / "cron.py",
+    "fixlog":      _ROOT / "bob" / "tui" / "fixlog.py",     # v0.40.0
 }
 
 
@@ -107,8 +108,11 @@ class TestTheGeometry:
 
     def test_every_chrome_row_is_padded_to_the_full_width(self):
         from bob.tui import _keys
-        for _, _, text, _ in _draw(_keys.NAVIGATION + (_keys.QUIT,), w=100):
-            assert len(text) == 99, f"row not padded to the width: {len(text)}"
+        # v0.40.0 — the key caps are written over each banner row afterwards;
+        # the row itself is the write at column 0.
+        for _, col, text, _ in _draw(_keys.NAVIGATION + (_keys.QUIT,), w=100):
+            if col == 0:
+                assert len(text) == 99, f"row not padded to the width: {len(text)}"
 
     def test_chrome_height_matches_what_draw_actually_paints(self):
         from bob.tui import _chrome, _keys
@@ -129,7 +133,7 @@ class TestTheColours:
         from bob.tui import _keys
         from bob.tui._palette import CONTEXT, FOOTER
         writes = _draw(_keys.NAVIGATION + (_keys.QUIT,), context="  x")
-        by_row = {r: attr for r, _, _, attr in writes}
+        by_row = {r: attr for r, col, _, attr in writes if col == 0}   # the rows, not their key caps
         bottom = max(by_row)
         assert by_row[bottom] == _FakeCurses.color_pair(FOOTER) | _FakeCurses.A_BOLD
         assert by_row[min(by_row)] == _FakeCurses.color_pair(CONTEXT)
@@ -137,7 +141,7 @@ class TestTheColours:
     def test_a_monochrome_terminal_still_separates_the_bands(self):
         from bob.tui import _keys
         writes = _draw(_keys.NAVIGATION + (_keys.QUIT,), context="  x", has_color=False)
-        by_row = {r: attr for r, _, _, attr in writes}
+        by_row = {r: attr for r, col, _, attr in writes if col == 0}   # the rows, not their key caps
         assert by_row[max(by_row)] == _FakeCurses.A_REVERSE, "the banner loses its band"
         assert by_row[min(by_row)] == _FakeCurses.A_NORMAL
 
@@ -174,8 +178,9 @@ def _declared_screens() -> dict:
     import bob.explain as ex
     import bob.manage_logs as ml
     import bob.tui.cron as cr
+    import bob.tui.fixlog as fl
     out = {}
-    for mod in (ex, ml, cr):
+    for mod in (ex, ml, cr, fl):
         for name in dir(mod):
             if name.endswith("_KEYS"):
                 value = getattr(mod, name)

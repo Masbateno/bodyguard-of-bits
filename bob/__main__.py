@@ -100,6 +100,22 @@ EXIT_TARGET_MISSED = 4  # --target N and score < N, or anything could not be rea
 #                          opened the gate on the least trustworthy run)
 
 
+def _show_fix_journal(t) -> int:
+    """v0.40.0 — ``bob --fix-journal``: the journal of --fix --apply, its
+    verdict first. The exit code carries the verdict, for a script or a
+    monitoring check: 0 intact, EXIT_ALERTS a falsification shown,
+    EXIT_TARGET_MISSED something could not be checked."""
+    from bob.fixlog import text_report
+    c = output._c
+    colour = {"alert": c.red_bold, "warn": c.yellow_bold, "ok": c.green_bold,
+              "verbatim": c.violet_bold, "body": ""}
+    lines, overall = text_report(t)
+    for text, kind in lines:
+        tint = colour.get(kind, "")
+        print(f"{tint}{text}{c.reset}" if tint else text)
+    return {"intact": EXIT_OK, "tampered": EXIT_ALERTS}.get(overall, EXIT_TARGET_MISSED)
+
+
 def require_root() -> None:
     if os.geteuid() != 0:
         from bob._privilege import with_privilege
@@ -156,6 +172,11 @@ def _run(argv=None) -> int:
         output.init(no_color=config.no_color)
         display_history(t=i18n.t)
         return EXIT_OK
+
+    if config.fix_journal:
+        i18n.init(lang=config.lang)
+        output.init(no_color=config.no_color)
+        return _show_fix_journal(i18n.t)
 
     if config.list_checks:
         # I-3 (v0.7.4): --check=list now honours --lang for i18n.
@@ -878,9 +899,12 @@ def _run(argv=None) -> int:
             # and this history line), for --manage-logs's comparison and
             # history blocks.
             if getattr(report, "path", None) is not None:
+                from bob.breakdown import breakdown_state
                 from bob.compare import save_report_state
                 from bob.history import history_entry
-                save_report_state(report.path, curr_baseline, history_entry(**_history_args))
+                # v0.40.0 (B-032) — and the computation --breakdown prints.
+                save_report_state(report.path, curr_baseline, history_entry(**_history_args),
+                                  breakdown_state(engine))
             # v0.26.1 — a write refused under a redirected home is said, not
             # dropped: the baseline, history or report the user expects is missing.
             from bob.sysinfo import say_refused_redirects

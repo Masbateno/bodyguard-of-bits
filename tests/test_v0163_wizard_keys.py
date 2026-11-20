@@ -63,9 +63,10 @@ def _declared_sets() -> "dict[str, tuple]":
     import bob.explain
     import bob.manage_logs
     import bob.tui.cron
+    import bob.tui.fixlog
 
     out = {}
-    for mod in (bob.tui.cron, bob.manage_logs, bob.explain):
+    for mod in (bob.tui.cron, bob.manage_logs, bob.explain, bob.tui.fixlog):
         for name in dir(mod):
             if name.endswith("_KEYS") and isinstance(getattr(mod, name), tuple):
                 out[f"{mod.__name__}.{name}"] = getattr(mod, name)
@@ -212,7 +213,7 @@ class TestAnAdvertisedKeyDoesSomething:
 #: without any test noticing. Adding a screen means classifying it here.
 _LANDING = {
     "bob.explain._FAMILY_KEYS",
-    "bob.manage_logs._DIR_KEYS",
+    "bob.manage_logs._HOME_KEYS",       # v0.40.0 — reports or the journal of fixes
     "bob.tui.cron._LANDING_KEYS",
     "bob.tui.cron._MANAGE_KEYS",
 }
@@ -220,6 +221,7 @@ _NESTED = {
     "bob.explain._DETAIL_KEYS",
     "bob.explain._VERSION_KEYS",
     "bob.explain._KEY_PICKER_KEYS",
+    "bob.manage_logs._DIR_KEYS",        # v0.40.0 — under the landing screen now
     "bob.manage_logs._LIST_KEYS",
     "bob.manage_logs._MARKED_KEYS",
     "bob.manage_logs._PREVIEW_KEYS",
@@ -233,6 +235,14 @@ _NESTED = {
     "bob.tui.cron._STORE_KEYS",
     "bob.tui.cron._EDIT_KEYS",
     "bob.tui.cron._CHOICE_KEYS",
+    # v0.40.0 — the journal of --fix --apply, under the landing screen
+    "bob.tui.fixlog._FIXDAYS_KEYS",
+    "bob.tui.fixlog._FIXDAYS_CUT_KEYS",
+    "bob.tui.fixlog._FIXDAY_KEYS",
+    "bob.tui.fixlog._FIXENTRY_KEYS",
+    "bob.tui.fixlog._FIXENTRY_RO_KEYS",
+    "bob.tui.fixlog._FIXCUT_KEYS",
+    "bob.tui.fixlog._NOTE_INPUT_KEYS",
 }
 
 
@@ -305,7 +315,11 @@ _SCREEN_OF = {
     "bob/tui/cron.py::_run_manage_cron_curses":   "bob.tui.cron._MANAGE_KEYS",
     "bob/tui/cron.py::_curses_email_list_sub":    "bob.tui.cron._EMAIL_KEYS",
     "bob/tui/cron.py::_curses_email_store_sub":   "bob.tui.cron._STORE_KEYS",
+    "bob/manage_logs.py::_home":                  "bob.manage_logs._HOME_KEYS",
     "bob/manage_logs.py::_dir_picker":            "bob.manage_logs._DIR_KEYS",
+    "bob/tui/fixlog.py::run":                     "bob.tui.fixlog._FIXDAYS_CUT_KEYS",
+    "bob/tui/fixlog.py::_day":                    "bob.tui.fixlog._FIXDAY_KEYS",
+    "bob/tui/fixlog.py::_entry":                  "bob.tui.fixlog._FIXENTRY_KEYS",
     "bob/manage_logs.py::_browse_dir":            "bob.manage_logs._LIST_KEYS",
     "bob/manage_logs.py::_curses_preview_log":    "bob.manage_logs._PREVIEW_KEYS",
     "bob/explain.py::_family_picker":              "bob.explain._FAMILY_KEYS",

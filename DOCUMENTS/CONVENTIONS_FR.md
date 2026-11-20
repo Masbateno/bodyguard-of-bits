@@ -106,6 +106,7 @@ fond sans que personne le voie.
 | `CONTEXT_OK` | la ligne de contexte disant qu'une action a pris effet (`✔`) — vert sur noir |
 | `CONTEXT_ERROR` | la ligne de contexte disant qu'une action a été refusée ou a échoué (`✖`) — rouge sur noir |
 | `CONTEXT_INFO` | la ligne de contexte qui informe seulement (`ℹ`, une action annulée) — cyan sur noir |
+| `KEYCAP` | la pastille d'une touche dans le bandeau du bas — noir sur blanc (v0.40.0) |
 
 **La ligne de contexte dit ce que signifie un message** (v0.39.0, décidé avec
 l'utilisateur). Sa couleur est celle de la sortie texte pour le même sens — vert
@@ -122,6 +123,19 @@ et deux confirmations de `--manage-logs`, remplaçaient encore le bandeau.
 *Gardé :* la couleur de chaque symbole · la paire de chaque couleur · chaque
 message construit avec son symbole · aucune écriture sur la ligne du bandeau ·
 les invites dans la couleur des invites.
+
+**Chaque touche a sa pastille** (v0.40.0, décidé avec l'utilisateur, 20 novembre
+2026 : sur la ligne orange uniforme, on distinguait mal les touches). Dans le
+bandeau du bas, chaque touche — `⏎`, `Échap`, `d`, `1-4` — est dessinée noir sur
+blanc (`KEYCAP`), avec l'espace de chaque côté ; son libellé reste blanc sur
+orange. Les trois touches de navigation (`↑↓ jk`, `PgUp/PgDn`, `g/G`) ont chacune
+leur pastille, serrée sur la touche, une espace orange entre elles : une seule
+pastille sur tout le groupe se lisait comme un bloc blanc (l'utilisateur). Sans couleurs, la pastille est en
+vidéo normale sur la vidéo inversée du bandeau. Le texte du bandeau est celui
+qu'il a toujours été : aucune largeur ne bouge, aucune ligne ne se replie
+autrement (`_keys.footer_layout` donne à chaque ligne ses pastilles). *Gardé :*
+les pastilles couvrent chaque touche et rien d'autre · elles sont dessinées dans
+leur couleur, et à part sans couleurs · le texte est inchangé sur chaque écran.
 
 **Toute confirmation se demande d'une seule façon** (v0.39.0, décidé avec
 l'utilisateur, 19 novembre 2026). Une action qui supprime, écrase, retire, purge

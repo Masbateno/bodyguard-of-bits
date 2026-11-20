@@ -590,7 +590,29 @@
       "none_left": "no note left for this action",
       "empty_range": "no note between {low} and {high} for this action"
     },
-    "note_foreign_owner": "⚠ this notes file belongs to {owner}, not to root: it was not written by BOB — whoever owns it may have written every line, chain included"
+    "note_foreign_owner": "⚠ this notes file belongs to {owner}, not to root: it was not written by BOB — whoever owns it may have written every line, chain included",
+    "home_header": "choose what to look at",
+    "home_reports": "Audit reports — {count} tracked folder(s)",
+    "home_no_reports": "Audit reports — none yet (an audit with -d writes them)",
+    "home_fixes": "Journal of fixes (--fix --apply) — {count} command(s) · {verdict}",
+    "home_verdict": {
+      "intact": "✔ intact",
+      "tampered": "✖ FALSIFIED",
+      "unproven": "⚠ not demonstrated",
+      "empty": "nothing recorded yet"
+    },
+    "fix_journal_title": "Journal of fixes (--fix --apply)",
+    "fix_cut_title": "lines cut from the journal",
+    "fix_note_prompt": "Note on this command (added, never edited): ",
+    "fix_note_cancelled": "No note added.",
+    "fix_note_added": "Note added — it can no longer be changed.",
+    "fix_note_failed": "The note could not be written: {reason}",
+    "plain_fix_journal": "The journal of --fix --apply: {cmd}",
+    "fix_note_needs_root": "To add a note: {cmd} (only root writes the journal)",
+    "block_breakdown": "Score computation (as --breakdown prints it)",
+    "breakdown_no_state": "This report has no state file beside it: its computation was not kept.",
+    "breakdown_older": "This report was written before BOB 0.40.0, which did not keep the computation of the score.",
+    "breakdown_unreadable": "The computation kept beside this report could not be read."
   },
   "cron_ui": {
     "prompt_sep": ": ",
@@ -665,7 +687,9 @@
       "note_purge": "purge",
       "note_journal": "journal",
       "complete": "complete",
-      "pick": "by number"
+      "pick": "by number",
+      "removed": "lines cut",
+      "breakdown": "computation"
     },
     "mode_notes": "[NOTES]"
   },
@@ -800,7 +824,11 @@
     "timed_out": "timed out after {seconds}s — BOB stopped waiting; the change may be part-way through",
     "ufw_still_inactive": "but `ufw status` still says inactive",
     "ufw_unconfirmed": "ran and exited 0, but `ufw status` could not be read back — check whether the firewall is on",
-    "unknown_items_title": "OUTCOME UNKNOWN — CHECK THE SYSTEM BEFORE RE-RUNNING"
+    "unknown_items_title": "OUTCOME UNKNOWN — CHECK THE SYSTEM BEFORE RE-RUNNING",
+    "journal_unwritable": "The journal of --fix --apply ({path}) cannot be written: {reason}. No command was run — every command run must leave an entry in it.",
+    "journal_start_failed": "not run — its entry could not be written to the journal: {reason}",
+    "journal_finish_failed": "the outcome could not be written to the journal ({reason}): the entry will read \"no outcome recorded\"",
+    "journal_written": "{count} command(s) recorded in {path} — read it with bob --manage-logs"
   },
   "risk_context": {
     "not_running": "not running — the service's own risk, not a measured exposure",
@@ -1249,7 +1277,8 @@
       "explain_key": "(explain a key)",
       "version": "Show version and exit",
       "help": "Show this help message",
-      "install_completion": "Install bash tab-completion to /etc/bash_completion.d/"
+      "install_completion": "Install bash tab-completion to /etc/bash_completion.d/",
+      "fix_journal": "Journal of --fix --apply, checked for falsification (exit 0, 2 or 4)"
     },
     "example": {
       "standard": "Standard audit",
@@ -4825,5 +4854,124 @@
     "missing": "there is no {number} in the list",
     "empty_range": "nothing in the list between {low} and {high}",
     "none": "the list is empty"
+  },
+  "fix_journal": {
+    "err": {
+      "needs_root": "only root writes it",
+      "link": "a symbolic link stands at its name or at its directory's",
+      "foreign_owner": "it belongs to {owner}, not to root: it was not written by BOB",
+      "not_regular": "it is not a plain file of its own (another name leads to it, or it is not a regular file)",
+      "empty": "the note is empty",
+      "no_entry": "this entry does not exist"
+    }
+  },
+  "fixlog": {
+    "title": "Journal of --fix --apply — {path}",
+    "removed_title": "Lines the system log holds and the journal no longer does ({count}):",
+    "day_row": "{day} — {count} command(s): {applied} applied, {failed} failed, {other} other",
+    "day_tampered": "[✖ falsified]",
+    "day_unproven": "[⚠ not demonstrated]",
+    "weekday": {
+      "0": "Monday",
+      "1": "Tuesday",
+      "2": "Wednesday",
+      "3": "Thursday",
+      "4": "Friday",
+      "5": "Saturday",
+      "6": "Sunday"
+    },
+    "status": {
+      "ok": "applied",
+      "failed": "failed",
+      "timeout": "timed out",
+      "unconfirmed": "not confirmed",
+      "started": "no outcome recorded"
+    },
+    "unreadable": {
+      "link": "a symbolic link stands at its name",
+      "denied": "permission denied — read it as root or as a member of the adm group",
+      "not_regular": "it is not a regular file",
+      "too_large": "it is larger than BOB reads"
+    },
+    "verdict": {
+      "tampered": "✖ FALSIFIED — this journal was changed outside BOB (proof below)",
+      "unproven": "⚠ NOT DEMONSTRATED — nothing shows a falsification, but not everything could be checked",
+      "chain_only": "✔ Chain intact — no witness to compare with (no system log when the entries were written)",
+      "intact": "✔ INTACT — the chain holds and {count} line(s) match their witness in the system log",
+      "empty": "No command run by --fix --apply is recorded yet.",
+      "unreadable": "⚠ The journal {path} could not be read: {reason}",
+      "chain_only_unwitnessed": "✔ Chain intact — no line could be held against its witness (gone with the system log's rotation, or unreadable): only the chain vouches for the journal"
+    },
+    "finding": {
+      "foreign_owner": "the journal belongs to {owner}, not to root: it was not written by BOB",
+      "chain": "line {line}: the chain breaks — a line was changed, removed or moved there",
+      "differs": "{count} line(s) differ from their witness: what they say was changed",
+      "conflicting": "{count} line(s) have two witnesses that disagree: one was forged as root",
+      "rechained": "{count} line(s) say what they said but were re-chained after a changed line: the chain was recomputed",
+      "removed": "{count} line(s) of the system log are missing from the journal: cut from its end, or the journal deleted (proof below)",
+      "not_shown": "{count} line(s) have no witness though the system log covers their date: not demonstrated",
+      "append_only_removed": "the append-only attribute was taken off since the last entry (chattr -a): a deliberate act the content may have followed",
+      "witness_gone": "{count} line(s) are older than anything the system log still holds: their witness went with its rotation",
+      "no_witness": "{count} line(s) were written without a system log: only the chain vouches for them"
+    },
+    "witness": {
+      "ok": "Witness: the system log (journald), read back",
+      "unreadable": "Witness: the system log cannot be read by this account — run as root or as a member of adm",
+      "no_journald": "Witness: no journald on this host — the witness cannot be read back here",
+      "no_store": "Witness: journald keeps no file on this host (Storage=none)",
+      "failed": "Witness: journalctl failed: {detail}",
+      "volatile": "The system log is kept in memory only (/run/log/journal): it is lost at reboot, and the witness with it"
+    },
+    "sealed": {
+      "yes": "journald sealing (FSS): set up — journalctl --verify, with the key kept off the machine, shows a rewritten system log",
+      "no": "journald sealing (FSS): not set up — root could rewrite the system log too (journalctl --setup-keys)"
+    },
+    "append_only": {
+      "set": "Append-only attribute (chattr +a): set — the kernel refuses to rewrite the journal, root included",
+      "unavailable": "Append-only attribute: not available on this file system",
+      "unknown": "Append-only attribute: could not be read"
+    },
+    "proof": {
+      "differs": "✖ changed",
+      "conflicting": "✖ forged witness",
+      "rechained": "✖ re-chained",
+      "not_shown": "⚠ no witness",
+      "witness_gone": "witness gone (rotation)",
+      "no_witness": "no witness",
+      "confirmed": "✔ witnessed",
+      "unchecked": "unchecked"
+    },
+    "proof_detail": {
+      "differs": "✖ Witness: this entry differs from what the system log recorded when it was written — it was changed",
+      "conflicting": "✖ Witness: the system log holds two disagreeing witnesses for this entry — one was forged as root",
+      "rechained": "✖ Witness: this entry says what it said, but its link to the line before was recomputed after an earlier change",
+      "not_shown": "⚠ Witness: none in the system log, though the system log covers this date — not demonstrated",
+      "witness_gone": "Witness: older than anything the system log still holds (rotation) — only the chain vouches for it",
+      "no_witness": "Witness: none — written where there was no system log; only the chain vouches for it",
+      "confirmed": "✔ Witness: matches what the system log recorded when it was written",
+      "unchecked": "Witness: could not be checked (the system log was not read)"
+    },
+    "detail": {
+      "when": "Launched: {date}",
+      "who": "By: {who}",
+      "finding": "Finding: {finding} — {message}",
+      "command": "Command:",
+      "native": "Carried out by BOB's own code: {action}",
+      "status": "Outcome: {status}",
+      "rc": "Exit code: {rc} · {seconds} s · ended {ended}",
+      "interrupted": "No outcome recorded: either BOB stopped during the command (session cut, power cut, killed), or its outcome could not be written (BOB said so on screen at the time) — what the command did is not known from the journal",
+      "error": "Error output:",
+      "notes": "Notes ({count}) — added, never edited:",
+      "note": "{date}  {who}: {text}",
+      "no_notes": "No note.",
+      "witnessed": "What the system log recorded when its lines were written:"
+    },
+    "short": {
+      "ok": "applied",
+      "failed": "failed",
+      "timeout": "timed out",
+      "unconfirmed": "unconfirmed",
+      "started": "no outcome"
+    }
   }
 }

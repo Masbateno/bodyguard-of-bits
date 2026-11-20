@@ -463,7 +463,19 @@ Dans un terminal interactif, une interface TUI curses s'ouvre. Un mode texte de 
 
 ### Mode TUI (terminal interactif)
 
-Elle s'ouvre sur un **sélecteur de dossiers** : le répertoire de rapports courant et chaque répertoire antérieur que BOB suit encore, chacun avec ce qu'il contient. `Entrée` parcourt un dossier, `c` change (ou ajoute) le répertoire où vont les nouveaux rapports, `d` oublie un dossier suivi (ses fichiers sont conservés). Dans un dossier, la liste montre chaque rapport avec sa date, sa taille et son score, sous un graphique d'historique des scores.
+Depuis la v0.40.0, elle s'ouvre sur **deux choix** : `1` les rapports d'audit,
+`2` le journal des correctifs (`--fix --apply`), tenus à part. La ligne du
+journal porte son verdict dans sa couleur — ✔ intact, ⚠ non démontré,
+✖ FALSIFIÉ — et s'ouvre sur ce verdict, puis une ligne par jour, la plus récente
+en haut ; `Entrée` ouvre un jour (ses commandes dans l'ordre où elles ont
+tourné), puis une commande (son détail, ce que le journal système en a
+enregistré, ses notes — `a` en ajoute une, en root seulement ; sans le droit,
+l'écran dit comment). `r` liste les lignes retirées du journal, quand il y en a.
+Ce que le journal enregistre et comment une falsification se voit, avec une
+démonstration mesurée sur un vrai hôte : [FIX_JOURNAL_FR.md](FIX_JOURNAL_FR.md).
+La même chose en texte, avec le verdict en code de sortie : `bob --fix-journal`.
+
+Les rapports d'audit s'ouvrent sur un **sélecteur de dossiers** (`Échap` revient aux deux choix) : le répertoire de rapports courant et chaque répertoire antérieur que BOB suit encore, chacun avec ce qu'il contient. `Entrée` parcourt un dossier, `c` change (ou ajoute) le répertoire où vont les nouveaux rapports, `d` oublie un dossier suivi (ses fichiers sont conservés). Dans un dossier, la liste montre chaque rapport avec sa date, sa taille et son score, sous un graphique d'historique des scores.
 
 **Le socle commun** — depuis la v0.16.3, tous les écrans curses de BOB
 acceptent la même navigation, et un **bandeau orange** en bas d'écran énumère
@@ -538,14 +550,15 @@ pas :
 | `a` | Gérer les notes (ajouter, modifier, retirer, purger, journal) |
 | `c` | Afficher / masquer la comparaison avec le rapport précédent |
 | `h` | Afficher / masquer l'historique des rapports de cet hôte |
+| `b` | Afficher / masquer le calcul du score, comme `--breakdown` l'affiche (depuis la v0.40.0) |
 | `#` | Numéroter les lignes du rapport (log complet seulement) |
 | `Échap` | Revenir à la liste des rapports |
 
-**Les blocs au-dessus du rapport** (depuis la v0.39.0). Les notes, la comparaison
-et l'historique sont des blocs à part, affichés au-dessus du rapport et jamais
-dedans, dans cet ordre. À l'ouverture du visualiseur, les notes sont ouvertes
-(si le rapport en a), la comparaison et l'historique fermés, la numérotation
-désactivée. Un bloc que vous ouvrez ou fermez le reste quand `←` / `→` passent à
+**Les blocs au-dessus du rapport** (depuis la v0.39.0). Les notes, la comparaison,
+l'historique et (depuis la v0.40.0) le calcul sont des blocs à part, affichés
+au-dessus du rapport et jamais dedans, dans cet ordre. À l'ouverture du
+visualiseur, les notes sont ouvertes (si le rapport en a), la comparaison,
+l'historique et le calcul fermés, la numérotation désactivée. Un bloc que vous ouvrez ou fermez le reste quand `←` / `→` passent à
 un autre rapport, et montre le contenu de ce rapport (ou dit qu'il n'y en a
 pas) ; il ne change que si vous appuyez de nouveau sur sa touche. Sortir du
 visualiseur et y revenir repart de zéro.
@@ -640,6 +653,14 @@ devinée à partir du texte du rapport.
 L'historique montre la fin de chaque audit en UTC, comme `--history` ; le nom
 d'un rapport porte son début, en heure locale.
 
+**`b` — calcul** du score du rapport, affiché par le code même de `--breakdown`
+à partir de ce que le moteur tenait quand le rapport a été écrit — déductions,
+plafonds d'outil, plafond général, domaines, moyenne et score final. Gardé dans
+le fichier d'état depuis la v0.40.0 ; un rapport écrit avant dit qu'il n'a pas
+ce détail, plutôt que d'en recalculer un à partir du texte du rapport. Le bloc
+montre chaque ligne avec son signe (✔ ⚠ ℹ ✖), là où la sortie texte ajoute
+`[ATTENTION]`, `[INFO]`, `[ALERTE]`.
+
 #### Les fichiers à côté de chaque rapport
 
 Trois fichiers, deux niveaux de confiance :
@@ -647,7 +668,7 @@ Trois fichiers, deux niveaux de confiance :
 | Fichier | Propriétaire, mode | Qui peut le modifier |
 |---------|--------------------|----------------------|
 | `bob_<date>.log` — le rapport | le propriétaire du rapport, `0600` | son propriétaire |
-| `bob_<date>.log.state` — son état, pour la comparaison et l'historique | le propriétaire du rapport, `0600` | son propriétaire — la comparaison et l'historique qui en sont tirés ne valent donc pas plus que le rapport |
+| `bob_<date>.log.state` — son état, pour la comparaison, l'historique et le calcul | le propriétaire du rapport, `0600` | son propriétaire — la comparaison et l'historique qui en sont tirés ne valent donc pas plus que le rapport |
 | `bob_<date>.log.note` — ses notes | root, `0640`, groupe du rapport | root pour le contenu ; le propriétaire du répertoire peut supprimer ou remplacer le fichier, et BOB le dit |
 
 Les deux fichiers compagnons ne sont jamais listés — chaque liste ne montre que

@@ -290,7 +290,7 @@ class TestOneWayToConfirm:
         scr = _KeyScreen([key])
         assert _chrome.ask_confirm(scr, _Coloured, _t, "Delete x?") is answer
         h, w = scr.getmaxyx()
-        rows = {row: (text, attr) for row, _col, text, attr in scr.calls}
+        rows = {row: (text, attr) for row, col, text, attr in scr.calls if col == 0}   # rows, not key caps
         text, attr = rows[_chrome.context_row(_t, _chrome.CONFIRM_ACTIONS, h, w)]
         assert text.strip() == _chrome.confirm_text(_t, "Delete x?")
         assert attr == _chrome.context_attr(_Coloured, True, _chrome.PROMPT)

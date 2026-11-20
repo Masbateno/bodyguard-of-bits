@@ -458,7 +458,18 @@ In an interactive terminal, a full curses TUI opens. A plain text fallback is us
 
 ### TUI mode (interactive terminal)
 
-It opens on a **folder picker**: the current report directory and every earlier one BOB still tracks, each with what it holds. `Enter` browses a folder, `c` changes (or adds) the directory new reports go to, `d` forgets a tracked folder (its files are kept). Inside a folder, the list shows each report with its date, size and score, under a score history chart.
+Since v0.40.0 it opens on **two choices**: `1` the audit reports, `2` the
+journal of fixes (`--fix --apply`), kept apart. The journal's row carries its
+verdict in its colour — ✔ intact, ⚠ not demonstrated, ✖ FALSIFIED — and opens on
+that verdict, then one line per day, most recent first; `Enter` opens a day (its
+commands in the order they ran), then a command (its detail, what the system
+log recorded of it, its notes — `a` adds one, root only; without the right, the
+screen says how). `r` lists the lines cut from the journal, when there are some.
+What the journal records and how a falsification shows, with a demonstration
+measured on a real host: [FIX_JOURNAL.md](FIX_JOURNAL.md). The same in text, with
+the verdict as exit code: `bob --fix-journal`.
+
+The audit reports open on a **folder picker** (`Esc` back to the two choices): the current report directory and every earlier one BOB still tracks, each with what it holds. `Enter` browses a folder, `c` changes (or adds) the directory new reports go to, `d` forgets a tracked folder (its files are kept). Inside a folder, the list shows each report with its date, size and score, under a score history chart.
 
 **The shared floor** — since v0.16.3 every curses screen in BOB accepts the
 same navigation, and an **orange banner** across the bottom of the screen always
@@ -526,13 +537,15 @@ nested screen, so `Esc` returns to the list and `q` does not quit:
 | `a` | Manage the notes (add, edit, withdraw, purge, journal) |
 | `c` | Show / hide the comparison with the previous report |
 | `h` | Show / hide the history of this host's reports |
+| `b` | Show / hide the computation of the score, as `--breakdown` prints it (since v0.40.0) |
 | `#` | Number the report's lines (full log only) |
 | `Esc` | Return to report list |
 
-**Blocks above the report** (since v0.39.0). The notes, the comparison and the
-history are blocks of their own, shown above the report and never part of it,
-in that order. When the viewer opens, the notes are open (if the report has
-any), the comparison and the history closed, the line numbers off. A block you
+**Blocks above the report** (since v0.39.0). The notes, the comparison, the
+history and (since v0.40.0) the computation are blocks of their own, shown above
+the report and never part of it, in that order. When the viewer opens, the notes
+are open (if the report has any), the comparison, the history and the
+computation closed, the line numbers off. A block you
 open or close stays so while `←` / `→` move to another report, and shows that
 report's content (or says there is none); it changes only when you press its
 key again. Leaving the viewer and opening it again starts over.
@@ -620,6 +633,13 @@ the block says so — no comparison is guessed from the report's text.
 The history shows each audit's end in UTC, as `--history` does; a report's
 name carries its start, in local time.
 
+**`b` — computation** of the report's score, printed by `--breakdown`'s own
+code from what the engine held when the report was written — deductions, tool
+caps, the engine cap, the domains, the average and the final score. Kept in the
+state file since v0.40.0; a report written before says it has no such detail,
+rather than recomputing one from the report's text. The block shows each line
+with its sign (✔ ⚠ ℹ ✖) where the text output adds `[WARNING]`, `[INFO]`, `[ALERT]`.
+
 #### Files beside each report
 
 Three files, two levels of trust:
@@ -627,7 +647,7 @@ Three files, two levels of trust:
 | File | Owner, mode | Who can change it |
 |------|-------------|-------------------|
 | `bob_<date>.log` — the report | the report's owner, `0600` | its owner |
-| `bob_<date>.log.state` — its state, for the comparison and the history | the report's owner, `0600` | its owner — so the comparison and history drawn from it are only as trustworthy as the report |
+| `bob_<date>.log.state` — its state, for the comparison, the history and the computation | the report's owner, `0600` | its owner — so the comparison and history drawn from it are only as trustworthy as the report |
 | `bob_<date>.log.note` — its notes | root, `0640`, the report's group | root's content; the directory's owner can delete or replace the file, and BOB says so |
 
 The two companion files are never listed — every list shows `bob_*.log` only —

@@ -6,6 +6,234 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.40.0] — 21-11-2026
+
+**Une version mineure : un journal de chaque commande que lance `--fix --apply`,
+tenu pour l'hôte, qui montre sa propre falsification et en remet la preuve ; le
+calcul du score d'un rapport dans l'aperçu de `--manage-logs` ; une pastille
+pour chaque touche du bandeau du bas ; CIS Ubuntu 26.04 cité.**
+
+Pas BREAKING : un même hôte a le même score sous la 0.39.0 et la 0.40.0. Aucun
+changement de clé de constat, de schéma de sortie JSON ni de colonne CSV. Une
+option nouvelle, `--fix-journal`, qui reprend les codes de sortie existants
+(0, 2, 4). Ce qui change sur le disque : un journal pour l'hôte,
+`/var/log/bob/fixes.journal` (`root:adm`, `0640`, dossier `0750`), portant
+l'attribut d'ajout seul — pour le supprimer, `chattr -a` d'abord ; et le
+`.state` de chaque rapport reçoit le calcul du score. Ce qui change dans le
+journal système : chaque ligne de ce journal y est aussi envoyée, sous le nom
+`bob-fix` (facilité `authpriv`, niveau `notice`) — deux lignes par commande, une
+par note. Ce qui change à l'écran : `--manage-logs` s'ouvre sur deux choix, et le
+sélecteur de dossiers, désormais en dessous, se quitte par `Échap` (`q` et `l`
+passent à l'écran d'accueil) ; l'aperçu gagne `b` ; le bandeau du bas dessine
+chaque touche dans une pastille noir sur blanc, son texte et sa largeur
+inchangés ; le libellé français de `#` devient « numéros » (il disait « n° de
+ligne », une colonne de trop pour le bandeau à 78 colonnes). Nouvelles clés de
+traduction : 116 ; aucune retirée ni renommée ; une valeur française changée
+(ce libellé).
+
+### 1. Le journal de `--fix --apply`
+
+`--fix --apply` modifie le système, et BOB lui-même ne gardait aucune trace de ce
+qu'il lançait au-delà de sa propre sortie dans le terminal (le journal de sudo
+garde ce qui passe par sudo, pas le constat, le résultat ni l'opérateur derrière
+un shell root). Décidé avec l'utilisateur : chaque commande qu'il **lance** laisse une
+entrée, quoi qu'il en advienne — appliquée, en échec, délai dépassé, ou lancée
+sans que son effet ait pu être confirmé — avec la date, l'opérateur, le constat
+auquel elle répondait, la commande exacte (pour un correctif que BOB exécute par
+son propre code, l'action exécutée aussi), le code de sortie, la durée et la
+sortie d'erreur, bornée. Une commande que l'opérateur refuse, ou que BOB refuse
+de lancer, n'est pas lancée et n'en laisse pas.
+
+- **Qui.** La même mesure que pour les notes d'un rapport (0.39.0) : le compte
+  que nomme le login uid du noyau — il survit à `sudo` — et la déclaration
+  `SUDO_USER`/`DOAS_USER` à côté.
+- **Deux lignes par commande.** L'une avant qu'elle démarre, l'autre avec son
+  résultat — deux écritures, pas la promesse de deux lignes. Quand la seconde
+  manque, l'entrée se lit *aucun résultat inscrit*, pour l'une de deux raisons
+  que le journal ne distingue pas : BOB s'est arrêté pendant la commande (le
+  correctif de pare-feu qui coupe la session SSH où BOB tourne, une coupure de
+  courant), ou le résultat n'a pas pu être écrit, ce que BOB a dit à l'écran sur
+  le moment. La commande reste visible ; ce qu'elle a fait n'est pas affirmé.
+- **Aucune commande sans son entrée.** Avant la première commande, BOB ouvre le
+  journal en écriture ; un lien à son nom, ou un journal ou un dossier qui
+  n'appartient pas à root — et rien ne tourne. Une commande dont la première
+  ligne ne peut pas être écrite (un disque plein) n'est pas lancée, et le dit.
+  Un résultat ou une note qui ne peut pas être écrit est dit, jamais perdu en
+  silence.
+- **Un journal pour l'hôte**, `/var/log/bob/fixes.journal` : à root, `0640`,
+  groupe `adm` (le groupe qui lit les journaux du système), ouvert sans suivre
+  de lien, sous verrou ; un journal ou un dossier qui n'appartient pas à root
+  est dit ne pas être celui de BOB, et rien n'y est écrit.
+- **Les notes**, datées et leur auteur enregistré comme les entrées, s'ajoutent
+  après coup (`sudo bob --manage-logs`, `a`) — jamais modifiées, jamais
+  retirées. Sans le droit, l'écran ne propose pas `a` et dit comment l'obtenir
+  (trouvé par l'utilisateur : rien ne disait qu'une note pouvait être ajoutée).
+
+### 2. Comment une falsification se voit
+
+Décidé avec l'utilisateur : « du moment que le log a été falsifié, que ce soit
+explicitement affiché ou du moins facilement démontrable ». Un journal sur la
+machine qu'il décrit peut toujours être réécrit par root ; ce que fait BOB,
+c'est rendre une réécriture visible. Quatre mesures, chacune avec sa limite,
+toutes écrites dans [FIX_JOURNAL_FR.md](FIX_JOURNAL_FR.md) :
+
+- **La chaîne.** Chaque ligne porte le SHA-256 de la précédente. Une ligne
+  modifiée, retirée au milieu ou déplacée la casse — sauf si les empreintes
+  sont recalculées, ce que root peut faire.
+- **Le témoin.** Chaque ligne est aussi envoyée au journal système
+  (`/dev/log`) avec deux empreintes : celle de la ligne entière, et celle de ce
+  qu'elle dit sans son lien à la précédente. BOB les relit (`journalctl
+  SYSLOG_IDENTIFIER=bob-fix`) et ne garde que ce que journald a enregistré comme
+  envoyé par root : `_UID` est fixé par journald d'après les identifiants de la
+  socket, pas par l'expéditeur (mesuré : une ligne envoyée par
+  `logger -t bob-fix` depuis un compte ordinaire porte son propre uid).
+  `_UID` dit qui a envoyé une ligne — quelque chose qui a les droits de root —
+  pas quel programme l'a écrite : une ligne envoyée au nom de BOB par un autre
+  processus root se montre comme une ligne coupée ou comme deux témoins qui se
+  contredisent, les deux falsifiés. Face à lui : une ligne qui diffère de son témoin — **falsifiée**, chaîne recalculée ou
+  non ; une ligne qui dit la même chose mais a été rechaînée après une ligne
+  modifiée — la chaîne a été **recalculée** ; un témoin sans ligne — des lignes
+  **coupées** à la fin, ou le journal supprimé ; deux témoins qui se
+  contredisent — l'un **forgé** en root ; une ligne sans témoin alors que le
+  journal système couvre sa date — **non démontrée** ; une ligne plus ancienne
+  que la rétention du journal système — son témoin est parti avec la rotation,
+  **dit, jamais appelé falsification**.
+- **L'attribut d'ajout seul** (`chattr +a`), posé par BOB : le noyau refuse de
+  réécrire, tronquer ou supprimer le journal, root compris, tant qu'il n'est
+  pas retiré ; chaque ligne enregistre s'il était posé, et son retrait est dit.
+- **Le scellement de journald** (Forward Secure Sealing) : BOB dit s'il est
+  configuré ; il ne le configure jamais.
+
+Le verdict vient en tête de l'écran et du texte, dans sa couleur — ✔ **intact**,
+⚠ **non démontré**, ✖ **FALSIFIÉ** — chaque constat compté, et, sous chaque
+entrée que le témoin contredit, les lignes que le journal système a enregistrées
+quand elle a été écrite : celles-là seulement, à côté de ce que dit le journal
+aujourd'hui.
+
+**Mesuré sur la Linux Mint 22.3 de test** (20 novembre 2026), deux opérateurs —
+`root` connecté directement, un second compte par `sudo`, chacun avec son login
+uid — chacun appliquant un correctif et ajoutant une note par l'écran :
+
+- réécrire le journal en root avec l'attribut posé (`sed -i`, `truncate`,
+  `rm`) — refusé par le noyau ;
+- l'attribut retiré, les lignes du second opérateur réécrites au nom de root,
+  toutes les empreintes recalculées — **FALSIFIÉ**, code de sortie 2,
+  l'enregistrement du journal système nommant le vrai opérateur à côté de la
+  ligne forgée ;
+- les dernières lignes coupées, la chaîne recalculée — **FALSIFIÉ**, les lignes
+  coupées lisibles depuis le journal système ;
+- le journal supprimé — **FALSIFIÉ**, chaque ligne lisible depuis le journal
+  système ;
+- un témoin forgé par un compte ordinaire — laissé de côté, **intact** ;
+- un lecteur ni root ni membre d'`adm` — *permission refusée*, code de sortie
+  4 ; un membre d'`adm` lit le journal et son témoin sans `sudo` ;
+- le journal recopié octet pour octet — de nouveau **intact** : ce dont BOB
+  répond, c'est de ce que dit le journal, face à ce qui a été enregistré quand
+  il a été écrit ;
+- journald tourné et ses anciens fichiers supprimés — tous les témoins partis :
+  dit comme partis avec la rotation, jamais comme une falsification, code de
+  sortie 0 ;
+- le scellement de journald configuré (`journalctl --setup-keys`) — dit
+  *configuré*, là où il disait *non configuré* avant.
+
+Trouvé en chemin, avant la publication :
+
+- par un test : un faussaire qui passe le champ `witness` d'une entrée à `none`
+  la faisait passer pour écrite sans journal système ; le témoin est désormais
+  cherché par l'identifiant de la ligne, quoi que dise la ligne ;
+- par un test : recalculer la chaîne change l'empreinte de toutes les lignes
+  suivantes, si bien que des entrées intactes étaient dites modifiées ; la
+  seconde empreinte (ce que dit une ligne) distingue la ligne modifiée des
+  lignes rechaînées ;
+- sur la Mint de test : `journalctl` lancé par un compte sans le droit sort en 1
+  (« insufficient permissions ») ; BOB disait *journalctl a échoué*, il dit
+  désormais que ce compte ne peut pas lire le journal système ;
+- sur la Mint de test : la preuve sous une entrée listait aussi ses lignes
+  intactes, et le lecteur devait chercher celle qui avait changé ; seules les
+  lignes contredites sont listées ;
+- sur la Mint de test : `--fix-journal` donnait le verdict sans la preuve ; il
+  l'imprime, prête à être copiée dans un ticket ;
+- sur la Mint de test, tous les témoins partis avec la rotation : le verdict
+  disait *INTACT — … 0 ligne(s) correspondent à leur témoin*, exact et
+  trompeur ; il dit désormais que seule la chaîne répond du journal ;
+- en revue : une entrée sans résultat se lisait *interrompue — résultat
+  inconnu*, alors qu'elle peut venir d'une commande qui a tourné et dont le
+  résultat n'a pas pu être écrit ; elle se lit *aucun résultat inscrit*, les deux
+  causes données.
+
+**Limites, dites :** root qui réécrit de façon cohérente le journal et le
+journal système, ou qui supprime les deux, sur un hôte où le journal système
+n'est ni scellé ni copié sur une autre machine ; les lignes plus anciennes que
+la rétention du journal système (la chaîne seule) ; un journal système gardé en
+mémoire seulement, perdu au redémarrage ; un hôte sans journald, où le témoin
+est écrit mais ne peut pas être relu. Les empreintes prouvent que le journal a
+changé, pas qui l'a changé.
+
+### 3. Le lire
+
+- **`--manage-logs`** s'ouvre sur deux choix : `1` les rapports d'audit (le
+  sélecteur de dossiers, désormais sous l'écran d'accueil : `Échap` pour
+  revenir), `2` le journal des correctifs, sa ligne portant son verdict. Le
+  journal s'ouvre sur le verdict, puis une ligne par jour, la plus récente en
+  haut (date, commandes, appliquées, en échec) ; `Entrée` ouvre un jour — ses
+  commandes dans l'ordre où elles ont tourné — puis une commande : son détail,
+  ce que le journal système en a enregistré, ses notes. `r` liste les lignes
+  retirées du journal, proposé seulement quand il y en a. Un hôte où
+  `--fix --apply` a tourné mais où aucun audit n'a écrit de rapport s'ouvre sur
+  les mêmes deux choix.
+- **`bob --fix-journal`** affiche la même chose en texte, avec le verdict en
+  code de sortie : 0 intact, 2 falsifié, 4 non démontré — un contrôle de
+  supervision. Lisible en root ou par un membre d'`adm`.
+
+### 4. Le calcul du score dans l'aperçu
+
+Décidé avec l'utilisateur : l'aperçu d'un rapport d'audit montre, sous `b`, le calcul
+qu'affiche `--breakdown` — déductions, plafonds d'outil, plafond général,
+domaines, moyenne et score final. Fermé à l'ouverture de l'aperçu, gardé tel
+quel à travers `←`/`→`, comme la comparaison et l'historique. Rendu par le code
+même de `--breakdown` : ce que tenait le moteur est écrit dans le `.state` du
+rapport comme des données, et lui est rendu sous la forme du moteur, si bien que
+le bloc dit ce que `--breakdown` a dit — mesuré sur un vrai `-d -B` sur la Mint
+de test, seize lignes identiques, chaque ligne avec son signe là où la sortie
+texte ajoute `[ATTENTION]`, `[INFO]`. Un rapport écrit avant la 0.40.0 dit qu'il
+n'a pas ce détail ; rien n'est recalculé à partir du texte du rapport.
+
+### 5. Une pastille pour chaque touche
+
+Trouvé par l'utilisateur : sur le bandeau orange, les touches se mêlaient à leurs
+libellés — `⏎ choisir   1-4 par numéro   Esc retour` se lisait comme une suite de
+mots, pire sur deux lignes. Chaque touche est désormais dans une pastille noir
+sur blanc ; les touches de navigation chacune dans la sienne, serrée sur le
+glyphe ; la touche d'une action avec une espace de chaque côté. Le texte du
+bandeau est celui qu'affichait la 0.39.0 (comparé sur chaque écran, dans les
+deux langues, à cinq largeurs) : aucune largeur, aucun retour à la ligne, aucune
+touche annoncée ne change. Sans couleurs, la pastille est en vidéo normale sur
+la vidéo inversée du bandeau.
+
+### 6. CIS Ubuntu 26.04
+
+ComplianceAsCode a fusionné ses contrôles CIS Ubuntu 26.04 le 20 novembre 2026
+(PR #15097, v1.0.0) — le cas qu'attendait la veille de l'assemblage. Le
+générateur le lit (il vit avec son produit, pas dans `controls/`), et
+`--explain` le cite : **73** des 95 clés que BOB fait correspondre. Le fichier
+ne contient que le niveau 1 (278 contrôles, aucun de niveau 2) et décrit le
+pare-feu par `ufw` : les 22 autres — contrôles de niveau 2 comme auditd et
+l'imposition d'AppArmor, les règles iptables, les clés GPG — ne portent pas de
+numéro 26.04 plutôt qu'un numéro emprunté. Citations inter-benchmarks
+262 → 335 ; aucune autre référence n'a bougé.
+
+### 7. Tests et outillage
+
+**Tests** 23100 → **23517**, mutations 2170 → **2230**, toutes tuées. Nouveaux
+fichiers de test : `test_v0400_fix_journal.py`, `test_v0400_fix_witness.py`,
+`test_v0400_fix_journal_apply.py`, `test_v0400_fixlog_screens.py`,
+`test_v0400_breakdown_block.py`, `test_v0400_key_caps.py`. La suite envoie le
+journal des correctifs dans un dossier à elle et son témoin vers une socket qui
+n'existe pas, quel que soit celui qui la lance, root compris. Un écran de test
+qui répondait `q` indéfiniment une fois ses touches épuisées bouclait sans fin
+quand le sélecteur de dossiers a cessé de prendre `q` ; il s'arrête désormais
+quand ses touches sont épuisées.
+
 ## [0.39.0] — 20-11-2026
 
 **Une version mineure : des notes sur un rapport, gardées à côté de lui dans un

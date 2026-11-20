@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.39.0
+Version:        0.40.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,14 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sat Nov 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.40.0-1
+- Minor, not BREAKING; one new option, --fix-journal. Every command
+  --fix --apply launches is written to /var/log/bob/fixes.journal
+  (root:adm 0640, chattr +a), chained and witnessed in the system log; a
+  falsification is shown with what the system log recorded. --manage-logs
+  opens on two choices; the preview shows the score's computation (b);
+  each key in a cap; CIS Ubuntu 26.04 cross-cited (Level 1).
+
 * Fri Nov 20 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.39.0-1
 - Minor, not BREAKING; the wizards' interactions change. --manage-logs:
   notes on a report in a root-owned journal recording each author, with

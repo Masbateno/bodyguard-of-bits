@@ -366,6 +366,9 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
 
     output.print_titled_box(t("manage_logs.title"))
     print()
+    # v0.40.0 — the journal of --fix --apply has its own text form.
+    print(f"  ℹ {t('manage_logs.plain_fix_journal', cmd=output.command('bob --fix-journal'))}")
+    print()
 
     log_dir_str = user_config.get("log_dir")
     if not log_dir_str:
@@ -747,7 +750,7 @@ def _extract_summary_view(lines: list[str]) -> list[str]:
 #: history of that host's reports (h); ``a`` opens the notes' own actions, and
 #: ``#`` numbers the report's lines (the whole log only: the summary's lines are
 #: not consecutive, so a number there would not name a line of the file).
-_BLOCK_ACTIONS = (_keys.NOTES, _keys.ANNOTATE, _keys.COMPARE, _keys.HISTORY)
+_BLOCK_ACTIONS = (_keys.NOTES, _keys.ANNOTATE, _keys.COMPARE, _keys.HISTORY, _keys.BREAKDOWN)
 _PREVIEW_KEYS = _keys.NAVIGATION + (_keys.SUMMARY,) + _BLOCK_ACTIONS + (_keys.NUMBERS,) + _keys.NESTED_EXIT
 
 #: Same screen once the condensed view is showing. `s` still works — it is what
@@ -891,7 +894,7 @@ def _notes_body(path: "Path", t, journal_view: bool) -> "list[tuple[str, str]] |
 def _preview_content(path: "Path", t, view: dict, report_lines: "list[str]",
                      width: int) -> "list[tuple[str, str]]":
     """Everything the preview scrolls through: the blocks that are open, in
-    the order notes, comparison, history, then the report itself."""
+    the order notes, comparison, history, breakdown, then the report itself."""
     from bob import compare
     out: "list[tuple[str, str]]" = []
     if view["notes"]:
@@ -906,6 +909,10 @@ def _preview_content(path: "Path", t, view: dict, report_lines: "list[str]",
     if view["history"]:
         out += _frame(t("manage_logs.block_history"),
                       [(line, "body") for line in compare.history_lines(path, t)], width)
+    if view["breakdown"]:
+        # v0.40.0 (B-032) — the computation --breakdown printed for this report.
+        out += _frame(t("manage_logs.block_breakdown"),
+                      [(line, "body") for line in compare.breakdown_block(path, t)], width)
     if out:
         out.append(("", "report"))
     if view["numbers"] and view["mode"] == "full":
@@ -918,11 +925,11 @@ def _preview_content(path: "Path", t, view: dict, report_lines: "list[str]",
 
 def _new_view() -> dict:
     """What an opened preview shows (decided with the user, 17 November 2026):
-    the notes open, the comparison and the history closed, no line numbers.
-    ←/→ keep it as it is; it starts over only when the preview is opened
-    again."""
+    the notes open, the comparison and the history closed, no line numbers;
+    the breakdown closed too (20 November 2026, B-032). ←/→ keep it as it is;
+    it starts over only when the preview is opened again."""
     return {"mode": "full", "notes": True, "compare": False, "history": False,
-            "numbers": False, "journal": False}
+            "breakdown": False, "numbers": False, "journal": False}
 
 
 #: v0.39.0 (user, 19 November 2026: a screen announces exactly the keys it
@@ -1168,6 +1175,8 @@ def _curses_preview_log(stdscr, path: "Path", t, peers: "list[Path] | None" = No
             view["compare"] = not view["compare"]
         elif action == _keys.HISTORY:
             view["history"] = not view["history"]
+        elif action == _keys.BREAKDOWN:
+            view["breakdown"] = not view["breakdown"]
         elif action == _keys.NUMBERS:
             view["numbers"] = not view["numbers"]
         elif action == _keys.MOVE:
@@ -1184,12 +1193,17 @@ def _curses_preview_log(stdscr, path: "Path", t, peers: "list[Path] | None" = No
 #: operator reads to learn the screen.
 _DIR_FOLDER = "\U0001F4C1"
 
-#: The directory picker is the landing screen: q exits, l switches language.
+#: v0.40.0 — the landing screen: two choices, the audit reports and the
+#: journal of --fix --apply, kept apart (decided with the user, 20 November
+#: 2026). q exits, l switches language.
+_HOME_KEYS = _keys.NAVIGATION + (_keys.SELECT, _keys.pick(2)) + _keys.LANDING_EXIT
+
+#: The directory picker, under the landing screen since v0.40.0: Esc goes back.
 #: Enter browses the selected directory, c changes/adds the write directory,
 #: d forgets a tracked (non-current) directory (its files are kept).
 _DIR_KEYS = _keys.NAVIGATION + (
     _keys.SELECT, _keys.CHANGE, _keys.DELETE,
-) + _keys.LANDING_EXIT
+) + _keys.NESTED_EXIT
 
 #: The per-directory report list is nested: Esc goes back to the picker.
 _LIST_KEYS = _keys.NAVIGATION + (
@@ -1362,10 +1376,8 @@ def _dir_picker(stdscr, user_config, config, t) -> "tuple[str, Path | None]":
         ch = _keys.complete_escape(stdscr, curses, stdscr.getch())
         act = _keys.resolve(curses, ch, _DIR_KEYS)
 
-        if act == _keys.QUIT:
+        if act == _keys.BACK:
             return ("quit", None)
-        elif act == _keys.LANG:
-            _keys.toggle_language(config)
         elif act == _keys.MOVE:
             cursor = max(0, min(n - 1, cursor + _keys.direction(curses, ch)))
         elif act == _keys.PAGE:
@@ -1612,21 +1624,85 @@ def _browse_dir(stdscr, browse_dir: Path, user_config, config, t) -> None:
                 cursor = logs.index(shown) if shown in logs else cursor
 
 
-def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
-    """Curses --manage-logs: pick a tracked directory, then browse its reports.
+def _home_rows(user_config, t) -> "list[tuple[str, str]]":
+    """The landing screen's two rows: the audit reports, the journal of
+    --fix --apply with its verdict in its own colour."""
+    from bob import fix_journal as FJ
+    from bob import fix_witness as W
+    n = len(_declared_dirs(user_config)) if user_config.get("log_dir") else 0
+    reports = (t("manage_logs.home_reports", count=n) if n else t("manage_logs.home_no_reports"))
+    journal = FJ.load()
+    verdict = W.verify(journal)
+    if journal.entries or verdict.removed or verdict.overall != "intact":
+        state = verdict.overall
+    else:
+        state = "empty"
+    kind = {"tampered": "alert", "unproven": "warn", "intact": "ok"}.get(state, "body")
+    fixes = t("manage_logs.home_fixes", count=len(journal.entries),
+              verdict=t(f"manage_logs.home_verdict.{state}"))
+    return [(f"1  {_DIR_FOLDER} {reports}", "body"), (f"2  {_FIX_SHIELD} {fixes}", kind)]
 
-    The directory picker is the landing screen; a directory opens into its own
-    report list. Tracked directories persist until the operator forgets one, so
-    changing where reports are written never loses sight of the old ones.
-    """
-    if not user_config.get("log_dir"):
-        return 0
+
+#: The journal's row on the landing screen.
+_FIX_SHIELD = "\U0001f6e1"
+
+
+def _home(stdscr, user_config, config, t) -> str:
+    """The landing screen (v0.40.0): ``reports``, ``fixes`` or ``quit``."""
+    import curses
+    from bob.tui import _chrome as _ch
+    from bob.tui import fixlog as _fl
+    try:
+        curses.curs_set(0)
+    except curses.error:
+        pass
+    has_color = _init_colors_ml()
+    cursor, status = 0, ""
     while True:
-        action, chosen = _dir_picker(stdscr, user_config, config, t)
-        if action == "quit":
+        rows = _home_rows(user_config, t)
+        title = "  bob --manage-logs    " + t("manage_logs.home_header")
+        body = [("", "body")] + [("  " + text, kind) for text, kind in rows]
+        _fl._draw(stdscr, curses, t, title, body, _HOME_KEYS, has_color, 0, cursor + 1, status)
+        status = ""
+        ch = _keys.complete_escape(stdscr, curses, stdscr.getch())
+        act = _keys.resolve(curses, ch, _HOME_KEYS)
+        if act == _keys.QUIT:
+            return "quit"
+        if act == _keys.LANG:
+            _keys.toggle_language(config)
+        elif act in (_keys.MOVE, _keys.PAGE, _keys.EDGE):
+            cursor = _fl._move(curses, act, ch, cursor, [0, 1], 2)
+        elif act == _keys.SELECT or (act and act.startswith("pick:")):
+            choice = cursor if act == _keys.SELECT else ch - ord("1")
+            if choice == 0 and not user_config.get("log_dir"):
+                status = _ch.refused(t("manage_logs.home_no_reports"))
+                continue
+            return "reports" if choice == 0 else "fixes"
+
+
+def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
+    """Curses --manage-logs: the landing screen's two choices (v0.40.0).
+
+    The audit reports: pick a tracked directory, then browse its reports;
+    tracked directories persist until the operator forgets one, so changing
+    where reports are written never loses sight of the old ones. The journal
+    of --fix --apply: its verdict, then day by day (bob/tui/fixlog.py).
+    """
+    import curses
+    from bob.tui import fixlog as _fl
+    while True:
+        choice = _home(stdscr, user_config, config, t)
+        if choice == "quit":
             return 0
-        if action == "select" and chosen is not None:
-            _browse_dir(stdscr, chosen, user_config, config, t)
+        if choice == "fixes":
+            _fl.run(stdscr, curses, t, _init_colors_ml())
+            continue
+        while True:
+            action, chosen = _dir_picker(stdscr, user_config, config, t)
+            if action == "quit":
+                break
+            if action == "select" and chosen is not None:
+                _browse_dir(stdscr, chosen, user_config, config, t)
 
 
 # ---------------------------------------------------------------------------
@@ -1653,10 +1729,11 @@ def _run_manage_logs_dispatch(user_config, config, t) -> int:
         return _run_manage_logs_plain(user_config, config, t)
 
     # Nothing to manage yet (fresh install — no audit has created a log
-    # directory): the curses path would bail on `if not log_dir: return 0`
-    # *inside* curses.wrapper, flashing a blank screen and exiting silently.
-    # Route to the plain path, which prints the "run an audit first" guidance.
-    if not user_config.get("log_dir"):
+    # directory, and --fix --apply never ran): route to the plain path, which
+    # prints the "run an audit first" guidance, rather than a landing screen
+    # with nothing behind either choice.
+    from bob import fix_journal as _FJ
+    if not user_config.get("log_dir") and not _FJ.path().exists():
         return _run_manage_logs_plain(user_config, config, t)
 
     import curses
