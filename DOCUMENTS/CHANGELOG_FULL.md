@@ -228,7 +228,10 @@ AUTOMATION.md's viewer section rewritten (blocks, keys, notes, what the journal
 can and cannot prove, the files beside each report); it also lacked `←`/`→`
 (0.32.0) and still said reports were moved "via `shutil.move`" (they are moved
 through checked descriptors since 0.26.1, and now with their notes and state).
-CONVENTIONS.md: thirteen curses pairs and the context-line rule. SECURITY.md:
+AUTOMATION.md also brings the shared floor of the wizards, `--install-cron`'s
+confirmations and the plain-text lists to the rules of section 4.
+CONVENTIONS.md: thirteen curses pairs, the context-line rule and the three
+rules of section 4. SECURITY.md:
 the files beside each report and the notes' limits. All in English and French.
 
 Measured on: the test Linux Mint 22.3 (two throwaway operators over SSH, sudo).

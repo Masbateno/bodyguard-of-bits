@@ -31,6 +31,8 @@ Un aperçu en langage naturel est affiché avant confirmation :
   → Planification : tous les lundi, mercredi, vendredi à 02:30
 ```
 
+`y` l'applique et `Échap` revient en arrière ; depuis la v0.39.0, aucune autre touche n'y fait rien (`Entrée` l'appliquait, toute autre touche l'abandonnait, sans que rien ne l'annonce). Quand une tâche de ce nom existe déjà, l'assistant demande avant de l'écraser, dans la formulation de toute confirmation : *Appuyez sur y pour confirmer, sur toute autre touche pour annuler* — un refus revient en arrière.
+
 ### Ce que l'audit programmé exécute réellement
 
 Les étapes 5 à 7 existent parce qu'**un cron s'exécute en root**. Avant la
@@ -188,6 +190,9 @@ Dans un terminal, le carnet est lui aussi un écran curses : `Espace` / `a` marq
 | `1,3` | Supprimer les adresses 1 et 3 |
 | `1-3` | Supprimer les adresses 1, 2 et 3 |
 | `all` | Supprimer toutes les adresses enregistrées |
+
+Depuis la v0.39.0, toute suppression demande d'abord (`[y/N]` ; elle supprimait sans rien demander), et les numéros suivent la règle de toute liste de numéros de BOB (CONVENTIONS.md) : un intervalle prend les adresses qui existent entre ses bornes, un numéro donné seul — isolé ou dans une liste — doit être une adresse, sinon rien n'est supprimé et ce numéro est dit ; les formes se mélangent (`1,3-5`).
+
 | Entrée / `q` | Revenir au menu de gestion des crons |
 
 Les adresses enregistrées ici sont proposées comme suggestions à chaque fois que `--install-cron` ou `--manage-cron` demande un email de notification.
@@ -468,7 +473,14 @@ que de tronquer quand les indications ne tiennent pas dans le terminal — coupe
 par la droite emporterait d'abord l'indication de sortie. La ligne juste
 au-dessus est **réservée aux invites et aux messages** : une confirmation de
 suppression ou un champ de saisie s'y affiche, et le bandeau de touches reste
-visible en dessous au lieu d'être recouvert. Depuis la v0.39.0, cette ligne prend
+visible en dessous au lieu d'être recouvert. Depuis la v0.39.0, le bandeau
+liste **exactement** les touches que l'écran accepte — aucune touche absente du
+bandeau ne fait rien, et une touche qui n'agit que dans certains états (`u`, dès
+que quelque chose est marqué) n'y figure qu'alors ; un menu numéroté affiche ses
+propres chiffres (`1-4 par numéro`). Toute suppression, écrasement, retrait ou
+purge se confirme d'une seule façon : la question, puis *Appuyez sur y pour
+confirmer, sur toute autre touche pour annuler*, au-dessus d'un bandeau qui
+n'affiche que `y`. Et cette ligne prend
 la couleur de ce qu'elle dit, comme la sortie texte : une **invite** ou une
 question qui attend une réponse en **jaune** ; une action réussie en **vert**,
 `✔` ; une action refusée ou échouée — rien n'a été changé — en **rouge**, `✖` ;
@@ -485,7 +497,8 @@ tous les assistants : `--manage-logs`, `--manage-cron`, `--install-cron`,
 
 **Les champs de saisie.** Quand un écran demande de taper quelque chose — un
 nom de tâche, une adresse e-mail, une heure — l'invite occupe la ligne réservée
-et le bandeau en dessous affiche `⏎ valider` et `Esc retour`. Toutes ces invites
+et le bandeau en dessous affiche `⏎ valider` et `Esc retour` — et `Tab compléter`
+là où le champ complète un chemin (un nouveau dossier de rapports). Toutes ces invites
 sont traduites ; avant la v0.16.3 elles étaient en anglais dans un assistant
 français.
 
@@ -646,7 +659,7 @@ Utilisé automatiquement quand stdout n'est pas un terminal :
 
 | Saisie | Action |
 |--------|--------|
-| `1`, `3`, `1,3`, `2-5` | Supprimer le(s) rapport(s) par numéro |
+| `1`, `3`, `1,3`, `2-5` | Supprimer le(s) rapport(s) par numéro (confirmation requise, `[y/N]`, depuis la v0.39.0 ; un numéro sans rapport est refusé et dit, un intervalle prend les rapports qui existent) |
 | `all` | Supprimer tous les rapports visibles (confirmation requise) |
 | `c` | Changer l'emplacement de stockage |
 | Entrée / `q` | Quitter |

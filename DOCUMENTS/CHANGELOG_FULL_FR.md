@@ -249,7 +249,10 @@ ce que le journal peut et ne peut pas prouver, les fichiers à côté de chaque
 rapport) ; il y manquait aussi `←`/`→` (0.32.0), et elle disait encore que les
 rapports étaient déplacés « via `shutil.move` » (ils le sont à travers des
 descripteurs vérifiés depuis la 0.26.1, et désormais avec leurs notes et leur
-état). CONVENTIONS.md : treize paires curses et la règle de la ligne de contexte.
+état). AUTOMATION.md met aussi le socle commun des assistants, les confirmations de
+`--install-cron` et les listes en mode texte aux règles de la section 4.
+CONVENTIONS.md : treize paires curses, la règle de la ligne de contexte et les
+trois règles de la section 4.
 SECURITY.md : les fichiers à côté de chaque rapport et les limites des notes. Le
 tout en anglais et en français.
 

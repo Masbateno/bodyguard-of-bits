@@ -31,6 +31,8 @@ A plain-language preview is shown before confirmation:
   → Schedule: every Monday, Wednesday, Friday at 02:30
 ```
 
+`y` applies it and `Esc` goes back; since v0.39.0 no other key does anything there (`Enter` applied it, any other key abandoned it, neither announced). When a job of that name already exists, the wizard asks before overwriting it, in the wording every confirmation uses: *Press y to confirm, any other key to cancel* — a refusal steps back.
+
 ### What the scheduled audit runs
 
 Steps 5 to 7 exist because **a cron runs as root**. Before v0.16.1 the generated
@@ -186,6 +188,9 @@ In a terminal the address book is a curses screen too: `Space` / `a` mark one or
 | `1,3` | Delete addresses 1 and 3 |
 | `1-3` | Delete addresses 1, 2 and 3 |
 | `all` | Delete all saved addresses |
+
+Since v0.39.0 every deletion here asks first (`[y/N]`; it deleted without asking), and the numbers follow the rule of every list of numbers in BOB (CONVENTIONS.md): a range takes the addresses there are between its bounds, a number given alone — on its own or in a list — must be an address, or nothing is deleted and that number is named; forms mix (`1,3-5`).
+
 | Enter / `q` | Return to the cron management menu |
 
 Addresses saved here are offered as suggestions whenever `--install-cron` or `--manage-cron` asks for a notification email.
@@ -462,7 +467,13 @@ the cyan header, and wraps onto a second row rather than truncating when the
 hints do not fit the terminal — cutting from the right would take the exit hint
 first. The line immediately above it is **reserved for prompts and status**: a
 delete confirmation or a text field appears there, and the key banner stays
-visible underneath instead of being painted over. Since v0.39.0 that line takes
+visible underneath instead of being painted over. Since v0.39.0 the banner lists
+**exactly** the keys the screen accepts — no key that is not shown does
+anything, and a key that acts only in some states (say `u`, once something is
+marked) is shown only then; a numbered menu shows its own digits (`1-4 by
+number`). Every deletion, overwrite, withdrawal or purge is confirmed one way:
+the question, then *Press y to confirm, any other key to cancel*, over a banner
+that shows `y` alone. And that line takes
 the colour of what it says, as the text output does: a **prompt** or a question
 waiting for an answer in **yellow**; an action that took effect in **green**,
 `✔`; an action refused or failed — nothing was changed — in **red**, `✖`;
@@ -478,7 +489,8 @@ wizard: `--manage-logs`, `--manage-cron`, `--install-cron`, `--explain`.
 
 **Text fields.** Where a screen asks you to type something — a job name, an
 e-mail address, a time — the prompt sits on the reserved line and the banner
-below it shows `⏎ submit` and `Esc back`. All of these prompts are translated;
+below it shows `⏎ submit` and `Esc back` — and `Tab complete` where the field
+completes a path (a new report directory). All of these prompts are translated;
 before v0.16.3 they were English on a French wizard.
 
 **Exits.** `q` quits, and only from a wizard's **first page** — deeper in, `Esc`
@@ -627,7 +639,7 @@ Used automatically when stdout is not a terminal:
 
 | Input | Action |
 |-------|--------|
-| `1`, `3`, `1,3`, `2-5` | Delete report(s) by number |
+| `1`, `3`, `1,3`, `2-5` | Delete report(s) by number (confirmation required, `[y/N]`, since v0.39.0; a number with no report is refused and named, a range takes the reports there are) |
 | `all` | Delete all visible reports (confirmation required) |
 | `c` | Change storage location |
 | Enter / `q` | Quit |
