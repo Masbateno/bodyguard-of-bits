@@ -105,7 +105,7 @@ class SslCertsSnapshot:
         # instead, so the denial is caught and recorded rather than lost.
         try:
             if strict_is_dir(_LE_LIVE):
-                for sub in _LE_LIVE.iterdir():
+                for sub in sorted(_LE_LIVE.iterdir()):
                     _add_path(sub / "fullchain.pem", paths)
         except OSError:
             snap.unreadable_dirs.append(str(_LE_LIVE))
@@ -113,7 +113,7 @@ class SslCertsSnapshot:
         # --- /etc/ssl/private ---
         try:
             if strict_is_dir(_SSL_PRIVATE):
-                for cert in _SSL_PRIVATE.iterdir():
+                for cert in sorted(_SSL_PRIVATE.iterdir()):
                     if cert.suffix in _PRIV_CERT_EXTS:
                         _add_path(cert, paths)
         except OSError:

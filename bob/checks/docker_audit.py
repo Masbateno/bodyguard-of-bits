@@ -401,7 +401,7 @@ def _rootless_podman() -> "dict[str, int]":
     import pwd
     counts: "dict[str, int]" = {}
     try:
-        pids = [d for d in _PROC.iterdir() if d.name.isdigit()]
+        pids = sorted((d for d in _PROC.iterdir() if d.name.isdigit()), key=lambda d: int(d.name))
     except OSError:
         return counts
     for pid in pids:

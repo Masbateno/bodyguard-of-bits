@@ -37,7 +37,7 @@ This separation allows the entire business logic to be tested by instantiating s
 
 | Module | Role |
 |---|---|
-| `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~1071 lines) |
+| `__main__.py` | Orchestrator — argument parsing, snapshot collection, calls `run_checks()`, displays summary (~1079 lines) |
 | `runner.py` | Audit execution engine — `run_checks()` with `_sec` section closure (57 filterable + 10 always-on sections), `_section_enabled()` (~1362 lines) |
 | `cli.py` | Argument parsing — returns an `AuditConfig` dataclass |
 | `config.py` | User configuration — `UserConfig` (`~/.config/bob/config.conf`), `EmailStore` |
@@ -548,8 +548,8 @@ print(f'Same order: {en == fr}')
 
 Expected output — the two files hold the same keys **in the same order**:
 ```
-EN keys: 3325
-FR keys: 3325
+EN keys: 3403
+FR keys: 3403
 Missing in FR: none
 Same order: True
 ```
@@ -566,7 +566,7 @@ cp bob/locales/en.json bob/locales/de.json
 
 ### 2. Translate all values
 
-The file contains exactly 3325 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
+The file contains exactly 3403 keys organised into sections (verified with `bob/locales/en.json` vs `fr.json` strict-parity test). Translate all values while keeping `{variable}` placeholders intact.
 
 Example:
 ```json

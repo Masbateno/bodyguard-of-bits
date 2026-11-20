@@ -37,6 +37,15 @@ PROFILE   = 6   #: a [ profile ] section header in --explain
 FOOTER    = 7   #: the bottom key banner — white on orange
 CONTEXT   = 8   #: the line above it — prompts and status, on black
 VERBATIM  = 9   #: material to reproduce exactly — violet, as in the text output
+#: v0.39.0 — the context line's text takes the colour of what it says, on the
+#: same black: a prompt in the prompts' yellow (ACCENT), a success in the
+#: text output's OK green, a refusal in its alert red (with ✖), information in
+#: its cyan. Decided with the user (17 November 2026), to match both tables of
+#: DOCUMENTS/CONVENTIONS.md; CONTEXT (white) stays for a line with no tone.
+CONTEXT_PROMPT = 10
+CONTEXT_OK     = 11
+CONTEXT_ERROR  = 12
+CONTEXT_INFO   = 13
 
 #: xterm-256 index for orange. Used only when the terminal advertises 256
 #: colours; see the module docstring for the fallback.
@@ -97,6 +106,10 @@ def init_palette(curses, *, notice: "int | None" = None) -> bool:
         # confirmation no longer paints over the keys it asks about.
         curses.init_pair(FOOTER,    curses.COLOR_WHITE, selection_background(curses))
         curses.init_pair(CONTEXT,   curses.COLOR_WHITE, curses.COLOR_BLACK)
+        curses.init_pair(CONTEXT_PROMPT, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+        curses.init_pair(CONTEXT_OK,     curses.COLOR_GREEN,  curses.COLOR_BLACK)
+        curses.init_pair(CONTEXT_ERROR,  curses.COLOR_RED,    curses.COLOR_BLACK)
+        curses.init_pair(CONTEXT_INFO,   curses.COLOR_CYAN,   curses.COLOR_BLACK)
         # Violet marks what must be reproduced exactly — a command to run
         # or a directive to write. The same lines read as ordinary prose
         # inside a wizard until v0.16.4: the convention stopped at the

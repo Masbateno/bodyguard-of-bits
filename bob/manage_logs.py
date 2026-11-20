@@ -36,12 +36,54 @@ def _listable(d: Path) -> bool:
     return True
 
 
+#: v0.39.0 — files kept beside a report: its notes and its state. Never listed
+#: (every list keeps ``bob_*.log``), moved and deleted with their report.
+COMPANION_SUFFIXES = (".note", ".state")
+
+
+def _companions(name: str) -> "tuple[str, ...]":
+    return tuple(name + suffix for suffix in COMPANION_SUFFIXES)
+
+
+def _move_one(name: str, sfd: int, dfd: int) -> None:
+    """Move *name* from the directory *sfd* to *dfd*: a rename, or across
+    filesystems a copy from a source opened without following a link, then an
+    unlink."""
+    import errno
+    try:
+        os.rename(name, name, src_dir_fd=sfd, dst_dir_fd=dfd)
+        return
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
+    src = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=sfd)
+    try:
+        dst = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC,
+                      0o600, dir_fd=dfd)
+        try:
+            while True:
+                chunk = os.read(src, 1 << 16)
+                if not chunk:
+                    break
+                view = memoryview(chunk)
+                while view:
+                    view = view[os.write(dst, view):]
+            os.fchmod(dst, os.fstat(src).st_mode & 0o777)
+        finally:
+            os.close(dst)
+    finally:
+        os.close(src)
+    os.unlink(name, dir_fd=sfd)
+
+
 def _move_report(f: Path, dest_dir: Path) -> None:
     """Move a report through checked descriptors of both directories (v0.26.1,
     after review): renamed relative to them; across filesystems, copied from a
     source opened without following a link, then unlinked. Either directory
-    under the user's home resolving outside it is refused."""
-    import errno
+    under the user's home resolving outside it is refused.
+
+    v0.39.0 — its notes and its state go with it, through the same checked
+    descriptors; one that is not there is skipped."""
     from bob.sysinfo import fd_real_path, refuse_if_redirected
     _dir = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
     sfd = os.open(str(f.parent), _dir)
@@ -50,30 +92,12 @@ def _move_report(f: Path, dest_dir: Path) -> None:
         dfd = os.open(str(dest_dir), _dir)
         try:
             refuse_if_redirected(dest_dir, fd_real_path(dfd))
-            try:
-                os.rename(f.name, f.name, src_dir_fd=sfd, dst_dir_fd=dfd)
-                return
-            except OSError as exc:
-                if exc.errno != errno.EXDEV:
-                    raise
-            src = os.open(f.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=sfd)
-            try:
-                dst = os.open(f.name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC,
-                              0o600, dir_fd=dfd)
+            _move_one(f.name, sfd, dfd)
+            for name in _companions(f.name):
                 try:
-                    while True:
-                        chunk = os.read(src, 1 << 16)
-                        if not chunk:
-                            break
-                        view = memoryview(chunk)
-                        while view:
-                            view = view[os.write(dst, view):]
-                    os.fchmod(dst, os.fstat(src).st_mode & 0o777)
-                finally:
-                    os.close(dst)
-            finally:
-                os.close(src)
-            os.unlink(f.name, dir_fd=sfd)
+                    _move_one(name, sfd, dfd)
+                except FileNotFoundError:
+                    pass
         finally:
             os.close(dfd)
     finally:
@@ -82,12 +106,19 @@ def _move_report(f: Path, dest_dir: Path) -> None:
 
 def _unlink_report(f: Path) -> None:
     """Delete a report through a checked descriptor of its directory (v0.26.1):
-    the directory swapped for a link after it was listed is refused."""
+    the directory swapped for a link after it was listed is refused.
+
+    v0.39.0 — its notes and its state are deleted with it."""
     from bob.sysinfo import fd_real_path, refuse_if_redirected
     dfd = os.open(str(f.parent), os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
     try:
         refuse_if_redirected(f.parent, fd_real_path(dfd))
         os.unlink(f.name, dir_fd=dfd)
+        for name in _companions(f.name):
+            try:
+                os.unlink(name, dir_fd=dfd)
+            except FileNotFoundError:
+                pass
     finally:
         os.close(dfd)
 
@@ -324,31 +355,6 @@ def _forget_dir(user_config, path: Path) -> None:
 # Selection parser
 # ---------------------------------------------------------------------------
 
-def parse_log_selection(answer: str, max_idx: int) -> list[int]:
-    """Parse user input into a sorted list of 1-based indices.
-
-    Accepted formats:
-        1          → [1]
-        1,3,5      → [1, 3, 5]
-        2-4        → [2, 3, 4]
-        1,3-5      → [1, 3, 4, 5]
-    """
-    indices: set[int] = set()
-    for part in answer.split(","):
-        part = part.strip()
-        if "-" in part:
-            lo, _, hi = part.partition("-")
-            if lo.isdigit() and hi.isdigit():
-                lo_i, hi_i = int(lo), int(hi)
-                if 1 <= lo_i <= hi_i <= max_idx:
-                    indices.update(range(lo_i, hi_i + 1))
-        elif part.isdigit():
-            n = int(part)
-            if 1 <= n <= max_idx:
-                indices.add(n)
-    return sorted(indices)
-
-
 # ---------------------------------------------------------------------------
 # --manage-logs
 # ---------------------------------------------------------------------------
@@ -511,8 +517,24 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
                 print(f"  ✔ {t('manage_logs.deleted_all', count=deleted)}")
 
         else:
-            selected = parse_log_selection(answer, len(all_logs))
-            if not selected:
+            from bob.selection import SelectionError, parse_selection
+            try:
+                selected = parse_selection(answer, range(1, len(all_logs) + 1))
+            except SelectionError as exc:
+                # v0.39.0 — said, rather than dropped: which number, which range.
+                print(f"  ✖ {t('selection.' + exc.kind, **exc.vars)}")
+                selected = None
+            # v0.39.0 (user, 19 November 2026) — every deletion is confirmed;
+            # by number it was not, only "all" was.
+            if selected:
+                from bob._tty import safe_input
+                if safe_input(f"  {t('manage_logs.confirm_prompt', count=len(selected))} [y/N] "
+                              ).strip().lower() != "y":
+                    print(f"  {t('manage_logs.cancelled')}")
+                    selected = None
+            if selected is None:
+                pass
+            elif not selected:
                 print(f"  ✖ {t('manage_logs.invalid')}")
             elif len(selected) == 1:
                 f = all_logs[selected[0] - 1]
@@ -539,12 +561,21 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
 # Curses UI helpers
 # ---------------------------------------------------------------------------
 
-def _curses_input(stdscr, row: int, w: int, prompt: str, default: str = "") -> str | None:
+def _prompt_attr(curses) -> int:
+    """v0.39.0 — a prompt on the context line, in the prompts' yellow."""
+    from bob.tui import _chrome
+    return _chrome.context_attr(curses, curses.has_colors(), _chrome.PROMPT)
+
+
+def _curses_input(stdscr, row: int, w: int, prompt: str, default: str = "",
+                  complete_paths: bool = True) -> str | None:
     """Inline single-line text input drawn on *row* inside a curses window.
 
-    Tab triggers path glob-completion.
+    Tab triggers path glob-completion (unless *complete_paths* is False: a
+    note is text, not a path — v0.39.0).
     Enter confirms (returns the string).
     Esc cancels (returns None).
+    A line longer than the window shows its end, where the cursor is.
     """
     import curses
     import glob as _glob
@@ -559,10 +590,12 @@ def _curses_input(stdscr, row: int, w: int, prompt: str, default: str = "") -> s
     while True:
         text    = "".join(buf)
         display = f"  {prompt}: {text}_"
+        if len(display) > w - 1:
+            display = "…" + display[-(w - 2):]
         try:
             stdscr.move(row, 0)
             stdscr.clrtoeol()
-            stdscr.addstr(row, 0, display[:w - 1], curses.A_BOLD)
+            stdscr.addstr(row, 0, display[:w - 1], _prompt_attr(curses))
         except curses.error:
             pass
         stdscr.refresh()
@@ -584,7 +617,7 @@ def _curses_input(stdscr, row: int, w: int, prompt: str, default: str = "") -> s
             elif ch in ("\x7f", "\x08"):            # Backspace
                 if buf:
                     buf.pop()
-            elif ch == "\t":                        # Tab = path completion
+            elif ch == "\t" and complete_paths:    # Tab = path completion
                 matches = sorted(_glob.glob(text + "*"))
                 if len(matches) == 1:
                     buf = list(matches[0])
@@ -708,16 +741,29 @@ def _extract_summary_view(lines: list[str]) -> list[str]:
 
 #: The log preview is nested under the file list, so Esc goes back and ``q``
 #: does not quit from here.
-_PREVIEW_KEYS = _keys.NAVIGATION + (_keys.SUMMARY,) + _keys.NESTED_EXIT
+#:
+#: v0.39.0 — the blocks shown above the report, detached from it: the notes
+#: (n), the comparison with the previous report of the same host (c), the
+#: history of that host's reports (h); ``a`` opens the notes' own actions, and
+#: ``#`` numbers the report's lines (the whole log only: the summary's lines are
+#: not consecutive, so a number there would not name a line of the file).
+_BLOCK_ACTIONS = (_keys.NOTES, _keys.ANNOTATE, _keys.COMPARE, _keys.HISTORY)
+_PREVIEW_KEYS = _keys.NAVIGATION + (_keys.SUMMARY,) + _BLOCK_ACTIONS + (_keys.NUMBERS,) + _keys.NESTED_EXIT
 
 #: Same screen once the condensed view is showing. `s` still works — it is what
 #: goes back to the whole log — so hiding it would break the rule that a screen
 #: never acts on a key it does not advertise. What was wrong was the label:
 #: the banner read `s summary` to an operator already looking at the summary.
-_PREVIEW_KEYS_SUMMARY = _keys.NAVIGATION + (_keys.FULL,) + _keys.NESTED_EXIT
+_PREVIEW_KEYS_SUMMARY = _keys.NAVIGATION + (_keys.FULL,) + _BLOCK_ACTIONS + _keys.NESTED_EXIT
+
+#: v0.39.0 — the notes' actions, opened from the preview by ``a``; Esc returns
+#: to the preview. Every prompt and confirmation is drawn on the context line.
+_NOTES_KEYS = _keys.NAVIGATION + (
+    _keys.NOTE_ADD, _keys.NOTE_EDIT, _keys.NOTE_WITHDRAW, _keys.NOTE_PURGE, _keys.NOTE_JOURNAL,
+) + _keys.NESTED_EXIT
 
 
-def _preview_keys(mode: str, peers: bool = False) -> "tuple[str, ...]":
+def _preview_keys(mode: str, peers: bool = False, has_notes: bool = True) -> "tuple[str, ...]":
     """The actions the preview advertises, which depend on what it is showing.
 
     v0.32.0 — ``peers``: the list it was opened from holds another log, so
@@ -725,6 +771,9 @@ def _preview_keys(mode: str, peers: bool = False) -> "tuple[str, ...]":
     on the one line an operator reads to learn the screen.
     """
     base = _PREVIEW_KEYS if mode == "full" else _PREVIEW_KEYS_SUMMARY
+    # v0.39.0 — a report with no notes has no block for n to show or hide.
+    if not has_notes:
+        base = tuple(a for a in base if a != _keys.NOTES)
     if not peers:
         return base
     return base[:-len(_keys.NESTED_EXIT)] + (_keys.PEER,) + _keys.NESTED_EXIT
@@ -750,6 +799,289 @@ def _peer_index(peers: "list[Path]", idx: int, side: int) -> int:
     return nxt if 0 <= nxt < len(peers) else idx
 
 
+# ---------------------------------------------------------------------------
+# v0.39.0 — the detached blocks
+# ---------------------------------------------------------------------------
+
+def _note_when(at: str, t) -> str:
+    """An action's time, in the reader's local time and the locale's format."""
+    try:
+        return _dt.fromisoformat(at).astimezone().strftime(t("manage_logs.note_date_fmt"))
+    except (TypeError, ValueError):
+        return at
+
+
+#: The bar in front of every line of a block, drawn in the frame's colour.
+_BAR = "│ "
+
+
+def _frame(title: str, body: "list[tuple[str, str]]", width: int) -> "list[tuple[str, str]]":
+    """A block: a titled top rule, its lines behind a bar, a bottom rule.
+
+    Each entry is (text, kind): kind "frame" for the rules, else the body's
+    own ("body", "warn"). Long body lines are wrapped, never cut."""
+    import textwrap
+    w = max(20, width - 1)
+    out = [("┌─ " + title + " " + "─" * max(0, w - len(title) - 4), "frame")]
+    for text, kind in body:
+        pieces = textwrap.wrap(text, w - 2, subsequent_indent="   ",
+                               replace_whitespace=False, drop_whitespace=False) or [""]
+        out.extend((_BAR + p, kind) for p in pieces)
+    out.append(("└" + "─" * (w - 1), "frame"))
+    return out
+
+
+def _notes_body(path: "Path", t, journal_view: bool) -> "list[tuple[str, str]] | None":
+    """The notes block's lines, or None when the report has no notes at all."""
+    from bob import annotations as A
+    j = A.load(path)
+    if j.unreadable is not None:
+        why = j.unreadable
+        if why in A._UNREADABLE_KEYS:
+            why = t(f"manage_logs.note_err.{why}")
+        return [(t("manage_logs.note_unreadable", reason=why), "warn")]
+    if not j.events:
+        return None
+    who = A.who_label
+    body: "list[tuple[str, str]]" = []
+    if j.foreign_owner is not None:
+        body.append((t("manage_logs.note_foreign_owner", owner=j.foreign_owner), "warn"))
+    elif not j.intact:
+        body.append((t("manage_logs.note_tampered", line=j.broken_at), "warn"))
+    for n in j.active:
+        body.append((t("manage_logs.note_line", number=n.number, date=_note_when(n.created.at, t),
+                       who=who(n.created.who), text=A.clean_text(n.text or "")), "body"))
+        if n.edited is not None:
+            body.append(("   " + t("manage_logs.note_edited", date=_note_when(n.edited.at, t),
+                                    who=who(n.edited.who)), "body"))
+    if not j.active:
+        body.append((t("manage_logs.note_none_active"), "body"))
+    withdrawn = sum(1 for n in j.notes if n.withdrawn is not None and n.purged is None)
+    purged = sum(1 for n in j.notes if n.purged is not None)
+    if (withdrawn or purged) and not journal_view:
+        body.append((t("manage_logs.note_counts", withdrawn=withdrawn, purged=purged), "body"))
+    if journal_view:
+        number = {n.id: n.number for n in j.notes}
+        body.append(("", "body"))
+        body.append((t("manage_logs.note_journal_title"), "body"))
+        for ev in j.events:
+            date = _note_when(str(ev.get("at", "")), t)
+            by = who(ev.get("by") if isinstance(ev.get("by"), dict) else {})
+            num = number.get(ev.get("id"), "?")
+            text = ev.get("text")
+            text = A.clean_text(text) if isinstance(text, str) else t("manage_logs.note_text_purged")
+            op = ev.get("op")
+            if op == "add":
+                line = t("manage_logs.note_ev_add", date=date, who=by, number=num, text=text)
+            elif op == "edit":
+                line = t("manage_logs.note_ev_edit", date=date, who=by, number=num, text=text)
+            elif op == "withdraw":
+                line = t("manage_logs.note_ev_withdraw", date=date, who=by, number=num)
+            elif op == "purge":
+                line = t("manage_logs.note_ev_purge", date=date, who=by, number=num,
+                         reason=A.clean_text(str(ev.get("reason", ""))))
+            else:
+                continue
+            body.append(("  " + line, "body"))
+    if j.intact:
+        body.append((t("manage_logs.note_intact", count=len(j.events)), "body"))
+    return body
+
+
+def _preview_content(path: "Path", t, view: dict, report_lines: "list[str]",
+                     width: int) -> "list[tuple[str, str]]":
+    """Everything the preview scrolls through: the blocks that are open, in
+    the order notes, comparison, history, then the report itself."""
+    from bob import compare
+    out: "list[tuple[str, str]]" = []
+    if view["notes"]:
+        body = _notes_body(path, t, view["journal"])
+        if body is not None:
+            from bob import annotations as A
+            count = len(A.load(path).active)
+            out += _frame(t("manage_logs.block_notes", count=count), body, width)
+    if view["compare"]:
+        out += _frame(t("manage_logs.block_compare"),
+                      [(line, "body") for line in compare.comparison_lines(path, t)], width)
+    if view["history"]:
+        out += _frame(t("manage_logs.block_history"),
+                      [(line, "body") for line in compare.history_lines(path, t)], width)
+    if out:
+        out.append(("", "report"))
+    if view["numbers"] and view["mode"] == "full":
+        digits = len(str(len(report_lines)))
+        out += [(f"{i:>{digits}} │ {line}", "report") for i, line in enumerate(report_lines, 1)]
+    else:
+        out += [(line, "report") for line in report_lines]
+    return out
+
+
+def _new_view() -> dict:
+    """What an opened preview shows (decided with the user, 17 November 2026):
+    the notes open, the comparison and the history closed, no line numbers.
+    ←/→ keep it as it is; it starts over only when the preview is opened
+    again."""
+    return {"mode": "full", "notes": True, "compare": False, "history": False,
+            "numbers": False, "journal": False}
+
+
+#: v0.39.0 (user, 19 November 2026: a screen announces exactly the keys it
+#: answers to) — the banner under a text field. A field kept the screen's
+#: banner (a e r p v, c d…), none of whose keys did anything while typing.
+#: Typing and Backspace are the field itself.
+_INPUT_KEYS = (_keys.SUBMIT,) + _keys.NESTED_EXIT
+_PATH_INPUT_KEYS = (_keys.SUBMIT, _keys.COMPLETE) + _keys.NESTED_EXIT
+
+
+def _input_banner(stdscr, t, actions) -> int:
+    """Draw a text field's own banner; the row the field is typed on."""
+    import curses
+    from bob.tui import _chrome
+    h, w = stdscr.getmaxyx()
+    _chrome.draw(stdscr, curses, t, actions, curses.has_colors())
+    return _chrome.context_row(t, actions, h, w)
+
+
+def _context_input(stdscr, t, actions, prompt: str, default: str = "") -> "str | None":
+    """A line typed on the bottom chrome's context row, over the field's own
+    banner (*actions* is the screen's, kept for the callers' symmetry)."""
+    row = _input_banner(stdscr, t, _INPUT_KEYS)
+    return _curses_input(stdscr, row, stdscr.getmaxyx()[1], prompt, default,
+                         complete_paths=False)
+
+
+def _context_confirm(stdscr, t, actions, question: str) -> bool:
+    """y/n on the bottom chrome's context row: y confirms, any other key
+    cancels — the shared wording (:func:`bob.tui._chrome.ask_confirm`)."""
+    import curses
+    from bob.tui import _chrome
+    return _chrome.ask_confirm(stdscr, curses, t, question)
+
+
+def _note_selection(raw: str, candidates: "list[int]") -> "list[int]":
+    """The notes an action is for: ``3``, ``1,3``, ``2-5``, a mix, or ``all``.
+
+    v0.39.0 (user, 19 November 2026) — read before anything else is asked: a
+    purge asked for its reason, then its confirmation, and only then said there
+    was no such note. Read by the rule every selection follows
+    (:mod:`bob.selection`): a range takes the notes there are between its
+    bounds — "2-4" over notes 1, 2 and 4 refused, saying "no note 3", and a run
+    of notes with holes had to be withdrawn piece by piece — while a number
+    given alone must be a note."""
+    from bob import annotations as A
+    from bob.selection import SelectionError, parse_selection
+    try:
+        return parse_selection(raw, candidates)
+    except SelectionError as exc:
+        key = {"bad": "bad_selection", "missing": "no_note", "empty_range": "empty_range",
+               "none": "none_left"}[exc.kind]
+        raise A.NoteError(key, **exc.vars) from None
+
+
+def _ask_number(stdscr, t, actions) -> "int | None":
+    raw = _context_input(stdscr, t, actions, t("manage_logs.note_prompt_number"))
+    if raw is None:
+        return None
+    raw = raw.strip()
+    return int(raw) if raw.isdigit() else -1
+
+
+def _notes_action(stdscr, path: "Path", t, action: str) -> str:
+    """Carry out one of the notes' actions on *path*; the status line to show."""
+    from bob import annotations as A
+    from bob.sysinfo import RedirectedOutOfHome
+    from bob.tui._chrome import done, info, refused
+    keys = _NOTES_KEYS
+    try:
+        if action == _keys.NOTE_ADD:
+            text = _context_input(stdscr, t, keys, t("manage_logs.note_prompt_add"))
+            if text is None:
+                return info(t("manage_logs.note_cancelled"))
+            j = A.add(path, text)
+            return done(t("manage_logs.note_added", number=j.notes[-1].number))
+        if action in (_keys.NOTE_WITHDRAW, _keys.NOTE_PURGE):
+            prompt = ("manage_logs.note_prompt_select_withdraw" if action == _keys.NOTE_WITHDRAW
+                      else "manage_logs.note_prompt_select_purge")
+            number = _context_input(stdscr, t, keys, t(prompt))
+        else:
+            number = _ask_number(stdscr, t, keys)
+        if number is None:
+            return info(t("manage_logs.note_cancelled"))
+        if action == _keys.NOTE_EDIT:
+            current = next((n for n in A.load(path).active if n.number == number), None)
+            if current is None:
+                raise A.NoteError("no_note", number=number)
+            text = _context_input(stdscr, t, keys, t("manage_logs.note_prompt_edit", number=number),
+                                  default=current.text or "")
+            if text is None:
+                return info(t("manage_logs.note_cancelled"))
+            A.edit(path, number, text)
+            return done(t("manage_logs.note_edited_ok", number=number))
+        if action == _keys.NOTE_WITHDRAW:
+            chosen = _note_selection(number, [n.number for n in A.load(path).active])
+            listed = ", ".join(map(str, chosen))
+            question = (t("manage_logs.note_confirm_withdraw", number=chosen[0]) if len(chosen) == 1 else
+                        t("manage_logs.note_confirm_withdraw_many", count=len(chosen), numbers=listed))
+            if not _context_confirm(stdscr, t, keys, question):
+                return info(t("manage_logs.note_cancelled"))
+            A.withdraw_many(path, chosen)
+            return done(t("manage_logs.note_withdrawn_ok", number=chosen[0]) if len(chosen) == 1 else
+                        t("manage_logs.note_withdrawn_many", count=len(chosen), numbers=listed))
+        if action == _keys.NOTE_PURGE:
+            chosen = _note_selection(number, [n.number for n in A.load(path).notes if n.purged is None])
+            listed = ", ".join(map(str, chosen))
+            reason = _context_input(stdscr, t, keys, t("manage_logs.note_prompt_reason"))
+            if reason is None:
+                return info(t("manage_logs.note_cancelled"))
+            if not A.clean_text(reason):
+                raise A.NoteError("no_reason")
+            question = (t("manage_logs.note_confirm_purge", number=chosen[0]) if len(chosen) == 1 else
+                        t("manage_logs.note_confirm_purge_many", count=len(chosen), numbers=listed))
+            if not _context_confirm(stdscr, t, keys, question):
+                return info(t("manage_logs.note_cancelled"))
+            A.purge_many(path, chosen, reason)
+            return done(t("manage_logs.note_purged_ok", number=chosen[0]) if len(chosen) == 1 else
+                        t("manage_logs.note_purged_many", count=len(chosen), numbers=listed))
+    except A.NoteError as exc:
+        return refused(t(f"manage_logs.note_err.{exc.key}", **exc.vars))
+    except RedirectedOutOfHome:
+        return refused(t("manage_logs.note_err.redirected"))
+    except OSError as exc:
+        return refused(t("manage_logs.note_err.os", error=exc.strerror or exc))
+    return ""
+
+
+def _draw_preview(stdscr, path: "Path", t, view: dict, content, scroll: int, body_h: int,
+                  actions, banner: str, status: str, has_color: bool) -> None:
+    import curses
+    from bob.tui import _chrome
+    from bob.tui._palette import ACCENT, NOTICE
+    h, w = stdscr.getmaxyx()
+    stdscr.erase()
+    _chrome.draw_header(stdscr, curses, banner, has_color)
+    attrs = {"frame": (curses.color_pair(ACCENT) | curses.A_BOLD) if has_color else curses.A_BOLD,
+             "warn": curses.color_pair(NOTICE) if has_color else curses.A_BOLD,
+             "body": curses.A_NORMAL, "report": curses.A_NORMAL}
+    for row in range(body_h):
+        i = scroll + row
+        if i >= len(content):
+            break
+        text, kind = content[i]
+        try:
+            # v0.39.0 (user, 19 November 2026) — a block's bar keeps the frame's
+            # colour; it took the colour of each line's text ("body", "warn").
+            if kind in ("body", "warn") and text.startswith(_BAR):
+                stdscr.addstr(row + 1, 0, _BAR[:w - 1], attrs["frame"])
+                stdscr.addstr(row + 1, len(_BAR), text[len(_BAR):][:max(0, w - 1 - len(_BAR))],
+                              attrs[kind])
+            else:
+                stdscr.addstr(row + 1, 0, text[:w - 1], attrs.get(kind, curses.A_NORMAL))
+        except curses.error:
+            pass
+    _chrome.draw(stdscr, curses, t, actions, has_color, context=status)
+    stdscr.refresh()
+
+
 def _curses_preview_log(stdscr, path: "Path", t, peers: "list[Path] | None" = None) -> "Path":
     """Scrollable read-only viewer for a log file.  Esc returns to list.
 
@@ -757,6 +1089,10 @@ def _curses_preview_log(stdscr, path: "Path", t, peers: "list[Path] | None" = No
     ←/→ show the older/newer log without going back to it, keeping the full or
     summary view. Returns the log shown last, so the list can put its cursor
     on it.
+
+    v0.39.0 — blocks detached from the report above it (notes, comparison,
+    history), each opened or closed by its key and kept as it is across ←/→;
+    ``a`` opens the notes' actions; ``#`` numbers the lines of the whole log.
     """
     import curses
 
@@ -766,50 +1102,53 @@ def _curses_preview_log(stdscr, path: "Path", t, peers: "list[Path] | None" = No
 
     has_color = curses.has_colors()
     scroll = 0
-    mode   = "full"   # "full" | "summary"
+    view = _new_view()
+    status = ""
+    notes_mode = False
 
     while True:
-        lines = full_lines if mode == "full" else summary_lines
-        _actions = _preview_keys(mode, peers=len(peers) > 1)
+        lines = full_lines if view["mode"] == "full" else summary_lines
+        from bob import annotations as A
+        _actions = _NOTES_KEYS if notes_mode else _preview_keys(
+            view["mode"], peers=len(peers) > 1, has_notes=bool(A.load(path).events))
 
         h, w = stdscr.getmaxyx()
         from bob.tui import _chrome as _ch
         body_h = max(1, h - 1 - _ch.chrome_height(t, _actions, w))
-        max_scroll = max(0, len(lines) - body_h)
+        content = _preview_content(path, t, view, lines, w)
+        max_scroll = max(0, len(content) - body_h)
         scroll = max(0, min(scroll, max_scroll))
-
-        stdscr.erase()
 
         # Top banner — v0.16.3: title and context only; the keys moved to the
         # footer, where every other screen puts them. The mode tag and the line
         # range were English literals on a screen whose body is translated.
-        mode_tag = t("tui.mode_full") if mode == "full" else t("tui.mode_summary")
+        mode_tag = t("tui.mode_notes") if notes_mode else (
+            t("tui.mode_full") if view["mode"] == "full" else t("tui.mode_summary"))
         _rng = t("tui.range", first=scroll + 1,
-                 last=min(scroll + body_h, len(lines)), total=len(lines))
+                 last=min(scroll + body_h, len(content)), total=len(content))
         _pos = f"{idx + 1}/{len(peers)}  " if len(peers) > 1 else ""
         banner = f"  {path.name}  {_pos}{mode_tag}   {_rng}"
-        from bob.tui import _chrome
-        _chrome.draw_header(stdscr, curses, banner, has_color)
-
-        # Body
-        for row in range(body_h):
-            line_idx = scroll + row
-            if line_idx >= len(lines):
-                break
-            try:
-                stdscr.addstr(row + 1, 0, lines[line_idx][:w - 1])
-            except curses.error:
-                pass
-
-        # Bottom chrome — the shared key contract, translated.
-        from bob.tui import _chrome
-        _chrome.draw(stdscr, curses, t, _actions, has_color)
-
-        stdscr.refresh()
+        _draw_preview(stdscr, path, t, view, content, scroll, body_h, _actions, banner, status, has_color)
 
         ch = _keys.complete_escape(stdscr, curses, stdscr.getch())
-
+        status = ""
         action = _keys.resolve(curses, ch, _actions)
+
+        if notes_mode:
+            if action == _keys.BACK:
+                notes_mode = False
+            elif action == _keys.NOTE_JOURNAL:
+                view["journal"] = not view["journal"]
+            elif action in (_keys.NOTE_ADD, _keys.NOTE_EDIT, _keys.NOTE_WITHDRAW, _keys.NOTE_PURGE):
+                status = _notes_action(stdscr, path, t, action)
+            elif action == _keys.MOVE:
+                scroll = max(0, min(max_scroll, scroll + _keys.direction(curses, ch)))
+            elif action == _keys.PAGE:
+                scroll = max(0, min(max_scroll, scroll + body_h * _keys.direction(curses, ch)))
+            elif action == _keys.EDGE:
+                scroll = 0 if _keys.is_top(ch) else max_scroll
+            continue
+
         if action == _keys.BACK:                        # nested screen: Esc goes back
             return path
         elif action == _keys.PEER:                      # ← older / → newer log
@@ -819,8 +1158,18 @@ def _curses_preview_log(stdscr, path: "Path", t, peers: "list[Path] | None" = No
                 full_lines, summary_lines = _read_log_views(path)
                 scroll = 0
         elif action in (_keys.SUMMARY, _keys.FULL):     # toggle summary / full
-            mode = "summary" if mode == "full" else "full"
+            view["mode"] = "summary" if view["mode"] == "full" else "full"
             scroll = 0
+        elif action == _keys.NOTES:
+            view["notes"] = not view["notes"]
+        elif action == _keys.ANNOTATE:                  # the notes' actions; the block opens
+            notes_mode, view["notes"] = True, True
+        elif action == _keys.COMPARE:
+            view["compare"] = not view["compare"]
+        elif action == _keys.HISTORY:
+            view["history"] = not view["history"]
+        elif action == _keys.NUMBERS:
+            view["numbers"] = not view["numbers"]
         elif action == _keys.MOVE:
             scroll = max(0, min(max_scroll, scroll + _keys.direction(curses, ch)))
         elif action == _keys.PAGE:
@@ -1031,34 +1380,30 @@ def _dir_picker(stdscr, user_config, config, t) -> "tuple[str, Path | None]":
         elif act == _keys.DELETE:
             chosen = dirs[cursor]
             if chosen == current:
-                status = t("manage_logs.forget_current_blocked")
-            elif _confirm_inline(stdscr, t("manage_logs.forget_confirm"), h, w):
+                status = _ch.refused(t("manage_logs.forget_current_blocked"))
+            elif _confirm_inline(stdscr, t, _DIR_KEYS, t("manage_logs.forget_confirm")):
                 _forget_dir(user_config, chosen)
-                status = t("manage_logs.forgot", path=str(chosen))
+                status = _ch.done(t("manage_logs.forgot", path=str(chosen)))
                 cursor = max(0, cursor - 1)
 
 
-def _confirm_inline(stdscr, prompt: str, h: int, w: int) -> bool:
-    """A one-line y/n confirmation drawn on the bottom row. y confirms."""
+def _confirm_inline(stdscr, t, actions, prompt: str) -> bool:
+    """A one-line y/n confirmation on the context line, in the prompts' colour.
+
+    v0.39.0 — it was drawn on the bottom row, over the key banner the bottom
+    chrome keeps for the keys (a prompt never covers them since 0.16.3); it
+    now asks in the shared wording (:func:`bob.tui._chrome.ask_confirm`)."""
     import curses
-    try:
-        stdscr.move(h - 1, 0)
-        stdscr.clrtoeol()
-        stdscr.addstr(h - 1, 0, f"  {prompt}"[:w - 1], curses.A_BOLD)
-    except curses.error:
-        pass
-    stdscr.refresh()
-    return stdscr.getch() in (ord("y"), ord("Y"))
+    from bob.tui import _chrome
+    return _chrome.ask_confirm(stdscr, curses, t, prompt)
 
 
 def _change_log_dir(stdscr, user_config, t, log_dir, has_color) -> None:
     """Ask for a new write directory, remember the old one, optionally move
     its reports across. Shared by the picker's ``c`` action."""
-    import curses
     h, w = stdscr.getmaxyx()
-    from bob.tui import _chrome as _ch2
     new_path_str = _curses_input(
-        stdscr, _ch2.context_row(t, _DIR_KEYS, h, w), w,
+        stdscr, _input_banner(stdscr, t, _PATH_INPUT_KEYS), w,
         t("manage_logs.change_prompt"),
         str(log_dir) if log_dir else "",
     )
@@ -1073,16 +1418,10 @@ def _change_log_dir(stdscr, user_config, t, log_dir, has_color) -> None:
     if log_dir is not None and chosen != log_dir:
         cur_logs = sorted(log_dir.glob("bob_*.log")) if log_dir.exists() and _listable(log_dir) else []
         if cur_logs:
-            move_prompt = (f"  {t('manage_logs.move_logs_prompt', count=len(cur_logs))}"
-                           "  [y/N]")
-            try:
-                stdscr.move(h - 1, 0)
-                stdscr.clrtoeol()
-                stdscr.addstr(h - 1, 0, move_prompt[:w - 1], curses.A_BOLD)
-            except curses.error:
-                pass
-            stdscr.refresh()
-            if stdscr.getch() in (ord("y"), ord("Y")):
+            # v0.39.0 — on the context line, in the prompts' colour: it was
+            # drawn on the bottom row, over the key banner.
+            move_prompt = t('manage_logs.move_logs_prompt', count=len(cur_logs))
+            if _confirm_inline(stdscr, t, _DIR_KEYS, move_prompt):
                 for fp in cur_logs:
                     try:
                         _move_report(fp, chosen)
@@ -1199,15 +1538,19 @@ def _browse_dir(stdscr, browse_dir: Path, user_config, config, t) -> None:
                 except curses.error:
                     pass
 
+        _tone = None
         if confirm_delete:
-            _transient = f"  {t('manage_logs.confirm_prompt', count=len(pending_delete))}"
+            _transient = f"  {_ch.confirm_text(t, t('manage_logs.confirm_prompt', count=len(pending_delete)))}"
+            _tone = _ch.PROMPT
         elif status:
             _transient = f"  {status}"
             status = ""
         else:
             _transient = ""
         _actions = _MARKED_KEYS if n_sel else _LIST_KEYS
-        _ch.draw(stdscr, curses, t, _actions, has_color, context=_transient)
+        if confirm_delete:                  # y, or any other key to cancel
+            _actions = _ch.CONFIRM_ACTIONS
+        _ch.draw(stdscr, curses, t, _actions, has_color, context=_transient, tone=_tone)
         stdscr.refresh()
 
         ch = _keys.complete_escape(stdscr, curses, stdscr.getch())
@@ -1232,11 +1575,11 @@ def _browse_dir(stdscr, browse_dir: Path, user_config, config, t) -> None:
                 marked.clear()
                 cursor = max(0, cursor - deleted_before_cursor)
                 if deleted == 1 and deleted_name is not None:
-                    status = t("manage_logs.deleted_one", name=deleted_name)
+                    status = _ch.done(t("manage_logs.deleted_one", name=deleted_name))
                 elif deleted:
-                    status = t("manage_logs.deleted_multi", count=deleted)
+                    status = _ch.done(t("manage_logs.deleted_multi", count=deleted))
             else:
-                status = t("manage_logs.cancelled")
+                status = _ch.info(t("manage_logs.cancelled"))
             pending_delete = []
             continue
 

@@ -71,6 +71,44 @@ def _readable_entry(e: dict) -> dict | None:
     return e
 
 
+def history_entry(
+    score: int,
+    level: str,
+    level_score_only: str | None = None,
+    partial: bool = False,
+    upper_bound: bool = False,
+    span: "tuple[int, int] | None" = None,
+) -> dict:
+    """One history line, as :func:`save_score` writes it.
+
+    v0.39.0 — split out so the state file kept beside a report (--manage-logs
+    shows its history) carries the very same entry as history.jsonl."""
+    entry_dict: dict = {
+        "ts":    datetime.now(timezone.utc).isoformat(),
+        "score": score,
+        "level": level,
+    }
+    if level_score_only is not None:
+        entry_dict["level_score_only"] = level_score_only
+    if partial:
+        entry_dict["partial"] = True
+    # v0.30.0 — the score's uncertainty, as the terminal shows it: a
+    # ceiling ("≤", a check could not read its input) or, when a whole
+    # domain fell out of the average, the span of what is known ("~").
+    # Until 0.29.0 the history kept the number alone, and --history showed
+    # a ceiling as a firm score with a trend arrow beside it.
+    # Every new line also says it recorded this, so that a line without
+    # the field is known to predate 0.30.0: whether its score was a
+    # ceiling is not known, and --history says so instead of showing it
+    # as firm.
+    entry_dict["bound_known"] = True
+    if upper_bound:
+        entry_dict["upper_bound"] = True
+    elif span is not None:
+        entry_dict["span"] = [int(span[0]), int(span[1])]
+    return entry_dict
+
+
 def save_score(
     score: int,
     level: str,
@@ -92,29 +130,7 @@ def save_score(
     """
     try:
         ensure_user_dir(_CONFIG_DIR)
-        entry_dict: dict = {
-            "ts":    datetime.now(timezone.utc).isoformat(),
-            "score": score,
-            "level": level,
-        }
-        if level_score_only is not None:
-            entry_dict["level_score_only"] = level_score_only
-        if partial:
-            entry_dict["partial"] = True
-        # v0.30.0 — the score's uncertainty, as the terminal shows it: a
-        # ceiling ("≤", a check could not read its input) or, when a whole
-        # domain fell out of the average, the span of what is known ("~").
-        # Until 0.29.0 the history kept the number alone, and --history showed
-        # a ceiling as a firm score with a trend arrow beside it.
-        # Every new line also says it recorded this, so that a line without
-        # the field is known to predate 0.30.0: whether its score was a
-        # ceiling is not known, and --history says so instead of showing it
-        # as firm.
-        entry_dict["bound_known"] = True
-        if upper_bound:
-            entry_dict["upper_bound"] = True
-        elif span is not None:
-            entry_dict["span"] = [int(span[0]), int(span[1])]
+        entry_dict = history_entry(score, level, level_score_only, partial, upper_bound, span)
         entry = json.dumps(entry_dict)
         # I-5 (v0.6.1): explicit mode=0o600 on creation. Python's default
         # `Path.open("a")` uses the process umask (typically 0o644 → world-

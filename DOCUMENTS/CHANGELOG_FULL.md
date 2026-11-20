@@ -6,6 +6,254 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.39.0] — 2026-11-20
+
+**A minor release: notes on a report, kept beside it in a journal that records
+who did what and shows a change made outside BOB; the comparison with the
+previous report and the history, in the --manage-logs preview; a context line
+that says what a message means.**
+
+Not BREAKING: the same host scores the same under 0.38.0 and 0.39.0. No finding
+key, option, exit code, JSON-output-schema or CSV-column change. What changes
+on disk: each report written with `-d` gets `<report>.state` beside it, and a
+report someone annotates gets `<report>.note` — the first `0600`, owned like
+the report, the second root's, `0640`, in the report's group; neither listed by
+`--manage-logs`, both moved and deleted with their report.
+A script that lists the report directory by anything other than `bob_*.log`
+will see them. What changes on screen: the `--manage-logs` preview (three
+blocks and five keys: `n`, `a`, `c`, `h`, `#`), and the colour and leading
+glyph of the context line in every wizard — and, on purpose, how the wizards
+are answered: every deletion confirmed in one wording, a screen taking only the
+keys it announces, numbered menus, lists of numbers read by one rule (section
+4); the documented machine interfaces — options, exit codes, JSON schema, CSV
+columns — do not change. New translation keys: 79, one removed
+(3325 → 3403): `manage_cron.email_store_invalid_sel` ("Invalid selection"), replaced by
+messages that say which number or range; none renamed; two confirmations of `--manage-logs` lose the
+instruction they spelled out (now one shared key), and the French "add another
+address" prompt reads `[y/N]` like every other (it read `[o/N]`).
+
+### 1. Notes on a report, beside it and never inside it
+
+A report written with `-d` is evidence: nothing rewrites it. Its notes live in
+`<report>.note`, shown by the preview in a block of their own above the report
+— open when the preview opens (if there are any), closed by `n`, back at the
+next opening. `a` opens their actions, each prompt and confirmation on the
+context line:
+
+- **add** — the text typed; the date and time added;
+- **edit** — the note marked *edited*, with when and by whom; every version kept;
+- **withdraw** — the note leaves the block; its text stays in the journal;
+- **purge** — for a secret pasted by mistake: the text removed from every
+  version, a reason required; who, when and why kept;
+- withdraw and purge take one note, several (`1,3`, `2-5`, mixed) or `all`,
+  in one write, read before a reason or a confirmation is asked (found by the
+  user: a purge asked for its reason, then its confirmation, and only then said
+  the note did not exist): a range takes the notes there are between its
+  bounds (`2-4` over notes 1, 2 and 4 takes 2 and 4 — found by the user, it
+  said "no note 3"); a number given alone must be a note, or the selection is
+  refused and the number named;
+- **journal** (`v`) — every action on the notes, oldest first.
+
+**Who did it.** On a shared server everyone runs `sudo bob`, so "root" says
+nothing. Measured on the test Linux Mint 22.3 (17 November 2026), with an
+account logged in over SSH: the kernel's login uid named it through `sudo`,
+`sudo -i`, `sudo su -`, `sudo env -i` and a nested sudo, where `SUDO_USER` was
+absent, "root", or forged (`sudo SUDO_USER=alice` → "alice"). Each action
+records the login uid's account and the `SUDO_USER`/`DOAS_USER` claim beside it,
+shown as `alice (sudo: bob)` when they differ; with no login uid — measured
+for a systemd service — the claim, else the effective account. The login uid is
+the session's identity as the kernel keeps it, not a proof of who typed. Times
+are stored with their offset from UTC and shown in the reader's local time. Measured too, on
+that host, whose audit setting does not make the login uid immutable: root
+could rewrite its own login uid — nothing in a file root can write stops root
+from lying.
+
+**Who can write it.** Notes are written by BOB run as root (`sudo bob
+--manage-logs`): the journal belongs to root, `0640`, in the report's group —
+the report's owner can read it, only root can change the content of the existing journal. Found in review and measured
+on the test Mint before release: owned by the report's owner, as first built,
+that account rewrote the journal **without root**, recomputed the chain with
+BOB's own code, and BOB read it back as intact. A journal not owned by root is
+now said not to be BOB's, and BOB writes nothing more to it. Whoever owns the
+report's directory can still delete the file or put another in its place: BOB
+says so, and a link in its place is not followed. Measured on the test Mint
+after the fix, each operator over SSH with their own login uid: the journal
+created `root:bobop1 0640`; the report's owner, without root, read it, was
+refused writing to it (`Permission denied`) and refused by BOB (`sudo bob`
+needed); a copy of its own put in its place was said not to be BOB's and not written
+to; a link in its place was neither read nor written through.
+
+**What the journal shows.** It is tamper-evident, not tamper-proof. One line per action; each line carries the digest
+of the line before it (the first, of the report's name), computed over the
+line without the note's text and salt — so over the text's salted digest, which
+checks the text while it is there. A text changed (its salted digest no
+longer matches) or an author changed outside BOB, a line removed from the
+middle, lines reordered, a journal copied beside another report — each shows, at its line: *"journal changed outside BOB
+at line N"*, and BOB writes nothing more to it. A purge removes the text and its
+salt from every line and adds a line naming who purged, when and why; the
+chain, which covers the text's digest and not the text itself, stays intact, and the salted digest left
+behind cannot be tested against candidate texts — its salt is gone with the
+text; copies made outside BOB (backups, filesystem snapshots) keep what they
+hold. The digests are no signature: whoever can write the file — root — can
+recompute the whole chain and leave no trace in it. Lines removed from the
+**end**, or the whole file deleted by whoever owns the report's directory,
+leave no trace in the file itself: stated.
+
+Two operators writing at once lose nothing: the journal is locked while a line
+is added. Measured on the test Mint with two throwaway operators, one through
+`sudo`, the other through `sudo su -`: a note created by one and edited by the
+other carries both names; 20 notes added at the same time by both — 23 lines,
+the chain intact — measured again after the fix, the file still
+`root:bobop1 0640`. It is created through a checked descriptor of its
+directory, no link followed.
+
+### 2. Comparison and history in the preview
+
+`--diff` compares with one file, `~/.config/bob/last_baseline.json`, rewritten
+by every audit: nothing kept the state of the audit before an old report, and
+the report does not carry the comparison. Each `-d` report now gets
+`<report>.state`: the run's baseline (what `--diff` compares) and its history
+line (what `--history` keeps). In the preview:
+
+- **`c` — comparison** with the previous report **of the same host** in the
+  folder (a shared folder can hold several hosts), rendered by `--diff`'s own
+  code, so it says exactly what `--diff` says;
+- **`h` — history** of that host's reports in the folder, up to the one shown,
+  rendered by `--history`'s own code — shared by every operator who writes
+  there, where `~/.config/bob` is one operator's.
+
+Both closed when the preview opens; once open they stay open across `←`/`→`
+and follow the report shown, until their key closes them. A report written
+before 0.39.0 has no state: the block says so — no comparison is guessed from
+the report's text. The history shows each audit's end in UTC, as `--history`
+does; a report's name carries its start, in local time. Three files, two
+levels of trust: the report and its state file belong to the report's owner,
+who can change them — so can the comparison and history drawn from that state;
+only the notes journal is root's.
+
+### 3. Line numbers
+
+`#` numbers the report's own lines, never the blocks, so a number names a line
+of the file; off at every opening, kept across `←`/`→`. Offered on the full log
+only: the summary's lines are not consecutive.
+
+### 4. The context line says what a message means
+
+Decided with the user, to match both colour tables of CONVENTIONS.md: the line
+above the key banner — every wizard keeps it for prompts and status — shows a
+prompt in yellow (curses' colour for prompts), an action that took effect in
+green with `✔`, an action refused or failed in red with `✖` (not yellow: in
+curses yellow is a prompt), information in cyan with `ℹ`. Every status of
+`--manage-logs` and `--manage-cron` now carries its glyph.
+
+Found doing it: `--manage-cron`'s address book, its address store and its job
+list drew their messages and the delete confirmation on the bottom row,
+replacing the key banner; `--manage-logs` drew "forget this folder?" and "move N
+reports?" there too. 0.16.3 reserved the bottom row for the key banner; these
+screens still drew over it. Their messages are on the context line now. A
+block's bar took the colour of each line's text; it keeps the frame's yellow
+(found by the user).
+
+**Every confirmation is asked one way** (decided with the user, now in
+CONVENTIONS.md): an action that deletes, overwrites, withdraws, purges or moves
+something asks on the context line — the question, then `Press y to confirm,
+any other key to cancel.`; `y` confirms, any other key cancels and says so. In
+plain-text mode the question ends in `[y/N]`. Found doing it (the user found
+the first): `--manage-cron`'s address book deleted an address without asking;
+its job list asked without saying how to answer; `--install-cron` waited for
+`y` or Esc before overwriting a job and ignored every other key; the plain-text
+report list of `--manage-logs` deleted reports by number without asking (only
+`all` was confirmed).
+
+**A screen accepts exactly the keys it announces** (decided with the user, now
+in CONVENTIONS.md): the banner lists every key a screen answers to, and the
+screen answers to no other; a key that acts only in some states is announced
+only then; a numbered menu announces its digits with its own range (`1-4 by
+number`); a text field draws its own banner (Enter, Esc, Tab to complete a
+path). Found doing it: the schedule confirmation of `--install-cron` and
+`--manage-cron` took Enter as yes and any other key as no, its banner saying
+`y` and Esc (the user found the Enter); the job editor announced Enter and Esc
+and also took the arrows, `jk`, PgUp/PgDn, `g`/`G` and two digits — a digit
+acting only when the cursor already stood on its entry; every numbered menu
+took its digits unannounced; the address book took `u` unannounced; the job
+list announced Enter and `m` while jobs were marked, when neither does
+anything; the preview announced `n` on a report with no notes; a text field of
+`--manage-logs` and the confirmations kept the screen's banner, none of whose
+keys did what it said meanwhile.
+
+**A list of numbers is read one way** (decided with the user, now in
+CONVENTIONS.md, one module, `bob/selection.py`): `all`, a number, a range, or
+these separated by commas; a number given alone — on its own or in a list such
+as `1,7` — must be an entry, or the whole selection is refused and that number
+named; a range takes
+the entries there are between its bounds, holes included, and a selection never
+chooses nothing. Four readers had four rules: the notes refused a range with a
+hole; the plain-text report list dropped an unknown number without a word
+(`1,7` over five reports deleted the first and said nothing of the seventh);
+the plain-text job list refused a range reaching past the end and any mix of
+forms; the plain-text address book capped a range at a thousand numbers — and
+deleted one, several or all addresses without asking. `--manage-cron`'s job
+list and address book are now numbered, and `d` takes numbers as the notes do
+— the prompt starts with the marked entries, else the one under the cursor, so
+`d` then Enter does what `d` did (asked by the user).
+
+### 5. Directories read in a fixed order
+
+0.37.0's CI failed one run in two: a guard bit only when a broken libvirt
+state file happened to be listed first — `iterdir()` answers in the
+filesystem's order, which differs between machines. The verdict did not
+change; what was read first did. Every scan whose order decides what is shown
+or found first is now sorted: the ten scans of `/proc` and a process's
+descriptors by number, and the libvirt network states, the certificate directories, Tripwire's
+database and `~/.ssh` by name; counts and "is there any" checks are left as
+they are. Measured: the whole suite run with every `iterdir()` answering in
+reverse order fails nothing on 0.38.0, and on 0.39.0 nothing but the release
+counters, not yet recounted when it was measured — no guard depends on a
+directory's order; the sort keeps it so, and a guard holds it.
+
+### 6. A CI-only dependency updated
+
+`soupsieve`, pulled in by `beautifulsoup4` for the HTML-output tests, carried
+three Dependabot alerts (ReDoS and recursion in its CSS parser, polynomial time
+in the descendant combinator). It is pinned to 4.0.1 (4 November 2026) on
+Python ≥ 3.11.5, by version and SHA-256 as every CI dependency. At the date of this release no fixed
+release supports Python 3.10, which the CI still tests: 2.10 stays there. The
+tests never call `.select()`, the only way into soupsieve, and parse only the
+HTML BOB itself generates. Nothing of this is in the published package, which
+has no dependency outside the standard library.
+
+### 7. Documentation
+
+AUTOMATION.md's viewer section rewritten (blocks, keys, notes, what the journal
+can and cannot prove, the files beside each report); it also lacked `←`/`→`
+(0.32.0) and still said reports were moved "via `shutil.move`" (they are moved
+through checked descriptors since 0.26.1, and now with their notes and state).
+CONVENTIONS.md: thirteen curses pairs and the context-line rule. SECURITY.md:
+the files beside each report and the notes' limits. All in English and French.
+
+Measured on: the test Linux Mint 22.3 (two throwaway operators over SSH, sudo).
+
+### Tests
+
+**Tests** 22668 → **23100**, mutations 2106 → **2170**, all killed. New test files:
+`test_v0390_report_notes.py`, `test_v0390_preview_blocks.py`,
+`test_v0390_context_tones.py`, `test_v0390_deterministic_order.py`,
+`test_v0390_confirm_and_selection.py`, `test_v0390_announced_keys.py`. The work's
+own mutations found four defects before any release, review a fifth (the
+journal's owner, section 1), and the field pass a sixth (a link at the
+journal's name came back in the system's English words inside a French
+screen; reading the code then showed the same for a journal the account
+cannot read, and two English literals — each reason is now named in the
+screen's language). The four from the mutations: the reopen loop under
+the lock spun for ever on a name that never settled (now bounded, refused
+after 20 tries); the guard "nothing drawn on the banner's row" missed
+`_draw(stdscr, h - 1, 0, …)` (its pattern widened); the two-writers guard
+passed without the lock when the writers happened not to overlap (they now
+overlap for certain); and a 0.32.0 mutation kept testing a variable the viewer
+no longer uses (re-aimed).
+
+---
+
 ## [0.38.0] — 2026-11-17
 
 **A minor release, BREAKING for scores: a rootless container's configuration

@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.38.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.39.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -129,7 +129,7 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 ### Automation
 
 - **Detailed report** — timestamped log file with ASCII art header, system info, findings, and recommendations; created with `-d`; filename: `bob_YYYYMMDD_HHMMSS.log`. Each finding carries its explanation, its command (`→` fix, `?` check) and its key — unconditionally, and under `-q` too, since an archive cannot be re-run with `-v`
-- **`--manage-logs`** — interactive UI to list, preview, and delete saved report files; scrollable preview with full/summary toggle, and ←/→ to the older/newer report without leaving it (0.32.0). Opens on a folder picker (📁) of every tracked log directory — the current one and any previous ones, kept until you explicitly forget one so a directory change never loses sight of old reports; pick a folder to browse its reports
+- **`--manage-logs`** — interactive UI to list, preview, and delete saved report files; scrollable preview with full/summary toggle, and ←/→ to the older/newer report without leaving it (0.32.0). Opens on a folder picker (📁) of every tracked log directory — the current one and any previous ones, kept until you explicitly forget one so a directory change never loses sight of old reports; pick a folder to browse its reports. Since 0.39.0 the preview shows, above the report and apart from it, its notes (dated, author recorded through sudo, edits kept, withdrawn or purged — a root-owned journal, written by `sudo bob`, whose chained digests show a change made outside BOB; tamper-evident, not tamper-proof), the comparison with the previous report of the same host (as `--diff` says it) and that host's history (as `--history` draws it), from a state file written beside each `-d` report; `#` numbers the lines. Details: [AUTOMATION.md](AUTOMATION.md#report-preview-viewer)
 - **`--install-cron`** — schedule wizard: name the job, choose schedule type (daily / specific days / custom cron expression), set time and optional email, then pin the audit's profile, language and outbound-probe stance (v0.16.1 — a cron runs as root, so without these it would read root's saved profile and cron's bare `$LANG`); MTA auto-detection (Postfix, Exim, msmtp, ssmtp) — warns when no `sendmail` found; natural-language preview; resulting command line shown before writing; curses TUI with plain fallback; named cron jobs in `/etc/cron.d/bob-{name}`, or — BusyBox crond, no `/etc/cron.d` — a marked block of `/etc/crontabs/root` (0.26.0)
 - **`--manage-cron`** — looping TUI: list installed cron jobs, edit schedule or notification email, delete; email address book accessible from the menu even without any cron installed
 
@@ -402,7 +402,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.38.0  │  Linux hardening auditor                                     ║
+║  BOB 0.39.0  │  Linux hardening auditor                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║

@@ -1490,7 +1490,7 @@ def kubelet_running() -> bool:
     process, not the package, is the evidence.
     """
     try:
-        pids = [d for d in Path("/proc").iterdir() if d.name.isdigit()]
+        pids = sorted((d for d in Path("/proc").iterdir() if d.name.isdigit()), key=lambda d: int(d.name))
     except OSError:
         return False
     for pid in pids:

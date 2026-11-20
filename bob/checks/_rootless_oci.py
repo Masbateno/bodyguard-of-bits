@@ -234,7 +234,7 @@ def _dockerd_roots() -> "dict[int, list[Path]]":
     """Each non-root dockerd's data root, by the uid it runs as."""
     roots: "dict[int, list[Path]]" = {}
     try:
-        pids = [d for d in _PROC.iterdir() if d.name.isdigit()]
+        pids = sorted((d for d in _PROC.iterdir() if d.name.isdigit()), key=lambda d: int(d.name))
     except OSError:
         return roots
     for pid in pids:
@@ -275,7 +275,7 @@ def rootless_containers() -> "list[RootlessContainer]":
     one, a ``conmon`` that does not run as root."""
     import pwd
     try:
-        pids = [d for d in _PROC.iterdir() if d.name.isdigit()]
+        pids = sorted((d for d in _PROC.iterdir() if d.name.isdigit()), key=lambda d: int(d.name))
     except OSError:
         return []
     cap_total = _cap_total()

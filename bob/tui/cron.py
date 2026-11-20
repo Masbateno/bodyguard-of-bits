@@ -85,7 +85,9 @@ class _WizardEntry(NamedTuple):
 # back and nothing leaves outright, so one keystroke cannot abandon a
 # half-entered cron job from three screens down.
 # ---------------------------------------------------------------------------
-_SCHEDULE_KEYS = _keys.NAVIGATION + (_keys.SELECT,) + _keys.NESTED_EXIT
+# v0.39.0 — a numbered menu announces its digits (_menu_keys): the schedule's
+# four types; _CHOICE_KEYS is the widest menu (nine), for the banner guards.
+_SCHEDULE_KEYS = _keys.NAVIGATION + (_keys.SELECT, _keys.pick(4)) + _keys.NESTED_EXIT
 _CONFIRM_KEYS  = (_keys.CONFIRM,) + _keys.NESTED_EXIT
 # A text input takes Enter to submit and Esc to go back. Enter was
 # dispatched and never declared, so the banner offered only a way out.
@@ -95,7 +97,7 @@ _STORE_KEYS    = _keys.NAVIGATION + (
     _keys.TOGGLE, _keys.ALL, _keys.NEW, _keys.DELETE,
 ) + _keys.NESTED_EXIT
 _EDIT_KEYS     = _keys.NAVIGATION + (_keys.SELECT,) + _keys.NESTED_EXIT
-_CHOICE_KEYS   = _keys.NAVIGATION + (_keys.SELECT,) + _keys.NESTED_EXIT
+_CHOICE_KEYS   = _keys.NAVIGATION + (_keys.SELECT, _keys.pick(9)) + _keys.NESTED_EXIT
 _LANDING_KEYS  = (_keys.CREATE,) + _keys.LANDING_EXIT
 # Space marks an entry for deletion here exactly as it does in
 # --manage-logs; v0.16.3 shipped the dispatch without the hint, so the
@@ -109,12 +111,30 @@ def _with_unmark(actions, n_sel: int):
     """Insert UNMARK before the exit actions when something is marked."""
     if not n_sel:
         return actions
-    head = tuple(a for a in actions if a not in _keys.LANDING_EXIT)
-    tail = tuple(a for a in actions if a in _keys.LANDING_EXIT)
+    exits = _keys.LANDING_EXIT + _keys.NESTED_EXIT
+    head = tuple(a for a in actions if a not in exits)
+    tail = tuple(a for a in actions if a in exits)
     return head + (_keys.UNMARK,) + tail
 
 
-def _draw_footer(stdscr, t, actions, has_color: bool, *, context: str = "") -> None:
+def _menu_keys(count: int):
+    """A numbered menu's banner: move, Enter, the menu's own digits, back.
+
+    v0.39.0 (user, 19 November 2026: a screen accepts exactly the keys it
+    announces) — the digits were accepted and never announced."""
+    return _keys.NAVIGATION + (_keys.SELECT, _keys.pick(count)) + _keys.NESTED_EXIT
+
+
+def _manage_actions(n_sel: int):
+    """The job list's banner. With entries marked, Enter (edit one job) and m
+    (the address book) do nothing, so they are not announced; u is."""
+    if not n_sel:
+        return _MANAGE_KEYS
+    return tuple(a for a in _with_unmark(_MANAGE_KEYS, n_sel) if a not in (_keys.SELECT, _keys.BOOK))
+
+
+def _draw_footer(stdscr, t, actions, has_color: bool, *, context: str = "",
+                 tone: "str | None" = None) -> None:
     """Draw the bottom chrome: the key banner and the line reserved above it.
 
     v0.16.3 — every screen used to spell its own hints out in English. They
@@ -130,7 +150,7 @@ def _draw_footer(stdscr, t, actions, has_color: bool, *, context: str = "") -> N
     import curses as _curses
 
     from bob.tui import _chrome
-    _chrome.draw(stdscr, _curses, t, actions, has_color, context=context)
+    _chrome.draw(stdscr, _curses, t, actions, has_color, context=context, tone=tone)
 
 
 def _prompt_row(stdscr, t, actions) -> int:
@@ -202,7 +222,7 @@ def _curses_readline(stdscr, t, actions, prompt: str, default: str = "") -> "str
         # French puts a space before the colon; the separator is a
         # translation, not a character.
         display = f"  {prompt}{t('cron_ui.prompt_sep')}{text}"
-        _chrome.draw(stdscr, _curses, t, actions, has_color, context=display)
+        _chrome.draw(stdscr, _curses, t, actions, has_color, context=display, tone=_chrome.PROMPT)
         try:
             stdscr.move(_chrome.context_row(t, actions, h, w),
                         min(len(display), w - 2))
@@ -325,7 +345,7 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: "str | None"
             is_cur = (i == sel)
             attr = (_curses.color_pair(1) | _curses.A_BOLD) if (is_cur and has_color) else (_curses.A_REVERSE if is_cur else _curses.A_NORMAL)
             _draw(stdscr, 4 + i, 2, f"  {i + 1}. {opt}  "[:w - 3], attr)
-        _ftr(_SCHEDULE_KEYS)
+        _ftr(_menu_keys(len(options)))
         stdscr.refresh()
         ch_i = _read_key(stdscr)
         if ch_i == 27:
@@ -440,13 +460,17 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: "str | None"
         h, w = stdscr.getmaxyx()
         _hdr()
         _draw(stdscr, 2, 2, t("install_cron.preview", schedule=human))
-        _draw(stdscr, 4, 2, t("manage_cron.confirm_update"))
+        _draw(stdscr, 4, 2, t("manage_cron.confirm_update_question"))
         _ftr(_CONFIRM_KEYS)
         stdscr.refresh()
         ch_i = _read_key(stdscr)
-        if ch_i in (ord("y"), ord("Y"), 10, 13) or ch_i == _curses.KEY_ENTER:
+        # v0.39.0 (user, 19 November 2026) — the banner says y and Esc, and
+        # those are the keys: Enter also applied the schedule, and any other
+        # key abandoned it, neither announced. Anything else is ignored.
+        if ch_i in (ord("y"), ord("Y")):
             return schedule_expr
-        return None
+        if ch_i == 27:
+            return None
 
 
 # ---------------------------------------------------------------------------
@@ -486,7 +510,6 @@ def _curses_email_list_sub(stdscr, current_email: str, t) -> "str | None":
         body_h = max(1, h - 1 - _ch.chrome_height(t, _EMAIL_KEYS, w))
 
         hdr = f"  {t('cron_ui.select_emails')}    " + t("tui.email_selected", count=len(selected))
-        ftr_attr = _curses.color_pair(2) if has_color else _curses.A_REVERSE
         _chrome.draw_header(stdscr, _curses, hdr, has_color)
 
         if not saved:
@@ -513,11 +536,10 @@ def _curses_email_list_sub(stdscr, current_email: str, t) -> "str | None":
 
         # v0.16.3 — a transient message when there is one, otherwise the
         # shared key line. The count belongs in the banner: it is context.
-        if status:
-            _draw(stdscr, h - 1, 0, f"  {status}"[:w - 1].ljust(w - 1), ftr_attr)
-            status = ""
-        else:
-            _draw_footer(stdscr, t, _EMAIL_KEYS, has_color)
+        # v0.39.0 — the message on the context line, in its tone; it used to
+        # replace the key banner, which nothing covers since 0.16.3.
+        _draw_footer(stdscr, t, _EMAIL_KEYS, has_color, context=f"  {status}" if status else "")
+        status = ""
 
         stdscr.refresh()
         ch_i = _read_key(stdscr)
@@ -593,9 +615,9 @@ def _curses_email_store_sub(stdscr, t) -> None:
         stdscr.erase()
         h, w = stdscr.getmaxyx()
         from bob.tui import _chrome as _ch
-        body_h = max(1, h - 1 - _ch.chrome_height(t, _STORE_KEYS, w))
+        store_keys = _with_unmark(_STORE_KEYS, len(marked))   # v0.39.0 — u announced when it acts
+        body_h = max(1, h - 1 - _ch.chrome_height(t, store_keys, w))
 
-        ftr_attr = _curses.color_pair(2) if has_color else _curses.A_REVERSE
         n_sel = len(marked)
         if n_sel:
             hdr = f"  {t('cron_ui.address_book')}    " + t("tui.email_selected", count=n_sel)
@@ -614,7 +636,9 @@ def _curses_email_store_sub(stdscr, t) -> None:
                 addr = emails[idx]
                 _is_marked = idx in marked
                 mark = "✔ " if _is_marked else "  "
-                line = f"  {mark}{addr}"
+                # v0.39.0 (user, 19 November 2026) — numbered, as the notes
+                # are, so that d can take numbers.
+                line = f"  {mark}{idx + 1:>{len(str(n))}}. {addr}"
                 is_cur = (idx == cursor)
                 if is_cur:
                     attr = (_curses.color_pair(1) | _curses.A_BOLD) if has_color else _curses.A_REVERSE
@@ -624,11 +648,9 @@ def _curses_email_store_sub(stdscr, t) -> None:
                     attr = _curses.A_NORMAL
                 _draw(stdscr, row + 1, 0, line[:w - 1].ljust(w - 1), attr)
 
-        if status:
-            _draw(stdscr, h - 1, 0, f"  {status}"[:w - 1].ljust(w - 1), ftr_attr)
-            status = ""
-        else:
-            _draw_footer(stdscr, t, _STORE_KEYS, has_color)
+        # v0.39.0 — on the context line, in its tone (it replaced the banner).
+        _draw_footer(stdscr, t, store_keys, has_color, context=f"  {status}" if status else "")
+        status = ""
 
         stdscr.refresh()
         ch_i = _read_key(stdscr)
@@ -663,10 +685,32 @@ def _curses_email_store_sub(stdscr, t) -> None:
                     marked.add(cursor)
         elif ch_i in (ord("a"), ord("A")):
             marked = set(range(n))
-        elif ch_i in (ord("u"), ord("U")):
+        elif ch_i in (ord("u"), ord("U")) and marked:
             marked.clear()
-        elif ch_i in (ord("d"), ord("D")):
-            targets = sorted(marked) if marked else ([cursor] if 0 <= cursor < n else [])
+        elif ch_i in (ord("d"), ord("D")) and n:
+            # v0.39.0 (user, 19 November 2026) — the addresses are deleted by
+            # their numbers, as the notes are (bob/selection.py: 3, 1,3, 2-5,
+            # all); the prompt starts with the marked numbers, else the one
+            # under the cursor, so d then Enter does what d did. Then the
+            # confirmation every deletion asks — the address book asked none.
+            preset = ",".join(str(i + 1) for i in sorted(marked)) if marked else str(cursor + 1)
+            raw = _curses_readline(stdscr, t, _INPUT_KEYS, t("cron_ui.delete_prompt_select"), default=preset)
+            targets = []
+            if raw is None:
+                status = _chrome.info(t("tui.cancelled"))
+            else:
+                from bob.selection import SelectionError, parse_selection
+                try:
+                    targets = [i - 1 for i in parse_selection(raw, range(1, n + 1))]
+                except SelectionError as exc:
+                    status = _chrome.refused(t("selection." + exc.kind, **exc.vars))
+            if targets:
+                names = ", ".join(emails[i] for i in targets if 0 <= i < len(emails))
+                _names_w = max(12, w - len(t("tui.confirm_suffix")) - 14)
+                if not _chrome.ask_confirm(stdscr, _curses, t,
+                                           t("tui.confirm_delete", names=names[:_names_w])):
+                    status = _chrome.info(t("tui.cancelled"))
+                    targets = []
             if targets:
                 for idx in sorted(targets, reverse=True):
                     if 0 <= idx < len(emails):
@@ -685,9 +729,9 @@ def _curses_email_store_sub(stdscr, t) -> None:
             raw = _curses_readline(stdscr, t, _INPUT_KEYS, t("cron_ui.field_email"))
             if raw and _EMAIL_RE.match(raw.strip()):
                 store.add(raw.strip())
-                status = t("manage_cron.email_store_added", email=raw.strip())
+                status = f"✔ {t('manage_cron.email_store_added', email=raw.strip())}"
             elif raw:
-                status = t("manage_cron.email_store_invalid_email")
+                status = f"✖ {t('manage_cron.email_store_invalid_email')}"
 
 
 # ---------------------------------------------------------------------------
@@ -711,7 +755,9 @@ def _curses_edit_sub(stdscr, entry, config, t) -> None:
             attr = (_curses.color_pair(1) | _curses.A_BOLD) if (is_cur and has_color) else (
                 _curses.A_REVERSE if is_cur else _curses.A_NORMAL)
             _draw(stdscr, 2 + i, 2, f"  {i + 1}. {opt}  "[:w - 3], attr)
-        _draw_footer(stdscr, t, _INPUT_KEYS, has_color)
+        # v0.39.0 — it announced Enter and Esc and also took the arrows, jk,
+        # PgUp/PgDn, g/G and the digits.
+        _draw_footer(stdscr, t, _menu_keys(len(options)), has_color)
         stdscr.refresh()
         ch_i = _read_key(stdscr)
 
@@ -724,15 +770,10 @@ def _curses_edit_sub(stdscr, entry, config, t) -> None:
         elif ch_i in (_curses.KEY_PPAGE, _curses.KEY_NPAGE, ord("g"), ord("G")):
             # Short menu: a page and an edge are the same move.
             sel = 0 if ch_i in (_curses.KEY_PPAGE, ord("g")) else 1
-        elif (
-            ch_i in (_curses.KEY_ENTER, 10, 13)
-            or (ch_i == ord("1") and sel == 0)
-            or (ch_i == ord("2") and sel == 1)
-        ):
-            # M-3 (v0.5.7): the guard already constrains "1"→sel==0 and "2"→sel==1,
-            # so chosen == sel holds for all entry paths; previous explicit override
-            # was dead code.
-            chosen = sel
+        elif ch_i in (_curses.KEY_ENTER, 10, 13, ord("1"), ord("2")):
+            # v0.39.0 — a digit picks its entry wherever the cursor is: "2"
+            # did nothing unless the cursor was already on entry 2.
+            chosen = ch_i - ord("1") if ch_i in (ord("1"), ord("2")) else sel
             if chosen == 0:
                 new_expr = _curses_schedule_wizard(stdscr, entry, config, t)
                 if new_expr:
@@ -771,7 +812,7 @@ def _curses_choice_screen(stdscr, t, title: str, prompt: str, options: "list[str
             _draw(stdscr, 4 + i, 2, f"  {i + 1}. {opt}  "[:w - 3], attr)
         if hint:
             _draw(stdscr, 5 + len(options), 2, hint[:w - 3])
-        _draw_footer(stdscr, t, _CHOICE_KEYS, has_color)
+        _draw_footer(stdscr, t, _menu_keys(len(options)), has_color)
         stdscr.refresh()
         ch_i = _read_key(stdscr)
         if ch_i == 27:
@@ -943,23 +984,19 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
                 if not _exists:
                     step = STEP_WRITE
                     continue
-                while True:
-                    stdscr.erase()
-                    h, w = stdscr.getmaxyx()
-                    _chrome.draw_header(stdscr, _curses, "  bob --install-cron", has_color)
-                    _draw(stdscr, 2, 2, t("install_cron.overwrite", path=str(cron_path)))
-                    _draw_footer(stdscr, t, _CONFIRM_KEYS, has_color)
-                    stdscr.refresh()
-                    ch_i = _read_key(stdscr)
-                    # v0.16.3 — no q here: this confirmation is nested three
-                    # screens into the wizard, and one keystroke must not
-                    # abandon everything entered so far. Esc steps back.
-                    if ch_i == 27:        # Esc → back to network
-                        step = STEP_NETWORK
-                        break
-                    if ch_i in (ord("y"), ord("Y")):
-                        step = STEP_WRITE
-                        break
+                # v0.16.3 — no q here: this confirmation is nested three
+                # screens into the wizard, and one keystroke must not abandon
+                # everything entered so far: a refusal steps back.
+                # v0.39.0 (user, 19 November 2026) — asked on the context line
+                # in the shared wording: y overwrites, any other key steps back
+                # to the previous screen (it waited for y or Esc and ignored
+                # every other key).
+                stdscr.erase()
+                _chrome.draw_header(stdscr, _curses, "  bob --install-cron", has_color)
+                _draw(stdscr, 2, 2, t("install_cron.overwrite_exists", path=str(cron_path)))
+                step = (STEP_WRITE if _chrome.ask_confirm(stdscr, _curses, t,
+                                                          t("install_cron.overwrite_question"))
+                        else STEP_NETWORK)
                 continue
 
             elif step == STEP_WRITE:
@@ -1118,7 +1155,6 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
         n_sel = len(marked)
 
         # ── Header ──────────────────────────────────────────────────────────
-        ftr_attr = _curses.color_pair(2) if has_color else _curses.A_REVERSE
         if confirm_delete:
             header = f"  bob --manage-cron    {t('tui.confirm_below')}"
         elif n_sel:
@@ -1140,13 +1176,15 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
             # aligned line, wider ones wrapped, a dim separator (index -1)
             # between jobs. Scroll counts physical rows; the cursor counts jobs.
             rows = []
-            for entry in crons:
+            for num, entry in enumerate(crons, 1):
                 is_marked = entry.key in marked
                 emails = (" ; ".join(a.strip() for a in entry.email.split(",") if a.strip())
                           if entry.email else "")
                 human = cron_to_human(entry.schedule_expr, lang)
                 tag = f"  [{t('manage_cron.legacy_tag')}]" if entry.legacy else ""
-                rows.append((entry.name, f"{human}{tag}", emails, is_marked))
+                # v0.39.0 (user, 19 November 2026) — numbered, so that d can
+                # take numbers, as the notes and the address book do.
+                rows.append((f"{num:>{len(str(n))}}. {entry.name}", f"{human}{tag}", emails, is_marked))
             display = _cron_render_lines(rows, w)
 
             # Physical-row span of each job, to keep the whole cursor job visible.
@@ -1189,19 +1227,22 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
         # v0.16.3 — transient message, else the shared key line. The counts
         # moved to the banner; the confirm prompt keeps the footer because it
         # is a question, and its keys are the CONFIRM set.
+        # v0.39.0 — the confirmation and the messages go on the context line,
+        # in their tone, and the key banner stays under them: they replaced it.
         if confirm_delete:
             names = ", ".join(e.name for e in pending_delete)
-            _draw(stdscr, h - 1, 0,
-                  f"  {t('tui.confirm_delete', names=names[:w - 30])}"[:w - 1].ljust(w - 1),
-                  ftr_attr)
+            _suffix_w = len(t("tui.confirm_suffix")) + 14
+            _draw_footer(stdscr, t, _chrome.CONFIRM_ACTIONS, has_color,
+                         context=f"  {_chrome.confirm_text(t, t('tui.confirm_delete', names=names[:max(12, w - _suffix_w)]))}",
+                         tone=_chrome.PROMPT)
         elif status:
-            _draw(stdscr, h - 1, 0, f"  {status}"[:w - 1].ljust(w - 1), ftr_attr)
+            _draw_footer(stdscr, t, _manage_actions(n_sel), has_color, context=f"  {status}")
             status = ""
         else:
             # UNMARK slots in before the exit actions: q and l close the line
             # on every screen, and an action appearing after them reads as an
             # afterthought rather than part of the set.
-            _draw_footer(stdscr, t, _with_unmark(_MANAGE_KEYS, n_sel), has_color)
+            _draw_footer(stdscr, t, _manage_actions(n_sel), has_color)
 
         stdscr.refresh()
 
@@ -1221,10 +1262,12 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
                         except OSError:
                             pass
                 if len(pending_delete) == 1:
-                    status = t("manage_cron.deleted", name=pending_delete[0].name)
+                    status = f"✔ {t('manage_cron.deleted', name=pending_delete[0].name)}"
                 else:
-                    status = t("manage_cron.deleted_count", count=len(pending_delete))
+                    status = f"✔ {t('manage_cron.deleted_count', count=len(pending_delete))}"
                 marked.clear()
+            else:
+                status = _chrome.info(t("tui.cancelled"))
             confirm_delete = False
             pending_delete = []
             continue
@@ -1262,7 +1305,7 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
         elif ch in (ord("a"), ord("A")):
             marked = {e.key for e in crons}
 
-        elif ch in (ord("u"), ord("U")):
+        elif ch in (ord("u"), ord("U")) and marked:
             marked.clear()
 
         # ── Actions ──────────────────────────────────────────────────────────
@@ -1270,14 +1313,23 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
             if crons and 0 <= cursor < n and not n_sel:
                 _curses_edit_sub(stdscr, crons[cursor], config, t)
 
-        elif ch in (ord("d"), ord("D")):
-            if crons:
-                if marked:
-                    pending_delete = [e for e in crons if e.key in marked]
-                elif 0 <= cursor < n:
-                    pending_delete = [crons[cursor]]
-                if pending_delete:
+        elif ch in (ord("d"), ord("D")) and crons:
+            # v0.39.0 (user, 19 November 2026) — the jobs are deleted by their
+            # numbers, as the notes and the address book are (bob/selection.py);
+            # the prompt starts with the marked numbers, else the one under the
+            # cursor, so d then Enter does what d did. Then the confirmation.
+            preset = (",".join(str(i + 1) for i, e in enumerate(crons) if e.key in marked)
+                      if marked else str(cursor + 1))
+            raw = _curses_readline(stdscr, t, _INPUT_KEYS, t("cron_ui.delete_prompt_jobs"), default=preset)
+            if raw is None:
+                status = _chrome.info(t("tui.cancelled"))
+            else:
+                from bob.selection import SelectionError, parse_selection
+                try:
+                    pending_delete = [crons[i - 1] for i in parse_selection(raw, range(1, n + 1))]
                     confirm_delete = True
+                except SelectionError as exc:
+                    status = _chrome.refused(t("selection." + exc.kind, **exc.vars))
 
         elif ch in (ord("m"), ord("M")):
             if not n_sel:

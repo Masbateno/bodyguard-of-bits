@@ -80,7 +80,7 @@ embedded reset.
 
 ## 2. Colour — curses screens
 
-Nine pairs, defined once in `bob/tui/_palette.py`. **Do not call `init_pair`
+Thirteen pairs, defined once in `bob/tui/_palette.py`. **Do not call `init_pair`
 outside that module** — a guard rejects it, and it exists because three screens
 once initialised the same chart independently and agreed, which is how the
 cursor row and the banner shared a background unnoticed.
@@ -96,6 +96,81 @@ cursor row and the banner shared a background unnoticed.
 | `FOOTER` | the bottom key banner — white on orange |
 | `CONTEXT` | the line above it, for prompts and status — white on black |
 | `VERBATIM` | material to reproduce exactly — violet, as in the text output |
+| `CONTEXT_PROMPT` | the context line holding a prompt or a question — yellow on black |
+| `CONTEXT_OK` | the context line saying an action took effect (`✔`) — green on black |
+| `CONTEXT_ERROR` | the context line saying an action was refused or failed (`✖`) — red on black |
+| `CONTEXT_INFO` | the context line only informing (`ℹ`, an action cancelled) — cyan on black |
+
+**The context line says what a message means** (v0.39.0, decided with the
+user). Its colour is the text output's for the same meaning — green done, red
+refused, cyan information — and a prompt takes `ACCENT`'s yellow, the curses
+colour for prompts. Not yellow for a refusal: in curses yellow is a prompt, and
+a refusal in yellow would read as a question. A status carries its meaning in
+its first glyph, built with `_chrome.done()` / `refused()` / `info()`, and the
+chrome reads the tone from it; a prompt is declared (`tone=_chrome.PROMPT`).
+**Nothing is drawn on the key banner's row** but the banner: a message or a
+confirmation goes on the context line above it. Found while doing this:
+`--manage-cron`'s address book, its store and its job list, and two
+`--manage-logs` confirmations, still replaced the banner. *Guarded:* each
+glyph's tone · each tone's pair · every status built with its glyph · no write
+on the banner's row · prompts in the prompts' colour.
+
+**Every confirmation is asked one way** (v0.39.0, decided with the user, 19
+November 2026). An action that deletes, overwrites, withdraws, purges or moves
+something asks first, on the context line, in the prompts' yellow, the key
+banner left under it: the question, then `Press y to confirm, any other key to
+cancel.` It is built with `_chrome.confirm_text()` or asked with
+`_chrome.ask_confirm()`; a question never spells out its own instruction, which
+lives in one key, `tui.confirm_suffix`. `y` confirms; every other key, Esc
+included, cancels, and a cancellation says so (`ℹ`). What the action is for is
+read before anything else is asked: a number with no such entry is refused at
+once, not after a reason was typed. In plain-text mode (no terminal) the same
+question ends in `[y/N]`, Enter meaning no. Applying a new schedule in
+`--manage-cron`, which deletes nothing, keeps `y` or Enter. Found while doing
+this: `--manage-cron`'s address book deleted without asking, its job list asked
+without saying how to answer, `--install-cron` waited for `y` or Esc before
+overwriting a job and ignored every other key, and the plain-text report list
+deleted reports by number without asking. *Guarded:* the wording · `y`
+confirms, any other key cancels · no question carries its own instruction ·
+every wizard asks through the shared one · the address book and the plain-text
+list ask.
+
+**A screen accepts exactly the keys it announces** (v0.39.0, decided with the
+user, 19 November 2026). The banner lists every key the screen answers to, and
+the screen answers to no other: a key it does not announce does nothing — no
+move, no mark, no redraw, no exit. 0.16.3 made every announced key work; this is
+the other half. A key that acts only in some states is announced only in those
+states: `u` once something is marked; `n` on a report that has notes; Enter and
+`m` leave the job list's banner while jobs are marked. A numbered menu announces
+its digits with its own range (`1-4 by number`, `_keys.pick(n)`). A text field
+draws its own banner — Enter, Esc, and Tab where it completes a path; typing and
+Backspace are the field itself. A confirmation's banner is `y`, its question
+saying that any other key cancels. Case does not make another key: `Q` is `q`.
+What a screen announces and what it accepts come from one tuple of actions
+(`_keys.accepted()`). Found while doing this: the schedule confirmation took
+Enter as yes and any other key as no, its banner saying `y` and Esc; the job
+editor announced Enter and Esc and took the arrows, `jk`, PgUp/PgDn, `g`/`G` and
+two digits (a digit acted only when the cursor already stood on its entry);
+every numbered menu took its digits unannounced; the address book took `u`
+unannounced; a text field of `--manage-logs` and the confirmations kept the
+screen's banner, none of whose keys did what it said meanwhile. *Guarded:*
+black-box, screen by screen — the banner drawn is the banner of the screen's
+actions, and every key outside them leaves the screen unchanged.
+
+**A list of numbers is read one way** (v0.39.0, decided with the user, 19
+November 2026; `bob/selection.py`). Wherever BOB asks for entries by number —
+notes, reports, cron jobs, addresses — it reads `all`, a number, a range `a-b`,
+or any of these separated by commas; spaces and case do not matter. A number
+given alone — on its own or in a list such as `1,7` — must be an entry: one that is not refuses the whole selection, and
+says which. A range takes every entry there is between its bounds, holes
+included, and is refused only when none is there. A selection never chooses
+nothing. Found while doing this: four readers had four rules — the notes refused
+a range with a hole ("2-4" over notes 1, 2 and 4 said "no note 3", found by the
+user), the plain-text report list dropped an unknown number without a word, the
+plain-text job list refused a range reaching past the end and any mix of forms,
+the plain-text address book capped a range at a thousand numbers (and deleted
+without asking). *Guarded:* the forms · a number that is not an entry · a range
+over holes and past the end · an empty range · the plain-text lists.
 
 **The two surfaces agree on meaning.** Orange marks the thing under attention
 (the cursor row, the key banner); violet marks what must be reproduced exactly,

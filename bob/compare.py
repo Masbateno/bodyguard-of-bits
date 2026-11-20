@@ -752,3 +752,133 @@ def _is_stable_port(port_proto: str) -> bool:
         return int(port_proto.split("/")[0]) < 32768
     except (ValueError, IndexError):
         return False
+
+
+# ---------------------------------------------------------------------------
+# v0.39.0 — the state kept beside each report, for --manage-logs
+# ---------------------------------------------------------------------------
+#
+# ``--diff`` compares with one file, last_baseline.json, rewritten by every
+# audit: nothing told what the audit before an old report looked like, and the
+# report itself does not carry the comparison. Each report written with ``-d``
+# now gets ``<report>.state`` beside it: the baseline of that run (what --diff
+# compares), plus the line --history keeps for it. --manage-logs reads them to
+# show, above a report, its comparison with the previous report of the same
+# host in that directory, and the history of that host's reports there —
+# shared by every operator who writes to it, where ~/.config/bob is one
+# operator's. A report written before 0.39.0 has none: its blocks say so.
+
+STATE_SUFFIX = ".state"
+
+
+def state_path(report: Path) -> Path:
+    """Where *report*'s state lives."""
+    return report.with_name(report.name + STATE_SUFFIX)
+
+
+def save_report_state(report: Path, baseline: AuditBaseline, history_line: dict) -> None:
+    """Write *report*'s state beside it, as the report itself is written (0600,
+    handed to the invoking user, the directory checked). Best effort: the audit
+    is not lost for a state that could not be written."""
+    dest = state_path(report)
+    data = asdict(baseline)
+    data["history"] = history_line
+    try:
+        atomic_write(dest, json.dumps(data, ensure_ascii=False, indent=2), mode=0o600)
+        chown_to_sudo_user(dest)
+    except OSError as exc:
+        logger.debug("save_report_state: could not write %s: %s", dest, exc)
+
+
+def load_report_state(report: Path) -> "tuple[AuditBaseline | None, dict | None]":
+    """*report*'s baseline and history line, (None, None) when it has no state."""
+    path = state_path(report)
+    baseline = load_baseline(path)
+    if baseline is None:
+        return None, None
+    try:
+        raw = json.loads(read_text_capped(path))
+    except (OSError, ValueError):
+        return baseline, None
+    line = raw.get("history") if isinstance(raw, dict) else None
+    from bob.history import _readable_entry
+    return baseline, (_readable_entry(line) if isinstance(line, dict) else None)
+
+
+def _reports_of(directory: Path) -> "list[Path]":
+    try:
+        return sorted(p for p in directory.iterdir() if p.name.startswith("bob_") and p.name.endswith(".log"))
+    except OSError:
+        return []
+
+
+def previous_report(report: Path, host: "str | None") -> "tuple[Path | None, AuditBaseline | None]":
+    """The newest report older than *report* in its directory whose state names
+    the same host, with that state; (None, None) when there is none."""
+    for older in reversed([p for p in _reports_of(report.parent) if p.name < report.name]):
+        base, _ = load_report_state(older)
+        if base is not None and base.hostname == host:
+            return older, base
+    return None, None
+
+
+class _Lines:
+    """Collects what :func:`display_delta` prints, as plain lines — so the
+    block --manage-logs shows says exactly what ``--diff`` says."""
+
+    _GLYPHS = {"ok": "✔ ", "warn": "⚠ ", "info": "ℹ ", "dim": "", "section": ""}
+
+    def __init__(self) -> None:
+        self.lines: "list[str]" = []
+
+    def _add(self, kind: str, text: str) -> None:
+        self.lines.append(f"{self._GLYPHS[kind]}{text}")
+
+    def print_section(self, text: str) -> None:
+        self._add("section", text)
+
+    def print_dim(self, text: str) -> None:
+        self._add("dim", text)
+
+    def print_ok(self, text: str) -> None:
+        self._add("ok", text)
+
+    def print_warn(self, text: str) -> None:
+        self._add("warn", text)
+
+    def print_info(self, text: str) -> None:
+        self._add("info", text)
+
+
+def comparison_lines(report: Path, t) -> "list[str]":
+    """The comparison block for *report*: what changed since the previous report
+    of the same host in its directory, as ``--diff`` would say it."""
+    curr, _ = load_report_state(report)
+    if curr is None:
+        return [t("manage_logs.compare_no_state")]
+    prev_report, prev = previous_report(report, curr.hostname)
+    if prev is None:
+        return [t("manage_logs.compare_no_previous")]
+    sink = _Lines()
+    display_delta(compute_delta(prev, curr), t, sink)
+    return [t("manage_logs.compare_with", name=prev_report.name)] + sink.lines[1:]
+
+
+def history_lines(report: Path, t) -> "list[str]":
+    """The history block for *report*: the history lines of the reports of the
+    same host in its directory, up to and including this one, rendered as
+    ``--history`` renders its own."""
+    curr, line = load_report_state(report)
+    if curr is None:
+        return [t("manage_logs.history_no_state")]
+    entries = []
+    for p in _reports_of(report.parent):
+        if p.name > report.name:
+            break
+        base, entry = load_report_state(p)
+        if base is not None and entry is not None and base.hostname == curr.hostname:
+            entries.append(entry)
+    if line is None or not entries:
+        return [t("manage_logs.history_no_state")]
+    from bob.history import render_history
+    return render_history(entries, t)

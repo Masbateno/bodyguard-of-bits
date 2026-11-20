@@ -2,7 +2,7 @@
 Tests for manage_logs.py — log management UI.
 
 Covers:
-- parse_log_selection
+- the plain-text report list's selection (bob/selection.py since v0.39.0)
 - Change location: no-logs, same-path, move yes/no, cancel
 - Extra directories: display, auto-cleanup, cross-dir delete
 - All: deletes from all directories
@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+import pytest
 from unittest.mock import MagicMock, patch
 
 # Captured before any test runs so the real implementation is always available
@@ -58,13 +59,16 @@ def _make_log(directory: Path, name: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# parse_log_selection
+# the plain-text report list's selection (bob/selection.py)
 # ---------------------------------------------------------------------------
 
 class TestParseLogSelection:
+    """v0.39.0 — the plain-text report list reads its numbers by the rule every
+    selection follows (bob/selection.py); parse_log_selection is gone."""
+
     def _parse(self, answer, max_idx):
-        from bob.manage_logs import parse_log_selection
-        return parse_log_selection(answer, max_idx)
+        from bob.selection import parse_selection
+        return parse_selection(answer, range(1, max_idx + 1))
 
     def test_single(self):
         assert self._parse("1", 3) == [1]
@@ -78,14 +82,18 @@ class TestParseLogSelection:
     def test_mixed(self):
         assert self._parse("1,3-5", 5) == [1, 3, 4, 5]
 
-    def test_out_of_bounds_ignored(self):
-        assert self._parse("9", 3) == []
+    def test_out_of_bounds_refused(self):
+        from bob.selection import SelectionError
+        with pytest.raises(SelectionError) as e:
+            self._parse("9", 3)
+        assert e.value.kind == "missing"
 
-    def test_invalid_string(self):
-        assert self._parse("abc", 3) == []
-
-    def test_empty(self):
-        assert self._parse("", 3) == []
+    @pytest.mark.parametrize("answer", ["abc", ""])
+    def test_not_a_selection_refused(self, answer):
+        from bob.selection import SelectionError
+        with pytest.raises(SelectionError) as e:
+            self._parse(answer, 3)
+        assert e.value.kind == "bad"
 
 
 # ---------------------------------------------------------------------------
@@ -438,8 +446,8 @@ class TestDeleteFromExtraDir:
         ex_log = _make_log(extra_dir, "bob_2026-01-02.log")
 
         uc, _ = _make_user_config(str(cur_dir), extra_dirs=[str(extra_dir)])
-        # Index 2 = first log in extra dir
-        inputs = iter(["2", "q"])
+        # Index 2 = first log in extra dir; v0.39.0 — the deletion is confirmed.
+        inputs = iter(["2", "y", "q"])
 
         with patch("builtins.input", side_effect=inputs):
             from bob.manage_logs import run_manage_logs

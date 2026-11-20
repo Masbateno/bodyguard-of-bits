@@ -223,6 +223,9 @@ _NESTED = {
     "bob.manage_logs._LIST_KEYS",
     "bob.manage_logs._MARKED_KEYS",
     "bob.manage_logs._PREVIEW_KEYS",
+    "bob.manage_logs._NOTES_KEYS",      # v0.39.0 — the notes' actions, Esc back to the preview
+    "bob.manage_logs._INPUT_KEYS",      # v0.39.0 — a text field's own banner (Enter, Esc)
+    "bob.manage_logs._PATH_INPUT_KEYS",  # v0.39.0 — the same, with Tab completing a path
     "bob.tui.cron._SCHEDULE_KEYS",
     "bob.tui.cron._CONFIRM_KEYS",
     "bob.tui.cron._INPUT_KEYS",

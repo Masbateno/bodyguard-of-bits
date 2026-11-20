@@ -85,7 +85,7 @@ après une couleur qu'il contient.
 
 ## 2. Couleur — écrans curses
 
-Neuf paires, définies une seule fois dans `bob/tui/_palette.py`. **N'appelez pas
+Treize paires, définies une seule fois dans `bob/tui/_palette.py`. **N'appelez pas
 `init_pair` hors de ce module** — une garde le rejette, et elle existe parce que
 trois écrans ont un jour initialisé la même charte chacun de leur côté en étant
 d'accord, ce qui est ainsi que la ligne de curseur et le bandeau ont partagé un
@@ -102,6 +102,90 @@ fond sans que personne le voie.
 | `FOOTER` | le bandeau de touches du bas — blanc sur orange |
 | `CONTEXT` | la ligne au-dessus, pour les invites et messages — blanc sur noir |
 | `VERBATIM` | de la matière à reproduire à l'identique — violet, comme en sortie texte |
+| `CONTEXT_PROMPT` | la ligne de contexte portant une invite ou une question — jaune sur noir |
+| `CONTEXT_OK` | la ligne de contexte disant qu'une action a pris effet (`✔`) — vert sur noir |
+| `CONTEXT_ERROR` | la ligne de contexte disant qu'une action a été refusée ou a échoué (`✖`) — rouge sur noir |
+| `CONTEXT_INFO` | la ligne de contexte qui informe seulement (`ℹ`, une action annulée) — cyan sur noir |
+
+**La ligne de contexte dit ce que signifie un message** (v0.39.0, décidé avec
+l'utilisateur). Sa couleur est celle de la sortie texte pour le même sens — vert
+réussi, rouge refusé, cyan information — et une invite prend le jaune
+d'`ACCENT`, la couleur curses des invites. Pas de jaune pour un refus : en curses
+le jaune est une invite, et un refus en jaune se lirait comme une question. Un
+message porte son sens dans son premier symbole, construit avec
+`_chrome.done()` / `refused()` / `info()`, et la barre du bas en déduit la
+couleur ; une invite est déclarée (`tone=_chrome.PROMPT`). **Rien ne s'écrit sur
+la ligne du bandeau des touches** que le bandeau : un message ou une
+confirmation va sur la ligne de contexte au-dessus. Trouvé en le faisant : le
+carnet d'adresses de `--manage-cron`, sa liste d'adresses et sa liste de tâches,
+et deux confirmations de `--manage-logs`, remplaçaient encore le bandeau.
+*Gardé :* la couleur de chaque symbole · la paire de chaque couleur · chaque
+message construit avec son symbole · aucune écriture sur la ligne du bandeau ·
+les invites dans la couleur des invites.
+
+**Toute confirmation se demande d'une seule façon** (v0.39.0, décidé avec
+l'utilisateur, 19 novembre 2026). Une action qui supprime, écrase, retire, purge
+ou déplace quelque chose demande d'abord, sur la ligne de contexte, dans le
+jaune des invites, le bandeau des touches laissé dessous : la question, puis
+`Appuyez sur y pour confirmer, sur toute autre touche pour annuler.` Elle se
+construit avec `_chrome.confirm_text()` ou se pose avec `_chrome.ask_confirm()` ;
+une question n'écrit jamais sa propre consigne, qui vit dans une seule clé,
+`tui.confirm_suffix`. `y` confirme ; toute autre touche, Échap compris, annule,
+et une annulation le dit (`ℹ`). Ce sur quoi porte l'action est lu avant toute
+autre question : un numéro sans entrée est refusé tout de suite, pas après la
+saisie d'un motif. En mode texte (sans terminal), la même question finit par
+`[y/N]`, Entrée valant non. Appliquer un nouveau planning dans `--manage-cron`,
+qui ne supprime rien, garde `y` ou Entrée. Trouvé en le faisant : le carnet
+d'adresses de `--manage-cron` supprimait sans rien demander, sa liste de tâches
+demandait sans dire comment répondre, `--install-cron` attendait `y` ou Échap
+avant d'écraser une tâche et ignorait toute autre touche, et la liste des
+rapports en mode texte supprimait par numéro sans rien demander. *Gardé :* la
+formulation · `y` confirme, toute autre touche annule · aucune question ne porte
+sa propre consigne · chaque assistant demande par la confirmation commune · le
+carnet d'adresses et la liste en mode texte demandent.
+
+**Un écran accepte exactement les touches qu'il annonce** (v0.39.0, décidé avec
+l'utilisateur, 19 novembre 2026). Le bandeau liste toutes les touches auxquelles
+l'écran répond, et l'écran ne répond à aucune autre : une touche qu'il n'annonce
+pas ne fait rien — ni déplacement, ni marque, ni redessin, ni sortie. La 0.16.3 a
+fait marcher chaque touche annoncée ; c'est l'autre moitié. Une touche qui n'agit
+que dans certains états n'est annoncée que dans ces états : `u` dès que quelque
+chose est marqué ; `n` sur un rapport qui a des notes ; Entrée et `m` quittent le
+bandeau de la liste des tâches tant que des tâches sont marquées. Un menu numéroté
+annonce ses chiffres avec son propre intervalle (`1-4 par numéro`,
+`_keys.pick(n)`). Un champ de texte dessine son propre bandeau — Entrée, Échap, et
+Tab là où il complète un chemin ; la frappe et Retour arrière sont le champ
+lui-même. Le bandeau d'une confirmation est `y`, sa question disant que toute
+autre touche annule. La casse ne fait pas une autre touche : `Q` est `q`. Ce
+qu'un écran annonce et ce qu'il accepte viennent d'un seul tuple d'actions
+(`_keys.accepted()`). Trouvé en le faisant : la confirmation du planning prenait
+Entrée pour oui et toute autre touche pour non, son bandeau disant `y` et Échap ;
+l'éditeur de tâche annonçait Entrée et Échap et prenait les flèches, `jk`,
+PgUp/PgDn, `g`/`G` et deux chiffres (un chiffre n'agissait que si le curseur était
+déjà sur son entrée) ; chaque menu numéroté prenait ses chiffres sans les
+annoncer ; le carnet d'adresses prenait `u` sans l'annoncer ; un champ de texte de
+`--manage-logs` et les confirmations gardaient le bandeau de l'écran, dont aucune
+touche ne faisait alors ce qu'elle disait. *Gardé :* en boîte noire, écran par
+écran — le bandeau dessiné est celui des actions de l'écran, et toute touche hors
+de celles-ci laisse l'écran inchangé.
+
+**Une liste de numéros se lit d'une seule façon** (v0.39.0, décidé avec
+l'utilisateur, 19 novembre 2026 ; `bob/selection.py`). Partout où BOB demande des
+entrées par numéro — notes, rapports, tâches cron, adresses — il lit `all`, un
+numéro, un intervalle `a-b`, ou plusieurs de ces formes séparées par des
+virgules ; espaces et casse sont indifférents. Un numéro donné seul — isolé ou
+dans une liste comme `1,7` — doit être une entrée : sinon toute la sélection est refusée, et le numéro est dit. Un
+intervalle prend toutes les entrées qui existent entre ses bornes, trous
+compris, et n'est refusé que s'il n'en contient aucune. Une sélection ne choisit
+jamais rien du tout. Trouvé en le faisant : quatre lecteurs avaient quatre
+règles — les notes refusaient un intervalle à trou (« 2-4 » sur les notes 1, 2 et
+4 disait « pas de note 3 », trouvé par l'utilisateur), la liste des rapports en
+mode texte abandonnait sans un mot un numéro inconnu, la liste des tâches en mode
+texte refusait un intervalle dépassant la fin et tout mélange de formes, le
+carnet d'adresses en mode texte plafonnait un intervalle à mille numéros (et
+supprimait sans rien demander). *Gardé :* les formes · un numéro qui n'est pas
+une entrée · un intervalle à trous et au-delà de la fin · un intervalle vide ·
+les listes en mode texte.
 
 **Les deux surfaces s'accordent sur le sens.** L'orange marque ce qui est sous
 l'attention (ligne de curseur, bandeau de touches) ; le violet marque ce qui

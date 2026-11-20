@@ -286,7 +286,7 @@ def _collect_private_keys(ssh_dir: Path) -> list[PrivateKeyInfo]:
     """Return PrivateKeyInfo for each private key file found in ssh_dir."""
     results = []
     try:
-        entries = list(ssh_dir.iterdir())
+        entries = sorted(ssh_dir.iterdir())
     except OSError:
         return results
 

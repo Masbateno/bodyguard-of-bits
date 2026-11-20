@@ -29,7 +29,67 @@ holds it.
 from __future__ import annotations
 
 from bob.tui import _keys
-from bob.tui._palette import BANNER, CONTEXT, FOOTER
+from bob.tui._palette import (BANNER, CONTEXT, CONTEXT_ERROR, CONTEXT_INFO, CONTEXT_OK,
+                               CONTEXT_PROMPT, FOOTER)
+
+#: v0.39.0 — what a context line says, and its colour (see _palette). A status
+#: carries its meaning in its first glyph, as in the text output: ✔ done,
+#: ✖ refused or failed, ℹ information. A prompt is declared as one.
+PROMPT, OK, ERROR, INFO = "prompt", "ok", "error", "info"
+_TONE_PAIR = {PROMPT: CONTEXT_PROMPT, OK: CONTEXT_OK, ERROR: CONTEXT_ERROR, INFO: CONTEXT_INFO}
+_GLYPH_TONE = {"✔": OK, "✖": ERROR, "ℹ": INFO}
+
+
+def tone_of(text: str) -> str:
+    """The tone a status line's first glyph gives it; "" for none."""
+    head = text.lstrip()[:1]
+    return _GLYPH_TONE.get(head, "")
+
+
+def done(text: str) -> str:
+    """A status saying an action took effect."""
+    return f"✔ {text}"
+
+
+def refused(text: str) -> str:
+    """A status saying an action was refused or failed: nothing was changed."""
+    return f"✖ {text}"
+
+
+def info(text: str) -> str:
+    """A status that only informs (an action cancelled by the operator)."""
+    return f"ℹ {text}"
+
+
+def confirm_text(t, question: str) -> str:
+    """The one wording of a confirmation in a wizard: the question, then how to
+    answer it (decided with the user, 19 November 2026: every deletion asks it
+    this way, as --manage-logs did — --manage-cron's address book deleted
+    without asking, and its job list asked without saying how to answer)."""
+    return f"{question}  {t('tui.confirm_suffix')}"
+
+
+#: The banner under a confirmation: ``y``; the question says that any other
+#: key cancels. The screen's own banner stayed under it, announcing keys that
+#: only cancelled (v0.39.0: a screen announces exactly the keys it answers to).
+CONFIRM_ACTIONS = (_keys.CONFIRM,)
+
+
+def ask_confirm(stdscr, curses, t, question: str) -> bool:
+    """Ask *question* on the context line, in the prompts' colour, over the
+    confirmation's banner: ``y`` confirms, any other key cancels."""
+    draw(stdscr, curses, t, CONFIRM_ACTIONS, curses.has_colors(),
+         context=f"  {confirm_text(t, question)}", tone=PROMPT)
+    stdscr.refresh()
+    return stdscr.getch() in (ord("y"), ord("Y"))
+
+
+def context_attr(curses, has_color: bool, tone: str) -> int:
+    """How the context line is drawn for *tone*."""
+    if not has_color:
+        return curses.A_BOLD if tone else curses.A_NORMAL
+    pair = curses.color_pair(_TONE_PAIR.get(tone, CONTEXT))
+    return pair | curses.A_BOLD if tone else pair
 
 
 def banner_lines(t, actions: "tuple[str, ...]", width: int) -> "list[str]":
@@ -65,7 +125,7 @@ def context_row(t, actions: "tuple[str, ...]", height: int, width: int) -> int:
 
 
 def draw(stdscr, curses, t, actions: "tuple[str, ...]", has_color: bool,
-         *, context: str = "") -> None:
+         *, context: str = "", tone: "str | None" = None) -> None:
     """Paint the context line and the key banner at the bottom of *stdscr*.
 
     *context* is the prompt or status for this frame, or "" to leave the
@@ -73,11 +133,11 @@ def draw(stdscr, curses, t, actions: "tuple[str, ...]", has_color: bool,
     disappears would move the banner under the operator's eyes.
     """
     h, w = stdscr.getmaxyx()
-    draw_text(stdscr, curses, has_color, banner_lines(t, actions, w), context=context)
+    draw_text(stdscr, curses, has_color, banner_lines(t, actions, w), context=context, tone=tone)
 
 
 def draw_text(stdscr, curses, has_color: bool, lines: "list[str]",
-              *, context: str = "") -> None:
+              *, context: str = "", tone: "str | None" = None) -> None:
     """Paint arbitrary banner rows, for a screen with no declared actions.
 
     ``_curses_status_flash`` waits for any key at all; its banner says exactly
@@ -88,7 +148,8 @@ def draw_text(stdscr, curses, has_color: bool, lines: "list[str]",
 
     banner_attr = ((curses.color_pair(FOOTER) | curses.A_BOLD) if has_color
                    else curses.A_REVERSE)
-    ctx_attr = curses.color_pair(CONTEXT) if has_color else curses.A_NORMAL
+    # v0.39.0 — *tone* given (a prompt), or read from the status's glyph.
+    ctx_attr = context_attr(curses, has_color, tone if tone is not None else tone_of(context))
 
     for i, line in enumerate(reversed(lines)):
         _safe(stdscr, curses, h - 1 - i, line.ljust(w - 1)[:w - 1], banner_attr)

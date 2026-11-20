@@ -131,7 +131,8 @@ are not backported.
 
 | Version        | Supported          |
 |----------------|--------------------|
-| 0.38.x         | ✅ current          |
+| 0.39.x         | ✅ current          |
+| 0.38.x         | ❌ end of life      |
 | 0.37.x         | ❌ end of life      |
 | 0.36.x         | ❌ end of life      |
 | 0.35.x         | ❌ end of life      |
@@ -163,15 +164,15 @@ are not backported.
 | 0.6.x          | ❌ end of life      |
 | ≤ 0.5.x        | ❌ end of life      |
 
-Patches release as `0.38.x+1`. A change to the stable contract — exit codes, the
+Patches release as `0.39.x+1`. A change to the stable contract — exit codes, the
 JSON schema, option names, finding keys ([CONVENTIONS](DOCUMENTS/CONVENTIONS.md#8-versioning))
-— bumps the minor (`0.39.0`). A patch can still move scores, when a finding is
+— bumps the minor (`0.40.0`). A patch can still move scores, when a finding is
 corrected against a measurement: its changelog entry then says *BREAKING for
 scores* and lists every penalty it newly triggers (0.31.1 to 0.31.4 did).
 
-**v0.37.x is end-of-life as of the day 0.38.0 ships**, per the "latest minor
-line only" policy above. No security fixes will be backported. Users on v0.37.x
-must `pipx upgrade bodyguard-of-bits` to v0.38.x.
+**v0.38.x is end-of-life as of the day 0.39.0 ships**, per the "latest minor
+line only" policy above. No security fixes will be backported. Users on v0.38.x
+must `pipx upgrade bodyguard-of-bits` to v0.39.x.
 
 The upgrade changes what the score *means* when BOB cannot read part of the
 host. Until v0.16.0 the score was a sum over the checks that ran, and a check
@@ -572,6 +573,28 @@ BOB never phones home.
     contents, no PII other than the hostname.
   - **History**: `~/.config/bob/history.jsonl` is `0600`. One line per
     audit: timestamp + score + level. Rotated at 1000 entries.
+  - **Beside each `-d` report** (v0.39.0) — three files, two levels of
+    trust. The report and `<report>.state` (the run's baseline and history
+    line, for `--manage-logs`'s comparison and history) are `0600`, owned by
+    the report's owner, who can change both — so the comparison and history
+    are only as trustworthy as the report. `<report>.note`, once someone
+    annotates it, is root's, `0640`, in the report's group: the report's owner
+    can read it, only BOB run as root changes its content; the directory's
+    owner can still delete or replace the file, and a notes file not owned by
+    root is said not to be BOB's. Both companions are written through a
+    checked descriptor of the report's directory with no link followed, never
+    listed, moved and deleted with the report. The notes journal records, for
+    every action, the operator's account as the kernel's login uid names it
+    (it survived sudo on the test host — measured; a session identity, not a
+    proof of who typed) beside the `SUDO_USER`/`DOAS_USER` claim. Each line's
+    digest covers the line without the note's text and salt — so the text's
+    salted digest; a purge removes a note's text and salt from every line, not
+    from copies made outside BOB (backups, snapshots). The journal is
+    tamper-evident, not tamper-proof: its chained digests show a change made
+    outside BOB, but they are no signature — root can recompute them, and on
+    the test host root could rewrite its own login uid; lines removed from the
+    end, or the file deleted by whoever owns the report's directory, leave no
+    trace in the file itself.
   - **All state reads are bounded** (v0.14.1). Every state file, and the
     operator-supplied `--diff=PATH`, is read through
     `bob._atomic.read_text_capped()`, which refuses anything that is not a

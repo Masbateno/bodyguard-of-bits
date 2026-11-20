@@ -53,13 +53,13 @@ def _holders(inode: str) -> "list[tuple[int, str, int]] | None":
     /proc cannot be listed."""
     target = f"socket:[{inode}]"
     try:
-        pids = [d for d in _PROC.iterdir() if d.name.isdigit()]
+        pids = sorted((d for d in _PROC.iterdir() if d.name.isdigit()), key=lambda d: int(d.name))
     except OSError:
         return None
     out = []
     for pid in pids:
         try:
-            fds = list((pid / "fd").iterdir())
+            fds = sorted((pid / "fd").iterdir(), key=lambda f: int(f.name) if f.name.isdigit() else -1)
         except OSError:
             continue
         for fd in fds:
@@ -101,7 +101,7 @@ def system_dockerd_state() -> str:
     or one that is not systemd's. ``unknown``: /proc could not be read; the
     callers then do not ask (asking could start dockerd)."""
     try:
-        pids = [d for d in _PROC.iterdir() if d.name.isdigit()]
+        pids = sorted((d for d in _PROC.iterdir() if d.name.isdigit()), key=lambda d: int(d.name))
     except OSError:
         pids = []
     for pid in pids:
@@ -145,7 +145,7 @@ def _shims() -> "list[tuple[str, int]] | None":
     """(namespace, uid) of each containerd shim running; None when /proc
     cannot be listed."""
     try:
-        pids = [d for d in _PROC.iterdir() if d.name.isdigit()]
+        pids = sorted((d for d in _PROC.iterdir() if d.name.isdigit()), key=lambda d: int(d.name))
     except OSError:
         return None
     out = []
@@ -208,7 +208,7 @@ def rootless_dockerd() -> "dict[str, int]":
     container reached the internet with the host's ip_forward at 0."""
     import pwd
     try:
-        pids = [d for d in _PROC.iterdir() if d.name.isdigit()]
+        pids = sorted((d for d in _PROC.iterdir() if d.name.isdigit()), key=lambda d: int(d.name))
     except OSError:
         return {}
     users: "dict[int, int]" = {}

@@ -19,7 +19,12 @@ PINS = [
     ("pluggy", "1.7.0", None), ("Pygments", "2.21.0", None), ("pyproject_hooks", "1.3.3", None),
     # soupsieve 3.x requires Python >= 3.11.5 (found on the 0.27.0 CI run, 3.10
     # job): 2.10 for the older interpreters of the matrix.
-    ("soupsieve", "3.0.4", 'python_full_version >= "3.11.5"'),
+    # v0.39.0 — 4.0.1 (4 November 2026): fixes the three Dependabot alerts on
+    # 3.0.4 (ReDoS and recursion in the CSS parser, 3.0.2; polynomial time in
+    # the descendant combinator, 4.0.0). No fixed release supports Python
+    # < 3.11.5, so 2.10 stays for 3.10: the tests never call .select(), the only
+    # way into soupsieve, and parse only the HTML BOB itself generates.
+    ("soupsieve", "4.0.1", 'python_full_version >= "3.11.5"'),
     ("soupsieve", "2.10", 'python_full_version < "3.11.5"'),
     ("typing_extensions", "4.16.0", None),
     ("tomli", "2.2.1", 'python_version < "3.11"'),

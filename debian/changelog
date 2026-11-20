@@ -1,3 +1,19 @@
+bodyguard-of-bits (0.39.0-1) unstable; urgency=medium
+
+  * Minor, not BREAKING: no score, finding key, option, exit code,
+    JSON-schema or CSV-column change; the wizards' interactions change.
+  * --manage-logs: notes on a report, in a journal owned by root that
+    records each action's author (the kernel's login uid) and whose
+    chained digests show a change made outside BOB; edit, withdraw, purge.
+  * --manage-logs: the comparison with the previous report of the same
+    host and its history, from a state file written beside each report.
+  * Every deletion is confirmed one way; a screen accepts exactly the
+    keys it announces; a list of numbers is read by one rule; the cron
+    job list and address book are numbered and deleted by number.
+  * Directories are read in a fixed order; a CI-only dependency updated.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Fri, 20 Nov 2026 14:00:00 +0000
+
 bodyguard-of-bits (0.38.0-1) unstable; urgency=medium
 
   * Minor, BREAKING for scores (sshd Match blocks covered or included,

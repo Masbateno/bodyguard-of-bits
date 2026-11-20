@@ -95,7 +95,9 @@ sudo bob --manage-cron
 Liste tous les crons installés avec leur planning et leur email de notification.
 Dans un terminal, c'est un écran curses (les touches communes ci-dessous, plus
 `Entrée` pour modifier un cron, `Espace` / `a` pour en marquer un ou tous, `d`
-pour supprimer les marqués, `m` pour le carnet d'adresses, `l` pour la langue
+pour supprimer des crons par leurs numéros — la saisie part des marqués, sinon
+de celui sous le curseur, et prend `3`, `1,3`, `2-5` ou `all` (CONVENTIONS.md) —
+`m` pour le carnet d'adresses, `l` pour la langue
 et `q` pour quitter) ; quand stdout n'est pas un terminal, c'est le menu texte
 ci-dessous. Les deux bouclent jusqu'à ce que vous quittiez :
 
@@ -177,7 +179,7 @@ Le carnet d'adresses (`m`) permet de gérer les adresses de notification enregis
   >
 ```
 
-Dans un terminal, le carnet est lui aussi un écran curses : `Espace` / `a` marquent une adresse ou toutes, `n` en ajoute une, `d` supprime les marquées, `Échap` revient en arrière.
+Dans un terminal, le carnet est lui aussi un écran curses : `Espace` / `a` marquent une adresse ou toutes, `n` en ajoute une, `d` supprime des adresses par leurs numéros (la saisie part des marquées, sinon de celle sous le curseur ; `3`, `1,3`, `2-5` ou `all`), `Échap` revient en arrière. Depuis la v0.39.0, les adresses et les crons sont numérotés, et toute suppression est confirmée.
 
 | Commande | Action |
 |----------|--------|
@@ -466,7 +468,13 @@ que de tronquer quand les indications ne tiennent pas dans le terminal — coupe
 par la droite emporterait d'abord l'indication de sortie. La ligne juste
 au-dessus est **réservée aux invites et aux messages** : une confirmation de
 suppression ou un champ de saisie s'y affiche, et le bandeau de touches reste
-visible en dessous au lieu d'être recouvert :
+visible en dessous au lieu d'être recouvert. Depuis la v0.39.0, cette ligne prend
+la couleur de ce qu'elle dit, comme la sortie texte : une **invite** ou une
+question qui attend une réponse en **jaune** ; une action réussie en **vert**,
+`✔` ; une action refusée ou échouée — rien n'a été changé — en **rouge**, `✖` ;
+une information (une action que vous avez annulée) en **cyan**, `ℹ`. Pareil dans
+tous les assistants : `--manage-logs`, `--manage-cron`, `--install-cron`,
+`--explain`.
 
 | Touche | Action |
 |--------|--------|
@@ -511,8 +519,126 @@ pas :
 | Touche | Action |
 |--------|--------|
 | `↑` / `↓` / `j` / `k` / `PgUp` / `PgDn` / `g` / `G` | Faire défiler (le socle commun) |
+| `←` / `→` | Rapport plus ancien / plus récent, sans revenir à la liste (depuis la v0.32.0) |
 | `s` | Basculer entre log complet et vue résumé (score + constats ALERT/WARN uniquement) |
+| `n` | Afficher / masquer le bloc des notes — proposé quand le rapport a des notes |
+| `a` | Gérer les notes (ajouter, modifier, retirer, purger, journal) |
+| `c` | Afficher / masquer la comparaison avec le rapport précédent |
+| `h` | Afficher / masquer l'historique des rapports de cet hôte |
+| `#` | Numéroter les lignes du rapport (log complet seulement) |
 | `Échap` | Revenir à la liste des rapports |
+
+**Les blocs au-dessus du rapport** (depuis la v0.39.0). Les notes, la comparaison
+et l'historique sont des blocs à part, affichés au-dessus du rapport et jamais
+dedans, dans cet ordre. À l'ouverture du visualiseur, les notes sont ouvertes
+(si le rapport en a), la comparaison et l'historique fermés, la numérotation
+désactivée. Un bloc que vous ouvrez ou fermez le reste quand `←` / `→` passent à
+un autre rapport, et montre le contenu de ce rapport (ou dit qu'il n'y en a
+pas) ; il ne change que si vous appuyez de nouveau sur sa touche. Sortir du
+visualiseur et y revenir repart de zéro.
+
+**La numérotation** (`#`) numérote les lignes du rapport lui-même, jamais les
+blocs : un numéro désigne toujours une ligne du fichier. Elle n'est proposée
+que sur le log complet : les lignes de la vue résumé ne se suivent pas.
+
+#### Les notes sur un rapport
+
+Les notes consignent ce qui a été fait après un audit — *« UFW réactivé après
+l'audit »* — à côté du rapport, jamais dedans : le rapport est une preuve et
+n'est jamais réécrit. `a` ouvre leurs actions ; chaque invite et chaque
+confirmation s'affiche sur la ligne de contexte, et `Échap` revient au
+visualiseur :
+
+| Touche | Action |
+|--------|--------|
+| `a` | Ajouter une note — vous tapez le texte ; la date et l'heure sont ajoutées |
+| `e` | Modifier une note — elle est marquée *éditée*, avec quand et par qui ; son ancien texte reste dans le journal |
+| `r` | Retirer des notes — une, plusieurs (`1,3`, `2-5`) ou `all` ; elles quittent le bloc ; leur texte reste dans le journal |
+| `p` | Purger des notes — une, plusieurs ou `all` ; leur texte est effacé de toutes les versions, un motif est obligatoire ; qui, quand et pourquoi sont gardés |
+| `v` | Afficher / masquer le journal : toutes les actions sur les notes, de la plus ancienne |
+
+Les notes visées par une action sont lues d'abord — avant de demander un motif
+ou une confirmation — selon la règle de toute liste de numéros
+(CONVENTIONS.md) : un intervalle prend les notes qui existent entre ses bornes
+(`2-4` sur les notes 1, 2 et 4 prend 2 et 4) ; un numéro donné seul doit être une
+note, sinon la sélection est refusée et le numéro est dit. Plusieurs notes sont
+retirées ou purgées en une seule écriture, toutes ou aucune. Chaque retrait et chaque purge
+se confirme sur la ligne de contexte : la question, puis *Appuyez sur y pour
+confirmer, sur toute autre touche pour annuler.* (la formulation de toute
+confirmation, CONVENTIONS.md).
+
+**Modifier ou purger.** Modifier corrige une note et garde chaque version : sur
+un serveur partagé entre plusieurs opérateurs, personne ne réécrit une note sans
+laisser de trace. Un secret collé par erreur se **purge** : son texte quitte
+chaque ligne du journal, versions précédentes comprises, et il ne reste que
+*« purgée le … par … (motif) »*.
+
+**Qui a fait quoi.** Chaque action enregistre son auteur et son heure. Sur un
+serveur partagé, tout le monde lance `sudo bob`, donc « root » ne dirait rien :
+BOB enregistre le compte que désigne l'identifiant de connexion du noyau
+(loginuid) — sur l'hôte de test, il a survécu à `sudo`, `sudo -i`, `sudo su -`
+et `sudo env -i` (mesuré) — et à côté la déclaration `SUDO_USER`/`DOAS_USER`,
+affichée `alice (sudo: bob)` quand les deux diffèrent. Le loginuid est
+l'identité de la session telle que le noyau la garde, pas une preuve de qui est
+au clavier. Sans loginuid — mesuré pour un service systemd —, c'est la
+déclaration qui nomme l'auteur, sinon le compte effectif. Les heures sont
+enregistrées avec leur décalage par rapport à UTC et affichées dans l'heure
+locale de celui qui lit.
+
+**Qui peut l'écrire.** Les notes s'écrivent avec BOB lancé en root
+(`sudo bob --manage-logs`) : le journal appartient à root, en `0640`, dans le
+groupe du rapport — le propriétaire du rapport peut le lire, seul root peut en
+modifier le contenu. Quand il appartenait au propriétaire du rapport, comme
+d'abord conçu, ce compte l'a réécrit sans root et BOB l'a relu comme intact
+(mesuré sur l'hôte de test). Le propriétaire du répertoire du rapport peut
+toujours supprimer le fichier ou en mettre un autre à sa place : un fichier de
+notes qui n'appartient pas à root est dit ne pas être de BOB, et BOB n'y écrit
+plus rien ; un lien à sa place n'est pas suivi.
+
+**Ce que le journal peut montrer, et ce qu'il ne peut pas.** Il permet de
+détecter certaines altérations ; il ne les empêche pas. Chaque ligne porte
+l'empreinte de la précédente, calculée sur la ligne sans le texte de la note ni
+son sel — donc sur l'empreinte salée du texte, qui vérifie le texte tant qu'il
+est là. Un texte modifié (son empreinte salée ne correspond plus) ou un auteur
+modifié, une ligne retirée du milieu ou déplacée hors de BOB, ou un journal
+recopié à côté d'un autre rapport, se voit : le bloc dit *« journal modifié
+hors de BOB à la ligne N »*, et BOB n'y écrit plus rien. Les empreintes ne sont
+pas une signature : qui peut écrire le fichier — root — peut recalculer toute la
+chaîne sans y laisser de trace. Des lignes retirées à la **fin**, ou la
+suppression du fichier par le propriétaire du répertoire qui le contient, ne
+laissent aucune trace dans le fichier lui-même. Sur l'hôte de test (une Linux
+Mint 22.3 dont le réglage d'audit ne rend pas le loginuid immuable), root
+pouvait réécrire son propre loginuid : rien dans un fichier que root peut écrire
+n'empêche root de mentir sur son identité. Une purge efface le texte et son sel
+du journal — l'empreinte laissée ne peut plus être confrontée à des textes
+candidats ; les copies faites hors de BOB — sauvegardes, instantanés du système
+de fichiers — gardent ce qu'elles contiennent.
+
+#### Comparaison et historique
+
+**`c` — la comparaison** avec le rapport précédent **du même hôte** dans le
+dossier (un dossier partagé peut contenir plusieurs hôtes), dite exactement
+comme le dit `--diff` : score, constats apparus ou résolus, ports, services.
+**`h` — l'historique** des rapports de cet hôte dans le dossier, jusqu'à celui
+affiché, dessiné comme le dessine `--history`. Les deux viennent d'un petit
+fichier d'état que BOB écrit à côté de chaque rapport `-d` depuis la v0.39.0 ; un
+rapport écrit avant n'en a pas, et le bloc le dit — aucune comparaison n'est
+devinée à partir du texte du rapport.
+L'historique montre la fin de chaque audit en UTC, comme `--history` ; le nom
+d'un rapport porte son début, en heure locale.
+
+#### Les fichiers à côté de chaque rapport
+
+Trois fichiers, deux niveaux de confiance :
+
+| Fichier | Propriétaire, mode | Qui peut le modifier |
+|---------|--------------------|----------------------|
+| `bob_<date>.log` — le rapport | le propriétaire du rapport, `0600` | son propriétaire |
+| `bob_<date>.log.state` — son état, pour la comparaison et l'historique | le propriétaire du rapport, `0600` | son propriétaire — la comparaison et l'historique qui en sont tirés ne valent donc pas plus que le rapport |
+| `bob_<date>.log.note` — ses notes | root, `0640`, groupe du rapport | root pour le contenu ; le propriétaire du répertoire peut supprimer ou remplacer le fichier, et BOB le dit |
+
+Les deux fichiers compagnons ne sont jamais listés — chaque liste ne montre que
+`bob_*.log` — et sont déplacés et supprimés avec leur rapport.
 
 ### Mode texte de repli (non-TTY)
 
@@ -533,7 +659,7 @@ Appuyez sur `c` pour saisir un nouveau chemin. Si des rapports existent dans le 
 Déplacer 28 rapport(s) vers le nouvel emplacement ? [y/N]
 ```
 
-- **y** — tous les rapports visibles sont déplacés vers le nouveau chemin via `shutil.move`
+- **y** — tous les rapports visibles sont déplacés vers le nouveau chemin, chacun avec ses notes et son état, à travers des descripteurs vérifiés des deux répertoires (depuis la v0.26.1, un répertoire sous votre home qui se résout hors de lui est refusé)
 - **n / Entrée** — les rapports restent dans l'ancien répertoire ; l'ancien chemin est mémorisé
 
 ### Vue multi-répertoires

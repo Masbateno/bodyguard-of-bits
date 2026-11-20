@@ -861,9 +861,9 @@ def _run(argv=None) -> int:
             # (matches what was displayed/JSON-emitted) AND the score-only
             # baseline as a separate field, so trend analysis can reach for
             # either view without re-parsing the audit context.
-            save_score(
-                engine.score,
-                engine.effective_level.value,
+            _history_args = dict(
+                score=engine.score,
+                level=engine.effective_level.value,
                 level_score_only=engine.level.value,
                 # v0.28.0 — a --check / --skip run read part of the host: its
                 # score is not a point of the trend.
@@ -873,6 +873,14 @@ def _run(argv=None) -> int:
                 span=(engine.score_span if getattr(engine, "score_is_uncertain", False)
                       and not engine.score_is_upper_bound else None),
             )
+            save_score(**_history_args)
+            # v0.39.0 — the -d report gets its state beside it (the baseline
+            # and this history line), for --manage-logs's comparison and
+            # history blocks.
+            if getattr(report, "path", None) is not None:
+                from bob.compare import save_report_state
+                from bob.history import history_entry
+                save_report_state(report.path, curr_baseline, history_entry(**_history_args))
             # v0.26.1 — a write refused under a redirected home is said, not
             # dropped: the baseline, history or report the user expects is missing.
             from bob.sysinfo import say_refused_redirects

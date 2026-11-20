@@ -6,6 +6,278 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.39.0] — 20-11-2026
+
+**Une version mineure : des notes sur un rapport, gardées à côté de lui dans un
+journal qui enregistre qui a fait quoi et montre une modification faite hors de
+BOB ; la comparaison avec le rapport précédent et l'historique, dans l'aperçu
+de --manage-logs ; une ligne de contexte qui dit ce que signifie un message.**
+
+Pas BREAKING : un même hôte obtient le même score sous 0.38.0 et 0.39.0. Aucune
+clé de constat, option, code de sortie, schéma JSON ni colonne CSV ne change. Ce
+qui change sur le disque : chaque rapport écrit avec `-d` reçoit
+`<rapport>.state` à côté de lui, et un rapport qu'on annote reçoit
+`<rapport>.note` — le premier en `0600`, avec le propriétaire du rapport, le
+second appartenant à root, en `0640`, dans le groupe du rapport ; aucun listé par
+`--manage-logs`, tous deux déplacés et supprimés avec leur rapport. Un script
+qui liste le dossier des rapports autrement que par `bob_*.log` les verra. Ce
+qui change à l'écran : l'aperçu de `--manage-logs` (trois blocs et cinq
+touches : `n`, `a`, `c`, `h`, `#`), et la couleur et le symbole de tête de la
+ligne de contexte dans tous les assistants — et, volontairement, la façon de
+répondre aux assistants : toute suppression confirmée d'une seule façon, un
+écran qui ne prend que les touches qu'il annonce, des menus numérotés, des listes
+de numéros lues selon une seule règle (section 4) ; les interfaces machine documentées — options, codes de sortie,
+schéma JSON, colonnes CSV — ne changent pas. Clés de traduction nouvelles : 79, une retirée
+(3325 → 3403) : `manage_cron.email_store_invalid_sel` (« Sélection invalide »), remplacée
+par des messages qui disent quel numéro ou quel intervalle ; aucune renommée ; deux confirmations de
+`--manage-logs` perdent la consigne qu'elles écrivaient elles-mêmes (désormais une
+clé commune), et l'invite française « ajouter une autre adresse » se lit `[y/N]`
+comme toutes les autres (elle disait `[o/N]`).
+
+### 1. Des notes sur un rapport, à côté de lui et jamais dedans
+
+Un rapport écrit avec `-d` est une preuve : rien ne le réécrit. Ses notes sont
+dans `<rapport>.note`, affichées par l'aperçu dans un bloc à part au-dessus du
+rapport — ouvert à l'ouverture de l'aperçu (s'il y en a), fermé par `n`, de
+retour à l'ouverture suivante. `a` ouvre leurs actions, chaque invite et
+confirmation sur la ligne de contexte :
+
+- **ajouter** — le texte tapé ; la date et l'heure ajoutées ;
+- **modifier** — la note marquée *éditée*, avec quand et par qui ; chaque version gardée ;
+- **retirer** — la note quitte le bloc ; son texte reste dans le journal ;
+- **purger** — pour un secret collé par erreur : le texte effacé de toutes les
+  versions, un motif obligatoire ; qui, quand et pourquoi gardés ;
+- retirer et purger prennent une note, plusieurs (`1,3`, `2-5`, mélangés) ou
+  `all`, en une seule écriture, lues avant de demander un motif ou une
+  confirmation (trouvé par l'utilisateur : une purge demandait son motif, puis sa
+  confirmation, et seulement alors disait que la note n'existait pas) : un
+  intervalle prend les notes qui existent entre ses bornes (`2-4` sur les notes
+  1, 2 et 4 prend 2 et 4 — trouvé par l'utilisateur, il disait « pas de note
+  3 ») ; un numéro donné seul doit être une note, sinon la sélection est refusée
+  et le numéro est dit ;
+- **journal** (`v`) — toutes les actions sur les notes, de la plus ancienne.
+
+**Qui l'a fait.** Sur un serveur partagé, tout le monde lance `sudo bob`, donc
+« root » ne dit rien. Mesuré sur la Linux Mint 22.3 de test (17 novembre 2026),
+avec un compte connecté en SSH : l'identifiant de connexion du noyau le
+désignait à travers `sudo`, `sudo -i`, `sudo su -`, `sudo env -i` et un sudo
+imbriqué, là où `SUDO_USER` était absent, « root », ou forgé
+(`sudo SUDO_USER=alice` → « alice »). Chaque action enregistre le compte de cet
+identifiant et, à côté, la déclaration `SUDO_USER`/`DOAS_USER`, affichée
+`alice (sudo: bob)` quand les deux diffèrent ; sans identifiant de connexion —
+mesuré pour un service systemd —, la déclaration, sinon le compte effectif.
+L'identifiant de connexion est l'identité de la session telle que le noyau la
+garde, pas une preuve de qui a tapé. Les heures sont enregistrées avec leur
+décalage par rapport à UTC et affichées dans l'heure locale de celui qui lit.
+Mesuré aussi, sur cet hôte, dont le réglage d'audit ne rend pas l'identifiant
+de connexion immuable : root pouvait réécrire le sien — rien dans un fichier
+que root peut écrire n'empêche root de mentir.
+
+**Qui peut l'écrire.** Les notes s'écrivent avec BOB lancé en root (`sudo bob
+--manage-logs`) : le journal appartient à root, en `0640`, dans le groupe du
+rapport — le propriétaire du rapport peut le lire, seul root peut modifier le
+contenu du journal existant. Trouvé en revue
+et mesuré sur la Mint de test avant publication : au propriétaire du rapport,
+comme d'abord construit, ce compte a réécrit le journal **sans root**, recalculé
+la chaîne avec le code même de BOB, et BOB l'a relu comme intact. Un journal qui
+n'appartient pas à root est désormais dit ne pas être de BOB, et BOB n'y écrit
+plus rien. Le propriétaire du répertoire du rapport peut toujours supprimer le
+fichier ou en mettre un autre à sa place : BOB le dit, et un lien à sa place
+n'est pas suivi. Mesuré sur la Mint de test après le correctif, chaque
+opérateur en SSH avec son propre identifiant de connexion : journal créé
+`root:bobop1 0640` ; le propriétaire du rapport, sans root, l'a lu, s'est vu
+refuser l'écriture (`Permission non accordée`) puis refuser par BOB
+(`sudo bob` requis) ; sa copie mise à la place a été dite ne pas être de BOB, et
+rien n'y a été écrit ; un lien à la place n'a été ni lu ni écrit à travers.
+
+**Ce que le journal montre.** Il permet de détecter certaines altérations ; il
+ne les empêche pas. Une ligne par action ; chaque ligne porte
+l'empreinte de la précédente (la première, du nom du rapport), calculée sur la
+ligne sans le texte de la note ni son sel — donc sur l'empreinte salée du texte,
+qui vérifie le texte tant qu'il est là. Un texte modifié (son empreinte salée
+ne correspond plus) ou un auteur modifié hors de BOB, une ligne retirée du milieu, des lignes réordonnées,
+un journal recopié à côté d'un autre rapport — chacun se voit, à sa ligne :
+*« journal modifié hors de BOB à la ligne N »*, et BOB n'y écrit plus rien. Une
+purge retire le texte et son sel de chaque ligne et ajoute une ligne qui nomme
+qui a purgé, quand et pourquoi ; la chaîne, qui couvre l'empreinte du texte, et non le texte lui-même,
+reste intacte, et l'empreinte salée laissée ne peut pas être confrontée à des
+textes candidats — son sel est parti avec le texte ; les copies faites hors de
+BOB (sauvegardes, instantanés du système de fichiers) gardent ce qu'elles
+contiennent. Les empreintes ne sont pas une signature : qui peut écrire le
+fichier — root — peut recalculer toute la chaîne sans y laisser de trace. Des
+lignes retirées à la **fin**, ou la suppression du fichier par le propriétaire
+du répertoire qui le contient, ne laissent aucune trace dans le fichier lui-même :
+c'est dit.
+
+Deux opérateurs qui écrivent en même temps ne perdent rien : le journal est
+verrouillé pendant l'ajout d'une ligne. Mesuré sur la Mint de test avec deux
+opérateurs jetables, l'un par `sudo`, l'autre par `sudo su -` : une note créée
+par l'un et modifiée par l'autre porte les deux noms ; 20 notes ajoutées en même
+temps par les deux — 23 lignes, chaîne intacte — mesuré de nouveau après le
+correctif, le fichier toujours `root:bobop1 0640`. Il est créé à travers un
+descripteur vérifié de son répertoire, sans suivre de lien.
+
+### 2. Comparaison et historique dans l'aperçu
+
+`--diff` compare à un seul fichier, `~/.config/bob/last_baseline.json`, réécrit
+à chaque audit : rien ne gardait l'état de l'audit précédant un ancien rapport,
+et le rapport ne porte pas la comparaison. Chaque rapport `-d` reçoit désormais
+`<rapport>.state` : la baseline de l'audit (ce que compare `--diff`) et sa ligne
+d'historique (ce que garde `--history`). Dans l'aperçu :
+
+- **`c` — comparaison** avec le rapport précédent **du même hôte** dans le
+  dossier (un dossier partagé peut contenir plusieurs hôtes), rendue par le code
+  même de `--diff`, donc elle dit exactement ce que dit `--diff` ;
+- **`h` — historique** des rapports de cet hôte dans le dossier, jusqu'à celui
+  affiché, rendu par le code même de `--history` — commun à tous les opérateurs
+  qui écrivent là, là où `~/.config/bob` n'est qu'à un opérateur.
+
+Tous deux fermés à l'ouverture de l'aperçu ; une fois ouverts, ils le restent à
+travers `←`/`→` et suivent le rapport affiché, jusqu'à ce que leur touche les
+ferme. Un rapport écrit avant la 0.39.0 n'a pas d'état : le bloc le dit — aucune
+comparaison n'est devinée à partir du texte du rapport. L'historique montre la
+fin de chaque audit en UTC, comme `--history` ; le nom d'un rapport porte son
+début, en heure locale. Trois fichiers, deux niveaux de confiance : le rapport
+et son fichier d'état appartiennent au propriétaire du rapport, qui peut les
+modifier — et donc la comparaison et l'historique tirés de cet état ; seul le
+journal des notes est à root.
+
+### 3. Numérotation des lignes
+
+`#` numérote les lignes du rapport lui-même, jamais les blocs : un numéro
+désigne une ligne du fichier ; désactivée à chaque ouverture, gardée à travers
+`←`/`→`. Proposée sur le log complet seulement : les lignes de la vue résumé ne
+se suivent pas.
+
+### 4. La ligne de contexte dit ce que signifie un message
+
+Décidé avec l'utilisateur, pour coller aux deux tables de couleurs de
+CONVENTIONS.md : la ligne au-dessus du bandeau des touches — chaque assistant la
+garde pour les invites et les messages — montre une invite en jaune (la couleur
+curses des invites), une action réussie en vert avec `✔`, une action refusée ou
+échouée en rouge avec `✖` (pas en jaune : en curses le jaune est une invite),
+une information en cyan avec `ℹ`. Chaque message de `--manage-logs` et de
+`--manage-cron` porte désormais son symbole.
+
+Trouvé en le faisant : le carnet d'adresses de `--manage-cron`, sa liste
+d'adresses et sa liste de tâches écrivaient leurs messages et la confirmation de
+suppression sur la dernière ligne, à la place du bandeau des touches ;
+`--manage-logs` y écrivait aussi « oublier ce dossier ? » et « déplacer N
+rapports ? ». La 0.16.3 a réservé la dernière ligne au bandeau des touches ;
+ces écrans écrivaient encore dessus. Leurs messages sont maintenant sur la ligne
+de contexte. La barre d'un bloc prenait la couleur du texte de chaque ligne ;
+elle garde le jaune du cadre (trouvé par l'utilisateur).
+
+**Toute confirmation se demande d'une seule façon** (décidé avec
+l'utilisateur, désormais dans CONVENTIONS.md) : une action qui supprime, écrase,
+retire, purge ou déplace demande sur la ligne de contexte — la question, puis
+`Appuyez sur y pour confirmer, sur toute autre touche pour annuler.` ; `y`
+confirme, toute autre touche annule et le dit. En mode texte, la question finit
+par `[y/N]`. Trouvé en le faisant (l'utilisateur a trouvé le premier) : le
+carnet d'adresses de `--manage-cron` supprimait une adresse sans rien demander ;
+sa liste de tâches demandait sans dire comment répondre ; `--install-cron`
+attendait `y` ou Échap avant d'écraser une tâche et ignorait toute autre
+touche ; la liste des rapports de `--manage-logs` en mode texte supprimait par
+numéro sans rien demander (seul `all` était confirmé).
+
+**Un écran accepte exactement les touches qu'il annonce** (décidé avec
+l'utilisateur, désormais dans CONVENTIONS.md) : le bandeau liste toutes les
+touches auxquelles un écran répond, et l'écran ne répond à aucune autre ; une
+touche qui n'agit que dans certains états n'est annoncée qu'alors ; un menu
+numéroté annonce ses chiffres avec son propre intervalle (`1-4 par numéro`) ; un
+champ de texte dessine son propre bandeau (Entrée, Échap, Tab pour compléter un
+chemin). Trouvé en le faisant : la confirmation du planning de `--install-cron`
+et `--manage-cron` prenait Entrée pour oui et toute autre touche pour non, son
+bandeau disant `y` et Échap (l'utilisateur a trouvé l'Entrée) ; l'éditeur de
+tâche annonçait Entrée et Échap et prenait aussi les flèches, `jk`, PgUp/PgDn,
+`g`/`G` et deux chiffres — un chiffre n'agissant que si le curseur était déjà sur
+son entrée ; chaque menu numéroté prenait ses chiffres sans les annoncer ; le
+carnet d'adresses prenait `u` sans l'annoncer ; la liste des tâches annonçait
+Entrée et `m` quand des tâches étaient marquées, alors qu'aucune ne fait rien ;
+l'aperçu annonçait `n` sur un rapport sans notes ; un champ de texte de
+`--manage-logs` et les confirmations gardaient le bandeau de l'écran, dont aucune
+touche ne faisait alors ce qu'elle disait.
+
+**Une liste de numéros se lit d'une seule façon** (décidé avec l'utilisateur,
+désormais dans CONVENTIONS.md, un seul module, `bob/selection.py`) : `all`, un
+numéro, un intervalle, ou plusieurs de ces formes séparées par des virgules ; un
+numéro donné seul — isolé ou dans une liste comme `1,7` — doit être une entrée,
+sinon toute la sélection est refusée et ce numéro est dit ; un intervalle prend les entrées qui
+existent entre ses bornes, trous compris, et une sélection ne choisit jamais
+rien du tout. Quatre lecteurs avaient quatre règles : les notes refusaient un
+intervalle à trou ; la liste des rapports en mode texte abandonnait sans un mot
+un numéro inconnu (`1,7` sur cinq rapports supprimait le premier sans rien dire
+du septième) ; la liste des tâches en mode texte refusait un intervalle dépassant
+la fin et tout mélange de formes ; le carnet d'adresses en mode texte plafonnait
+un intervalle à mille numéros — et supprimait une, plusieurs ou toutes les
+adresses sans rien demander. La liste des tâches et le carnet d'adresses de
+`--manage-cron` sont désormais numérotés, et `d` prend des numéros comme pour les
+notes — la saisie part des entrées marquées, sinon de celle sous le curseur, donc
+`d` puis Entrée fait ce que faisait `d` (demandé par l'utilisateur).
+
+### 5. Répertoires lus dans un ordre fixe
+
+La CI de la 0.37.0 échouait un passage sur deux : une garde ne mordait que si un
+fichier d'état libvirt cassé se trouvait listé en premier — `iterdir()` répond
+dans l'ordre du système de fichiers, qui diffère d'une machine à l'autre. Le
+verdict ne changeait pas ; ce qui était lu en premier, si. Chaque parcours dont
+l'ordre décide de ce qui est affiché ou trouvé en premier est désormais trié :
+les dix parcours de `/proc` et les descripteurs d'un processus par numéro, les
+états des réseaux libvirt, les répertoires de certificats, la base de Tripwire
+et `~/.ssh` par nom ; les comptages et les « y en a-t-il » restent tels quels.
+Mesuré : toute la suite lancée avec chaque `iterdir()` répondant en ordre inverse
+n'échoue en rien sur la 0.38.0, et sur la 0.39.0 qu'aux compteurs de version,
+pas encore recomptés au moment de la mesure — aucune garde ne dépend de l'ordre
+d'un répertoire ; le tri le garde ainsi, et une garde le tient.
+
+### 6. Une dépendance de la CI mise à jour
+
+`soupsieve`, amenée par `beautifulsoup4` pour les tests de la sortie HTML,
+portait trois alertes Dependabot (ReDoS et récursion dans son analyseur CSS,
+temps polynomial dans le combinateur descendant). Elle est épinglée en 4.0.1
+(4 novembre 2026) pour Python ≥ 3.11.5, par version et SHA-256 comme toute
+dépendance de la CI. À la date de cette version, aucune version corrigée ne prend en
+charge Python 3.10, que la CI teste encore : la 2.10 y reste. Les tests n'appellent jamais `.select()`,
+le seul chemin vers soupsieve, et n'analysent que le HTML que BOB génère
+lui-même. Rien de tout cela n'est dans le paquet publié, qui n'a aucune
+dépendance hors de la bibliothèque standard.
+
+### 7. Documentation
+
+La section du visualiseur d'AUTOMATION.md est réécrite (blocs, touches, notes,
+ce que le journal peut et ne peut pas prouver, les fichiers à côté de chaque
+rapport) ; il y manquait aussi `←`/`→` (0.32.0), et elle disait encore que les
+rapports étaient déplacés « via `shutil.move` » (ils le sont à travers des
+descripteurs vérifiés depuis la 0.26.1, et désormais avec leurs notes et leur
+état). CONVENTIONS.md : treize paires curses et la règle de la ligne de contexte.
+SECURITY.md : les fichiers à côté de chaque rapport et les limites des notes. Le
+tout en anglais et en français.
+
+Mesuré sur : la Linux Mint 22.3 de test (deux opérateurs jetables en SSH, sudo).
+
+### Tests
+
+**Tests** 22668 → **23100**, mutations 2106 → **2170**, toutes tuées. Nouveaux
+fichiers de test : `test_v0390_report_notes.py`, `test_v0390_preview_blocks.py`,
+`test_v0390_context_tones.py`, `test_v0390_deterministic_order.py`,
+`test_v0390_confirm_and_selection.py`, `test_v0390_announced_keys.py`. Les
+mutations du travail lui-même ont trouvé quatre défauts avant toute publication,
+la revue un cinquième (le propriétaire du journal, section 1), et la passe de
+terrain un sixième (un lien à la place du journal revenait avec les mots
+anglais du système dans un écran français ; la lecture du code a ensuite montré
+la même chose pour un journal que le compte ne peut pas lire, et deux littéraux
+anglais — chaque motif est désormais nommé dans la langue de l'écran). Les quatre des
+mutations :
+la boucle de réouverture sous le verrou tournait sans fin sur un nom qui ne se
+stabilisait jamais (désormais bornée, refus après 20 essais) ; la garde « rien
+ne s'écrit sur la ligne du bandeau » ne voyait pas `_draw(stdscr, h - 1, 0, …)`
+(motif élargi) ; la garde des deux écrivains passait sans verrou quand ils ne se
+chevauchaient pas par hasard (ils se chevauchent désormais à coup sûr) ; et une
+mutation de la 0.32.0 testait encore une variable que le visualiseur n'utilise
+plus (réorientée).
+
+---
+
 ## [0.38.0] — 17-11-2026
 
 **Une version mineure, BREAKING pour les scores : le fichier de configuration

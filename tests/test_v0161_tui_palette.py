@@ -43,6 +43,8 @@ class _FakeCurses:
     # v0.16.4: the fallback for violet on a terminal without 256 colours,
     # used by the VERBATIM pair.
     COLOR_MAGENTA = 5
+    # v0.39.0: the context line's success tone (CONTEXT_OK).
+    COLOR_GREEN = 2
     error = RuntimeError
 
     def __init__(self, colors: int = 256, has: bool = True):

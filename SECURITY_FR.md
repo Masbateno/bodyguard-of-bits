@@ -137,7 +137,8 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 
 | Version        | Supportée          |
 |----------------|--------------------|
-| 0.38.x         | ✅ courante         |
+| 0.39.x         | ✅ courante         |
+| 0.38.x         | ❌ fin de vie       |
 | 0.37.x         | ❌ fin de vie       |
 | 0.36.x         | ❌ fin de vie       |
 | 0.35.x         | ❌ fin de vie       |
@@ -169,17 +170,17 @@ Les correctifs de sécurité sont émis pour la dernière ligne de minor release
 | 0.6.x          | ❌ fin de vie       |
 | ≤ 0.5.x        | ❌ fin de vie       |
 
-Les correctifs sortent en `0.38.x+1`. Un changement du contrat stable — codes de
+Les correctifs sortent en `0.39.x+1`. Un changement du contrat stable — codes de
 sortie, schéma JSON, noms d'options, clés de constat ([CONVENTIONS](DOCUMENTS/CONVENTIONS_FR.md#8-versionnage))
-— incrémente la version mineure (`0.39.0`). Un correctif peut tout de même faire
+— incrémente la version mineure (`0.40.0`). Un correctif peut tout de même faire
 bouger les scores, quand un constat est corrigé d'après une mesure : son entrée de
 changelog dit alors *BREAKING pour les scores* et liste chaque pénalité qu'il
 déclenche nouvellement (de 0.31.1 à 0.31.4, c'était le cas).
 
-**v0.37.x est en fin de vie le jour où 0.38.0 sort**, selon la politique
+**v0.38.x est en fin de vie le jour où 0.39.0 sort**, selon la politique
 « ligne minor la plus récente uniquement » ci-dessus. Aucun correctif de
-sécurité ne sera backporté. Les utilisateurs sur v0.37.x doivent
-`pipx upgrade bodyguard-of-bits` vers v0.38.x.
+sécurité ne sera backporté. Les utilisateurs sur v0.38.x doivent
+`pipx upgrade bodyguard-of-bits` vers v0.39.x.
 
 La mise à jour change ce que le score **signifie** quand BOB ne peut pas lire
 une partie de l'hôte. Jusqu'en v0.16.0, le score était une somme sur les checks
@@ -496,6 +497,7 @@ Pas de télémétrie, pas d'analytics, pas de vérification de mise à jour auto
   - **Config** : `~/.config/bob/config.conf` est `0600` (propriétaire uniquement).
   - **Baseline** : `~/.config/bob/last_baseline.json` est `0600`. Contient uniquement des clés de constats, scores, et listes de ports — pas de secrets, pas de contenus de fichiers, pas de PII autre que le nom d'hôte.
   - **Historique** : `~/.config/bob/history.jsonl` est `0600`. Une ligne par audit : timestamp + score + niveau. Rotation à 1000 entrées.
+  - **À côté de chaque rapport `-d`** (v0.39.0) — trois fichiers, deux niveaux de confiance. Le rapport et `<rapport>.state` (la baseline et la ligne d'historique de l'audit, pour la comparaison et l'historique de `--manage-logs`) sont en `0600`, au propriétaire du rapport, qui peut modifier l'un et l'autre — la comparaison et l'historique ne valent donc pas plus que le rapport. `<rapport>.note`, dès qu'on l'annote, appartient à root, en `0640`, dans le groupe du rapport : le propriétaire du rapport peut le lire, seul BOB lancé en root en modifie le contenu ; le propriétaire du répertoire peut toujours supprimer ou remplacer le fichier, et un fichier de notes qui n'appartient pas à root est dit ne pas être de BOB. Les deux compagnons sont écrits à travers un descripteur vérifié du répertoire du rapport sans suivre de lien, jamais listés, déplacés et supprimés avec le rapport. Le journal des notes enregistre, pour chaque action, le compte de l'opérateur tel que le nomme l'identifiant de connexion du noyau (il a survécu à sudo sur l'hôte de test — mesuré ; une identité de session, pas une preuve de qui a tapé), à côté de la déclaration `SUDO_USER`/`DOAS_USER`. L'empreinte de chaque ligne couvre la ligne sans le texte de la note ni son sel — donc l'empreinte salée du texte ; une purge efface le texte d'une note et son sel de toutes les lignes, pas des copies faites hors de BOB (sauvegardes, instantanés). Le journal permet de détecter certaines altérations, il ne les empêche pas : ses empreintes chaînées montrent une modification faite hors de BOB, mais ne sont pas une signature — root peut les recalculer, et sur l'hôte de test root pouvait réécrire son propre loginuid ; des lignes retirées à la fin, ou le fichier supprimé par le propriétaire du répertoire qui le contient, ne laissent aucune trace dans le fichier lui-même.
   - **Toutes les lectures d'état sont bornées** (v0.14.1). Chaque fichier d'état, ainsi que le `--diff=CHEMIN` fourni par l'opérateur, passe par `bob._atomic.read_text_capped()`, qui refuse tout ce qui n'est pas un fichier régulier et borne la lecture. Auparavant, un chemin pointant vers un périphérique caractère (`--diff=/dev/zero`, ou `ignore.yml` lié vers lui) épuisait la mémoire, et un FIFO bloquait le processus **indéfiniment** — un cron qui reste suspendu au lieu d'échouer, et à chaque exécution suivante.
 
 Quand BOB est invoqué via `sudo` (ou `doas`, depuis la 0.25.1), les fichiers dans `~/.config/bob/` sont automatiquement chownés de retour vers `$SUDO_USER` (depuis v0.3.6) ou `$DOAS_USER` afin qu'ils restent lisibles/éditables sans sudo par la suite. Depuis la 0.26.1, rien de ce que BOB y écrit en root ne passe par un lien symbolique vers un endroit hors du répertoire personnel de l'utilisateur — historique, baseline, compteurs de récurrence, configuration, liste d'ignorés, répertoire des journaux et rapport `-d` compris. Toute écriture passe par un descripteur de son répertoire, vérifié d'abord : un répertoire sous le répertoire personnel de l'utilisateur qui s'est résolu hors de lui (un `~/.config/bob`, un `~/.config` ou un répertoire de journaux lien symbolique) est refusé — rien n'y est créé, remplacé, changé de mode ni remis —, et le refus est dit sur stderr à la fin de l'audit ; `--manage-logs` n'y liste, supprime ni déplace aucun rapport. Le nom même du fichier est gardé aussi : l'historique et le rapport sont ouverts avec `O_NOFOLLOW`, les autres fichiers d'état renommés par-dessus leur nom. Toute remise passe par un descripteur ouvert avec `O_NOFOLLOW`, vérifié de même. Un lien qui reste dans le répertoire personnel appartient à l'utilisateur, et une exécution sans `sudo` ni `doas` n'est pas jugée. Avant — toutes les versions de la 0.1.0 à la 0.26.0, mesuré sur dix d'entre elles —, root suivait un tel lien — il écrivait dans sa cible, en changeait le mode, la créait à travers un lien pendant et la remettait à l'utilisateur appelant, créait les fichiers d'état et le rapport de BOB dans un répertoire lié et le passait en 0700 —, si bien qu'un compte tournant sous cet utilisateur, sans root, aurait pu se faire remettre un fichier comme `/etc/shadow` ou `/etc/ld.so.preload` au `sudo bob` suivant, ou rendre `/etc` illisible pour tous les autres comptes.

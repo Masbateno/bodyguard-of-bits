@@ -47,7 +47,12 @@ def _t(key, **kwargs):
         "manage_cron.email_store_invalid_sel":   "Invalid selection",
         "manage_cron.invalid":                   "Unrecognised choice",
     }
-    return messages.get(key, key)
+    if key in messages:
+        return messages[key]
+    # v0.39.0 — the shared selection and confirmation texts, in English.
+    from bob import i18n
+    i18n.init("en")
+    return i18n.t(key, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +151,7 @@ class TestEmailStoreDeleteAll:
         store = _make_store(tmp_path, ["a@x.com", "b@x.com", "c@x.com"])
         with \
             patch("bob.config.EmailStore.load", return_value=store), \
-            patch("builtins.input", side_effect=["all", ""]), \
+            patch("builtins.input", side_effect=["all", "y", ""]), \
             patch("builtins.print"):
             _manage_email_store(_t)
         assert store.all() == []
@@ -155,7 +160,7 @@ class TestEmailStoreDeleteAll:
         store = _make_store(tmp_path, ["a@x.com", "b@x.com"])
         with \
             patch("bob.config.EmailStore.load", return_value=store), \
-            patch("builtins.input", side_effect=["all", ""]):
+            patch("builtins.input", side_effect=["all", "y", ""]):
             _manage_email_store(_t)
         out = capsys.readouterr().out
         assert "2" in out
@@ -174,7 +179,7 @@ class TestEmailStoreDeleteAll:
         store = _make_store(tmp_path, ["old@x.com"])
         with \
             patch("bob.config.EmailStore.load", return_value=store), \
-            patch("builtins.input", side_effect=["all", "a", "new@x.com", ""]), \
+            patch("builtins.input", side_effect=["all", "y", "a", "new@x.com", ""]), \
             patch("builtins.print"):
             _manage_email_store(_t)
         assert store.all() == ["new@x.com"]
@@ -189,7 +194,7 @@ class TestEmailStoreDeleteSingle:
         store = _make_store(tmp_path, ["first@x.com", "second@x.com"])
         with \
             patch("bob.config.EmailStore.load", return_value=store), \
-            patch("builtins.input", side_effect=["1", ""]), \
+            patch("builtins.input", side_effect=["1", "y", ""]), \
             patch("builtins.print"):
             _manage_email_store(_t)
         assert store.all() == ["second@x.com"]
@@ -198,7 +203,7 @@ class TestEmailStoreDeleteSingle:
         store = _make_store(tmp_path, ["first@x.com", "second@x.com"])
         with \
             patch("bob.config.EmailStore.load", return_value=store), \
-            patch("builtins.input", side_effect=["2", ""]), \
+            patch("builtins.input", side_effect=["2", "y", ""]), \
             patch("builtins.print"):
             _manage_email_store(_t)
         assert store.all() == ["first@x.com"]
@@ -211,13 +216,13 @@ class TestEmailStoreDeleteSingle:
             _manage_email_store(_t)
         assert store.all() == ["a@x.com"]
         out = capsys.readouterr().out
-        assert "Invalid" in out
+        assert "there is no 5 in the list" in out
 
     def test_delete_shows_confirmation(self, tmp_path, capsys):
         store = _make_store(tmp_path, ["del@x.com", "keep@x.com"])
         with \
             patch("bob.config.EmailStore.load", return_value=store), \
-            patch("builtins.input", side_effect=["1", ""]):
+            patch("builtins.input", side_effect=["1", "y", ""]):
             _manage_email_store(_t)
         out = capsys.readouterr().out
         assert "del@x.com" in out
@@ -227,7 +232,7 @@ class TestEmailStoreDeleteSingle:
         store = _make_store(tmp_path, ["first@x.com", "second@x.com"])
         with \
             patch("bob.config.EmailStore.load", return_value=store), \
-            patch("builtins.input", side_effect=["1", "1", ""]), \
+            patch("builtins.input", side_effect=["1", "y", "1", "y", ""]), \
             patch("builtins.print"):
             _manage_email_store(_t)
         # Both deleted (second became #1 after the reload in second iteration)
@@ -243,7 +248,7 @@ class TestEmailStoreDeleteCommaList:
         store = _make_store(tmp_path, ["a@x.com", "b@x.com", "c@x.com"])
         with \
             patch("bob.config.EmailStore.load", return_value=store), \
-            patch("builtins.input", side_effect=["1,3", ""]), \
+            patch("builtins.input", side_effect=["1,3", "y", ""]), \
             patch("builtins.print"):
             _manage_email_store(_t)
         assert store.all() == ["b@x.com"]
@@ -256,7 +261,7 @@ class TestEmailStoreDeleteCommaList:
             _manage_email_store(_t)
         assert len(store.all()) >= 1
         out = capsys.readouterr().out
-        assert "Invalid" in out
+        assert "there is no 9 in the list" in out
 
 
 # ---------------------------------------------------------------------------
@@ -268,25 +273,46 @@ class TestEmailStoreDeleteRange:
         store = _make_store(tmp_path, ["a@x.com", "b@x.com", "c@x.com", "d@x.com"])
         with \
             patch("bob.config.EmailStore.load", return_value=store), \
-            patch("builtins.input", side_effect=["2-3", ""]), \
+            patch("builtins.input", side_effect=["2-3", "y", ""]), \
             patch("builtins.print"):
             _manage_email_store(_t)
         assert store.all() == ["a@x.com", "d@x.com"]
 
-    def test_range_out_of_range_rejected(self, tmp_path, capsys):
+    def test_a_range_takes_the_entries_there_are(self, tmp_path):
+        """v0.39.0 (bob/selection.py) — a range reaching past the end takes the
+        entries there are between its bounds; it was refused."""
         store = _make_store(tmp_path, ["a@x.com", "b@x.com"])
         with \
             patch("bob.config.EmailStore.load", return_value=store), \
-            patch("builtins.input", side_effect=["1-5", ""]):
+            patch("builtins.input", side_effect=["1-5", "y", ""]), \
+            patch("builtins.print"):
             _manage_email_store(_t)
-        out = capsys.readouterr().out
-        assert "Invalid" in out
+        assert store.all() == []
+
+    def test_a_range_with_no_entry_is_refused(self, tmp_path, capsys):
+        store = _make_store(tmp_path, ["a@x.com", "b@x.com"])
+        with \
+            patch("bob.config.EmailStore.load", return_value=store), \
+            patch("builtins.input", side_effect=["5-9", ""]):
+            _manage_email_store(_t)
+        assert store.all() == ["a@x.com", "b@x.com"]
+        assert "nothing in the list between 5 and 9" in capsys.readouterr().out
+
+    def test_a_refused_confirmation_deletes_nothing(self, tmp_path, capsys):
+        """v0.39.0 — the plain-text address book deleted without asking."""
+        store = _make_store(tmp_path, ["a@x.com", "b@x.com"])
+        with \
+            patch("bob.config.EmailStore.load", return_value=store), \
+            patch("builtins.input", side_effect=["all", "n", ""]):
+            _manage_email_store(_t)
+        assert store.all() == ["a@x.com", "b@x.com"]
+        assert "nothing was changed" in capsys.readouterr().out
 
     def test_range_single_element(self, tmp_path):
         store = _make_store(tmp_path, ["a@x.com", "b@x.com", "c@x.com"])
         with \
             patch("bob.config.EmailStore.load", return_value=store), \
-            patch("builtins.input", side_effect=["2-2", ""]), \
+            patch("builtins.input", side_effect=["2-2", "y", ""]), \
             patch("builtins.print"):
             _manage_email_store(_t)
         assert "b@x.com" not in store.all()
@@ -307,7 +333,7 @@ class TestEmailStoreInvalidInput:
             _manage_email_store(_t)
         assert store.all() == ["a@x.com"]
         out = capsys.readouterr().out
-        assert "Unrecognised" in out or "Invalid" in out
+        assert "is not a selection" in out
 
     def test_zero_index_rejected(self, tmp_path, capsys):
         store = _make_store(tmp_path, ["a@x.com"])
@@ -317,4 +343,4 @@ class TestEmailStoreInvalidInput:
             _manage_email_store(_t)
         assert store.all() == ["a@x.com"]
         out = capsys.readouterr().out
-        assert "Invalid" in out
+        assert "there is no 0 in the list" in out

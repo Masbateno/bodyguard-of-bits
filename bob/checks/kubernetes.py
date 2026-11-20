@@ -457,7 +457,7 @@ def _pids_named(name: str) -> "list[str]":
     """The processes whose name (``/proc/<pid>/comm``) is ``name``; none when
     /proc cannot be listed."""
     try:
-        pids = [d for d in _PROC.iterdir() if d.name.isdigit()]
+        pids = sorted((d for d in _PROC.iterdir() if d.name.isdigit()), key=lambda d: int(d.name))
     except OSError:
         return []
     found = []

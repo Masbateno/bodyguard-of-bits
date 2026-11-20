@@ -151,7 +151,7 @@ def _tripwire_db_state() -> tuple[bool, bool]:
     apart from a genuinely absent or empty one.
     """
     try:
-        for entry in _TRIPWIRE_DB_DIR.iterdir():
+        for entry in sorted(_TRIPWIRE_DB_DIR.iterdir()):
             if entry.suffix == ".twd":
                 return (True, True)
         return (False, True)

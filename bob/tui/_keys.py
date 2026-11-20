@@ -50,12 +50,39 @@ CREATE   = "create"     #: Enter, on a landing screen
 SUBMIT   = "submit"     #: Enter, on a text-input screen
 LANG     = "lang"       #: l — switch the interface language, landing screens only
 BOOK     = "book"       #: m — open the email address book
+#: v0.39.0 — the report preview's detached blocks and its notes.
+NOTES    = "notes"      #: n — show/hide the notes block
+ANNOTATE = "annotate"   #: a — manage the notes (add, edit, withdraw, purge)
+COMPARE  = "compare"    #: c — show/hide the comparison with the previous report
+HISTORY  = "history"    #: h — show/hide the history of this host's reports
+NUMBERS  = "numbers"    #: # — show/hide line numbers
+NOTE_ADD = "note_add"   #: a — add a note
+NOTE_EDIT = "note_edit"  #: e — edit a note
+NOTE_WITHDRAW = "note_withdraw"  #: r — withdraw a note
+NOTE_PURGE = "note_purge"  #: p — purge a note's text
+NOTE_JOURNAL = "note_journal"  #: v — show/hide every action on the notes
 #: ← → — the neighbouring entry of the list a nested view was opened from,
 #: without going back to it (v0.32.0, the --manage-logs preview: ← older log,
 #: → newer). Arrows only: h/l would pair with jk but ``l`` is LANG, ``n``/``p``
 #: collide with NEW, and ``[``/``]`` need AltGr on an AZERTY keyboard. PAGE is
 #: the precedent for an action bound to special keys alone.
 PEER     = "peer"
+#: v0.39.0 — Tab in a text field that completes a path.
+COMPLETE = "complete"
+#: v0.39.0 (user, 19 November 2026: the keys a screen accepts are exactly the
+#: keys it announces) — a numbered menu's digits, announced with the menu's own
+#: range: ``pick(4)`` is drawn "1-4" and binds 1 to 4, never 5. The digits were
+#: accepted and never announced.
+_PICK = "pick:"
+
+
+def pick(count: int) -> str:
+    """The action choosing one of *count* numbered entries by its digit."""
+    return f"{_PICK}{max(1, min(9, count))}"
+
+
+def _pick_count(action: str) -> int:
+    return int(action[len(_PICK):]) if action.startswith(_PICK) else 0
 
 #: Every screen that renders a list gets these three, in this order. A screen
 #: that scrolls but cannot page is a screen whose behaviour depends on which
@@ -102,6 +129,17 @@ _LITERAL: "dict[str, tuple[int, ...]]" = {
     NEW:     (ord("n"), ord("N")),
     LANG:    (ord("l"), ord("L")),
     BOOK:    (ord("m"), ord("M")),
+    NOTES:   (ord("n"), ord("N")),
+    ANNOTATE: (ord("a"), ord("A")),
+    COMPARE: (ord("c"), ord("C")),
+    HISTORY: (ord("h"), ord("H")),
+    NUMBERS: (ord("#"),),
+    NOTE_ADD: (ord("a"), ord("A")),
+    NOTE_EDIT: (ord("e"), ord("E")),
+    NOTE_WITHDRAW: (ord("r"), ord("R")),
+    NOTE_PURGE: (ord("p"), ord("P")),
+    NOTE_JOURNAL: (ord("v"), ord("V")),
+    COMPLETE: (9,),
 }
 
 #: The glyph cluster shown for each action. Navigation is drawn without a
@@ -113,7 +151,29 @@ _GLYPH = {
     TOGGLE: "Spc", ALL: "a", UNMARK: "u", DELETE: "d",
     CHANGE: "c", SUMMARY: "s", FULL: "s", CONFIRM: "y", NEW: "n", LANG: "l", BOOK: "m",
     PEER: "←/→",
+    NOTES: "n", ANNOTATE: "a", COMPARE: "c", HISTORY: "h", NUMBERS: "#",
+    NOTE_ADD: "a", NOTE_EDIT: "e", NOTE_WITHDRAW: "r", NOTE_PURGE: "p", NOTE_JOURNAL: "v",
+    COMPLETE: "Tab",
 }
+
+
+def _literal(action: str) -> "tuple[int, ...]":
+    """The plain keys *action* binds — a numbered menu's digits included."""
+    count = _pick_count(action)
+    if count:
+        return tuple(range(ord("1"), ord("1") + count))
+    return _LITERAL.get(action, ())
+
+
+def _glyph(action: str) -> str:
+    count = _pick_count(action)
+    if count:
+        return "1" if count == 1 else f"1-{count}"
+    return _GLYPH[action]
+
+
+def _label_key(action: str) -> str:
+    return "tui.keys.pick" if _pick_count(action) else "tui.keys." + action
 
 
 #: The curses constants each action is bound to, by name.
@@ -189,9 +249,20 @@ def resolve(curses, ch: int, actions: "tuple[str, ...]") -> "str | None":
     key; :func:`conflicts` is the guard for that.
     """
     for action in actions:
-        if ch in _LITERAL.get(action, ()) or ch in _special(curses, action):
+        if ch in _literal(action) or ch in _special(curses, action):
             return action
     return None
+
+
+def accepted(curses, actions: "tuple[str, ...]") -> "set[int]":
+    """Every key code a screen declaring *actions* answers to — and so the only
+    ones it may answer to (v0.39.0, CONVENTIONS.md "keys"). ↑↓ ride on MOVE,
+    PgUp/PgDn on PAGE, ←/→ on PEER."""
+    keys: "set[int]" = set()
+    for action in actions:
+        keys.update(_literal(action))
+        keys.update(_special(curses, action))
+    return keys
 
 
 def direction(curses, ch: int) -> int:
@@ -222,7 +293,7 @@ def conflicts(actions: "tuple[str, ...]") -> "list[str]":
     seen: "dict[int, str]" = {}
     clash = []
     for action in actions:
-        for key in _LITERAL.get(action, ()):
+        for key in _literal(action):
             if key in seen and seen[key] != action:
                 clash.append(f"{action} and {seen[key]} both bind {key!r}")
             seen[key] = action
@@ -241,9 +312,9 @@ def footer_lines(t, actions: "tuple[str, ...]", width: int = 78) -> "list[str]":
     would silently eat the exit hint — the one an operator needs most, and the
     one they cannot guess.
     """
-    nav = [_GLYPH[a] for a in actions if a in NAVIGATION]
+    nav = [_glyph(a) for a in actions if a in NAVIGATION]
     rest = [
-        f"{_GLYPH[a]} {t('tui.keys.' + a)}"
+        f"{_glyph(a)} {t(_label_key(a))}"
         for a in actions if a not in NAVIGATION
     ]
     parts = ([" ".join(nav)] if nav else []) + rest

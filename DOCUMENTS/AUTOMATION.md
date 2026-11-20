@@ -94,8 +94,9 @@ sudo bob --manage-cron
 
 Lists all installed cron jobs with their schedule and notification email. In a
 terminal this is a curses screen (the shared keys below, plus `Enter` to edit a
-job, `Space` / `a` to mark one or all, `d` to delete the marked ones, `m` for the
-address book, `l` for the language and `q` to quit); when stdout is not a
+job, `Space` / `a` to mark one or all, `d` to delete jobs by their numbers — the
+prompt starts with the marked ones, else the one under the cursor, and takes
+`3`, `1,3`, `2-5` or `all` (CONVENTIONS.md) — `m` for the address book, `l` for the language and `q` to quit); when stdout is not a
 terminal, the plain menu below is used instead. Both loop until you quit:
 
 ```
@@ -176,7 +177,7 @@ The email address book (`m`) lets you manage saved notification addresses indepe
   >
 ```
 
-In a terminal the address book is a curses screen too: `Space` / `a` mark one or all, `n` adds an address, `d` deletes the marked ones, `Esc` goes back.
+In a terminal the address book is a curses screen too: `Space` / `a` mark one or all, `n` adds an address, `d` deletes addresses by their numbers (the prompt starts with the marked ones, else the one under the cursor; `3`, `1,3`, `2-5` or `all`), `Esc` goes back. Since v0.39.0 the addresses and the jobs are numbered, and every deletion is confirmed.
 
 | Command | Action |
 |---------|--------|
@@ -461,7 +462,12 @@ the cyan header, and wraps onto a second row rather than truncating when the
 hints do not fit the terminal — cutting from the right would take the exit hint
 first. The line immediately above it is **reserved for prompts and status**: a
 delete confirmation or a text field appears there, and the key banner stays
-visible underneath instead of being painted over.
+visible underneath instead of being painted over. Since v0.39.0 that line takes
+the colour of what it says, as the text output does: a **prompt** or a question
+waiting for an answer in **yellow**; an action that took effect in **green**,
+`✔`; an action refused or failed — nothing was changed — in **red**, `✖`;
+information (an action you cancelled) in **cyan**, `ℹ`. The same in every
+wizard: `--manage-logs`, `--manage-cron`, `--install-cron`, `--explain`.
 
 | Key | Action |
 |-----|--------|
@@ -502,8 +508,118 @@ nested screen, so `Esc` returns to the list and `q` does not quit:
 | Key | Action |
 |-----|--------|
 | `↑` / `↓` / `j` / `k` / `PgUp` / `PgDn` / `g` / `G` | Scroll (the shared floor) |
+| `←` / `→` | Older / newer report, without going back to the list (since v0.32.0) |
 | `s` | Toggle between full log and summary view (score + ALERT/WARN findings only) |
+| `n` | Show / hide the notes block — offered when the report has notes |
+| `a` | Manage the notes (add, edit, withdraw, purge, journal) |
+| `c` | Show / hide the comparison with the previous report |
+| `h` | Show / hide the history of this host's reports |
+| `#` | Number the report's lines (full log only) |
 | `Esc` | Return to report list |
+
+**Blocks above the report** (since v0.39.0). The notes, the comparison and the
+history are blocks of their own, shown above the report and never part of it,
+in that order. When the viewer opens, the notes are open (if the report has
+any), the comparison and the history closed, the line numbers off. A block you
+open or close stays so while `←` / `→` move to another report, and shows that
+report's content (or says there is none); it changes only when you press its
+key again. Leaving the viewer and opening it again starts over.
+
+**Line numbers** (`#`) number the report's own lines, never the blocks, so a
+number always names a line of the file. They are offered on the full log only:
+the summary's lines are not consecutive.
+
+#### Notes on a report
+
+Notes record what was done after an audit — *"UFW re-enabled after the
+audit"* — beside the report, never inside it: the report is evidence and is
+never rewritten. `a` opens their actions; every prompt and confirmation is on
+the context line, and `Esc` returns to the viewer:
+
+| Key | Action |
+|-----|--------|
+| `a` | Add a note — you type the text; the date and time are added |
+| `e` | Edit a note — it is marked *edited*, with when and by whom; its earlier text stays in the journal |
+| `r` | Withdraw notes — one, several (`1,3`, `2-5`) or `all`; they leave the block; their text stays in the journal |
+| `p` | Purge notes — one, several or `all`; their text is removed from every version, a reason is required; who, when and why are kept |
+| `v` | Show / hide the journal: every action on the notes, oldest first |
+
+The notes an action is for are read first — before a reason or a
+confirmation is asked — by the rule every list of numbers follows
+(CONVENTIONS.md): a range takes the notes there are between its bounds (`2-4`
+over notes 1, 2 and 4 takes 2 and 4); a number given alone must be a note, and
+one that is not refuses the selection and is named. Several notes are withdrawn
+or purged in one write, all of them or none. Every withdrawal and purge is confirmed on
+the context line: the question, then *Press y to confirm, any other key to
+cancel.* (the wording every confirmation uses, CONVENTIONS.md).
+
+**Edit or purge.** Editing corrects a note and keeps every version, so that on
+a server several operators share nobody rewrites a note without a trace. A
+secret pasted by mistake is **purged**: its text leaves every line of the
+journal, its earlier versions included, and only *"purged on … by … (reason)"*
+remains.
+
+**Who did it.** Every action records its author and its time. On a shared
+server everyone runs `sudo bob`, so "root" would say nothing: BOB records the
+account the kernel's login uid names — on the test host it survived `sudo`,
+`sudo -i`, `sudo su -` and `sudo env -i` (measured) — and the
+`SUDO_USER`/`DOAS_USER` claim beside it, shown as `alice (sudo: bob)` when the
+two differ. The login uid is the session's identity as the kernel keeps it,
+not a proof of who sits at the keyboard. With no login uid — measured for a
+systemd service — the claim names the author, else the effective account.
+Times are stored with their offset from UTC and shown in the reader's local
+time.
+
+**Who can write it.** Notes are written by BOB run as root
+(`sudo bob --manage-logs`): the journal belongs to root, mode `0640`, in the
+report's group, so the report's owner can read it and only root can change
+its content. Owned by the report's owner, as first designed, that account
+rewrote it without root and BOB read it back as intact (measured on the test
+host). Whoever owns the report's directory can still delete the file or put
+another in its place: a notes file not owned by root is said not to be BOB's,
+and BOB writes nothing more to it; a link in its place is not followed.
+
+**What the journal can and cannot show.** It is tamper-evident, not
+tamper-proof. Each line carries the digest of the one before it, computed over
+the line without the note's text and salt — so over the text's salted digest,
+which checks the text while it is there. A text changed (its salted digest no
+longer matches) or an author changed, a line removed from the middle or
+reordered outside BOB, or a journal copied beside another report, shows: the
+block says *"journal changed outside BOB at line N"*, and BOB writes nothing
+more to it. The digests are no signature: whoever can write the file — root —
+can recompute the whole chain and leave no trace in it. Lines removed from the
+**end**, or the file deleted by whoever owns the report's directory, leave no
+trace in the file itself. On the test host (a Linux Mint 22.3 whose audit
+setting does not make the login uid immutable) root could rewrite its own
+login uid: nothing in a file root can write stops root from lying about who it
+is. A purge removes the text and its salt from the journal — the digest left
+behind can no longer be tested against candidate texts; copies made outside
+BOB — backups, filesystem snapshots — keep what they hold.
+
+#### Comparison and history
+
+**`c` — comparison** with the previous report **of the same host** in the
+folder (a shared folder can hold several hosts), said exactly as `--diff`
+says it: score, findings that appeared or were resolved, ports, services.
+**`h` — history** of that host's reports in the folder, up to the one shown,
+drawn as `--history` draws it. Both come from a small state file BOB writes
+beside each `-d` report since v0.39.0; a report written before has none, and
+the block says so — no comparison is guessed from the report's text.
+The history shows each audit's end in UTC, as `--history` does; a report's
+name carries its start, in local time.
+
+#### Files beside each report
+
+Three files, two levels of trust:
+
+| File | Owner, mode | Who can change it |
+|------|-------------|-------------------|
+| `bob_<date>.log` — the report | the report's owner, `0600` | its owner |
+| `bob_<date>.log.state` — its state, for the comparison and the history | the report's owner, `0600` | its owner — so the comparison and history drawn from it are only as trustworthy as the report |
+| `bob_<date>.log.note` — its notes | root, `0640`, the report's group | root's content; the directory's owner can delete or replace the file, and BOB says so |
+
+The two companion files are never listed — every list shows `bob_*.log` only —
+and are moved and deleted with their report.
 
 ### Plain text fallback (non-TTY)
 
@@ -524,7 +640,7 @@ Press `c` to enter a new path. If reports exist in the current directory, you wi
 Move 28 report(s) to the new location? [y/N]
 ```
 
-- **y** — all visible reports are moved to the new path via `shutil.move`
+- **y** — all visible reports are moved to the new path, each with its notes and its state, through checked descriptors of both directories (since v0.26.1, a directory under your home that resolves outside it is refused)
 - **n / Enter** — reports stay in the old directory; the old path is remembered
 
 ### Multi-directory view

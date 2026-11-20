@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.38.0
+Version:        0.39.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,13 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Fri Nov 20 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.39.0-1
+- Minor, not BREAKING; the wizards' interactions change. --manage-logs:
+  notes on a report in a root-owned journal recording each author, with
+  chained digests that show a change made outside BOB; comparison and
+  history in the preview. One way to confirm a deletion, keys exactly as
+  announced, one rule for lists of numbers; directories read in order.
+
 * Tue Nov 17 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.38.0-1
 - Minor, BREAKING for scores; no JSON-schema or CSV-column change.
   Security: a rootless container's configuration file inspected with

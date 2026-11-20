@@ -77,56 +77,32 @@ def _manage_email_store(t) -> None:
                 print(f"  ✔ {t('manage_cron.email_store_added', email=raw)}")
             continue
 
-        if answer == "all":
-            if not emails:
-                print(f"  ℹ {t('manage_cron.email_store_empty')}")
-            else:
-                count = len(emails)
-                for addr in emails:
-                    store.remove(addr)
-                print(f"  ✔ {t('manage_cron.email_store_cleared', count=count)}")
+        # v0.39.0 (user, 19 November 2026) — one rule for every selection
+        # (bob/selection.py) and every deletion confirmed: "all", a number or
+        # a range deleted at once, without asking.
+        if not emails:
+            print(f"  ℹ {t('manage_cron.email_store_empty')}")
             continue
-
-        # Parse individual number, comma list, or range
-        indices = set()  # type: set[int]
-        valid = True
+        from bob.selection import SelectionError, parse_selection
         try:
-            if re.match(r"^\d+$", answer):
-                indices.add(int(answer))
-            elif re.match(r"^\d+(?:,\d+)+$", answer):
-                for part in answer.split(","):
-                    indices.add(int(part))
-            elif re.match(r"^\d+-\d+$", answer):
-                start_s, end_s = answer.split("-")
-                # Cap the range to prevent memory exhaustion on absurd input
-                end_n = min(int(end_s), int(start_s) + 999)
-                for n in range(int(start_s), end_n + 1):
-                    indices.add(n)
-            else:
-                print(f"  ✖ {t('manage_cron.invalid')}")
-                valid = False
-        except ValueError:
-            print(f"  ✖ {t('manage_cron.invalid')}")
-            valid = False
-
-        if not valid:
+            chosen = parse_selection(answer, range(1, len(emails) + 1))
+        except SelectionError as exc:
+            print(f"  ✖ {t('selection.' + exc.kind, **exc.vars)}")
             continue
-
-        if not indices:
-            print(f"  ✖ {t('manage_cron.email_store_invalid_sel')}")
+        to_delete = [emails[i - 1] for i in chosen]
+        ans = safe_input(f"  {t('tui.confirm_delete', names=', '.join(to_delete))} [y/N] ").strip().lower()
+        if ans != "y":
+            print(f"  ℹ {t('tui.cancelled')}")
             continue
-
-        to_delete = []
-        for idx in sorted(indices):
-            if not (1 <= idx <= len(emails)):
-                print(f"  ✖ {t('manage_cron.email_store_invalid_sel')}")
-                to_delete = []
-                break
-            to_delete.append(emails[idx - 1])
-
+        if answer == "all":
+            for addr in to_delete:
+                store.remove(addr)
+            print(f"  ✔ {t('manage_cron.email_store_cleared', count=len(to_delete))}")
+            continue
         for addr in to_delete:
             store.remove(addr)
             print(f"  ✔ {t('manage_cron.email_store_removed', email=addr)}")
+
 
 def edit_cron_email(entry, t) -> None:
     """Change the notification email of an existing cron entry.
@@ -335,39 +311,14 @@ def _run_manage_cron_plain(config, t) -> int:
         if delete_match:
             raw_del = delete_match.group(1).strip()
 
-            # Resolve indices: single / comma list / range / all
-            if raw_del == "all":
-                to_delete = list(crons)
-            else:
-                indices: set[int] = set()
-                valid = True
-                try:
-                    if re.match(r"^\d+$", raw_del):
-                        indices.add(int(raw_del))
-                    elif re.match(r"^\d+(?:,\d+)+$", raw_del):
-                        for part in raw_del.split(","):
-                            indices.add(int(part))
-                    elif re.match(r"^\d+-\d+$", raw_del):
-                        start_s, end_s = raw_del.split("-")
-                        end_n = min(int(end_s), int(start_s) + 999)
-                        for n in range(int(start_s), end_n + 1):
-                            indices.add(n)
-                    else:
-                        valid = False
-                except ValueError:
-                    valid = False
-
-                if not valid:
-                    print(f"  ✖ {t('manage_cron.invalid')}")
-                    continue
-
-                to_delete = []
-                for idx in sorted(indices):
-                    if not (1 <= idx <= len(crons)):
-                        print(f"  ✖ {t('manage_cron.invalid')}")
-                        to_delete = []
-                        break
-                    to_delete.append(crons[idx - 1])
+            # v0.39.0 — the rule every selection follows (bob/selection.py):
+            # "1,3-5" was refused, a range reaching past the end too.
+            from bob.selection import SelectionError, parse_selection
+            try:
+                to_delete = [crons[i - 1] for i in parse_selection(raw_del, range(1, len(crons) + 1))]
+            except SelectionError as exc:
+                print(f"  ✖ {t('selection.' + exc.kind, **exc.vars)}")
+                continue
 
             if not to_delete:
                 continue
