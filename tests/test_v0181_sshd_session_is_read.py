@@ -29,12 +29,12 @@ import pytest
 from bob.checks import auth_log as A
 from bob.checks.auth_log import AuthLogSnapshot, check_auth_log
 
-_ACCEPTED_PW = ("Sep 11 13:20:04 pizero sshd-session[1605]: Accepted password for so6 "
+_ACCEPTED_PW = ("Sep 11 13:20:04 pizero sshd-session[1605]: Accepted password for devuser "
                 "from 192.168.1.10 port 58814 ssh2")
-_ACCEPTED_KEY = ("Sep 11 13:25:31 pizero sshd-session[1659]: Accepted publickey for so6 "
+_ACCEPTED_KEY = ("Sep 11 13:25:31 pizero sshd-session[1659]: Accepted publickey for devuser "
                  "from 192.168.1.10 port 54466 ssh2: ED25519 SHA256:abc")
 _INVALID = "Sep 11 13:42:06 pizero sshd-session[2911]: Invalid user intrus1 from 127.0.0.1 port 57392"
-_FAILED = "Sep 11 13:55:00 pizero sshd-session[2950]: Failed password for so6 from ::1 port 38704 ssh2"
+_FAILED = "Sep 11 13:55:00 pizero sshd-session[2950]: Failed password for devuser from ::1 port 38704 ssh2"
 _PENALTY = ("Sep 11 13:42:35 pizero sshd[1049]: drop connection #0 from [127.0.0.1]:52466 on "
             "[127.0.0.1]:22 penalty: connections without attempting authentication")
 _LEGACY_FAILED = "Apr 18 10:23:45 host sshd[123]: Failed password for root from 203.0.113.9 port 1 ssh2"
@@ -53,8 +53,8 @@ def _keys(result):
 def test_accepted_logins_from_sshd_session_are_counted():
     snap = AuthLogSnapshot.from_text("\n".join([_ACCEPTED_PW, _ACCEPTED_KEY]))
     assert [(e.method, e.user, e.source) for e in snap.entries] == [
-        ("password", "so6", "192.168.1.10"),
-        ("publickey", "so6", "192.168.1.10"),
+        ("password", "devuser", "192.168.1.10"),
+        ("publickey", "devuser", "192.168.1.10"),
     ]
 
 
@@ -114,7 +114,7 @@ def test_real_logins_are_not_reported_as_none():
 # The command follows the source it read
 # ---------------------------------------------------------------------------
 
-_PUBLIC = ("Sep 11 13:25:31 pizero sshd-session[1659]: Accepted publickey for so6 "
+_PUBLIC = ("Sep 11 13:25:31 pizero sshd-session[1659]: Accepted publickey for devuser "
            "from 203.0.113.7 port 54466 ssh2")
 
 

@@ -484,8 +484,8 @@ def _read_partition_usage() -> list[PartitionInfo]:
         used_pct_s = parts[5].rstrip("%")
         # A mount point may contain spaces — `df` prints it unescaped, and it is
         # the last column, so everything from here on belongs to it. Splitting
-        # naively named "/media/so6/My" for a drive mounted at
-        # "/media/so6/My Passport": a path the operator cannot act on, in a
+        # naively named "/media/devuser/My" for a drive mounted at
+        # "/media/devuser/My Passport": a path the operator cannot act on, in a
         # finding telling them it is 95% full.
         mountpoint = " ".join(parts[6:])
 

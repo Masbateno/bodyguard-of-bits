@@ -57,7 +57,7 @@ def test_init_version_matches_pyproject_version():
 
     Hand-bumping just one of the two files used to produce a wheel that
     PyPI labeled correctly while the running code reported the prior
-    version. Caught on the so6 Debian 13 VM during the v0.7.0b1 beta
+    version. Caught on the devuser Debian 13 VM during the v0.7.0b1 beta
     validation (2026-05-31) — the banner said ``BOB v0.6.2`` after a
     clean ``pipx install bodyguard-of-bits-beta``.
 

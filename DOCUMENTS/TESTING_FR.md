@@ -13,6 +13,7 @@ Deux parties complémentaires :
 
 | Version | Tests | Notes |
 |---------|-------|-------|
+| 0.41.0 | 23585 | **Mineure — le backlog purgé : dossiers rendus à leur utilisateur, sshd interrogé sur les blocs Match, ufw de CIS 26.04 cité.** `test_v0410_parents_handed_over.py` (4) : chaque parent créé par BOB dans le home rendu, un parent déjà présent laissé tel quel, un parent créé hors du home jamais donné, aucun quand on le demande. `test_v0410_match_probe.py` (19) : les connexions essayées (l'exclusion du bloc antérieur, les bornes de ses plages, jamais les exclusions du bloc lui-même, un critère que seul le bloc antérieur a, borné), un témoin gardé, sans témoin dit non prouvé, sshd indisponible dit, la déduction identique avec ou sans témoin, de bout en bout ; un test interroge le sshd de l'hôte sur le cas mesuré (sauté sans sshd). `test_v0410_cis_ufw.py` (3) : 4.1.3 cité en 26.04 pour une politique entrante ouverte ou inconnue, la référence principale inchangée, les constats sur les chaînes du noyau laissés sans numéro ufw. `test_v0410_history_no_trend.py` (2) : des exécutions partielles seulement disent qu'il n'y a pas de tendance ; une exécution complète la trace. |
 | 0.40.0 | 23517 | **Mineure — un journal de --fix --apply qui montre sa propre falsification ; le calcul du score dans l'aperçu.** `test_v0400_fix_journal.py` (33) : deux lignes par commande, résultats gardés, champs bornés, chaîne cassée par une ligne modifiée, retirée ou déplacée, un journal modifié qui reçoit encore la commande suivante, notes ajoutées jamais modifiées, root seul, droits, liens au journal et à son dossier, liens physiques et propriétaires étrangers refusés, lecture au-delà de la borne des notes, jours du plus récent au plus ancien, témoin envoyé avec son empreinte ou dit absent. `test_v0400_fix_witness.py` (24) : chaque falsification montrée (ligne modifiée, chaîne recalculée ou non, fin coupée, journal supprimé, ligne retirée au milieu, témoin forgé en root, `witness` passé à none, propriétaire étranger) et chaque cas qui n'en est pas une (rotation, pas de journal système, témoin manquant, illisible, commande interrompue, ajout seul impossible) ; seuls les témoins `_UID=0` gardés. `test_v0400_fix_journal_apply.py` (10) : chaque commande lancée a son entrée, écrite avant qu'elle démarre ; aucune ne tourne si le journal ne peut pas être écrit ou si sa première ligne échoue ; un résultat perdu est dit ; une commande refusée n'en laisse pas. `test_v0400_fixlog_screens.py` (24) : le verdict en tête et en rouge, la preuve dans le détail et le texte (lignes contredites seulement), chaîne seule quand rien n'a été confronté, codes de sortie de `--fix-journal`, écran d'accueil, jours, notes proposées au seul propriétaire du journal. `test_v0400_breakdown_block.py` (16) : le bloc dit ce que `--breakdown` a dit pour cinq moteurs, chacun exerçant sa branche ; rapports plus anciens dits. `test_v0400_key_caps.py` (8) : une pastille par touche, le texte du bandeau inchangé par rapport à la 0.39.0 sur chaque écran, dans les deux langues, à cinq largeurs. La suite envoie le journal dans un dossier à elle et son témoin vers une socket qui n'existe pas. |
 | 0.39.0 | 23100 | **Mineure — des notes sur un rapport, dans un journal permettant de détecter ses altérations ; comparaison et historique dans l'aperçu de --manage-logs.** `test_v0390_report_notes.py` (31) : l'auteur par le loginuid à côté de la déclaration sudo/doas, le journal à root en `0640` dans le groupe du rapport et écrit seulement par BOB lancé en root, un journal d'un autre propriétaire dit ne pas être de BOB et jamais écrit, une modification hors de BOB montrée à sa ligne (texte, auteur, ligne du milieu, ordre, copie à côté d'un autre rapport), une purge qui efface texte et sel de chaque ligne, chaîne intacte, deux écrivains qui se chevauchent à coup sûr sous le verrou, un lien à la place refusé et nommé, un journal illisible dit dans la langue de l'écran ; `test_v0390_preview_blocks.py` (27) : blocs notes, comparaison et historique dans cet ordre, la comparaison qui dit ce que dit `--diff` et seulement avec le même hôte, l'historique dessiné par le code de `--history`, blocs gardés à travers ←/→ et remis à zéro à l'ouverture suivante, numérotation sur le log complet seulement, un rapport sans fichier d'état qui le dit ; `test_v0390_context_tones.py` (19) : la couleur de chaque symbole et la paire de chaque couleur, chaque message construit avec son symbole, rien sur la ligne du bandeau, les invites dans la couleur des invites ; `test_v0390_deterministic_order.py` (10) : chaque parcours dont l'ordre décide de ce qui est affiché est trié, /proc par numéro ; `test_v0390_confirm_and_selection.py` (54) : la formulation unique de la confirmation et ses touches, aucune question ne portant sa propre consigne, les sélections lues avant toute question, un intervalle prenant les entrées qui existent et un numéro seul exigé, plusieurs notes retirées ou purgées en une écriture, la barre d'un bloc dans la couleur du cadre, le carnet d'adresses et la liste des tâches de `--manage-cron` numérotés et supprimés par numéro, les listes en mode texte confirmées et précises ; `test_v0390_announced_keys.py` (12) : en boîte noire, écran par écran — le bandeau dessiné est celui de l'écran, et toute touche qu'il n'annonce pas laisse l'écran inchangé. Corrigés : `test_manage_logs.py` (la liste en mode texte confirme une suppression par numéro ; ses tests de sélection testent désormais `bob/selection.py`), `test_email_store_mgmt.py` (confirmation, refus précis, un intervalle dépassant la fin), `test_v0161_tui_palette.py`, `test_v0163_wizard_keys.py`, `test_v0164_graphic_charter.py` (quatre nouvelles paires curses, les nouveaux écrans déclarés). |
 | 0.38.0 | 22668 | **Mineure — config sans root examinée avant sa lecture par root, blocs Match couverts écartés, mises à jour auto de Mint comptées.** `test_v0380_rootless_config_not_opened.py` (6) : un périphérique et une FIFO ne sont jamais ouverts qu'en O_PATH et jamais rouverts, un fichier régulier de l'utilisateur toujours lu, un lien final refusé, le fichier rouvert doit être celui examiné, sans /proc/self/fd rien n'est lu ; `test_v0380_sshd_match_cover.py` (32) : les 13 cas de recouvrement mesurés (11a-11m) et les cas de motifs 12a-12d, 12f tranchés comme sshd les tranche (`[` littéral), la casse des noms d'hôte comptée, les cas limites de la 0.37.0 plus comptés, deux clés différentes comptées, un Include suivi dans son bloc, un Match dans le fichier inclus exigeant les deux critères, le bloc qui reprend après l'Include, un fichier inclus illisible gardant le plafond, le même fichier dans deux blocs, un Include dans un bloc coûtant ses points de bout en bout ; `test_v0380_mint_auto_updates.py` (7) : témoin et lien du timer, les deux ou rien, aucun point sous server avec l'automatisation, le point gardé sans elle, l'instantané qui la lit ; `test_v0380_ufw_enable_read_back.py` (21) : seule une ligne `Status:` explicite est une lecture, l'outil de privilège du correctif interrogé avec `-n`, quelles commandes sont relues, inactif = non appliqué, non relu = inconnu, actif = appliqué, une autre commande non relue, les deux textes ; `test_v0380_precise_texts.py` (9) : chaque texte précisé s'affiche dans les deux langues ; `test_v0380_risk_card_not_running.py` (4) : la fiche d'un service qui ne tourne pas le dit, à l'écran et dans le rapport ; `test_v0380_logs_repeat_criterion.py` (4) : le critère dans le titre et la ligne « aucune » du rapport, les mots conformes au détecteur (10 tentatives rien, 11 détectées) ; `test_v0380_ipv6_closed_counts_all.py` (5) : le compte des services IPv6 injoignables inclut les services internes. Corrigés : `test_v0164_command_convention.py` et `test_v0180_no_fix_locks_you_out.py` ne lancent plus de vrai `sudo ufw enable` / `sudo -n ufw status` ; `test_v0310_shown_network_context.py` suit la nouvelle ligne NAT ; `test_v0370_sshd_match_blocks.py` (un Include dans un bloc est suivi) ; tests à retardement (horloge réelle contre dates figées) désamorcés dans `test_v0370_timeshift_btrfs.py`, `test_v0314_timeshift_measured.py`, `test_report.py`, `test_logs.py` — trouvés avec l'horloge du système avancée de 30 et 365 jours. |
@@ -148,7 +149,7 @@ Deux parties complémentaires :
 
 ### v0.6.1 — 4600/4600 (26-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -187,7 +188,7 @@ Approche standard de couverture cross-distro. La sortie wire (plain-text + JSON)
 - I-4 n'affecte que la sémantique `--fix --apply` sur des chemins comportant des espaces
 - I-5 ne change que le mode à la première création (les `history.jsonl` existants ne sont pas touchés)
 
-Testé par un run sudo sur so6desktop avant livraison pour vérifier que le score de référence v0.5.x (9/10) est préservé.
+Testé par un run sudo sur devhost avant livraison pour vérifier que le score de référence v0.5.x (9/10) est préservé.
 
 Les 4600 tests passent en ~7s sur Python 3.12 / Linux Mint 22.3.
 
@@ -195,7 +196,7 @@ Les 4600 tests passent en ~7s sur Python 3.12 / Linux Mint 22.3.
 
 ### v0.6.0 — 4583/4583 (25-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -243,7 +244,7 @@ Tous les 4583 tests passent en ~7s sur Python 3.12 / Linux Mint 22.3.
 
 ### v0.5.8 — 4583/4583 (25-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -286,7 +287,7 @@ Tous les 4583 tests passent en ~6s sur Python 3.12 / Linux Mint 22.3.
 
 ### v0.5.7 — 4571/4571 (24-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -332,7 +333,7 @@ Tous les 4571 tests passent en ~6s sur Python 3.12 / Linux Mint 22.3.
 
 ### v0.5.6 — 4560/4560 (24-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -383,7 +384,7 @@ Les 4560 tests passent en ~6s sur Python 3.12 / Linux Mint 22.3.
 
 ### v0.5.5 — 4545/4545 (24-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -447,11 +448,11 @@ Le plateau 4538 à travers les Phases 2-5 confirme que la garantie contract-pres
 
 #### Test terrain
 
-Même approche couverture cross-distro que v0.5.4 — pipx upgrade + `sudo bob -v -d` sur chaque VM (so6desktop, debian13vm, kali, so6minttest, so6ubuntutest). Changements visibles attendus vs v0.5.4 :
+Même approche couverture cross-distro que v0.5.4 — pipx upgrade + `sudo bob -v -d` sur chaque VM (devhost, debian13vm, kali, mint-test, ubuntu-test). Changements visibles attendus vs v0.5.4 :
 
-- **Shift display password_policy** : sur hosts sans `pam_pwquality` installé (so6desktop, so6ubuntutest, autres), le finding se déplace de "À corriger" (bloc action) à "Améliorations possibles" (bloc improvement) dans le summary box. Score global inchangé. Texte verdict change de "Des corrections sont nécessaires" à "Configuration globalement saine".
+- **Shift display password_policy** : sur hosts sans `pam_pwquality` installé (devhost, ubuntu-test, autres), le finding se déplace de "À corriger" (bloc action) à "Améliorations possibles" (bloc improvement) dans le summary box. Score global inchangé. Texte verdict change de "Des corrections sont nécessaires" à "Configuration globalement saine".
 - **Changement shape cmd `services_state.service_inactive`** : sur hosts avec services monitorés inactifs, le cmd ne chaîne plus `&& sudo journalctl …` (ce qui le rendait non-fixable). La suggestion journalctl se déplace en `note=` pour guidance.
-- **Aucun changement visible** sur hosts qui ne déclenchent pas les conditions ci-dessus (debian13vm, kali, so6minttest dans leur état actuel).
+- **Aucun changement visible** sur hosts qui ne déclenchent pas les conditions ci-dessus (debian13vm, kali, mint-test dans leur état actuel).
 
 INFO C cache APT continue de fonctionner comme avant (supprimé quand mises à jour security/regular en attente).
 
@@ -461,7 +462,7 @@ Les 4545 tests passent en ~7s sur Python 3.12 / Linux Mint 22.3.
 
 ### v0.5.4 — 4538/4538 (22-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -505,7 +506,7 @@ Approche de couverture cross-distro inchangée depuis les Phases 1-4 — pipx up
 1. **Ligne INFO cache APT** dans section MISES À JOUR SYSTÈME quand le host a APT, aucune mise à jour security/regular en attente, et âge du cache sous le seuil obsolète de 7 jours.
 2. **Reshuffle score par domaine** sur hosts émettant findings `fail2ban.*` / `virt.*` / `docker_audit.*` — le score global est inchangé.
 
-Sur le host dev `so6desktop` (Mint 22.3 + Docker installé + libvirt KVM), le reshuffle est observable : `Pare-feu & Services` est passé de 3/10 à 10/10 (`virt.bypass_risk` sorti du catch-all), `Durcissement` est descendu de 6/10 à 5/10 (`virt.bypass_risk` compté là maintenant). Le score global reste à 8/10.
+Sur le host dev `devhost` (Mint 22.3 + Docker installé + libvirt KVM), le reshuffle est observable : `Pare-feu & Services` est passé de 3/10 à 10/10 (`virt.bypass_risk` sorti du catch-all), `Durcissement` est descendu de 6/10 à 5/10 (`virt.bypass_risk` compté là maintenant). Le score global reste à 8/10.
 
 Les 4538 tests passent en ~6s sur Python 3.12 / Linux Mint 22.3.
 
@@ -513,7 +514,7 @@ Les 4538 tests passent en ~6s sur Python 3.12 / Linux Mint 22.3.
 
 ### v0.5.3 — 4538/4538 (22-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -573,7 +574,7 @@ Les 4538 tests passent en ~6s sur Python 3.12 / Linux Mint 22.3.
 
 ### v0.5.2 — 4538/4538 (22-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -622,7 +623,7 @@ Les 4538 tests passent en ~6s sur Python 3.12 / Linux Mint 22.3.
 
 ### v0.5.1 — 4538/4538 (21-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -651,13 +652,13 @@ Un grep à travers `tests/` a confirmé que tous les tests sur les instances `Ch
 
 #### Le test terrain suit le même pattern que v0.5.0
 
-La release Phase 1 v0.5.0 a été testée terrain sur 5 distros (Linux Mint 22.3 production + so6minttest, Debian 13 trixie, Kali Rolling, Ubuntu 26.04 LTS) avec `sudo bob -v -d --french`. Le refactor de v0.5.1 préserve la sortie wire exactement, donc la même couverture cross-distro s'applique. Le test terrain recommandé pour v0.5.1 : installer via `pipx upgrade bodyguard-of-bits` et lancer `sudo bob -v -d` — la sortie d'audit, le score breakdown, et les barres par domaine doivent être bit-identiques à v0.5.0 (modulo les changements d'état système entre runs).
+La release Phase 1 v0.5.0 a été testée terrain sur 5 distros (Linux Mint 22.3 production + mint-test, Debian 13 trixie, Kali Rolling, Ubuntu 26.04 LTS) avec `sudo bob -v -d --french`. Le refactor de v0.5.1 préserve la sortie wire exactement, donc la même couverture cross-distro s'applique. Le test terrain recommandé pour v0.5.1 : installer via `pipx upgrade bodyguard-of-bits` et lancer `sudo bob -v -d` — la sortie d'audit, le score breakdown, et les barres par domaine doivent être bit-identiques à v0.5.0 (modulo les changements d'état système entre runs).
 
 ---
 
 ### v0.5.0 — 4538/4538 (21-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -702,13 +703,13 @@ Le nouveau `TestApplyCronSchedule::test_replaces_schedule` a échoué au premier
 
 Aucune assertion changée sémantiquement — le contrat que ces tests pinnent (champs snapshot NTP/Fail2ban, inférence service-active) est préservé.
 
-Les 4538 tests passent en 7.77s sur Python 3.12 / Linux Mint 22.3 / `so6desktop`.
+Les 4538 tests passent en 7.77s sur Python 3.12 / Linux Mint 22.3 / `devhost`.
 
 ---
 
 ### v0.4.8 — 4499/4499 (21-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -748,7 +749,7 @@ Tous les 4499 tests passent en 6.29s sur le workstation de développement local.
 
 ### v0.4.7 — 4500/4500 (21-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -773,7 +774,7 @@ Tous les autres tests passent inchangés, incluant toute la suite de tests `bob/
 
 ### v0.4.6 — 4500/4500 (17-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -817,7 +818,7 @@ Validation terrain post-release : 14 audits sur 5 systèmes confirment 7 noyaux 
 
 ### v0.4.5 — 4489/4489 (17-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -851,7 +852,7 @@ Le parsing AST est ~5× plus lent que regex sur ce codebase (300 ms vs 60 ms pou
 
 ### v0.4.4 — 4489/4489 (16-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -903,7 +904,7 @@ Nouveau helper `_is_safe_user_path(path, owner_home)` dans `bob/checks/_run.py` 
 
 ### v0.4.3 — 4468/4468 (15-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -944,7 +945,7 @@ Attribut `key=` ajouté à ~30 findings dans `docker`/`firewall_stack`/`network_
 
 ### v0.4.2 — 4452/4452 (14-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -973,7 +974,7 @@ Validation complète `dpkg-buildpackage` + `lintian` + `rpmbuild` + `rpmlint` re
 
 ### v0.4.1 — 4449/4449 (14-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -1021,7 +1022,7 @@ Champ `template_vars` exposé dans la sortie JSON :
 
 ### v0.4.0 — 4430/4430 (14-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -1119,7 +1120,7 @@ Fixture autouse force `LC_ALL=C`/`LANG=C` pour chaque test, rendant les défauts
 
 ### v0.3.6 — 4348/4348 (09-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -1128,13 +1129,13 @@ pytest tests/ -q
 
 **Aucun nouveau test — passe de code review.** Huit correctifs liés : `Path.home()` → `get_user_home()` dans 7 modules · ULA/link-local IPv6 dans `_is_private_or_loopback` · SSH `AllowTcpForwarding local` accepté · header journalisation UFW masqué quand UFW inactif · regex legacy `NOTIFY_EMAIL` · `_check_weak_algo` déplacé dans la section sub-check · 22 imports inutilisés supprimés (pyflakes propre sauf un `noqa` intentionnel) · 47 clés de locales mortes supprimées.
 
-**Validation terrain :** Audit complet sur so6desktop (Linux Mint 22.3) terminé avec score 8/10. L'en-tête de section journalisation UFW est désormais masqué quand UFW est inactif ; les link-local IPv6 sont correctement classés privés ; les profils/plugins/baselines sont correctement chargés depuis `/home/so6/.config/bob/` (et non `/root/.config/bob/`).
+**Validation terrain :** Audit complet sur devhost (Linux Mint 22.3) terminé avec score 8/10. L'en-tête de section journalisation UFW est désormais masqué quand UFW est inactif ; les link-local IPv6 sont correctement classés privés ; les profils/plugins/baselines sont correctement chargés depuis `/home/devuser/.config/bob/` (et non `/root/.config/bob/`).
 
 ---
 
 ### v0.3.5 — 4348/4348 (08-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -1147,7 +1148,7 @@ pytest tests/ -q
 
 ### v0.3.4 — 4348/4348 (08-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -1160,7 +1161,7 @@ pytest tests/ -q
 
 ### v0.3.3 — 4348/4348 (07-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -1187,7 +1188,7 @@ pytest tests/ -q
 
 ### v0.3.2 — 4347/4347 (07-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -1244,7 +1245,7 @@ pytest tests/ -q
 
 ### v0.3.1 — 4328/4328 (06-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -1268,7 +1269,7 @@ pytest tests/ -q
 
 ### v0.3.0 — 4322/4322 (06-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -1320,7 +1321,7 @@ pytest tests/ -q
 
 ### v0.2.4 — 4274/4274 (05-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -1360,7 +1361,7 @@ pytest tests/ -q
 
 ### v0.2.3 — 4262/4262 (03-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -1388,7 +1389,7 @@ pytest tests/ -q
 
 ### v0.2.2 — 4255/4255 (02-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -1451,7 +1452,7 @@ Tests de régression pour le fix race condition `.stat()` de v0.2.1. Un fichier 
 
 ### v0.2.0 — 4238/4238 (01-05-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -1538,7 +1539,7 @@ pytest tests/ -q
 
 ### v0.1.1 — 4206/4206 (29-04-2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -1560,14 +1561,14 @@ Tests de régression pour le bug du format arbre fwupd 1.9+, trouvé sur Ubuntu 
 
 ### post-v0.1.0 — 4202/4202 (27 avril 2026)
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
 4202 passed in 4.38s
 ```
 
-**Bugs trouvés lors du premier run sur Ubuntu 26.04 LTS (`so6ubuntutest`) :**
+**Bugs trouvés lors du premier run sur Ubuntu 26.04 LTS (`ubuntu-test`) :**
 
 **Correction — surface d'attaque : `ssh.not_installed` et `fail2ban.not_installed` non détectés :**
 Ces deux clés sont émises au niveau `INFO` par leurs vérifications respectives. `compute_exposure()` dans `exposure.py` ne consultait que `bad_keys` (ALERT+WARN), donc aucune des deux n'était jamais détectée — SSH s'affichait comme "clé uniquement, root désactivé" et fail2ban comme "actif", même quand aucun des deux n'était installé.
@@ -1581,7 +1582,7 @@ Correction : ajout de `all_keys = bad_keys | info_keys` ; `ssh.not_installed` et
 ### v0.1.0 — 4200/4200 (26 avril 2026)
 
 
-**Plateforme :** Linux Mint 22.3 — `so6desktop` — Python 3.12, pytest 8.x
+**Plateforme :** Linux Mint 22.3 — `devhost` — Python 3.12, pytest 8.x
 
 ```
 pytest tests/ -q
@@ -1670,7 +1671,7 @@ pytest tests/ -q
 
 ----
 
-**Hôte de test :** Linux Mint 22.3 — `so6minttest`
+**Hôte de test :** Linux Mint 22.3 — `mint-test`
 **État de référence** (baseline propre après chaque test) :
 
 ```bash

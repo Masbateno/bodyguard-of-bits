@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.40.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.41.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -225,7 +225,7 @@ Each item of the *Action required* list shows a CIS reference when one applies, 
 
 ## CIS benchmark mapping
 
-241 entries: **91 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 7 CIS Kubernetes 2.0 · 1 CIS Red Hat 8/9 · 135 best-practice**, plus **335 cross-benchmark citations** on 95 keys (CIS Debian 12/13 and CIS Ubuntu 24.04/26.04 — 26.04 since 0.40.0, Level 1 only, as ComplianceAsCode publishes it), sourced from [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) so every control number is verifiable rather than invented.
+241 entries: **91 CIS Ubuntu 22.04 · 7 CIS Docker 1.6 · 7 CIS Kubernetes 2.0 · 1 CIS Red Hat 8/9 · 135 best-practice**, plus **339 cross-benchmark citations** on 95 keys (CIS Debian 12/13 and CIS Ubuntu 24.04/26.04 — 26.04 since 0.40.0, Level 1 only, as ComplianceAsCode publishes it), sourced from [ComplianceAsCode/content](https://github.com/ComplianceAsCode/content) so every control number is verifiable rather than invented.
 
 Each finding with a formal CIS code displays `[CIS:X.Y.Z]` inline in the summary box.  
 Full reference text is shown in `--verbose` mode.  

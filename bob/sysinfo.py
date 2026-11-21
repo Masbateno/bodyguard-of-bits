@@ -137,9 +137,26 @@ def ensure_user_dir(d: "str | Path", mode: "int | None" = None, hand_over: bool 
     """
     d = Path(d)
     probe = d
+    missing: "list[Path]" = []
     while not os.path.lexists(probe) and probe.parent != probe:
+        missing.append(probe)
         probe = probe.parent
     refuse_if_redirected(d, os.path.realpath(probe))
+    # v0.41.0 (B-029) — the missing parents, one by one, each handed over like
+    # the leaf when it lies in the invoking user's home. mkdir(parents=True)
+    # created them as root and only the leaf was handed over: measured on the
+    # test Mint (17 November 2026), ~/.local/share/bob stayed root's after a
+    # first `sudo bob -d`, and the user could create or remove nothing in it
+    # without root. A parent created outside the home (an --output-dir the
+    # operator chose) is never handed to the user.
+    home = os.path.abspath(str(get_user_home()))
+    for parent in reversed(missing[1:]):
+        try:
+            os.mkdir(parent)
+        except FileExistsError:
+            continue                      # made meanwhile, by someone else: not ours to give
+        if hand_over and _within(os.path.abspath(str(parent)), home):
+            chown_to_sudo_user(parent)
     if mode is None:
         d.mkdir(parents=True, exist_ok=True)
     else:

@@ -160,13 +160,13 @@ class TestDockerUserns:
 
     def test_a_range_already_taken_is_not_reused(self, tmp_path, systemd):
         """Measured on Mint 22.3, docker 29.1.3: left to docker, dockremap got
-        100000:65536 - so6's range. BOB writes the next free one."""
+        100000:65536 - devuser's range. BOB writes the next free one."""
         import subprocess
         cmd = (self._cmd().replace(_DOCKREMAP_USER, "true").replace("/etc/", f"{tmp_path}/etc/")
                .replace("sudo ", "").replace("systemctl restart docker", "true"))
         (tmp_path / "etc").mkdir()
         for name in ("subuid", "subgid"):
-            (tmp_path / f"etc/{name}").write_text("so6:100000:65536\nalice:165536:65536\n")
+            (tmp_path / f"etc/{name}").write_text("devuser:100000:65536\nalice:165536:65536\n")
         subprocess.run(["sh", "-c", cmd], check=True, timeout=30)
         for name in ("subuid", "subgid"):
             assert (tmp_path / f"etc/{name}").read_text().splitlines()[-1] == "dockremap:231072:65536"

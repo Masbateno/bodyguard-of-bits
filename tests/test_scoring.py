@@ -531,7 +531,7 @@ class TestPostureEscalation:
 
 
 class TestPostureTypeGuard:
-    """Regression guard for the so6desktop crash on 2026-05-30:
+    """Regression guard for the devhost crash on 2026-05-30:
     engine.domain_scores returns dict[str, dict] but the first cut of
     __main__.py passed the inner dict to set_posture, crashing
     posture_escalation at the ``<=`` comparison."""
@@ -539,7 +539,7 @@ class TestPostureTypeGuard:
     def test_passing_dict_raises_typeerror(self):
         e = ScoreEngine()
         e.finalize()
-        # The exact mistake that crashed sudo bob on so6desktop:
+        # The exact mistake that crashed sudo bob on devhost:
         # engine.domain_scores["firewall"] is a dict, not an int.
         with pytest.raises(TypeError) as exc:
             e.set_posture(firewall_domain_score={"score": 3, "deductions": 7, "label": "Firewall"})
@@ -583,7 +583,7 @@ class TestPostureTypeGuard:
 class TestPostureIntegrationWithDomainScores:
     """Integration: real engine.domain_scores → set_posture round-trip.
 
-    Pre-fix on so6desktop: __main__.py passed engine.domain_scores.get('firewall')
+    Pre-fix on devhost: __main__.py passed engine.domain_scores.get('firewall')
     (a dict) directly to set_posture(firewall_domain_score=...), crashing
     the audit with "'<=' not supported between instances of 'dict' and 'int'".
     """

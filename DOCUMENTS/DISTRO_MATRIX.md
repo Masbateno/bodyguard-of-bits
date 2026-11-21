@@ -507,7 +507,7 @@ gone (exit 3); `package_integrity.*` has no explain (INFO-only, exit 3); `--exha
 is in `--help` and bash-completion. Box fully restored (nft flushed, base64 restored
 from backup, debsums removed, `/root/st` cleaned).*
 
-*Linux Mint 22.3 field pass (0.23.0 WIP, 2026-10-02, real so6minttest, x86_64
+*Linux Mint 22.3 field pass (0.23.0 WIP, 2026-10-02, real mint-test, x86_64
 4-core, Py 3.12.3, **ufw installed but inactive**, AppArmor enabled, French
 locale): A/B 0.23.0 ↔ 0.22.1 (`--profile server`, comparing `deductions` +
 counts) **identical** — score 6, same domains, same deduction keys, same
@@ -521,7 +521,7 @@ this full desktop install (21 genuinely-changed files). Box restored (base64 fro
 backup, debsums removed, `/root/st` cleaned).*
 
 *Ubuntu Server 26.04.1 LTS field pass (0.23.0 WIP, 2026-10-02, real
-so6ubuntuservertest, x86_64 4-core, **Python 3.14.4**, ufw installed but
+ubuntuserver-test, x86_64 4-core, **Python 3.14.4**, ufw installed but
 inactive, AppArmor enabled, freshly booted → load 7–12): A/B 0.23.0 ↔ 0.22.1
 (`deductions` + counts) clean — score 6, same domains, same deduction keys, same
 alert/warning counts; the only diff is `info_count` 62 vs 63, traced to the live
@@ -567,7 +567,7 @@ round-trip, **both package verifiers are now validated end-to-end on real
 hardware.** Box restored (base64 from backup — GNU coreutils is a real file, no
 uutils multicall trap — `/root/st` cleaned).*
 
-*Kali Rolling field pass (0.23.0 WIP, 2026-10-02, real so6kalitest, x86_64,
+*Kali Rolling field pass (0.23.0 WIP, 2026-10-02, real kali-test, x86_64,
 **Python 3.14.7**, no ufw, empty nft ruleset, firewalld inactive, AppArmor
 enabled): the B change fires **naturally** here (unlike the Pi, where the
 protective-nft side had to be forged) — a genuine nft-only host with no filtering
@@ -581,7 +581,7 @@ remediation `sudo apt install -y ufw` → `… && sudo ufw enable`, explain key
 Banner 🐉, 0 traceback, `package_integrity` → honest "not verified" (debsums
 absent). Re-confirms B on x86 + the newest Python (3.14.7). Box cleaned.*
 
-*Debian 13 (trixie) field pass (0.23.0 WIP, 2026-10-03, real so6debiantest,
+*Debian 13 (trixie) field pass (0.23.0 WIP, 2026-10-03, real debian-test,
 x86_64, Python 3.13.5, minimal — 369 packages, no ufw, empty nft, firewalld
 inactive, AppArmor enabled, GNU coreutils): A/B 0.23.0 ↔ 0.22.1 **identical**
 (score 7, same deduction keys / counts), text diff = **exactly** the B rename
@@ -971,7 +971,7 @@ granting passwordless `python3` was removed by its owner.*
 | ip6tables INPUT `-P DROP`, `-j evpn.INPUT` (ExpressVPN), `-j LIBVIRT_INP` (libvirt), `-i lo -j ACCEPT`, both chains empty; sshd on `[::]:22`, link-local only | "BOB cannot show whether the local network reaches them"; the ports OK said every interface filtered by UFW | IPv6 inbound closed, the chains named, only inbound judged; the ports OK says closed "by the host's rules" for IPv6 |
 | `/var/log/ufw.log` 3 days, `ufw.log.1` the 7 before (some 10 000 blocks in the last 7 days) | "3 day(s) of logs available", "1764 blocked attempt(s) over 7 day(s)" | "N day(s) in /var/log/ufw.log; rotated files are not read", the verdict over the days covered (5 at the replay) |
 | a TV box, 192.168.1.50: unicast UDP to 413 (20 October) and 567 (22 October) distinct high ports, none to 5353/1900 | "likely IoT discovery traffic (mDNS/SSDP/UPnP), not an attack" | the protocol and port count; "BOB does not identify this traffic" |
-| `~/.config/bob/history.jsonl` root:root 0600, 56 KB | `bob --history`: "No score history found" | "exists but cannot be read … owned by root, mode 0600"; after one `sudo bob`, so6:so6 and read |
+| `~/.config/bob/history.jsonl` root:root 0600, 56 KB | `bob --history`: "No score history found" | "exists but cannot be read … owned by root, mode 0600"; after one `sudo bob`, devuser:devuser and read |
 | `--exhaustive` after a normal run, then a normal run | "This run could read less of the host", "6 new info notice(s)", then "4 info notice(s) resolved" | "not run the same way (… now, not recorded before)": exhaustive sections and counts left out |
 | `/` and `/home` on plain ext4, plain swap | the root named, `/home` not | `/home` and swap named in the detail, same −1 |
 
@@ -1407,7 +1407,7 @@ policy, user and ranges; `runc` stays, required by `containers-common-extra`.*
 | a container publishing 8099; a host service on 8097; both probed from the LAN | 8099 answered, 8097 refused: the zone does not filter a published port. BOB said Docker "may bypass UFW rules" (no ufw on the host), announced "three options" and listed two, recommended "explicit UFW rules", tagged the port "bypasses UFW", and the ports section said 8099 (docker-proxy) was "governed by the firewalld zone". 0.25.1 names the host firewall, lists two options, the second being to publish on 127.0.0.1 a port that should stay on the host and to filter in DOCKER-USER who reaches the others, and says a docker-proxy port is not filtered by the zone; keys, levels and points unchanged |
 | a container publishing on `127.0.0.1:8096` | answered on the host, refused from the LAN (option 2 holds) |
 | two containers running, no port published | BOB said "No running Docker containers detected" while its Docker hardening section counted 2. The OK fires when no port is published; it now says so |
-| the `userns-remap` fix, applied as printed | `useradd -r -U` created dockremap (uid 388); its range `589824:65536` starts after so6's `524288:65536`; Docker restarted with `userns`; a container's root maps to host uid 589824 under SELinux enforcing; re-audit: "userns-remap enabled". The existing containers and images no longer listed (Docker root `/var/lib/docker/589824.589824`), as the detail warns |
+| the `userns-remap` fix, applied as printed | `useradd -r -U` created dockremap (uid 388); its range `589824:65536` starts after devuser's `524288:65536`; Docker restarted with `userns`; a container's root maps to host uid 589824 under SELinux enforcing; re-audit: "userns-remap enabled". The existing containers and images no longer listed (Docker root `/var/lib/docker/589824.589824`), as the detail warns |
 
 ### 0.25.1 field pass — Docker's DOCKER-USER chain on Ubuntu Server
 

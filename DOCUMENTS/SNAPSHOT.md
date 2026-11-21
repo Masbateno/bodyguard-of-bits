@@ -123,8 +123,8 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  bob 0.40.0     ~66.0 kLoC Python · 0 runtime deps outside stdlib        │
-│                 23517 unit tests · 30 doc files · 7+ distros field-tested │
+│  bob 0.41.0     ~66.3 kLoC Python · 0 runtime deps outside stdlib        │
+│                 23585 unit tests · 30 doc files · 7+ distros field-tested │
 └─────────────────────────────────────────────────────────────────────────┘
 
 LAYER (top→bottom = imports flow down)
@@ -172,7 +172,7 @@ LAYER (top→bottom = imports flow down)
     bob/json_output.py + html_output.py + csv_output.py + markdown_output.py + report_markdown.py
         ← export formatters
     bob/formatter.py + bob/i18n.py + bob/_i18n_safe.py + bob/locales/{en,fr}.json
-        ← locale-independent reconstruction + i18n (3519 keys per language;
+        ← locale-independent reconstruction + i18n (3526 keys per language;
           _i18n_safe.py since v0.8.2 = shared make_fallback_t + t_or_hardcoded)
 
 DATA (read-only at runtime, shipped in the package)
@@ -246,9 +246,10 @@ bodyguard-of-bits/
 │   │   └── ssh/               ← split package since v0.6.0 (was 1296 L monolith)
 │   │       ├── __init__.py    ← public re-exports for backwards-compat (64 L)
 │   │       ├── _directives.py ← _BadDirective table + _BAD_DIRECTIVES + _WEAK_CIPHERS/_WEAK_MACS/_WEAK_KEX sets (284 L)
-│   │       ├── _snapshot.py   ← 5 dataclasses + SSHSnapshot + from_system (356 L)
+│   │       ├── _snapshot.py   ← 5 dataclasses + SSHSnapshot + from_system (362 L)
 │   │       ├── _parsers.py    ← pure parsers, key-type helpers, collect_host_keys (643 L)
-│   │       └── _subchecks.py  ← check_ssh entry point + per-area _check_* helpers, incl. v0.10.1 client-side ForwardX11 detection (928 L)
+│   │       ├── _probe.py      ← **NEW 0.41.0** asks `sshd -T -C` where a Match setting an earlier block may override applies: a witness connection shown, or "not proven" — never a reason to drop the setting
+│   │       └── _subchecks.py  ← check_ssh entry point + per-area _check_* helpers, incl. v0.10.1 client-side ForwardX11 detection (944 L)
 │   ├── cron/                  ← split package since v0.6.0 (was 1204 L monolith)
 │   │   ├── __init__.py        ← public re-exports incl. datetime + _EMAIL_RE (114 L)
 │   │   ├── _crontab.py        ← **NEW 0.26.0** BusyBox crond: BOB jobs as `# BEGIN/END BOB cron bob-<slug>` blocks of `/etc/crontabs/root`, then `root` to `cron.update` (108 L)
@@ -270,7 +271,7 @@ bodyguard-of-bits/
 │   ├── breakdown.py           ← --breakdown score computation transparency
 │   ├── exposure.py            ← attack-surface table (compute_exposure)
 │   ├── formatter.py           ← locale-independent reconstruction (v0.4.1)
-│   ├── i18n.py                ← t(key, **vars), 3519 keys per locale (strict parity)
+│   ├── i18n.py                ← t(key, **vars), 3526 keys per locale (strict parity)
 │   ├── locales/
 │   │   ├── en.json            ← English translation keys
 │   │   └── fr.json            ← French translation keys (strict parity)
@@ -308,7 +309,7 @@ bodyguard-of-bits/
 │   └── _tty.py                ← safe_input + raw-mode read_line() + prompt_wizard() (Esc-to-cancel); EOFError swallow contract uniform (v0.6.1 I-2)
 ├── .ruff.toml                 ← v0.13.3 correctness-only lint gate (E9/F/B); nothing ignored since v0.14.0
 ├── scripts/lint_locales.py    ← v0.8.2 locale linter (EN/FR parity + placeholder sanity)
-├── tests/                     ← 555 test files, ~9222 functions, 23517 collected (0.40.0)
+├── tests/                     ← 559 test files, ~9222 functions, 23585 collected (0.41.0)
 ├── DOCUMENTS/                 ← public technical documentation
 ├── debian/                    ← Debian source package (bob-core/bob-tui/bob meta)
 ├── packaging/rpm/             ← Fedora COPR RPM spec
@@ -354,11 +355,11 @@ bodyguard-of-bits/
 | `breakdown.py` | 257 | `--breakdown` / `-B` score computation transparency display; **v0.40.0** `breakdown_state` (what the engine held, kept in a `-d` report's `.state`) and `breakdown_lines` (replayed through `display_breakdown` itself, for the `b` block of the `--manage-logs` preview) |
 | `exposure.py` | 302 | `compute_exposure()` — attack-surface table for the audit summary (synthesises firewall state + ports + network context + finding keys) |
 | `formatter.py` | 119 | `format_finding()`, `format_deduction()` — locale-independent via `template_vars` |
-| `i18n.py` | 309 | `t(key, **vars)`, locale auto-detect (POSIX), 3519 keys EN/FR |
+| `i18n.py` | 309 | `t(key, **vars)`, locale auto-detect (POSIX), 3526 keys EN/FR |
 | `compare.py` | 911 | `AuditBaseline`, `AuditDelta`, `build_baseline()`, `compute_delta()`, `display_delta()`. **v0.9.0 F-2**: `AuditBaseline.hostname` field + `BaselineLoadError` + strict-mode `load_baseline(path, strict=True)` for `--diff [PATH]` cross-machine compare. **v0.9.2**: `load_baseline` calls `bob._v090_renames.remap_finding_key` per entry to remap legacy section prefixes at load + `BaselineLoadError` raise sites use `_i18n_safe.t_or_hardcoded` for 4 new `compare.baseline_load.*` keys. |
 | `correlation.py` | 161 | 6 compound-risk rules (`CorrelationRule` with frozensets) |
 | `recurrence.py` | 101 | Recurring finding tracker: consecutive-audit counters |
-| `history.py` | 361 | `--history` sparkline, JSONL append at `~/.config/bob/history.jsonl`, rotate@1000 |
+| `history.py` | 364 | `--history` sparkline, JSONL append at `~/.config/bob/history.jsonl`, rotate@1000 |
 | `ignore.py` | 201 | Persistent ignore list `~/.config/bob/ignore.yml`; canonical key regex validation (v0.7.1 M-3); `--unignore` symmetric helper (v0.8.1 T57). v0.10.0 D-4 back-compat for legacy umbrella entries is centralised in `scoring.py::ScoreEngine.apply`, not here. |
 | `fix_journal.py` | 493 | **v0.40.0** the journal of `--fix --apply`: `check_writable` (asked before the first command — none runs without its entry), `start` / `finish` (two lines per command, so one during which BOB dies still shows as started), `add_note`, `load` / `parse` / `days`; root only, O_NOFOLLOW, flock, refuses a journal or directory not owned by root; each line chained to the one before, `chattr +a` set and recorded, a witness line (`bob-fix`) with the line's digest and its content's digest sent through `/dev/log` |
 | `fixlog.py` | 274 | **v0.40.0** the journal of `--fix --apply` in words, one rendering for the `--manage-logs` screens and `bob --fix-journal`: `verdict_lines` (the verdict first — falsified / not demonstrated / intact — then each finding and what vouches for the journal: witness, sealing, append-only), `day_row`, `entry_row`, `entry_detail` (with, for an entry its witness contradicts, what the system log recorded when it was written), `removed_lines`, `text_report` |
@@ -383,7 +384,7 @@ bodyguard-of-bits/
 | `csv_output.py` | 136 | `--format csv` formatter; **BREAKING v0.7.3 I-3**: column renamed `section` → `nature` to match the Finding field it actually carries |
 | `html_output.py` | 310 | `build_html_output()` standalone HTML (no JS, XSS-safe); i18n via `t` (v0.7.2 M-4); section descriptions (v0.8.2 T39); uses `_i18n_safe.make_fallback_t` |
 | `markdown_output.py` | 306 | `--format markdown` formatter; i18n via `t` + level emoji prefixes (v0.7.2 M-4); uses `_i18n_safe.make_fallback_t` |
-| `sysinfo.py` | 593 | `collect_system_info()`, `detect_network_context()`, `get_user_home()` (sudo-aware), `audit_user()` (v0.17.1 — measured from `geteuid()`, not read from `$USER`); hostname and kernel come from `os.uname()`; `_is_private_or_loopback_ipv4/_ipv6` single source of truth since v0.5.x |
+| `sysinfo.py` | 610 | `collect_system_info()`, `detect_network_context()`, `get_user_home()` (sudo-aware), `audit_user()` (v0.17.1 — measured from `geteuid()`, not read from `$USER`); hostname and kernel come from `os.uname()`; `_is_private_or_loopback_ipv4/_ipv6` single source of truth since v0.5.x |
 | `platform.py` | 96 | `machine()`, `raspberry_pi_model()`, `is_raspberry_pi()`, `boot_firmware_dir()` (v0.17.0) — what machine this is, so a *missing* x86 concept degrades instead of lying: no UEFI is reported as "no UEFI found", not "Legacy BIOS", and no microcode package on ARM is the correct state, not a gap |
 | `_paths.py` | 53 | `resolve_share_dir()`: BOB_SHARE only — `UFW_AUDIT_SHARE` legacy alias **removed in v0.6.0** after the v0.4.2 → v0.5.4 deprecation chain |
 | `_tty.py` | 137 | `safe_input(prompt)` thin EOFError-swallowing wrapper around `input()` (v0.6.1 I-2), `read_line(prompt) → str|None`, Esc returns None, TTY fallback; `prompt_wizard()` helper added v0.5.x |
@@ -926,7 +927,7 @@ plus an emulated arm64 job (`debian:bookworm-slim` under QEMU, `ci/arm64_smoke.s
 ## Quick references
 
 - **Add a service**: edit `bob/data/services.json` (38 entries, schema in `bob/data/schemas/`). No Python code change. See [README_DEV.md § Adding a service](README_DEV.md).
-- **Add a language**: copy `bob/locales/en.json` → `bob/locales/de.json`, translate all 3519 values keeping the exact key tree, then append `"de"` to `SUPPORTED_LANGS` in `bob/i18n.py` (currently `("en", "fr")`). `cli.py` validates the *shape* since v0.14.1 (`_LANG_RE = ^[A-Za-z]{2,3}([_-][A-Za-z]{2,4})?$`, enforced by `_validate_lang`) — a well-formed but unsupported code still falls back to English, while a path-shaped value is rejected outright and `i18n.init()` falls back to `DEFAULT_LANG` if the file is missing.
+- **Add a language**: copy `bob/locales/en.json` → `bob/locales/de.json`, translate all 3526 values keeping the exact key tree, then append `"de"` to `SUPPORTED_LANGS` in `bob/i18n.py` (currently `("en", "fr")`). `cli.py` validates the *shape* since v0.14.1 (`_LANG_RE = ^[A-Za-z]{2,3}([_-][A-Za-z]{2,4})?$`, enforced by `_validate_lang`) — a well-formed but unsupported code still falls back to English, while a path-shaped value is rejected outright and `i18n.init()` falls back to `DEFAULT_LANG` if the file is missing.
 - **Add a check** (full checklist):
   1. Create `bob/checks/foo.py` with `FooSnapshot.from_system()` + `check_foo(snapshot, t)` (follow the pattern of an existing simple check, e.g. `ntp.py`).
   2. Wire in `bob/runner.py`: add the import at the top, add a `_Section` entry to the `_SECTIONS` tuple (`bob/runner.py`, v0.9.0 D-2) — `_ALL_SECTIONS` is *derived* from it (`tuple(s.name for s in _SECTIONS if not s.always_on)`) and cannot be appended to, and invoke via `_sec("foo", foo_snapshot, check_foo)` in the appropriate GROUP block.
@@ -952,14 +953,14 @@ plus an emulated arm64 job (`debian:bookworm-slim` under QEMU, `ci/arm64_smoke.s
 | Metric | Value | Source |
 |---|---:|---|
 | Python source (bob/) | 53,849 LoC across 137 files (0.26.0 work tree) | `find bob -name '*.py' | xargs wc -l` |
-| Tests | 555 test files, ~9222 functions, **23517 collected** (0.40.0) | `pytest --collect-only -q` |
+| Tests | 559 test files, ~9222 functions, **23585 collected** (0.41.0) | `pytest --collect-only -q` |
 | Runtime deps outside stdlib | **0** | `pyproject.toml` |
 | Optional runtime deps | `geoip2` (IP geolocation) | `pipx inject bodyguard-of-bits geoip2` |
 | Distro CI matrix | 7 distro containers + 1 emulated arm64 job | `.github/workflows/integration.yml` |
 | Python versions tested | 3.10, 3.11, 3.12, 3.13, 3.14 | `.github/workflows/tests.yml` + `pyproject.toml` classifiers |
-| Locale keys | 3519 EN ↔ 3519 FR (strict parity) | `bob/locales/{en,fr}.json` |
+| Locale keys | 3526 EN ↔ 3526 FR (strict parity) | `bob/locales/{en,fr}.json` |
 | EXPLAIN_KEYS | 241 (in 62 prefixes) | `bob.explain.EXPLAIN_KEYS` |
-| CIS references | 241 primary (91 CIS Ubuntu 22.04 + 7 CIS Docker 1.6 + 7 CIS Kubernetes 2.0 + **1 CIS Red Hat 8/9** + 135 BOB-authored best-practice) + **335 cross-benchmark citations** on 95 keys (91 CIS Debian 12 + 80 CIS Debian 13 + 91 CIS Ubuntu 24.04 + 73 CIS Ubuntu 26.04, the last Level 1 only as ComplianceAsCode publishes it since 20 November 2026; sourced from ComplianceAsCode/content by `scripts/gen_cis_benchmarks.py`, which also re-bases the primary Ubuntu 22.04 numbering onto CAC v2.0.0 from the rule anchor) | `bob/data/cis_refs.json` |
+| CIS references | 241 primary (91 CIS Ubuntu 22.04 + 7 CIS Docker 1.6 + 7 CIS Kubernetes 2.0 + **1 CIS Red Hat 8/9** + 135 BOB-authored best-practice) + **339 cross-benchmark citations** on 95 keys (91 CIS Debian 12 + 82 CIS Debian 13 + 91 CIS Ubuntu 24.04 + 75 CIS Ubuntu 26.04, the last Level 1 only as ComplianceAsCode publishes it since 20 November 2026; sourced from ComplianceAsCode/content by `scripts/gen_cis_benchmarks.py`, which also re-bases the primary Ubuntu 22.04 numbering onto CAC v2.0.0 from the rule anchor) | `bob/data/cis_refs.json` |
 | Known services | 39 | `bob/data/services.json` |
 | Score domains | 6 | `bob.domain_scores.DOMAINS` |
 | `_PREFIX_TO_DOMAIN` mappings | 67 (since v0.5.x explicit table) | `bob.domain_scores._PREFIX_TO_DOMAIN` |
@@ -970,7 +971,7 @@ plus an emulated arm64 job (`debian:bookworm-slim` under QEMU, `ci/arm64_smoke.s
 | Doc files | 26 public markdown (20 in `DOCUMENTS/` + 6 at the repo root) + 3 man pages | `DOCUMENTS/` + `man/` |
 | JSON schema_version | `"3"` only (v1 retired v0.9.0 F-3, v2 retired v0.12.0 F9) | `bob.json_output.DEFAULT_SCHEMA_VERSION` |
 | Release-engineering CI guards | 5 — 3 workflow-level (integration-first / smoke-after-commit / smoke-plugin) + 2 pytest guards (`tests/test_version_consistency.py`, `tests/test_doc_version_consistency.py`) **plus the ruff correctness gate** (v0.13.3, `bob/` only, nothing ignored since v0.14.0) | `.github/workflows/*.yml` |
-| Version | 0.40.0, released 2026-11-21 (bare SemVer, no `v` prefix since 0.21.0) | `pyproject.toml::version` |
+| Version | 0.41.0, released 2026-11-21 (bare SemVer, no `v` prefix since 0.21.0) | `pyproject.toml::version` |
 | Supported branch | 0.26.x (everything ≤ 0.25.x is EOL — latest-minor-only policy) | `SECURITY.md` |
 | First release | v0.1.0 (2026-04-26) | `CHANGELOG.md` |
 

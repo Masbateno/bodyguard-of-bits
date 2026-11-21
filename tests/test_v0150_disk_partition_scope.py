@@ -14,8 +14,8 @@ Ubuntu as an installer option — the root filesystem was dropped, so a pool at
 which is what the docstring always claimed.
 
 **Spaces.** `df` prints mount points unescaped, and `line.split()[5]` takes one
-word of them. A drive mounted at `/media/so6/My Passport` was reported as
-`/media/so6/My` — a path that does not exist, in a finding telling the operator
+word of them. A drive mounted at `/media/devuser/My Passport` was reported as
+`/media/devuser/My` — a path that does not exist, in a finding telling the operator
 it is 95% full.
 """
 
@@ -78,13 +78,13 @@ class TestPseudoAndNetworkAreSkipped:
 
 class TestMountPointsWithSpaces:
     def test_the_whole_path_is_kept(self, df):
-        parts = df("/dev/sdb1 ext4  500  475  25  95% /media/so6/My Passport\n")
-        assert "/media/so6/My Passport" in parts
-        assert "/media/so6/My" not in parts
+        parts = df("/dev/sdb1 ext4  500  475  25  95% /media/devuser/My Passport\n")
+        assert "/media/devuser/My Passport" in parts
+        assert "/media/devuser/My" not in parts
 
     def test_several_spaces_survive(self, df):
-        parts = df("/dev/sdc1 ext4  10  5  5  50% /media/so6/Sauvegarde Disque Externe\n")
-        assert "/media/so6/Sauvegarde Disque Externe" in parts
+        parts = df("/dev/sdc1 ext4  10  5  5  50% /media/devuser/Sauvegarde Disque Externe\n")
+        assert "/media/devuser/Sauvegarde Disque Externe" in parts
 
     def test_an_ordinary_path_is_unchanged(self, df):
         parts = df("/dev/sda1 ext4  100  50  50  50% /home\n")

@@ -6,7 +6,7 @@ v0.9.0 F-3 (--json-v1 retrait) added a CLIError raise that called
 so the lookup hit ``i18n.t()`` pre-init and surfaced the bracketed-fallback
 ``[cli.error.json_v1_retired]`` to the user instead of the real message:
 
-    so6@so6desktop:~$ bob --json-v1
+    devuser@devhost:~$ bob --json-v1
     i18n.t() called before i18n.init() — returning key 'cli.error.json_v1_retired'
     Error: [cli.error.json_v1_retired]
 

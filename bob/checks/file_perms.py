@@ -391,7 +391,7 @@ def _is_nopasswd_all(line: str) -> bool:
 # ---------------------------------------------------------------------------
 # v0.27.0 — a NOPASSWD rule for a command that is root anyway
 # ---------------------------------------------------------------------------
-# Measured on a Mint host: `so6 ALL=(root) NOPASSWD: /home/so6/.local/bin/bob,
+# Measured on a Mint host: `devuser ALL=(root) NOPASSWD: /home/devuser/.local/bin/bob,
 # /usr/bin/python3` — root without a password for any process of that user —
 # was an INFO, "specific commands, often intentional". A rule is root-equivalent
 # when the command gives a shell or runs code it is handed (GTFOBins' sudo

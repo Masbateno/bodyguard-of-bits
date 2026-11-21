@@ -283,6 +283,12 @@ class SSHSnapshot:
             seen: set[str] = set()
             config: dict[str, str] = {}
             _parsers._parse_config_file(config_path, config, seen)
+            # v0.41.0 (B-001) — a Match setting an earlier block may override:
+            # sshd asked for a connection where it applies (bob/checks/ssh/_probe.py).
+            from bob.checks.ssh import _probe
+            import shutil
+            sshd_bin = shutil.which("sshd") or ("/usr/sbin/sshd" if path_exists(Path("/usr/sbin/sshd")) else None)
+            _probe.probe_blocks(config, config_path, sshd_bin)
             snap.sshd_config = config
 
             # The findings below describe this file. sshd loads it at start and

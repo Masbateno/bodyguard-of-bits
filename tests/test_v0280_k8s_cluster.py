@@ -135,9 +135,9 @@ class TestRuntimeSocket:
         assert d["kubernetes.runtime_socket_open"] == 3
 
     def test_group_writable_with_members_is_info(self):
-        f, d = _check(_snap(runtime_socket=("/x.sock", 0o660, "microk8s", ("so6",))))
+        f, d = _check(_snap(runtime_socket=("/x.sock", 0o660, "microk8s", ("devuser",))))
         assert f["kubernetes.runtime_socket_group"].level.value == "info"
-        assert "so6" in f["kubernetes.runtime_socket_group"].message and not d
+        assert "devuser" in f["kubernetes.runtime_socket_group"].message and not d
 
     def test_group_writable_no_member_says_so(self):
         f, _ = _check(_snap(runtime_socket=("/x.sock", 0o660, "microk8s", ())))

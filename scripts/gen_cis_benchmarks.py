@@ -120,7 +120,11 @@ MAP = {
  # ---- firewall / UFW ----
  "prerequisites.firewall_missing": ["package_ufw_installed"],
  "firewall.inactive": ["service_ufw_enabled"],
- "firewall.policy_open": ["set_ufw_default_rule"],
+ # v0.41.0 (B-034) — CIS Ubuntu 26.04 states the incoming default through ufw
+ # (4.1.3, ufw_default_incoming_rule): the same meaning as "default incoming
+ # policy ALLOW". The iptables policy findings are not mapped to ufw controls:
+ # BOB reads the kernel's chains, those controls read ufw's configuration.
+ "firewall.policy_open": ["set_ufw_default_rule", "ufw_default_incoming_rule"],
  "firewall_iptables.no_loopback": ["set_ufw_loopback_traffic"],
  # ---- file integrity (AIDE) ----
  "file_integrity.not_installed": ["package_aide_installed"],
@@ -143,7 +147,7 @@ MAP = {
  #      became best-practice references in cis_refs.json. ----
  "cron.world_writable": ["file_permissions_unauthorized_world_writable"],
  "systemd_timers.world_writable": ["file_permissions_unauthorized_world_writable"],
- "firewall.policy_unknown": ["set_ufw_default_rule"],
+ "firewall.policy_unknown": ["set_ufw_default_rule", "ufw_default_incoming_rule"],
  "firewall_iptables.input_accept": ["set_iptables_default_rule"],
  "firewall_iptables.forward_accept": ["set_iptables_default_rule"],
  "firewall_iptables.nft_no_input_filter": ["set_nftables_base_chain"],

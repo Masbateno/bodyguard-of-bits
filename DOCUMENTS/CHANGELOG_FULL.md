@@ -6,6 +6,124 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.41.0] — 2026-11-21
+
+**A minor release that clears the backlog: the directories BOB creates in a
+user's home handed to that user; sshd asked whether a Match-block setting
+applies; CIS Ubuntu 26.04's ufw control cited; `--history` honest about partial
+runs.**
+
+Not BREAKING: the same host scores the same under 0.40.0 and 0.41.0. No
+finding key, option, exit code, JSON-output-schema or CSV-column change. What
+changes on disk: directories BOB creates under a user's home are that user's
+(section 1). What BOB runs: as root, `sshd -T -C` — sshd's test mode, which reads
+the configuration and changes nothing — for a Match setting an earlier block
+may override (section 2). What changes on screen: new INFO lines under SSH,
+`--explain` cites CIS Ubuntu 26.04 and Debian 13 on two more findings, and
+`--history` says when it has no trend. New translation keys: 7; none removed
+or renamed; one value changed, in both languages (`ssh.match_block_weakens_detail`, which now says that sshd is asked).
+
+### 1. Directories created in a user's home are the user's
+
+Found on the test Linux Mint 22.3 (17 November 2026), present since at least
+0.26.1: a first `sudo bob -d` on an account whose home had no `~/.local` created
+`~/.local`, `~/.local/share` and `~/.local/share/bob` as root, and handed over
+only `logs` beneath them — `mkdir(parents=True)` created every missing parent
+as root. The user could create, rename or remove nothing in
+`~/.local/share/bob` without root. `~/.config` had the same fate.
+
+Each missing parent is now created one by one and handed to the invoking user,
+through the same checks as the directory itself (no link followed, nothing
+handed over that resolves outside the home) — only when it lies in the user's
+home: a parent created outside it, for an `--output-dir` the operator chose, is
+never given away. Measured on the test Mint with a fresh account: under 0.40.0
+`~/.config`, `~/.local`, `~/.local/share` and `~/.local/share/bob` were root's
+and `touch ~/.local/share/bob/x` was refused; under 0.41.0 all four are the
+user's, and the file is created.
+
+A directory an earlier version already created as root stays root's — BOB does
+not take ownership decisions on directories it cannot tell it created. To hand
+back those of BOB's directories that are root's, and only those (run as the
+user, not under sudo, so that `$USER` names the user):
+
+```bash
+for d in ~/.config ~/.config/bob ~/.local ~/.local/share ~/.local/share/bob; do
+  [ "$(stat -c %u "$d" 2>/dev/null)" = 0 ] && sudo chown "$USER": "$d"
+done
+```
+
+Measured on the test Mint, on the directories 0.40.0 leaves: the four that were
+root's are handed back and the user creates files again; another root-owned
+directory under `~/.local/share` is left alone.
+
+### 2. sshd asked whether a Match setting applies
+
+Since 0.38.0 a Match block's setting that an earlier block certainly takes
+first — the text proves it — is left out and said; any other overlap is
+counted, an error on the side of a deduction too many. 0.41.0 asks sshd about
+those: for each setting an earlier block sets otherwise, BOB runs `sshd -T -C`
+for the connections the block takes — its own entries, the first and last
+address of its ranges, the edges of the earlier block's ranges, what the
+earlier block leaves out (its negated entries), a neutral value for what
+neither block constrains; at most 16 per setting — and says:
+
+- **a connection where the block's value applies** — the deduction shown with
+  that proof (`ssh.match_block_probe_applies`);
+- **none of those tried got it** — still counted, said as not proven
+  (`ssh.match_block_probe_unproven`);
+- **sshd could not be asked** (not found, no answer) — still counted, said
+  (`ssh.match_block_probe_unavailable`).
+
+Decided with the user after a measurement: sshd's answer never removes a
+setting. With `Match Address 192.0.2.0/24,!192.0.2.5` setting
+`PasswordAuthentication no` then `Match Address 192.0.2.0/25` setting `yes`,
+`sshd -T -C` (OpenSSH 9.6p1) gave `no` from 192.0.2.1 and `yes` from
+192.0.2.5: one representative connection would have called the later block
+covered and hidden a password login. The witness search finds 192.0.2.5 (third
+connection tried). Measured end to end on the test Mint as root, the blocks in
+a drop-in, sshd not reloaded, the global setting brought to `no`: the proof line
+names `addr=192.0.2.5`, and the block's finding counts −2 under the server
+profile (`ssh.password_auth`, read from the JSON output; INFO under desktop,
+which tolerates password logins). With the global setting at `yes`, the key is
+already counted once globally and the block does not count it again (the rule
+since 0.37.0); the proof line is shown all the same. A connection not tried may still get the value: a
+search that finds no witness proves nothing, and is said so.
+
+### 3. CIS Ubuntu 26.04: the ufw incoming default
+
+ComplianceAsCode's CIS Ubuntu 26.04 (v1.0.0, Level 1) has no iptables control;
+its 4.1.3 "Ensure ufw incoming default is configured" (rule
+`ufw_default_incoming_rule`) says what BOB's "default incoming policy ALLOW"
+says. `--explain` now cites it for `firewall.policy_open` and
+`firewall.policy_unknown` — and CIS Debian 13, which has the same rule, too.
+The kernel-chain findings (an iptables INPUT or FORWARD policy at ACCEPT) are
+not mapped to ufw controls: BOB reads the chains, those controls read ufw's
+configuration. Cross-benchmark citations 335 → 339; no other reference moved.
+CIS Ubuntu 26.04's Level 2 (auditd, AppArmor enforcement…) is not published
+yet; the assembly watch will regenerate when it is.
+
+### 4. `--history` over partial runs
+
+Found on the test Mint (17 November 2026): under the history title, an empty
+line where the trend goes — the trend leaves out partial runs (`--check`,
+`--skip`), and all of them were. It now says "No full run yet: partial runs
+(--check, --skip) draw no trend". Same in the `--manage-logs` history block,
+which shares the code.
+
+### 5. Names of the developer's machines removed
+
+The documentation, the changelogs and some test data carried the host and
+account names of the machines BOB is developed and field-tested on — 246
+occurrences in 27 files, now neutral names (`devhost`, `mint-test`, `devuser`…).
+Published releases and the git history keep them.
+
+### 6. Tests and tooling
+
+**Tests** 23517 → **23585**, mutations 2230 → **2240**, all killed. New test
+files: `test_v0410_parents_handed_over.py`, `test_v0410_match_probe.py` (with a
+test that asks this host's sshd, skipped where there is none),
+`test_v0410_cis_ufw.py`, `test_v0410_history_no_trend.py`.
+
 ## [0.40.0] — 2026-11-21
 
 **A minor release: a journal of every command `--fix --apply` launches, kept
@@ -5722,7 +5840,7 @@ is no `sudo`):
   command is printed: typed with `sudo`, it would resolve the path again,
   through any link in it — what §7 closes.
 
-Replayed: after one `sudo bob`, the file was `so6:so6` and `bob --history`
+Replayed: after one `sudo bob`, the file was `devuser:devuser` and `bob --history`
 read it.
 
 ### 4. An `--exhaustive` run compared with a normal one
@@ -5838,11 +5956,11 @@ v0.3.6. Upgrading to 0.26.1 closes it.
   moves one through checked descriptors of both directories (renamed relative
   to them; across filesystems copied from a source opened with `O_NOFOLLOW`,
   then unlinked) — a move into or out of a redirected directory is refused; it
-  says so when it ends: "… resolves outside the home of so6, to …: run as
+  says so when it ends: "… resolves outside the home of devuser, to …: run as
   root, BOB listed, deleted and moved nothing there."
 - A refusal is said: at the end of the audit, and once per directory in
   `--watch`, one line on stderr — "~/.config/bob resolves outside the home of
-  so6, to …: run as root, BOB wrote nothing there in this run (state, history
+  devuser, to …: run as root, BOB wrote nothing there in this run (state, history
   or report not saved). To see where it leads: realpath ~/.config/bob". A
   refused log directory is also said where the report is opened, and the audit
   runs on without the file.
@@ -14068,8 +14186,8 @@ Network types are listed explicitly rather than excluded by accident — a full
 NFS share is a real problem, but it is not this host's disk.
 
 Second defect, same function: `df` prints mount points unescaped and
-`line.split()[5]` takes one word of them. A drive at `/media/so6/My Passport`
-was reported as `/media/so6/My` — a path that does not exist, in a finding
+`line.split()[5]` takes one word of them. A drive at `/media/devuser/My Passport`
+was reported as `/media/devuser/My` — a path that does not exist, in a finding
 telling the operator it is 95% full.
 
 ### A failed security service was invisible to the check that reports failed
@@ -18172,7 +18290,7 @@ sudo bob -v -d       # standard audit; posture escalation auto-applies if firewa
 
 ### Why the b3 VM validation missed this
 
-The b3 ship was gated on 5/5 cible smokes — so6desktop (Linux Mint 22.3, Py 3.12.3), Debian 13 VM (Py 3.13.5), Kali Rolling VM (Py 3.13.12), Ubuntu 26.04 LTS VM (Py 3.14.4), Mint+DDNS VM (Py 3.12.3). Three of those should have caught the regression… except none of them had any plugins installed at `~/.config/bob/checks.d/*.py`, so the audit chain never instantiated the `SandboxRunner` and never tried to exec a plugin under MappingProxyType-as-builtins. The smoke ran the WHOLE audit but completely bypassed the changed code path.
+The b3 ship was gated on 5/5 cible smokes — devhost (Linux Mint 22.3, Py 3.12.3), Debian 13 VM (Py 3.13.5), Kali Rolling VM (Py 3.13.12), Ubuntu 26.04 LTS VM (Py 3.14.4), Mint+DDNS VM (Py 3.12.3). Three of those should have caught the regression… except none of them had any plugins installed at `~/.config/bob/checks.d/*.py`, so the audit chain never instantiated the `SandboxRunner` and never tried to exec a plugin under MappingProxyType-as-builtins. The smoke ran the WHOLE audit but completely bypassed the changed code path.
 
 This is the 4th release-engineering bug class on the v0.7.x branch and slots into the same pattern as v0.7.0b1 → v0.7.0b2: a change correct on the maintainer's primary machine, validated end-to-end on multiple cibles, but the validation exercise itself didn't actually touch the modified code. Each prior gap got a matching guard (integration-first / smoke-after-commit / version-consistency); this one will land a `smoke-plugin-on-every-python-matrix-version` step in the publish.yml pre-tag gate.
 
@@ -18220,7 +18338,7 @@ If you ran v0.7.0b3 WITH plugins on a non-3.12 Python, every plugin run produced
 
 ### Next
 
-Same as b3: monitor 24h of real-world smoke output across the 4 VMs + so6desktop. If no further surprises, the v0.7.0 final cut squashes b1+b2+b3+b4 + the four T3 commits into one and ships without further beta cycle. The pre-tag publish.yml gate gains a "smoke benign plugin on every matrix Python" step.
+Same as b3: monitor 24h of real-world smoke output across the 4 VMs + devhost. If no further surprises, the v0.7.0 final cut squashes b1+b2+b3+b4 + the four T3 commits into one and ships without further beta cycle. The pre-tag publish.yml gate gains a "smoke benign plugin on every matrix Python" step.
 
 ---
 
@@ -18279,7 +18397,7 @@ After confirming the three PoCs, the solo maintainer reviewed three trajectories
 ### Smoke validation
 
   - **Three PoCs re-tested post-hardening** — `/tmp/bob_c1_escape`, `/tmp/bob_c2_parent_pwned`, `/tmp/bob_arch_escape` all NOT created after the fixes; the runner correctly surfaces each as a WARN finding with the underlying error class (ImportError / AttributeError) and no plugin output reaches the parent.
-  - **5/5 cibles cross-validated** via `pipx install --pip-args="--pre"` of the b3 wheel: so6desktop (Linux Mint 22.3, Python 3.12, score 8/10 LOW clean), Debian 13 VM (Python 3.13, score 9/10 LOW clean), Kali Rolling VM (Python 3.13, score 8/10 LOW clean + compound finding), Ubuntu 26.04 LTS VM (**Python 3.14.4** — the T1 ladder step 1 target, score 8/10 → **HIGH risk raised by posture: firewall inactive**, the critical posture escalation scenario validated end-to-end), Mint + DDNS VM (Python 3.12, score 7/10 MEDIUM with `network_context = Exposition publique via DDNS` shift). Every cible reports "Score inchangé" in its "CHANGEMENTS DEPUIS LE DERNIER AUDIT" section against the b2 baseline from earlier the same day — zero regression on the audit chain.
+  - **5/5 cibles cross-validated** via `pipx install --pip-args="--pre"` of the b3 wheel: devhost (Linux Mint 22.3, Python 3.12, score 8/10 LOW clean), Debian 13 VM (Python 3.13, score 9/10 LOW clean), Kali Rolling VM (Python 3.13, score 8/10 LOW clean + compound finding), Ubuntu 26.04 LTS VM (**Python 3.14.4** — the T1 ladder step 1 target, score 8/10 → **HIGH risk raised by posture: firewall inactive**, the critical posture escalation scenario validated end-to-end), Mint + DDNS VM (Python 3.12, score 7/10 MEDIUM with `network_context = Exposition publique via DDNS` shift). Every cible reports "Score inchangé" in its "CHANGEMENTS DEPUIS LE DERNIER AUDIT" section against the b2 baseline from earlier the same day — zero regression on the audit chain.
 
 ### Memory
 
@@ -18311,7 +18429,7 @@ BOB declares its version in TWO places:
 
 When the v0.7.0b1 ship commit `a4b7b9b` bumped `pyproject.toml` from `0.6.2` → `0.7.0b1`, only that file was updated — `bob/__init__.py` stayed at `0.6.2`. The wheel built and uploaded to PyPI correctly identifies as `bodyguard-of-bits-0.7.0b1`, but anyone running `pipx install --pre` and invoking the binary sees `BOB v0.6.2` in every surface that reads `__version__`.
 
-Caught on the so6 Debian 13 VM during the v0.7.0b1 beta validation (2026-05-31) — the banner said `BOB v0.6.2` after a clean `pipx install bodyguard-of-bits-beta` of the `0.7.0b1` wheel.
+Caught on the devuser Debian 13 VM during the v0.7.0b1 beta validation (2026-05-31) — the banner said `BOB v0.6.2` after a clean `pipx install bodyguard-of-bits-beta` of the `0.7.0b1` wheel.
 
 ### Fix
 
@@ -18370,7 +18488,7 @@ Bundles **15 commits since v0.6.2** across three phases of work on branch `v0.7.
   - **M-7 `--check`/`--skip` recognise always-on sections** (`3865738`) — pre-fix, `bob --check=firewall` raised "matches no known section" because the validator didn't know about the 10 always-on sections (firewall, rules, ports_analysis, network_context, firewall_stack, ufw_logging, services, ddns, docker, virtualization). New `_ALWAYS_ON_SECTIONS` tuple in `bob/runner.py`; `--check=<always-on>` is now valid input, `--skip=<always-on>` prints a "has no effect" warning instead of silently swallowing user intent. The "Available sections" wall-of-text in unknown-token warnings is replaced by a single line pointing to `bob --check=list`.
   - **Posture escalation** (`e3d998f`) — `ScoreEngine` gains `set_posture()` + `posture_escalation` property + `effective_level` derived as `max(score-derived level, posture floor)`. Triggers (first match wins): `firewall_inactive` → `HIGH`, `iptables_input_accept` → `HIGH`, `firewall_domain_score ≤ 3` → `MEDIUM`. Surfaces what Phase 1 fixes structurally: a host with UFW OFF and score 8/10 used to display "LOW risk" (score-only) — now displays "HIGH risk" with the parenthetical "raised by posture: firewall inactive". Migration of 5 sites to `effective_level` (display banner, JSON v2 `risk` field, CSV, webhook payload, report.write_summary). New EXPLAIN key `risk.escalated_posture` (count 116 → 117). New locale strings `scoring.posture.{firewall_inactive,iptables_input_accept,firewall_domain_low}` in EN + FR.
   - **CI publish pre-release tag handling** (`9def225`) — `.github/workflows/publish.yml` now detects PEP 440 pre-release tag suffix `(a|b|rc|.dev)[0-9]+$` and (a) synthesises minimal release notes from `git log` when no CHANGELOG section exists, (b) sets `make_latest: false` + `prerelease: true` on the GitHub Release so a pre-release does NOT override the "Latest" badge from the v0.6.x stable line, (c) titles the release `"$VERSION (pre-release)"` when no CHANGELOG headline is found. The infrastructure enabling this current v0.7.0b1 ship.
-  - **Posture crash hotfix** (`4ed2e3b`) — smoke test on so6desktop revealed `engine.domain_scores["firewall"]` is a dict, not an int — the dict was passed by mistake to `set_posture(firewall_domain_score=...)` and crashed the audit at the `<=` comparison just before the summary box ("Fatal error: '<=' not supported between instances of 'dict' and 'int'"). Fixed by extracting `["score"]` from the dict + adding a type guard to `set_posture` that raises `TypeError` with a message explicitly naming the dict-vs-int mistake. +5 tests (4 unit + 1 integration test that builds a real engine with `apply_domain_score_override` and exercises the wire-up the same way `__main__.py` does).
+  - **Posture crash hotfix** (`4ed2e3b`) — smoke test on devhost revealed `engine.domain_scores["firewall"]` is a dict, not an int — the dict was passed by mistake to `set_posture(firewall_domain_score=...)` and crashed the audit at the `<=` comparison just before the summary box ("Fatal error: '<=' not supported between instances of 'dict' and 'int'"). Fixed by extracting `["score"]` from the dict + adding a type guard to `set_posture` that raises `TypeError` with a message explicitly naming the dict-vs-int mistake. +5 tests (4 unit + 1 integration test that builds a real engine with `apply_domain_score_override` and exercises the wire-up the same way `__main__.py` does).
 
 ### Phase 2 — T2 Schema v2 + EXPLAIN_KEYS audit (4 commits, ~ +940 LoC, +711 tests)
 
@@ -18391,7 +18509,7 @@ A sub-agent deep audit of the cumulated Phase 1 + Phase 2 diff (per project_v07x
 ### Test count + smoke validation
 
   - **5391 → 5409 tests** (+18 net across Phase 2.1, +35 across Phase 1, +711 across Phase 2 — including parametrized EXPLAIN_KEYS audit), 0 regressions throughout the 15-commit chain.
-  - **Smoke validated on so6desktop** (Linux Mint 22.3, 2026-05-31): `sudo bob -v -d --french` audits end-to-end, score 8/10, posture clean (UFW active), `--json` emits schema v2 with `posture_escalation: {applied: false}`, `--json --json-v1` emits legacy schema_version="1" with no posture_escalation block, `--check=list` shows both sections + always-on blocks, `history.jsonl` carries the new `level_score_only` field.
+  - **Smoke validated on devhost** (Linux Mint 22.3, 2026-05-31): `sudo bob -v -d --french` audits end-to-end, score 8/10, posture clean (UFW active), `--json` emits schema v2 with `posture_escalation: {applied: false}`, `--json --json-v1` emits legacy schema_version="1" with no posture_escalation block, `--check=list` shows both sections + always-on blocks, `history.jsonl` carries the new `level_score_only` field.
 
 ### Deferred to v0.8.0 (contract figé)
 
@@ -18435,7 +18553,7 @@ It's a textbook example of the "tests pass, ship breaks" failure mode. Three lay
 
 1. **Unit tests** import from the source tree. The `bob.checks.ssh` package exists as a directory in the working tree; Python's import resolution finds it via `sys.path` containing the repo root. The packaging discovery config in `pyproject.toml` is bypassed entirely.
 
-2. **Pre-ship `sudo python3 -m bob` smoke** ran from the working tree (`cd ~/github/bodyguard-of-bits && sudo python3 -m bob …`). Same source-tree resolution. The smoke test on so6desktop reported `BOB v0.6.1` and a normal audit run — exactly because it was loading the source directly, not the v0.6.1 wheel.
+2. **Pre-ship `sudo python3 -m bob` smoke** ran from the working tree (`cd ~/github/bodyguard-of-bits && sudo python3 -m bob …`). Same source-tree resolution. The smoke test on devhost reported `BOB v0.6.1` and a normal audit run — exactly because it was loading the source directly, not the v0.6.1 wheel.
 
 3. **CI `integration.yml`** used `pip install -e .` (editable mode). Editable installs add the repo root to `site-packages` via a `.pth` file. They DELIBERATELY bypass `find_packages()` discovery for fast iteration. The integration job was therefore testing the source tree wrapped in a venv — not the wheel.
 
@@ -19240,7 +19358,7 @@ Tests renamed: `test_nature_is_action` → `test_nature_is_improvement` (× 2 in
 ### Compatibility
 
 - **JSON contract**: `schema_version="1"` and the 116 EXPLAIN_KEYS unchanged. C-4 uses `EXPLAIN_KEY_ALIASES` (additive) — JSON output keys preserved; `--explain` routes via alias.
-- **Per-domain score**: unchanged. Global score on dev host (so6desktop): 8/10 → 8/10. The score *display* shifts slightly: on hosts without `pam_pwquality`, the password_policy finding moves from the "À corriger" block (action) to "Améliorations possibles" (improvement). Visual change, not score change.
+- **Per-domain score**: unchanged. Global score on dev host (devhost): 8/10 → 8/10. The score *display* shifts slightly: on hosts without `pam_pwquality`, the password_policy finding moves from the "À corriger" block (action) to "Améliorations possibles" (improvement). Visual change, not score change.
 - **Wire output diff**: visible only on hosts hitting the demoted-to-improvement findings (password_policy.no_quality_module + .weak_minlen, services_state.service_inactive — the latter only changes the `cmd` shape, not nature). All other hosts see identical output.
 - **External API**: no breaking change. `_atomic_write` (now takes `mode=` kwarg) and `EXPLAIN_KEY_ALIASES` (now has one entry) are additive.
 - **i18n**: 3 locale keys removed (verified via locale-coverage AST scan + manual `grep`).
@@ -19362,7 +19480,7 @@ Test changes in `tests/test_domain_scores_mapping_complete.py`:
 
 ### Cache APT option C — Permanent INFO on cache age (user-requested metier feature)
 
-**Context (from v0.5.3 terrain test).** During cross-distro testing on 2026-05-22, the Ubuntu 26.04 LTS VM (`so6ubuntutest`) reported "Les paquets système sont à jour" in BOB's audit, but a manual `sudo apt update` ran immediately after revealed 17 packages pending (including 8 LTS security updates: libgnutls30t64, bind9, openvpn, rsync, etc.). Investigation showed BOB's `apt-get -s dist-upgrade` simulation was correctly reading the local APT cache — but the cache was 3-5 days old (below the 7-day stale threshold that triggers a WARNING) and had not been synced with upstream where security advisories had landed in the meantime.
+**Context (from v0.5.3 terrain test).** During cross-distro testing on 2026-05-22, the Ubuntu 26.04 LTS VM (`ubuntu-test`) reported "Les paquets système sont à jour" in BOB's audit, but a manual `sudo apt update` ran immediately after revealed 17 packages pending (including 8 LTS security updates: libgnutls30t64, bind9, openvpn, rsync, etc.). Investigation showed BOB's `apt-get -s dist-upgrade` simulation was correctly reading the local APT cache — but the cache was 3-5 days old (below the 7-day stale threshold that triggers a WARNING) and had not been synced with upstream where security advisories had landed in the meantime.
 
 The existing `apt_cache_stale` WARNING (>7 days) covered the obviously-stale case but left the silent "fresh-enough but not zero" range unobservable. User picked "option C" from a 4-option proposal: *always* emit an INFO with the cache age when the verdict is "all clear", giving permanent transparency about cache freshness.
 
@@ -19416,7 +19534,7 @@ Subtlety: the "all clear" `result.ok(...)` check changed from `not result.findin
 | Cache age ≥ 7 days | No (`apt_cache_stale` WARN already covers it) |
 | Cache age 0–6 days AND no pending updates | **Yes** (the option C target case) |
 
-Terrain validation: on the dev host (so6desktop) with 4 security packages pending, the INFO is correctly suppressed (security WARN is the primary signal). On a hypothetical idle Ubuntu LTS box that's freshly synced, the INFO would read "Âge du cache APT : 0 jour(s) — `sudo apt update` pour une lecture plus fraîche" — transparency-by-default.
+Terrain validation: on the dev host (devhost) with 4 security packages pending, the INFO is correctly suppressed (security WARN is the primary signal). On a hypothetical idle Ubuntu LTS box that's freshly synced, the INFO would read "Âge du cache APT : 0 jour(s) — `sudo apt update` pour une lecture plus fraîche" — transparency-by-default.
 
 ### Deferrals: `#13` (ssh.py split) and `#14` (cron.py split) → v0.6.0
 
@@ -19449,7 +19567,7 @@ The audit's prediction was that Phases 2 + 3 would shrink ssh.py below 1000 LoC,
 
 ### Garde-fou observable diff
 
-`sudo python3 -m bob -v -d --french` audit on the dev host (so6desktop) at v0.5.4-pre-bump:
+`sudo python3 -m bob -v -d --french` audit on the dev host (devhost) at v0.5.4-pre-bump:
 
 - Score global: **8/10** (unchanged from v0.5.3 baseline — confirms re-bucketing is global-score-neutral).
 - New per-domain score breakdown observed:
@@ -20672,7 +20790,7 @@ Before opening v0.4.6, 13 audits were run across 6 distinct systems using the v0
 | Kali Rolling VM | 1 | clean |
 | Mint test VM | 3 (pre + `apt upgrade` + `dist-upgrade` + `autoremove`) | Bug 1 manifested after autoremove |
 | Ubuntu 26.04 LTS VM | 1 | clean |
-| so6desktop production (Linux Mint 22.3) | 2 (pre + post `dist-upgrade` + `autoremove`) | Bug 1 manifested in production |
+| devhost production (Linux Mint 22.3) | 2 (pre + post `dist-upgrade` + `autoremove`) | Bug 1 manifested in production |
 
 Two bugs reproduced. Bug 1 manifested on production hardware — confirms it is not a VM artefact but the routine outcome of any user cleaning an obsolete kernel image. Bug 2 was bound to a specific transition (`WARN/ALERT → OK only` within a domain) — narrower scope than initially expected, but a real ergonomics regression on the remediation path.
 
@@ -20688,7 +20806,7 @@ dpkg_out = _run("dpkg-query", "-f", "${Package}\n", "-W", "linux-image-[0-9]*", 
 
 This format prints the package name regardless of state. `_parse_installed_kernels` then assumed every returned line was an installed kernel and listed them all.
 
-**What the user saw**: BOB output listed kernels that `apt` had already removed. Concrete example on so6desktop after `apt dist-upgrade` (which removed `linux-image-6.17.0-20-generic`) + `apt autoremove` (which removed `linux-hwe-6.17-headers-6.17.0-20`):
+**What the user saw**: BOB output listed kernels that `apt` had already removed. Concrete example on devhost after `apt dist-upgrade` (which removed `linux-image-6.17.0-20-generic`) + `apt autoremove` (which removed `linux-hwe-6.17-headers-6.17.0-20`):
 
 ```
 → Installés  : 6.17.0-19-generic, 6.17.0-20-generic, 6.17.0-22-generic, 6.17.0-23-generic (*)
@@ -21880,7 +21998,7 @@ Total **4430/4430** (was 4427 before this pass — net +3, all defense-in-depth)
 
 #### Problem
 
-Field test on so6desktop showed:
+Field test on devhost showed:
 
 ```
 ║  Score de sécurité : 8/10  = 8                                               ║
@@ -21926,10 +22044,10 @@ Notes on the trajectory of these counts during v0.4.0 development:
 
 ### Field validation
 
-End-to-end audit on so6desktop (Linux Mint 22.3) confirms:
+End-to-end audit on devhost (Linux Mint 22.3) confirms:
 - v0.4.0 banner correctly displayed
 - Locale auto-detected as French via `$LANG=fr_FR.UTF-8`
-- All sections render correctly; UFW logging shown (UFW active), IPv6 link-local correctly classified, plugins/profiles loaded from `/home/so6/.config/bob/`
+- All sections render correctly; UFW logging shown (UFW active), IPv6 link-local correctly classified, plugins/profiles loaded from `/home/devuser/.config/bob/`
 - Score 8/10, delta tracked from previous audit, "Score inchangé" line shown without redundant `= 8` suffix
 - 4405 tests green, pyflakes clean (one intentional `# noqa: F401`)
 
@@ -22261,7 +22379,7 @@ Lines saved: 2049 → 1994 (−55 per file, −110 total).
 
 4348/4348 — no test changes. All fixes are covered by existing tests; no regression introduced. Pyflakes is clean (one intentional `# noqa: F401` remains for `AuditConfig` re-export).
 
-Validated end-to-end on so6desktop (Linux Mint 22.3) — full audit completes with score 8/10 (Pare-feu & Services 10/10, SSH 7/10, Durcissement 6/10) and renders all sections correctly. UFW logging section appears (UFW active); IPv6 consistency section indicates "link-local only"; profiles, plugins, and baselines are correctly loaded from `/home/so6/.config/bob/`.
+Validated end-to-end on devhost (Linux Mint 22.3) — full audit completes with score 8/10 (Pare-feu & Services 10/10, SSH 7/10, Durcissement 6/10) and renders all sections correctly. UFW logging section appears (UFW active); IPv6 consistency section indicates "link-local only"; profiles, plugins, and baselines are correctly loaded from `/home/devuser/.config/bob/`.
 
 ---
 
@@ -22478,7 +22596,7 @@ def run_checks(
 
 #### Validation
 
-Tested on 5 VMs (Linux Mint 22.3, Debian 13, Ubuntu 26.04, Kali, so6desktop) — full audit completes without error on all.
+Tested on 5 VMs (Linux Mint 22.3, Debian 13, Ubuntu 26.04, Kali, devhost) — full audit completes without error on all.
 
 ---
 
@@ -24205,7 +24323,7 @@ A genuine version difference (e.g. `6.12.63+deb13-amd64` running while `6.12.74+
 
 When a single private IP accounted for ≥ 70 % of all blocked UFW traffic over ≥ 50 log entries, BOB emitted an `INFO` finding with no score deduction. The feature was documented as WARN −1 pt in README_TECH.md but the implementation called `result.info()` with no `add_deduction()` call — the deduction was never applied.
 
-Discovered during first local test run on `so6desktop`: `192.168.1.50` accounted for 2267/2415 blocks (93 %) with no WARN or deduction emitted.
+Discovered during first local test run on `devhost`: `192.168.1.50` accounted for 2267/2415 blocks (93 %) with no WARN or deduction emitted.
 
 #### Fix
 

@@ -102,7 +102,7 @@ def _unexplained_errors(stderr: bytes, skipped: "list[str]") -> bool:
         return True
     for line in lines:
         # find names itself by argv[0], and BOB runs it by absolute path:
-        # "/usr/bin/find: '/home/so6/fusemnt': Permission denied" (measured on
+        # "/usr/bin/find: '/home/devuser/fusemnt': Permission denied" (measured on
         # Mint 22.3; BusyBox prints "find: /path: …" without quotes).
         m = _FIND_ERROR.match(line)
         body = m.group(1) if m else ""

@@ -278,10 +278,13 @@ def render_history(entries: list[dict], t: TranslationFunc | None = None) -> lis
 
     spark = "".join(_score_to_spark(e.get("score", 0)) for e in entries if e.get("partial") is not True)
 
+    # v0.41.0 (B-030) — every run partial (--check, --skip): the trend leaves
+    # them all out, and an empty line stood where it belongs (measured on the
+    # test Mint, 17 November 2026). Said instead.
     lines: list[str] = [
         f"  {_t('history.title')}",
         "  " + "─" * 44,
-        f"  {spark}",
+        f"  {spark}" if spark else f"  {_t('history.no_trend')}",
         "",
     ]
 

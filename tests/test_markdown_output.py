@@ -34,7 +34,7 @@ def _make_sys_info(**kw):
         ufw_version="0.36",
         iptables_version="1.8",
         nftables_version="1.0",
-        user="so6",
+        user="devuser",
         config_path="/root/.config/bob/config.conf",
         language="en",
         version="1.19.0",

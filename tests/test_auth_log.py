@@ -93,7 +93,7 @@ class TestAuthLogParsing:
 
     _PUBLICKEY_LINE = (
         "Apr 18 10:23:45 server sshd[1234]: "
-        "Accepted publickey for so6 from 192.168.1.5 port 54321 ssh2"
+        "Accepted publickey for devuser from 192.168.1.5 port 54321 ssh2"
     )
     _PASSWORD_LINE = (
         "Apr 18 11:00:00 server sshd[5678]: "
@@ -114,7 +114,7 @@ class TestAuthLogParsing:
         assert len(snap.entries) == 1
         e = snap.entries[0]
         assert e.method == "publickey"
-        assert e.user == "so6"
+        assert e.user == "devuser"
         assert e.source == "192.168.1.5"
         assert not e.is_public
 
@@ -176,7 +176,7 @@ class TestAuthLogParsing:
         # Real-world format: "...ssh2: RSA SHA256:xxxxx" after port number
         text = (
             "Apr 18 10:23:45 server sshd[1234]: "
-            "Accepted publickey for so6 from 192.168.1.5 port 54321 ssh2: RSA SHA256:AAAA/bbbb+cccc"
+            "Accepted publickey for devuser from 192.168.1.5 port 54321 ssh2: RSA SHA256:AAAA/bbbb+cccc"
         )
         snap = AuthLogSnapshot.from_text(text)
         assert len(snap.entries) == 1
@@ -231,25 +231,25 @@ class TestCheckAuthLog:
         assert "no_logins:" not in msg  # the {days} version must not be chosen
 
     def test_local_logins_only_no_warn(self):
-        entries = [LoginEntry("publickey", "so6", "192.168.1.5", is_public=False)]
+        entries = [LoginEntry("publickey", "devuser", "192.168.1.5", is_public=False)]
         result = check_auth_log(self._snap_with(entries))
         levels = [f.level for f in result.findings]
         assert FindingLevel.WARN not in levels
 
     def test_public_login_warns(self):
-        entries = [LoginEntry("publickey", "so6", "8.8.8.8", is_public=True)]
+        entries = [LoginEntry("publickey", "devuser", "8.8.8.8", is_public=True)]
         result = check_auth_log(self._snap_with(entries))
         warns = [f for f in result.findings if f.level == FindingLevel.WARN]
         assert len(warns) == 1
         assert warns[0].key == "auth_log.public_login"
 
     def test_public_login_no_deduction(self):
-        entries = [LoginEntry("publickey", "so6", "8.8.8.8", is_public=True)]
+        entries = [LoginEntry("publickey", "devuser", "8.8.8.8", is_public=True)]
         result = check_auth_log(self._snap_with(entries))
         assert not result.deductions
 
     def test_summary_info_present(self):
-        entries = [LoginEntry("publickey", "so6", "192.168.1.1", is_public=False)]
+        entries = [LoginEntry("publickey", "devuser", "192.168.1.1", is_public=False)]
         result = check_auth_log(self._snap_with(entries))
         infos = [f for f in result.findings if f.level == FindingLevel.INFO]
         assert any(f.key == "auth_log.summary" for f in infos)
@@ -263,8 +263,8 @@ class TestCheckAuthLog:
 
     def test_multiple_public_ips_single_warn(self):
         entries = [
-            LoginEntry("publickey", "so6", "1.2.3.4", is_public=True),
-            LoginEntry("password", "so6", "5.6.7.8", is_public=True),
+            LoginEntry("publickey", "devuser", "1.2.3.4", is_public=True),
+            LoginEntry("password", "devuser", "5.6.7.8", is_public=True),
             LoginEntry("publickey", "root", "9.10.11.12", is_public=True),
         ]
         result = check_auth_log(self._snap_with(entries))
@@ -272,7 +272,7 @@ class TestCheckAuthLog:
         assert len(warns) == 1
 
     def test_many_logins_same_public_ip_single_warn(self):
-        entries = [LoginEntry("publickey", "so6", "8.8.8.8", is_public=True)] * 10
+        entries = [LoginEntry("publickey", "devuser", "8.8.8.8", is_public=True)] * 10
         result = check_auth_log(self._snap_with(entries))
         warns = [f for f in result.findings if f.key == "auth_log.public_login"]
         assert len(warns) == 1
@@ -316,8 +316,8 @@ class TestCheckAuthLog:
     def test_mix_local_and_public_logins(self):
         # Summary present AND warn present when mix of local + public
         entries = [
-            LoginEntry("publickey", "so6", "192.168.1.1", is_public=False),
-            LoginEntry("publickey", "so6", "8.8.8.8", is_public=True),
+            LoginEntry("publickey", "devuser", "192.168.1.1", is_public=False),
+            LoginEntry("publickey", "devuser", "8.8.8.8", is_public=True),
         ]
         result = check_auth_log(self._snap_with(entries))
         keys = [f.key for f in result.findings]
@@ -329,13 +329,13 @@ class TestCheckAuthLog:
         # Pass a formatting t() so the message is interpolated, not just a key
         def _fmt(key, **kw): return str(kw)
         entries = [
-            LoginEntry("publickey", "so6", "10.0.0.1", is_public=False),
-            LoginEntry("publickey", "so6", "10.0.0.1", is_public=False),
-            LoginEntry("publickey", "so6", "10.0.0.1", is_public=False),  # 3x top
-            LoginEntry("publickey", "so6", "10.0.0.2", is_public=False),
-            LoginEntry("publickey", "so6", "10.0.0.2", is_public=False),  # 2x
-            LoginEntry("publickey", "so6", "10.0.0.3", is_public=False),  # 1x
-            LoginEntry("publickey", "so6", "10.0.0.4", is_public=False),  # 1x — outside top-3
+            LoginEntry("publickey", "devuser", "10.0.0.1", is_public=False),
+            LoginEntry("publickey", "devuser", "10.0.0.1", is_public=False),
+            LoginEntry("publickey", "devuser", "10.0.0.1", is_public=False),  # 3x top
+            LoginEntry("publickey", "devuser", "10.0.0.2", is_public=False),
+            LoginEntry("publickey", "devuser", "10.0.0.2", is_public=False),  # 2x
+            LoginEntry("publickey", "devuser", "10.0.0.3", is_public=False),  # 1x
+            LoginEntry("publickey", "devuser", "10.0.0.4", is_public=False),  # 1x — outside top-3
         ]
         result = check_auth_log(self._snap_with(entries), t=_fmt)
         summary = next(f for f in result.findings if f.key == "auth_log.summary")
@@ -347,7 +347,7 @@ class TestCheckAuthLog:
     def test_a_login_from_a_hostname_is_reported(self):
         """With UseDNS on, this is what every remote login looks like."""
         src = "host.example.com"
-        entries = [LoginEntry("publickey", "so6", src, is_public=not _is_private(src))]
+        entries = [LoginEntry("publickey", "devuser", src, is_public=not _is_private(src))]
         result = check_auth_log(self._snap_with(entries))
         warns = [f for f in result.findings if f.key == "auth_log.public_login"]
         assert len(warns) == 1
@@ -359,7 +359,7 @@ class TestAuthLogSnapshotMocked:
 
     _PUBLICKEY_LINE = (
         "Apr 18 10:23:45 server sshd[1234]: "
-        "Accepted publickey for so6 from 192.168.1.5 port 54321 ssh2\n"
+        "Accepted publickey for devuser from 192.168.1.5 port 54321 ssh2\n"
     )
     _FAILED_LINE = (
         "Apr 18 09:00:00 server sshd[999]: "
@@ -437,7 +437,7 @@ class TestAuthLogSnapshotFromSystem:
 
 _JOURNALD_AUTH_SAMPLE = (
     "Apr 18 10:23:45 debian13vm sshd[1234]: "
-    "Accepted publickey for so6 from 192.168.1.10 port 54321 ssh2: "
+    "Accepted publickey for devuser from 192.168.1.10 port 54321 ssh2: "
     "RSA SHA256:abc123\n"
     "Apr 18 10:30:00 debian13vm sshd[1235]: "
     "Failed password for root from 5.6.7.8 port 22222 ssh2\n"
@@ -472,7 +472,7 @@ class TestFromSystemJournaldFallback:
             snap = AuthLogSnapshot.from_system()
         assert snap.log_available
         assert len(snap.entries) == 1
-        assert snap.entries[0].user == "so6"
+        assert snap.entries[0].user == "devuser"
 
     def test_journald_failed_count_parsed(self, tmp_path, monkeypatch):
         monkeypatch.setattr("bob.checks.auth_log._LOG_PATHS", [tmp_path / "missing.log"])

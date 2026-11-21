@@ -157,7 +157,7 @@ class TestIsASyslogDaemonRunning:
 class TestDoesTheFileHoldSshdMessages:
     def test_a_file_rsyslog_writes(self, tmp_path):
         f = tmp_path / "auth.log"     # Mint 22.3, verbatim but for the address
-        f.write_text("2026-10-11T20:51:02.118437+02:00 so6minttest sshd[9120]: "
+        f.write_text("2026-10-11T20:51:02.118437+02:00 mint-test sshd[9120]: "
                      "Invalid user nosuchuser1 from 192.0.2.10 port 51122\n")
         assert f2b._jail_files_fed((str(f),)) is True
 
@@ -217,7 +217,7 @@ class TestAnOldMessageIsNotAFeed:
     file must hold that one. Measured on Mint 22.3 (rsyslog): see the replay
     in the 0.24.4 changelog."""
 
-    _OLD = (b"2026-10-11T20:51:02.118437+02:00 so6minttest sshd[9120]: "
+    _OLD = (b"2026-10-11T20:51:02.118437+02:00 mint-test sshd[9120]: "
             b"Invalid user nosuchuser1 from 192.0.2.10 port 51122\n")
     _LATEST = b"[2536]: Server listening on :: port 22."
 
@@ -240,7 +240,7 @@ class TestAnOldMessageIsNotAFeed:
 
     def test_the_latest_message_is_proof(self, tmp_path):
         f = tmp_path / "auth.log"
-        f.write_bytes(self._OLD + b"2026-10-11T21:30:00+02:00 so6minttest sshd" + self._LATEST + b"\n")
+        f.write_bytes(self._OLD + b"2026-10-11T21:30:00+02:00 mint-test sshd" + self._LATEST + b"\n")
         assert f2b._jail_files_fed((str(f),), self._LATEST) is True
 
     def test_the_verdict(self):
@@ -329,7 +329,7 @@ class TestRoutedByTheRoutingInForceNow:
 
     def test_the_verdict_is_unverified(self, monkeypatch, tmp_path):
         f = tmp_path / "auth.log"
-        f.write_bytes(b"Oct 11 22:05:20 so6minttest sshd[2536]: Server listening on :: port 22.\n")
+        f.write_bytes(b"Oct 11 22:05:20 mint-test sshd[2536]: Server listening on :: port 22.\n")
         jail = f"Status for the jail: sshd\n|- Filter\n|  `- File list:\t{f}\n`- Actions\n"
         outputs = {("fail2ban-client", "ping"): "pong",
                    ("fail2ban-client", "status"): "Status\n|- Number of jail:\t1\n`- Jail list:\tsshd\n",
@@ -420,7 +420,7 @@ class TestTheFailuresAreWhatCounts:
 
     def test_failures_routed_elsewhere(self, monkeypatch, tmp_path):
         snap = self._snap(monkeypatch, tmp_path,
-                          b"Oct 11 23:20:01 so6minttest sshd[35997]: pam_unix(sshd:session): session closed for user root\n")
+                          b"Oct 11 23:20:01 mint-test sshd[35997]: pam_unix(sshd:session): session closed for user root\n")
         assert (snap.ssh_jail_fed, snap.ssh_jail_misses_failures) == (False, True)
         result = check_fail2ban(snap, t=_t)
         assert "fail2ban.ssh_jail_misses_failures" in _keys(result)
@@ -430,7 +430,7 @@ class TestTheFailuresAreWhatCounts:
 
     def test_failures_in_the_file(self, monkeypatch, tmp_path):
         snap = self._snap(monkeypatch, tmp_path,
-                          b"Oct 11 23:20:00 so6minttest sshd[35990]: Invalid user nosuchsplit1 from 192.0.2.10 port 40000\n")
+                          b"Oct 11 23:20:00 mint-test sshd[35990]: Invalid user nosuchsplit1 from 192.0.2.10 port 40000\n")
         assert snap.ssh_jail_fed is True
         assert "fail2ban.ssh_jail_active" in _keys(check_fail2ban(snap, t=_t))
 
@@ -443,7 +443,7 @@ class TestTheFailuresAreWhatCounts:
                 "_PID": "40797", "__MONOTONIC_TIMESTAMP": "8500000", "_BOOT_ID": _BOOT}
         journal = "".join(_json.dumps(e) + "\n" for e in (self._FAIL, auth))
         f = tmp_path / "auth.log"
-        f.write_bytes(b"Oct 11 23:27:13 so6minttest sshd[40797]: Connection closed by authenticating user root "
+        f.write_bytes(b"Oct 11 23:27:13 mint-test sshd[40797]: Connection closed by authenticating user root "
                       b"192.0.2.10 port 47694 [preauth]\n")
         jail = f"Status for the jail: sshd\n|- Filter\n|  `- File list:\t{f}\n`- Actions\n"
         outputs = {("fail2ban-client", "ping"): "pong",

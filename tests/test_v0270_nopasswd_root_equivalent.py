@@ -1,6 +1,6 @@
 """v0.27.0 — a NOPASSWD rule for a command that is root anyway weighs like NOPASSWD:ALL.
 
-Found on a Mint host (0.26.0): `so6 ALL=(root) NOPASSWD: /home/so6/.local/bin/bob,
+Found on a Mint host (0.26.0): `devuser ALL=(root) NOPASSWD: /home/devuser/.local/bin/bob,
 /usr/bin/python3` was an INFO, "specific commands, often intentional" — root
 without a password for any process of that user. Measured on an Alpine VM
 (24 October 2026), as the account a rule names, each of these returned uid 0:

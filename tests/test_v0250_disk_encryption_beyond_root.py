@@ -58,7 +58,7 @@ class TestWhatIsLookedAt:
                        + "/dev/vda1 /boot ext4 rw 0 0\n"
                        + "/dev/vda1 /boot/efi vfat rw 0 0\n"
                        + "/dev/loop3 /snap/core22/1 squashfs ro 0 0\n"
-                       + "/dev/sdb1 /run/media/so6/KEY vfat rw 0 0\n"
+                       + "/dev/sdb1 /run/media/devuser/KEY vfat rw 0 0\n"
                        + "tmpfs /tmp tmpfs rw 0 0\n"
                        + "server:/export /srv/nfs nfs4 rw 0 0\n"
                        + "/dev/mapper/vg-root /var/lib/containers ext4 rw 0 0\n",

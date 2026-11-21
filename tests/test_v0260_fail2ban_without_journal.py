@@ -26,7 +26,7 @@ STATUS = ("Status for the jail: sshd\n|- Filter\n|  |- Currently failed:\t1\n"
 # As syslog-ng and busybox syslogd wrote the session's line there.
 ACCEPTED = (b"2026-10-18 18:56:24 info sshd-session[8919]: Accepted publickey for root "
             b"from 192.168.1.10 port 57566 ssh2\n")
-OLD = (b"Oct 18 20:55:05 so6alpinetest auth.info sshd-session[7972]: Connection closed "
+OLD = (b"Oct 18 20:55:05 alpine-test auth.info sshd-session[7972]: Connection closed "
        b"by invalid user bobnosuchuser 192.168.1.10 port 55756 [preauth]\n")
 
 
@@ -116,14 +116,14 @@ def _proc(root, pid, comm, start, argv0=b""):
 class TestTheNewestSession:
     def test_the_newest_priv_session_after_the_daemon(self, tmp_path):
         _proc(tmp_path, 8093, "syslog-ng-main", 95717)
-        _proc(tmp_path, 2665, "sshd-session", 7062, b"sshd-session: so6 [priv]")
+        _proc(tmp_path, 2665, "sshd-session", 7062, b"sshd-session: devuser [priv]")
         _proc(tmp_path, 8919, "sshd-session", 101844, b"sshd-session: root [priv]")
         _proc(tmp_path, 8922, "sshd-session", 101867, b"sshd-session: root@notty")
         assert _newest_session_since_syslog(str(tmp_path)) == 8919
 
     def test_only_sessions_older_than_the_daemon(self, tmp_path):
         _proc(tmp_path, 10588, "syslogd", 120000)
-        _proc(tmp_path, 2665, "sshd-session", 7062, b"sshd-session: so6 [priv]")
+        _proc(tmp_path, 2665, "sshd-session", 7062, b"sshd-session: devuser [priv]")
         assert _newest_session_since_syslog(str(tmp_path)) is None
 
     def test_no_daemon_process_found(self, tmp_path):

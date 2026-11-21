@@ -524,6 +524,22 @@ def _check_match_blocks(snapshot: SSHSnapshot, result: CheckResult, _t, ssh_expo
             result.info(message=_t("ssh.match_block_shadowed", criteria=blk["criteria"], file=blk["file"],
                                    directive=key, earlier=earlier),
                         key="ssh.match_block_shadowed", template_vars=vars_)
+    # v0.41.0 (B-001) — a setting an earlier block also sets, cover uncertain:
+    # what sshd said when asked (bob/checks/ssh/_probe.py). Never a reason to
+    # leave the setting out — decided with the user: a connection not tried
+    # may still get it.
+    for blk in blocks:
+        for key, probe in sorted((blk.get("probe") or {}).items()):
+            vars_ = {"criteria": blk["criteria"], "file": blk["file"], "directive": key,
+                     "value": probe["value"], "earlier": probe["earlier"], "count": probe["tried"],
+                     "connection": probe["applies"] or ""}
+            k = "ssh.match_block_probe_applies" if probe["applies"] else "ssh.match_block_probe_unproven"
+            result.info(message=_t(k, **vars_), key=k, template_vars=vars_)
+    unavailable = cfg.get("_match_probe_unavailable") or {}
+    if unavailable and unavailable.get("reason") != "root":
+        vars_ = {"count": unavailable["count"], "reason": _t(f"ssh.match_probe_why.{unavailable['reason']}")}
+        result.info(message=_t("ssh.match_block_probe_unavailable", count=vars_["count"], reason=vars_["reason"]),
+                    key="ssh.match_block_probe_unavailable", template_vars=vars_)
     base = {k: v for k, v in cfg.items() if not k.startswith("_match")}
     counted = {d.key for d in result.deductions}
     weakened = False

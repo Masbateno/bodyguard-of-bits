@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.40.0
+Version:        0.41.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,12 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sat Nov 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.41.0-1
+- Minor, not BREAKING. Directories BOB creates in a user's home are the
+  user's; a Match setting an earlier block may override carries what
+  sshd -T -C says (always counted); CIS Ubuntu 26.04 4.1.3 cited;
+  --history says when partial runs draw no trend.
+
 * Sat Nov 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.40.0-1
 - Minor, not BREAKING; one new option, --fix-journal. Every command
   --fix --apply launches is written to /var/log/bob/fixes.journal

@@ -1570,7 +1570,7 @@
     "match_block_skipped": "sshd_config has an Include inside a Match block that could not be read: {includes} — the settings it brings to those sessions are unknown",
     "match_blocks_read": "{count} Match block(s) in sshd_config, read and weighed for the sessions they match: {blocks}",
     "match_block_weakens": "Match {criteria} ({file}): {finding}",
-    "match_block_weakens_detail": "Set inside a Match block: sshd applies it to the sessions that block matches, over the global settings (measured with sshd -T -C). Change it in the block itself — a global directive does not override it. PermitRootLogin in a block whose User or Group criteria leave root out changes nothing for root and is not counted. A setting an earlier block certainly takes first (the same or narrower criteria, measured) is left out and said; where BOB cannot tell whether two blocks' sessions overlap, it counts it.",
+    "match_block_weakens_detail": "Set inside a Match block: sshd applies it to the sessions that block matches, over the global settings (measured with sshd -T -C). Change it in the block itself — a global directive does not override it. PermitRootLogin in a block whose User or Group criteria leave root out changes nothing for root and is not counted. A setting an earlier block certainly takes first (the same or narrower criteria, measured) is left out and said; where BOB cannot tell whether two blocks' sessions overlap, it counts it. Since 0.41.0, for such a block BOB asks sshd (sshd -T -C) for the connections it takes and shows where the block's value applies, or says it found none — never a reason to leave the setting out.",
     "match_block_no_account": "Match {criteria} ({file}) matches no account on this host — its settings take no session now; not counted",
     "match_block_shadowed": "Match {criteria} ({file}): {directive} is never applied — Match {earlier} comes first and takes every session this block takes, and sshd keeps the first value it reads; not counted",
     "match_all_sets": "Match all ({file}) sets {keys} for every session: a value in that block beats the global one, so it is judged as the effective setting, and any later Match block's value for these keys is never applied (measured with sshd -T -C); no command is offered for them — the edit is in that block",
@@ -1581,6 +1581,14 @@
         "client_detail": "X11 forwarding from your machine TO a remote host opens your display server to the remote — a hostile remote can take screenshots, inject keystrokes, and read clipboard data via the X protocol. Disable ForwardX11 in ~/.ssh/config (or use 'ssh -X' on-demand for trusted hosts only) by removing the directive or setting 'no'.",
         "client_scoped": "ForwardX11 = yes scoped to Host '{host}' in ~/.ssh/config — lower risk than a global setting; review whether that host is trusted"
       }
+    },
+    "match_block_probe_applies": "Match {criteria} ({file}): {directive} {value} — an earlier block (Match {earlier}) sets it otherwise, yet sshd applies this value to a connection {connection}: counted, with that proof",
+    "match_block_probe_unproven": "Match {criteria} ({file}): {directive} {value} — an earlier block (Match {earlier}) sets it otherwise; sshd gave another value to each of the {count} connection(s) tried, which does not prove that no connection gets this one: counted",
+    "match_block_probe_unavailable": "{count} Match setting(s) an earlier block sets otherwise could not be checked with sshd -T -C ({reason}): counted",
+    "match_probe_why": {
+      "sshd": "sshd not found",
+      "answer": "sshd did not answer",
+      "root": "BOB not run as root"
     }
   },
   "file_perms": {
@@ -3947,7 +3955,8 @@
     "span_legend": "~ a whole domain was not read: the score moved in an unknown direction — no trend arrow beside it",
     "bound_unknown_legend": "? written before 0.30.0, which kept the number alone: whether this score was a ceiling is not known — no trend arrow beside it",
     "unreadable": "Score history exists but cannot be read ({path}: {error}) — owned by {owner}, mode {mode}. To read it: sudo bob --history",
-    "unreadable_hand_back": "It is a regular file owned by another account: the next audit run with sudo bob gives it back to yours, through the same checked descriptor as every write — no chown to type, whose path the shell would resolve again"
+    "unreadable_hand_back": "It is a regular file owned by another account: the next audit run with sudo bob gives it back to yours, through the same checked descriptor as every write — no chown to type, whose path the shell would resolve again",
+    "no_trend": "No full run yet: partial runs (--check, --skip) draw no trend"
   },
   "auth_log": {
     "not_available": "auth.log not accessible — SSH login analysis unavailable",

@@ -57,7 +57,7 @@ keyboard:
   model: pc105
   layout: "fr"
 user:
-  name: so6
+  name: devuser
   shell: /bin/bash
   lock_passwd: false
   passwd: {_HASH}
@@ -94,9 +94,9 @@ def board(tmp_path):
     (boot / "user-data").write_text(_USER_DATA, encoding="utf-8")
     (boot / "network-config").write_text(_NETWORK, encoding="utf-8")
     passwd = tmp_path / "passwd"
-    passwd.write_text("so6:x:1000:1000::/home/so6:/bin/bash\n", encoding="utf-8")
+    passwd.write_text("devuser:x:1000:1000::/home/devuser:/bin/bash\n", encoding="utf-8")
     shadow = tmp_path / "shadow"
-    shadow.write_text(f"so6:{_HASH}:20341:0:99999:7:::\n", encoding="utf-8")
+    shadow.write_text(f"devuser:{_HASH}:20341:0:99999:7:::\n", encoding="utf-8")
     return boot, passwd, shadow
 
 
@@ -123,7 +123,7 @@ def test_the_password_in_the_seed_is_reported_not_passed_as_ok(board):
     )
     f = found["raspberry_pi.seed_password"]
     assert f.level.name == "WARN"
-    assert "so6" in f.message
+    assert "devuser" in f.message
     assert any(d.key == "raspberry_pi.seed_password" for d in result.deductions)
 
 
@@ -154,7 +154,7 @@ def test_no_secret_reaches_the_report(board):
 
 def test_a_stale_hash_is_called_stale(board):
     boot, passwd, shadow = board
-    shadow.write_text(f"so6:{_OLD_HASH}:20341:0:99999:7:::\n", encoding="utf-8")
+    shadow.write_text(f"devuser:{_OLD_HASH}:20341:0:99999:7:::\n", encoding="utf-8")
     snap, result = _audit(boot, passwd, shadow)
     assert snap.seed_password_current is False
     assert "no longer" in _by_key(result)["raspberry_pi.seed_password"].detail

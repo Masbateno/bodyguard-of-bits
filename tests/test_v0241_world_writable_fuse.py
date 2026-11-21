@@ -26,8 +26,8 @@ def test_real_gnu_line_with_absolute_argv0_is_understood():
     # Verbatim from the real Mint 22.3 run: BOB runs find by absolute path, so
     # find names itself "/usr/bin/find". A "find: " prefix test missed it and
     # the field run stayed "incomplete".
-    err = b"/usr/bin/find: '/home/so6/fusemnt': Permission denied\n"
-    assert not _unexplained_errors(err, ["/home/so6/fusemnt"])
+    err = b"/usr/bin/find: '/home/devuser/fusemnt': Permission denied\n"
+    assert not _unexplained_errors(err, ["/home/devuser/fusemnt"])
 
 
 def test_busybox_error_format_is_understood():
