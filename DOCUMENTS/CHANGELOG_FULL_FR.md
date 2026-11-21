@@ -6,7 +6,7 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [0.41.0] — 21-11-2026
+## [0.41.0] — 22-11-2026
 
 **Une version mineure qui purge le backlog : les dossiers que BOB crée dans le
 home d'un utilisateur rendus à cet utilisateur ; sshd interrogé pour savoir si

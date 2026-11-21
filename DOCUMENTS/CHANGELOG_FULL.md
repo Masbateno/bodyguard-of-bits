@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [0.41.0] — 2026-11-21
+## [0.41.0] — 2026-11-22
 
 **A minor release that clears the backlog: the directories BOB creates in a
 user's home handed to that user; sshd asked whether a Match-block setting

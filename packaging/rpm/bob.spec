@@ -95,7 +95,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
-* Sat Nov 21 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.41.0-1
+* Sun Nov 22 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.41.0-1
 - Minor, not BREAKING. Directories BOB creates in a user's home are the
   user's; a Match setting an earlier block may override carries what
   sshd -T -C says (always counted); CIS Ubuntu 26.04 4.1.3 cited;
