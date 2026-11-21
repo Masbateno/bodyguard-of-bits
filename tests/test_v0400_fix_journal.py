@@ -246,12 +246,21 @@ class TestReading:
         assert journal.unreadable is None and journal.intact
         assert A._read_raw(FJ.path())[1] == "too_large"        # the notes keep theirs
 
-    def test_by_day_most_recent_first(self):
+    def test_by_day_most_recent_first(self, monkeypatch):
+        """Each command's start dated by hand, in a fixed time zone. The first
+        version dated the file's first three lines — a start, an outcome, a
+        start, once commands took two lines — and left the last ones at the
+        current time: it passed on 20 November 2026 only because that was the
+        day it expected, and failed in CI the next morning."""
+        import time
+        monkeypatch.setenv("TZ", "UTC")
+        time.tzset()
         _run(finding="a"); _run(finding="b"); _run(finding="c")
         lines = [json.loads(ln) for ln in _lines()]
-        lines[0]["at"] = "2026-11-18T10:00:00+01:00"
-        lines[1]["at"] = "2026-11-20T09:00:00+01:00"
-        lines[2]["at"] = "2026-11-20T11:00:00+01:00"
+        starts = [e for e in lines if e["kind"] == "run"]
+        for event, at in zip(starts, ("2026-11-18T10:00:00+00:00", "2026-11-20T09:00:00+00:00",
+                                      "2026-11-20T11:00:00+00:00"), strict=True):
+            event["at"] = at
         prev = FJ._GENESIS
         for event in lines:
             event["prev"] = prev
@@ -260,6 +269,8 @@ class TestReading:
         days = FJ.days(FJ.load())
         assert [d for d, _ in days] == ["2026-11-20", "2026-11-18"]
         assert [e.finding for e in days[0][1]] == ["b", "c"]
+        monkeypatch.delenv("TZ")
+        time.tzset()
 
 
 class TestTheWitness:
