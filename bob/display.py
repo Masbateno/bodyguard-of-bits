@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from bob.cis_refs import get_cis_ref, get_cis_code
+from bob.cis_refs import host_cis
 from bob.visibility import section_of
 
 
@@ -101,7 +101,7 @@ def _emit_finding_body(finding, traits: _LevelTraits, verbose: bool) -> None:
     if traits.show_note and verbose and finding.note:
         print_info(finding.note)
     if traits.show_cis and verbose and finding.key:
-        _cis = get_cis_ref(finding.key)
+        _cis, _code = host_cis(finding.key)   # v0.42.0 (B-043) — the host's benchmark
         if _cis:
             print_dim(_cis)
 
@@ -706,7 +706,7 @@ def _add_finding_lines(icon_prefix: str, item, inner: int) -> list[tuple[str, st
         note_prefix = " " * len(icon_prefix) + "ℹ "
         lines.extend(_wrap_for_box(note_prefix, item.note, inner))
     if item.key:
-        cis_code = get_cis_code(item.key)
+        _ref, cis_code = host_cis(item.key)
         if cis_code:
             code_prefix = " " * len(icon_prefix)
             lines.append((f"{code_prefix}{_oc.dim}[{cis_code}]{_oc.reset}", ""))
@@ -965,9 +965,18 @@ def build_risk_context_entries(snapshots, lang: str, t,
         level    = t(f"service_risk.{svc_id}.level")
         if exposure.startswith("["):
             continue
+        level = f"{level} • LAN" if is_local else level
+        if not snap.is_active:
+            # v0.42.0 — the screen card says it (display_risk_context); the
+            # report's did not: the Telnet card read CRITICAL with no word that
+            # nothing runs.
+            level = f"{level} • {t('risk_context.not_running')}"
+        from bob.registry import shown_label
         entries.append({
-            "label":          snap.service.label,
-            "level":          f"{level} • LAN" if is_local else level,
+            # v0.42.0 (B-039) — the displayed label; the catalogue one is an
+            # identifier ("SSH Server" was printed in the French report).
+            "label":          shown_label(snap.service.label, t),
+            "level":          level,
             "exposure_label": t("risk_context.exposure"),
             "exposure":       exposure,
             "threat_label":   t("risk_context.threat"),
@@ -1019,16 +1028,15 @@ def display_ports_overview(ports_snapshot, config, t, report, output) -> None:
     to the .log report but stdout stays empty (honours ``bob -q`` contract).
     """
     from bob.output import print_section
-    from bob.checks.ports import EPHEMERAL_THRESHOLD
     if not config.quiet:
         print_section(t("sections.ports_overview"))
     report.write_section(t("sections.ports_overview"))
 
-    # Exclude ephemeral UDP ports from count and display
-    visible_ports = [
-        lp for lp in ports_snapshot.ports
-        if not (lp.proto == "udp" and lp.port > EPHEMERAL_THRESHOLD)
-    ]
+    # v0.42.0 (B-040) — every port `ss` listed, UDP above 32767 included: they
+    # were dropped here without a word (avahi's [::]:39479 on the developer's
+    # workstation, which the IPv6 section named). The ports section says they
+    # are not judged.
+    visible_ports = list(ports_snapshot.ports)
     visible_raw = {lp.raw_line for lp in visible_ports}
 
     # A count of zero is only worth printing when `ss` actually answered;
@@ -1083,6 +1091,11 @@ def display_services_panorama(registry, ufw_numbered: str,
         all_listening_ports=all_listening_ports,
     )
     panorama_rows = build_panorama_rows(all_snaps, port_scopes)
+    # v0.42.0 (B-039) — the displayed label, in the interface language
+    from bob.registry import shown_label
+    for row in panorama_rows:
+        row["label"] = shown_label(row["label"], t)
+    panorama_rows.sort(key=lambda r: r["label"].lower())
     panorama_labels = {
         "header_service": t("services.panorama.header_service"),
         "header_status":  t("services.panorama.header_status"),

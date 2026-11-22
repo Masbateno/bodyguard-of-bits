@@ -1329,6 +1329,15 @@ def path_is_file(path: "Path") -> bool:
         return False
 
 
+def more_suffix(t, total: int, shown: int) -> str:
+    """v0.42.0 (B-037) — `` (+N more)`` after a truncated list, translated.
+
+    Ten checks wrote ``f" (+{n} more)"`` by hand, outside the translation: the
+    French output of the developer's workstation audit read "(+4 more)".
+    """
+    return " " + t("output.more_items", count=total - shown) if total > shown else ""
+
+
 def _identity_t(key: str, **kwargs) -> str:
     """Fallback translation function — returns the key itself.
 

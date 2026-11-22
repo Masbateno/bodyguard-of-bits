@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.41.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.42.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -177,7 +177,7 @@ $ sudo bob
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  Security score : ≤ 7/10                                                     ║
-║  Risk level : ✖ HIGH at best  (raised by posture: firewall inactive)         ║
+║  Hardening gap : ✖ HIGH at best  (raised by posture: firewall inactive)      ║
 ║  Visibility : 1 section(s) not fully read — the score is a ceiling           ║
 ║  Network context : IPv4 behind NAT, public IPv6 (router filter unverified)   ║
 ║  Audit profile : Desktop                                                     ║
@@ -197,7 +197,7 @@ $ sudo bob
   Access Control       10/10  ██████████
   System Hardening      7/10  ███████░░░
   Health & Resilience   8/10  ████████░░
-  Threat Detection         —  reported, not scored
+  Detection Tools          —  reported, not scored
 ```
 
 Each item of the *Action required* list shows a CIS reference when one applies, a remediation command when one exists, and an `--explain` hint linking to the longer rationale.
@@ -385,7 +385,7 @@ Optional: `geoip2` for IP geolocation (`pipx inject bodyguard-of-bits geoip2`)
 
 **Raspberry Pi** is recognised as of v0.17.0. BOB reads the board name from the device tree and reports what a PC does not have: provisioning credentials left on the FAT boot partition — the Imager's `userconf.txt` on Bookworm, and on trixie the cloud-init seed, whose `user-data` holds the account's password hash and `network-config` the Wi-Fi key, on a filesystem that carries no ownership of its own — the first-boot `ssh` marker, and the distribution's historical `pi` account when it can actually log in. x86 firmware concepts degrade instead of deducting: microcode is not applicable, and Secure Boot reports that no UEFI was found rather than claiming a BIOS the board does not have. BOB does **not** test whether the `pi` account still has the default password: that needs `crypt`, which Python removed from the standard library in 3.13. The section was field tested on emulated `aarch64` (qemu-user): the board is read from the device tree, the boot partition resolves to Bookworm's `/boot/firmware`, the imager's yescrypt hash is recognised, and the `--fix --apply` round trip removes the file and clears the finding. Emulation is not hardware, and it is not silently equivalent either — `setrlimit(RLIMIT_AS)` returns success and applies nothing under qemu-user, which is how the plugin sandbox was caught claiming a memory cap it never got. An arm64 job runs on every PR: it refuses to pass unless `uname -m` really says `aarch64`, then asserts the audit exits cleanly, that microcode degrades, that no UEFI is not announced as a BIOS, and that the Raspberry Pi section fires on a simulated board. **v0.18.1 is the first release audited on a physical Pi** — a Zero W on Raspbian 13 trixie — and it found what emulation never could: the boot-partition check was looking for a file trixie no longer writes, while the cloud-init seed next to it held the sudo account's current hash, and SSH brute-force detection was blind to OpenSSH ≥ 9.8. One board is not a matrix: reports from other models are still worth more than any number of emulated runs.
 
-Pending updates are read through the host's package manager — apt, dnf, zypper, pacman or apk. Pending security updates cost 2 points where the manager can tell a security fix from a regular update (apt with a `-security` suite, dnf, zypper). pacman, apk and a rolling apt distribution with no `-security` suite (Kali) cannot, so there BOB reports the pending packages as INFO and says it cannot classify them, rather than reading "no security update" as "up to date". The unattended-upgrades check is apt-only; on Linux Mint, the Update Manager's own automation (`mintupdate-automation upgrade enable`) counts as automatic updates too, since 0.38.0. CIS Ubuntu 22.04 references are still emitted when the underlying control (sysctl flags, SSH config, file permissions) is OS-agnostic.
+Pending updates are read through the host's package manager — apt, dnf, zypper, pacman or apk. Pending security updates cost 2 points where the manager can tell a security fix from a regular update (apt with a `-security` suite, dnf, zypper). pacman, apk and a rolling apt distribution with no `-security` suite (Kali) cannot, so there BOB reports the pending packages as INFO and says it cannot classify them, rather than reading "no security update" as "up to date". The unattended-upgrades check is apt-only; on Linux Mint, the Update Manager's own automation (`mintupdate-automation upgrade enable`) counts as automatic updates too, since 0.38.0. CIS Ubuntu 22.04 references are still emitted when the underlying control (sysctl flags, SSH config, file permissions) is OS-agnostic. Since 0.42.0 the screen cites the host's own benchmark when a citation exists for it — CIS Ubuntu 24.04 on Linux Mint 22, read from `/etc/os-release` — and the CIS Ubuntu 22.04 reference otherwise.
 
 **Remediation commands are chosen for your package manager** since v0.17.0. Before that every "install this" finding read `sudo apt install …` on every host, and the package names were Debian's — `sudo dnf install auditd` installs nothing, because Fedora calls it `audit`. The names were measured in containers rather than recalled, and where BOB has no measured name for your manager it says so instead of inventing a command: an instruction that installs nothing is worse than an admission, because you have no reason to doubt it.
 

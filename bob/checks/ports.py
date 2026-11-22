@@ -360,6 +360,7 @@ def check_ports(
     reported_alert_ports:  set[str] = set()  # deduplicate alert ports
     reported_local_ports:  set[str] = set()  # deduplicate local/loopback ports (multi-address)
     reported_order_ports:  set[str] = set()  # v0.31.0 — refused by a rule an earlier portless rule overrides
+    unjudged: "list[ListeningPort]" = []      # v0.42.0 — UDP above EPHEMERAL_THRESHOLD, said
 
     # Parse UFW rules once instead of re-scanning the rules string for every
     # listening port (was O(N×M); now O(M) parse + O(N) lookups).
@@ -380,7 +381,11 @@ def check_ports(
         category = _categorize_port(lport, covered_ports)
 
         if category == PortCategory.EPHEMERAL:
-            continue  # silently ignored — kernel-assigned, no security relevance
+            # v0.42.0 (B-040) — not judged, but no longer hidden: measured on the
+            # developer's workstation, avahi's [::]:39479 was left out of the
+            # overview and of this verdict while the IPv6 section counted it.
+            unjudged.append(lport)
+            continue
 
         if category == PortCategory.SYSTEM_INTERNAL:
             # Deduplicate — same port/proto may appear on multiple loopback addresses
@@ -649,6 +654,15 @@ def check_ports(
                                  else "ports.all_covered_policy"), key="ports.all_covered")
         else:
             result.ok(message=_t("ports.all_covered"), key="ports.all_covered")
+
+    if unjudged:
+        named: "list[str]" = []
+        for lp in unjudged:
+            entry = f"{lp.port_proto} ({lp.process})" if lp.process else lp.port_proto
+            if entry not in named:
+                named.append(entry)
+        result.info(message=_t("ports.high_udp_not_judged", count=len(named), ports=", ".join(named)),
+                    detail=_t("ports.high_udp_not_judged_detail"), key="ports.high_udp_not_judged")
 
     return result
 

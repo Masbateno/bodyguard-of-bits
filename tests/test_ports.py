@@ -306,15 +306,19 @@ class TestCheckPorts:
         result = check_ports(snapshot)
         assert has_level(result, "info")
 
-    def test_ephemeral_silent(self):
-        """Ephemeral UDP ports produce no findings — silently ignored."""
+    def test_ephemeral_said_not_judged(self):
+        """v0.42.0 (B-040, user's decision) — UDP above 32767 is still not
+        judged, but said: it was silently dropped (avahi's [::]:39479 on the
+        developer's workstation, named by the IPv6 section only)."""
         snapshot = make_snapshot(
             ports=[make_port(port=EPHEMERAL_THRESHOLD + 1, proto="udp")],
             ufw_rules="",
         )
         result = check_ports(snapshot)
-        assert not has_level(result, "info")
+        said = [f for f in result.findings if f.key == "ports.high_udp_not_judged"]
+        assert len(said) == 1 and said[0].level.value == "info"
         assert has_level(result, "ok")  # all_covered OK
+        assert not result.deductions
 
     def test_audited_ports_skipped(self):
         snapshot = make_snapshot(

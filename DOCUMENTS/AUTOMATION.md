@@ -298,7 +298,7 @@ sudo bob --webhook URL --webhook-format=generic  # force generic JSON
 
 The Slack message includes:
 
-- A summary line: BOB version, host, score, risk level, and the alert and warning counts
+- A summary line: BOB version, host, score, hardening gap (the `risk` field), and the alert and warning counts
 - The list of ALERT and WARN findings, each with its detail, cut at 2500 characters (an ellipsis marks the cut)
 - A colour-coded attachment: red when there is an alert, orange when there are only warnings, green otherwise
 
@@ -376,7 +376,7 @@ Re-runs the audit every `N` seconds until interrupted with `Ctrl-C`:
 sudo bob --watch=60
 ```
 
-Each pass prints one line — time, score, score bar and risk level — then *No changes detected since last audit* or the findings that appeared or were resolved since the previous pass, then the time of the next pass; the first pass only sets the comparison point. The output scrolls; nothing is redrawn in place. The interval is 10 s at least. Use cases:
+Each pass prints one line — time, score, score bar and hardening gap — then *No changes detected since last audit* or the findings that appeared or were resolved since the previous pass, then the time of the next pass; the first pass only sets the comparison point. The output scrolls; nothing is redrawn in place. The interval is 10 s at least. Use cases:
 
 - Watching a hardening change take effect (`sudo sysctl -w ...` → next pass shows the WARN disappear)
 - Demoing the audit live in a meeting

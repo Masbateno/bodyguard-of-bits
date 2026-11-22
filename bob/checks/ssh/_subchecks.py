@@ -187,7 +187,7 @@ def _check_host_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
                 nature="action",
                 detail=_t("ssh.host_key_rsa_short_detail"),
                 # the file sshd serves, which a HostKey line may name otherwise
-                cmd=f"sudo ssh-keygen -t rsa -b 4096 -f {shlex.quote(str(hk.path))} -N '' && {service_restart_cmd(ssh_unit())}",
+                cmd=_rsa_regen_cmd(str(hk.path)),
                 cmd_type="fix",
                 template_vars={"name": name, "bits": hk.rsa_bits},
             )
@@ -196,7 +196,7 @@ def _check_host_keys(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
             result.info(
                 message=_t("ssh.host_key_rsa_short", name=name, bits=hk.rsa_bits),
                 detail=_t("ssh.host_key_rsa_short_detail"),
-                cmd=f"sudo ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N '' && {service_restart_cmd(ssh_unit())}",
+                cmd=_rsa_regen_cmd(str(hk.path)),
                 cmd_type="fix",
                 key="ssh.host_key_rsa_short",
                 template_vars={"name": name, "bits": hk.rsa_bits},  # pilot v0.4.1
@@ -243,6 +243,27 @@ def _dsa_offered(value: str) -> bool:
         return False
     listed = [p for p in (value[1:] if value[0] in "+^" else value).split(",") if p]
     return any(fnmatchcase("ssh-dss", p) for p in listed)
+
+
+def _rsa_regen_cmd(path: str) -> str:
+    """v0.42.0 (B-041) — regenerate an RSA host key: the old pair moved aside
+    first, sshd's configuration tested before the restart.
+
+    Measured on the test Mint (OpenSSH 9.6p1, 21 November 2026): ``ssh-keygen
+    -f <existing key>`` asks "Overwrite (y/n)?". Answered y, it overwrote the
+    key with no copy left, and sshd restarted untested; run from a script
+    (stdin closed) it exited 1 and nothing changed. ``--fix --apply`` never
+    runs this command itself: it chains commands (``&&``), which BOB leaves to
+    the operator. The pair now goes to ``<key>.bob-old`` (sshd loads only the
+    HostKey files it names), so there is no question to answer and the old
+    identity can be put back if a step fails — by hand: the chain stops at the
+    failing step and sshd restarts only after ``sshd -t`` succeeds.
+    """
+    key, pub = shlex.quote(path), shlex.quote(path + ".pub")
+    old, old_pub = shlex.quote(path + ".bob-old"), shlex.quote(path + ".pub.bob-old")
+    return (f"sudo mv {key} {old} && sudo mv {pub} {old_pub} && "
+            f"sudo ssh-keygen -t rsa -b 4096 -f {key} -N '' && sudo sshd -t && "
+            f"{service_restart_cmd(ssh_unit())}")
 
 
 def _dsa_host_key_served(snapshot: SSHSnapshot, path: Path) -> "bool | None":
@@ -502,7 +523,7 @@ def _check_match_blocks(snapshot: SSHSnapshot, result: CheckResult, _t, ssh_expo
     cfg = snapshot.sshd_config
     unread = cfg.get("_match_include_unread") or []
     if unread:
-        shown = "; ".join(unread[:3]) + (f" (+{len(unread) - 3})" if len(unread) > 3 else "")
+        shown = "; ".join(unread[:3]) + (f" (+{len(unread) - 3})" if len(unread) > 3 else "")   # language-neutral: rebuilt from template_vars in another locale
         result.info(message=_t("ssh.match_block_skipped", includes=shown),
                     key="ssh.match_block_skipped", template_vars={"includes": shown})
     blocks = cfg.get("_match_blocks") or []
@@ -574,7 +595,7 @@ def _check_match_blocks(snapshot: SSHSnapshot, result: CheckResult, _t, ssh_expo
                     message=_t("ssh.match_block_weakens", criteria=criteria, file=where, finding=what),
                     detail=_t("ssh.match_block_weakens_detail"), template_vars=vars_)
             weakened = True
-    shown = "; ".join(f"Match {b['criteria']}" for b in blocks[:5]) + (f" (+{len(blocks) - 5})" if len(blocks) > 5 else "")
+    shown = "; ".join(f"Match {b['criteria']}" for b in blocks[:5]) + (f" (+{len(blocks) - 5})" if len(blocks) > 5 else "")   # language-neutral: rebuilt from template_vars in another locale
     result.info(message=_t("ssh.match_blocks_read", count=len(blocks), blocks=shown),
                 key="ssh.match_blocks_read", template_vars={"count": len(blocks), "blocks": shown})
     return weakened

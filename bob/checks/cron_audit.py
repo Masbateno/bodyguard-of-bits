@@ -25,7 +25,7 @@ import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _identity_t, _is_safe_config_path, pipes_into_shell
+from bob.checks._run import TranslationFunc, _identity_t, _is_safe_config_path, more_suffix, pipes_into_shell
 from bob._fs import strict_is_dir, strict_is_file
 from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
@@ -325,7 +325,7 @@ def check_cron_audit(snapshot: CronAuditSnapshot, *, t: TranslationFunc | None =
         scripts = ", ".join(writable_scripts[:3])
         count   = len(writable_scripts)
         if count > 3:
-            scripts += f" (+{count - 3})"
+            scripts += more_suffix(_t, count, 3)
         result.warn_with_deduction(
             key="cron.world_writable",
             message=_t("cron.world_writable", count=count, scripts=scripts),

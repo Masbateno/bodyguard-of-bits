@@ -70,7 +70,7 @@ _FALLBACK_LABELS = {
     "markdown_output.col_message":            "Message",
     "markdown_output.col_fix_command":        "Fix command",
     "markdown_output.field_score":            "Score",
-    "markdown_output.field_risk_level":       "Risk level",
+    "markdown_output.field_risk_level":       "Hardening gap",
     "markdown_output.field_alerts":           "Alerts",
     "markdown_output.field_warnings":         "Warnings",
     "markdown_output.field_host":             "Host",

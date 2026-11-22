@@ -26,7 +26,7 @@ from bob.display import (
     display_services_panorama,
 )
 from bob.output import print_group, print_info, print_section, print_service_header
-from bob.registry import ServiceRegistry
+from bob.registry import ServiceRegistry, shown_label
 from bob.report import AuditReport, Report
 from bob.scoring import CheckResult, ScoreEngine
 from bob.sysinfo import shown_network_context
@@ -929,8 +929,8 @@ def run_checks(
 
     for snap in snapshots:
         if not config.quiet:
-            print_service_header(snap.label)
-        report.write_raw(f"\n  > {snap.label}")
+            print_service_header(shown_label(snap.label, t))
+        report.write_raw(f"\n  > {shown_label(snap.label, t)}")
         if snap.is_active or (snap.installed and not snap.is_active and snap.service.is_high_or_critical):
             _risk_note = (
                 t("service_risk.local_exposure_note")

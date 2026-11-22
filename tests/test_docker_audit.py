@@ -184,13 +184,13 @@ class TestPrivilegedContainers:
         names = [f"c{i}" for i in range(5)]
         result = check_docker_audit(_snap(privileged_containers=names), t=_t_format)
         f = _finding(result, "docker_hardening.privileged")
-        assert "more" not in (f.message or "")
+        assert "output.more_items" not in (f.message or "")
 
     def test_privileged_6_shows_plus_1_more(self):
         names = [f"c{i}" for i in range(6)]
         result = check_docker_audit(_snap(privileged_containers=names), t=_t_format)
         f = _finding(result, "docker_hardening.privileged")
-        assert "+1 more" in (f.message or "")
+        assert "output.more_items: count=1" in (f.message or "")
 
     def test_no_ok_when_privileged(self):
         result = check_docker_audit(_snap(privileged_containers=["web"]))
@@ -313,13 +313,13 @@ class TestRootContainers:
         names = [f"c{i}" for i in range(5)]
         result = check_docker_audit(_snap(root_containers=names), t=_t_format)
         f = _finding(result, "docker_hardening.root_containers")
-        assert "more" not in (f.message or "")
+        assert "output.more_items" not in (f.message or "")
 
     def test_root_containers_6_shows_plus_1_more(self):
         names = [f"c{i}" for i in range(6)]
         result = check_docker_audit(_snap(root_containers=names), t=_t_format)
         f = _finding(result, "docker_hardening.root_containers")
-        assert "+1 more" in (f.message or "")
+        assert "output.more_items: count=1" in (f.message or "")
 
 
 # ---------------------------------------------------------------------------

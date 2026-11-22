@@ -40,6 +40,7 @@ from bob.checks._run import (
     TranslationFunc,
     _command_exists,
     _identity_t,
+    more_suffix,
     detect_install_manager,
 )
 from bob.scoring import CheckResult
@@ -66,6 +67,17 @@ _VERIFIERS: "dict[str, tuple[str, tuple[str, ...]]]" = {
     "zypper": ("rpm", ("rpm", "-Va")),
     "pacman": ("pacman", ("pacman", "-Qkk")),
     "apk":    ("apk", ("apk", "audit", "--system")),
+}
+
+#: v0.42.0 (B-042) — the verifier dpkg itself ships, used when debsums is not
+#: installed. Measured on the developer's workstation audit under 0.40.0: no
+#: debsums, so the section stayed unread and the score a ceiling, while BOB's
+#: own AIDE text recommends ``dpkg --verify``. Measured on the test Mint (dpkg
+#: 1.22.6, 2025 packages, 21 November 2026): 499 s, exit 0 with 25 lines, 3 of
+#: them configuration files, 22 Mint's own changes under /usr — the shape
+#: 0.32.0 measured with debsums (21 files).
+_FALLBACK: "dict[str, tuple[str, tuple[str, ...]]]" = {
+    "apt":    ("dpkg", ("dpkg", "--verify")),
 }
 
 
@@ -180,8 +192,30 @@ def _parse_pacman(out: str) -> "list[str]":
     return changed
 
 
+def _parse_dpkg_verify(out: str) -> "list[str]":
+    """Changed non-config files from ``dpkg --verify``.
+
+    Lines are ``<9-char mask> [c] <path>`` (rpm's layout; ``c`` marks a
+    configuration file) or ``missing [c] <path>``, whose first word is no mask.
+    As with debsums and rpm, only a digest mismatch (``5``) outside /etc
+    counts; a missing file is not one debsums -c lists either.
+    """
+    changed = []
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        mask, path = parts[0], parts[-1]
+        if len(parts) >= 3 and parts[1] == "c":
+            continue
+        if len(mask) == 9 and "5" in mask and path.startswith("/") and not _is_config_path(path):
+            changed.append(path)
+    return changed
+
+
 _PARSERS = {
     "debsums": _parse_debsums,
+    "dpkg": _parse_dpkg_verify,
     "rpm": _parse_rpm,
     "apk": _parse_apk,
     "pacman": _parse_pacman,
@@ -199,6 +233,8 @@ class PackageIntegritySnapshot:
         tool_available: True if that binary exists on the host.
         ran:            True if the verifier was launched and returned in time.
         timed_out:      True if it overran the timeout and was group-killed.
+        failed:         v0.42.0 — dpkg --verify exited non-zero with no output:
+                        not verified (dpkg exits 0 with differences, measured).
         changed_files:  Non-config packaged files that differ from the manifest.
     """
     manager:        str = ""
@@ -206,6 +242,7 @@ class PackageIntegritySnapshot:
     tool_available: bool = False
     ran:            bool = False
     timed_out:      bool = False
+    failed:         bool = False
     changed_files:  "list[str]" = field(default_factory=list)
 
     @classmethod
@@ -217,12 +254,17 @@ class PackageIntegritySnapshot:
         if verifier is None:
             return snap  # unknown manager — nothing to run
         snap.tool, args = verifier
+        if not _command_exists(snap.tool) and mgr in _FALLBACK and _command_exists(_FALLBACK[mgr][0]):
+            snap.tool, args = _FALLBACK[mgr]
         if not _command_exists(snap.tool):
             return snap  # tool_available stays False → "not verified"
         snap.tool_available = True
-        out, _ok, timed_out, _found = _run_capped(args)
+        out, ok, timed_out, _found = _run_capped(args)
         snap.timed_out = timed_out
         if timed_out:
+            return snap
+        if snap.tool == "dpkg" and not ok and not out.strip():
+            snap.failed = True
             return snap
         snap.ran = True
         parser = _PARSERS.get(snap.tool)
@@ -258,10 +300,14 @@ def check_package_integrity(snapshot: PackageIntegritySnapshot,
                     key="package_integrity.timed_out")
         return result
 
+    if snapshot.failed:
+        result.info(message=_t("package_integrity.verifier_failed", tool=snapshot.tool),
+                    key="package_integrity.verifier_failed")
+        return result
+
     if snapshot.changed_files:
         sample = snapshot.changed_files[:_SAMPLE]
-        more = len(snapshot.changed_files) - len(sample)
-        listing = ", ".join(sample) + (f" (+{more})" if more > 0 else "")
+        listing = ", ".join(sample) + more_suffix(_t, len(snapshot.changed_files), len(sample))   # v0.42.0 (B-037)
         result.info(
             message=_t("package_integrity.changed",
                        count=len(snapshot.changed_files), files=listing),

@@ -226,7 +226,7 @@ class TestMarkdownRobustness:
         engine = _make_engine()
         engine.level = None
         md = build_markdown_output(engine, _make_sys_info())
-        assert "Risk level" in md
+        assert "Hardening gap" in md
 
     def test_section_order_alert_before_warn(self):
         """ALERT section must appear before WARN section."""
@@ -355,7 +355,7 @@ class TestMarkdownT18nExtraction:
         eng.finalize()
         md = build_markdown_output(eng, _make_sys_info())  # no t kwarg
         assert "Summary" in md
-        assert "Risk level" in md
+        assert "Hardening gap" in md
         assert "Timestamp" in md
 
     def test_custom_t_routes_through_to_output(self):

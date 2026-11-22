@@ -65,7 +65,7 @@ sudo bob
 Un audit dure de quelques secondes à quelques minutes : la durée dépend du disque, du processeur et du nombre de services installés. Le cadre de synthèse affiche la durée de l'exécution, inutile donc de la deviner. Tu verras :
 
 1. **Un titre par domaine** (`PARE-FEU & RÉSEAU`, `EXPOSITION & SERVICES`, `CONTRÔLE D'ACCÈS`, …), un encadré par section en dessous, et une ligne par constat marquée `✔ [OK]`, `ℹ [INFO]`, `⚠ [ATTENTION]` ou `✖ [ALERTE]`
-2. **Un cadre de synthèse** à la fin : le score sur 10 (écrit `≤ N/10` quand une section n'a pas pu être lue en entier — le score est alors un plafond — ou `~ N/10` quand ce qui n'a pas pu être lu retire un domaine entier de la moyenne, avec l'intervalle où se trouve le score), le niveau de risque (`FAIBLE`, `MOYEN`, `ÉLEVÉ` ou `CRITIQUE`), le contexte réseau détecté par BOB, le profil d'audit et la durée ; puis les constats à traiter en premier (*À corriger*), les *Améliorations possibles* et le détail du score
+2. **Un cadre de synthèse** à la fin : le score sur 10 (écrit `≤ N/10` quand une section n'a pas pu être lue en entier — le score est alors un plafond — ou `~ N/10` quand ce qui n'a pas pu être lu retire un domaine entier de la moyenne, avec l'intervalle où se trouve le score), l'écart au durcissement (`FAIBLE`, `MOYEN`, `ÉLEVÉ` ou `CRITIQUE`), le contexte réseau détecté par BOB, le profil d'audit et la durée ; puis les constats à traiter en premier (*À corriger*), les *Améliorations possibles* et le détail du score
 3. **Sous le cadre**, un rappel que le verdict dépend du profil et du contexte réseau affichés au-dessus, le score de chaque domaine, et une synthèse de la surface d'attaque
 
 BOB lit UFW, firewalld, et un jeu de règles nftables ou iptables brut. Quand aucun d'eux ne filtre le trafic entrant, il lève *« Aucun pare-feu actif »* et propose l'outil de pare-feu de ta famille de distributions — `ufw` sur Debian, Ubuntu, Arch et Alpine, `firewalld` sur Fedora, RHEL et openSUSE — avec des commandes qui autorisent SSH avant que le pare-feu ne commence à filtrer. Sur Alpine avec awall installé, BOB nomme awall à la place : il dit quelles politiques sont activées, ou qu'aucune ne l'est, et n'imprime aucune commande, puisque le choix d'une politique te revient (0.26.0).
@@ -131,7 +131,7 @@ souvent, mais pas toujours : installer un paquet peut *révéler* un constat que
 son absence masquait. Sans aucun pare-feu, BOB lève « Aucun pare-feu actif » —
 une ALERTE qui ne coûte aucun point ; une fois `sudo apt install -y ufw`
 exécuté, le constat devient « Le pare-feu UFW est désactivé », qui maintient
-le domaine *Pare-feu & Réseau* à 3/10. Les deux placent le niveau de risque à
+le domaine *Pare-feu & Réseau* à 3/10. Les deux placent l'écart au durcissement à
 `ÉLEVÉ` ou au-dessus. La baisse vient de ce plafond, pas d'un correctif raté :
 activer UFW est l'étape suivante.
 
@@ -359,7 +359,7 @@ sudo bob --french                           # raccourci pour --lang=fr
 sudo bob --lang=fr                          # explicite
 ```
 
-Toute la sortie (terminal, `--help`, .log, messages de détail JSON, contenus des webhooks, entrées explain) est localisée — 3526 clés × 2 locales — à trois exceptions près, décrites ci-dessous. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
+Toute la sortie (terminal, `--help`, .log, messages de détail JSON, contenus des webhooks, entrées explain) est localisée — 3571 clés × 2 locales — à trois exceptions près, décrites ci-dessous. `--help` a rejoint la liste en v0.15.3 : il rendait de l'anglais sous `--french` depuis la v0.1.0.
 
 Trois choses restent anglaises à dessein, et un diff bilingue de la sortie d'audit en v0.15.4 a confirmé que ce sont les seules : les **commandes shell** des lignes de remédiation (une commande n'est pas de la prose), les **références CIS** portant un code numéroté (décision v0.11.2 — les références « Bonne pratique », sans code, *sont* traduites), et les **38 libellés de services**, comme `Samba (Windows file sharing)` ou `Apache Web Server`, traités comme des noms de produits même quand ils portent des mots anglais. Ces libellés servent aussi de clé aux entrées `service_risk.*` et entrent dans la ligne de base d'audit : les traduire à la source renommerait 114 entrées de locale et ferait apparaître des changements fantômes dans `--diff` au changement de langue.
 

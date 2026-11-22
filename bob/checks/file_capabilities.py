@@ -43,7 +43,7 @@ import shlex
 import time
 from dataclasses import dataclass, field
 
-from bob.checks._run import TranslationFunc, _command_exists, _identity_t, run_result
+from bob.checks._run import TranslationFunc, _command_exists, _identity_t, more_suffix, run_result
 from bob.checks.suid_audit import _SCAN_ROOTS
 from bob.scoring import CheckResult
 
@@ -262,9 +262,9 @@ def _rpm_filecaps(paths: "list[str]") -> "dict[str, frozenset[str] | None]":
     return answered
 
 
-def _fmt(entries: "list[tuple[str, frozenset[str]]]") -> str:
+def _fmt(entries: "list[tuple[str, frozenset[str]]]", _t) -> str:
     shown = ", ".join(f"{p} ({','.join(sorted(c))})" for p, c in entries[:10])
-    return shown + (f" (+{len(entries) - 10} more)" if len(entries) > 10 else "")
+    return shown + more_suffix(_t, len(entries), 10)
 
 
 def _provenance(snapshot: "FileCapabilitiesSnapshot", flagged: "list[tuple[str, frozenset[str]]]",
@@ -318,7 +318,7 @@ def check_file_capabilities(snapshot: FileCapabilitiesSnapshot,
         result.warn_with_deduction(
             key="file_capabilities.root_equivalent",
             message=_t("file_capabilities.root_equivalent",
-                       count=len(dangerous), paths=_fmt(dangerous)),
+                       count=len(dangerous), paths=_fmt(dangerous, _t)),
             reason=_t("file_capabilities.root_equivalent_reason", count=len(dangerous)),
             points=1,
             detail=_t("file_capabilities.root_equivalent_detail") + _provenance(snapshot, dangerous, _t),
@@ -330,7 +330,7 @@ def check_file_capabilities(snapshot: FileCapabilitiesSnapshot,
     if unexpected:
         result.info(
             message=_t("file_capabilities.unexpected",
-                       count=len(unexpected), paths=_fmt(unexpected)),
+                       count=len(unexpected), paths=_fmt(unexpected, _t)),
             detail=_t("file_capabilities.unexpected_detail") + _provenance(snapshot, unexpected, _t),
             cmd=" && ".join(f"getcap {shlex.quote(p)}" for p, _ in unexpected[:5]),
             cmd_type="check",

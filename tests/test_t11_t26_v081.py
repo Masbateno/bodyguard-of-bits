@@ -158,7 +158,7 @@ class TestT26ServicesExposedDispatch:
         assert "SSH Server" in out
         assert "CRITICAL" in out
         assert "EXPOSURE" in out
-        assert "POTENTIAL THREAT" in out
+        assert "IF THE SERVICE IS REACHED" in out   # v0.42.0 (B-044) — was POTENTIAL THREAT
 
     def test_dispatch_renders_samba(self):
         out = self._capture("services.exposed.samba")
@@ -186,7 +186,7 @@ class TestT26ServicesExposedDispatch:
         out = self._capture("services.exposed.ssh")
         assert "CRITIQUE" in out
         assert "EXPOSITION" in out
-        assert "MENACE POTENTIELLE" in out
+        assert "SI LE SERVICE EST ATTEINT" in out   # v0.42.0 (B-044) — était MENACE POTENTIELLE
 
 
 class TestT26LabelTransformIsCanonical:

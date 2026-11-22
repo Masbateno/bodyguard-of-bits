@@ -58,6 +58,7 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "root_path.unknown",
     "package_integrity.tool_missing",
     "package_integrity.timed_out",
+    "package_integrity.verifier_failed",
     "package_integrity.unsupported",
     "world_writable.unknown",
     "world_writable.timed_out",

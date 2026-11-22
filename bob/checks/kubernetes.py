@@ -1160,7 +1160,7 @@ def _answer(status: "int | None") -> str:
 
 def _names(pods: "list[PodFacts]") -> str:
     shown = ", ".join(f"{p.namespace}/{p.name}" for p in pods[:8])
-    return shown + (f" (+{len(pods) - 8})" if len(pods) > 8 else "")
+    return shown + (f" (+{len(pods) - 8})" if len(pods) > 8 else "")   # language-neutral: rebuilt from template_vars in another locale
 
 
 def _say_run_inconclusive(result: CheckResult, run: "str | None", answer: str, _t) -> None:

@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.41.0
+Version:        0.42.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,14 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sun Nov 22 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.42.0-1
+- BREAKING (score certainty, --target): without debsums, package
+  integrity is read through dpkg --verify; the score stops being a
+  ceiling there and --target can pass. Orphan ufw delete commands
+  rebuilt from the whole rule; RSA host-key regeneration keeps the old
+  pair and runs sshd -t; high UDP ports said as not judged; the host's
+  own CIS benchmark; texts brought back to what BOB measures.
+
 * Sun Nov 22 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.41.0-1
 - Minor, not BREAKING. Directories BOB creates in a user's home are the
   user's; a Match setting an earlier block may override carries what

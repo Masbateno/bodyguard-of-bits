@@ -20,7 +20,7 @@ import subprocess
 from dataclasses import dataclass, field
 
 from bob.checks._run import (TranslationFunc, _C_LOCALE_ENV, _identity_t,
-                             package_owning)
+                             more_suffix, package_owning)
 from bob.scoring import CheckResult
 
 
@@ -310,8 +310,7 @@ def check_suid_audit(snapshot: SuidSnapshot, t: TranslationFunc | None = None) -
     # /usr/bin/passwd is not safe because "passwd" is expected.
     if snapshot.writable_suid:
         w_str = ", ".join(snapshot.writable_suid[:10])
-        w_suffix = (f" (+{len(snapshot.writable_suid) - 10} more)"
-                    if len(snapshot.writable_suid) > 10 else "")
+        w_suffix = more_suffix(_t, len(snapshot.writable_suid), 10)
         result.alert_with_deduction(
             key="suid_audit.writable_suid",
             message=_t("suid_audit.writable_suid",
@@ -352,7 +351,7 @@ def check_suid_audit(snapshot: SuidSnapshot, t: TranslationFunc | None = None) -
             )
     else:
         paths_str = ", ".join(snapshot.unexpected_suid[:10])
-        suffix = f" (+{len(snapshot.unexpected_suid) - 10} more)" if len(snapshot.unexpected_suid) > 10 else ""
+        suffix = more_suffix(_t, len(snapshot.unexpected_suid), 10)
         result.warn_with_deduction(
             key="suid_audit.unexpected_suid",
             message=_t(
@@ -376,8 +375,7 @@ def check_suid_audit(snapshot: SuidSnapshot, t: TranslationFunc | None = None) -
     # escalation takes, and it is the one worth waking someone for.
     if snapshot.unowned_suid:
         unowned_str = ", ".join(snapshot.unowned_suid[:10])
-        unowned_suffix = (f" (+{len(snapshot.unowned_suid) - 10} more)"
-                          if len(snapshot.unowned_suid) > 10 else "")
+        unowned_suffix = more_suffix(_t, len(snapshot.unowned_suid), 10)
         result.alert_with_deduction(
             key="suid_audit.unowned_suid",
             message=_t("suid_audit.unowned_suid",
@@ -395,8 +393,7 @@ def check_suid_audit(snapshot: SuidSnapshot, t: TranslationFunc | None = None) -
     if snapshot.whitelisted_suid:
         paths_str = ", ".join(snapshot.whitelisted_suid[:10])
         suffix = (
-            f" (+{len(snapshot.whitelisted_suid) - 10} more)"
-            if len(snapshot.whitelisted_suid) > 10 else ""
+            more_suffix(_t, len(snapshot.whitelisted_suid), 10)
         )
         result.info(
             message=_t(
@@ -410,7 +407,7 @@ def check_suid_audit(snapshot: SuidSnapshot, t: TranslationFunc | None = None) -
     # --- Unexpected SGID (INFO only) ---
     if snapshot.unexpected_sgid:
         paths_str = ", ".join(snapshot.unexpected_sgid[:10])
-        suffix = f" (+{len(snapshot.unexpected_sgid) - 10} more)" if len(snapshot.unexpected_sgid) > 10 else ""
+        suffix = more_suffix(_t, len(snapshot.unexpected_sgid), 10)
         result.info(
             message=_t(
                 "suid_audit.unexpected_sgid",

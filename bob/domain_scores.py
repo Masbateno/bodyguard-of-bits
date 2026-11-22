@@ -66,7 +66,7 @@ LABELS: dict[str, str] = {
     "access_control":    "Access Control",
     "system_hardening":  "System Hardening",
     "health_resilience": "Health & Resilience",
-    "detection":         "Threat Detection",
+    "detection":         "Detection Tools",   # v0.42.0 (B-044) — was "Threat Detection"
 }
 
 # Maximum total deduction (in points) that a single tool can contribute to its

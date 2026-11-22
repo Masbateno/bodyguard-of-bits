@@ -1,3 +1,18 @@
+bodyguard-of-bits (0.42.0-1) unstable; urgency=medium
+
+  * BREAKING (score certainty, --target): without debsums, package
+    integrity is read through dpkg --verify; the score stops being a
+    ceiling there and --target can pass. The number does not change.
+  * The delete command of an orphan ufw rule is rebuilt from the whole
+    rule (it named another rule when the real one had a source).
+  * RSA host-key regeneration moves the old pair aside and runs sshd -t
+    before restarting.
+  * UDP ports above 32767 shown and said as not judged; CIS cited for
+    the host's own benchmark; texts brought back to what BOB measures;
+    posture labels; the French output in French.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sun, 22 Nov 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.41.0-1) unstable; urgency=medium
 
   * Minor, not BREAKING, the backlog cleared: no score, finding key,

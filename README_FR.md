@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.41.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.42.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -178,7 +178,7 @@ $ sudo bob
 
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  Score de sécurité : ≤ 7/10                                                  ║
-║  Niveau de risque : ✖ ÉLEVÉ au mieux  (majoré par posture : pare-feu inactif)║
+║  Écart au durcissement : ✖ ÉLEVÉ au mieux  (majoré par posture : pare-feu inactif) ║
 ║  Visibilité : 1 section(s) non entièrement lue(s) — le score est un plafond  ║
 ║  Contexte réseau : IPv4 en NAT, IPv6 publique (filtrage box non vérifié)     ║
 ║  Profil d'audit : Desktop                                                    ║
@@ -199,7 +199,7 @@ $ sudo bob
   Contrôle d'accès       10/10  ██████████
   Durcissement système    7/10  ███████░░░
   Santé & Résilience      8/10  ████████░░
-  Détection des menaces      —  signalé, non noté
+  Outils de détection        —  signalé, non noté
 ```
 
 Chaque point de la liste *À corriger* affiche une référence CIS quand il y en a une, une commande de remédiation quand il en existe une, et un indicateur `--explain` qui pointe vers l'explication détaillée.
@@ -387,7 +387,7 @@ Optionnel : `geoip2` pour la géolocalisation IP (`pipx inject bodyguard-of-bits
 
 **Le Raspberry Pi** est reconnu depuis la v0.17.0. BOB lit le nom de la carte dans le device tree et rapporte ce qu'un PC n'a pas : les identifiants de provisionnement laissés sur la partition FAT de boot — le `userconf.txt` de l'Imager sous Bookworm et, sous trixie, l'amorçage cloud-init, dont `user-data` contient l'empreinte du mot de passe du compte et `network-config` la clé Wi-Fi, sur un système de fichiers sans notion de propriétaire — le marqueur `ssh` de premier démarrage, et le compte `pi` historique de la distribution quand il peut réellement se connecter. Les concepts firmware x86 dégradent au lieu de déduire : le microcode ne s'applique pas, et Secure Boot rapporte qu'aucun UEFI n'a été trouvé plutôt que d'affirmer un BIOS que la carte n'a pas. BOB ne teste **pas** si le compte `pi` a gardé le mot de passe par défaut : il faudrait `crypt`, que Python a retiré de la bibliothèque standard en 3.13. La section a été testée sur `aarch64` émulé (qemu-user) : la carte y est lue dans le device tree, la partition de boot se résout en `/boot/firmware` (chemin Bookworm), le hash yescrypt de l'imager est reconnu et le round trip `--fix --apply` supprime le fichier et efface le constat. L'émulation n'est pas du matériel, et elle n'y est pas non plus silencieusement équivalente : `setrlimit(RLIMIT_AS)` y retourne un succès sans rien appliquer, ce qui est précisément ainsi qu'on a surpris le bac à sable des plugins à revendiquer un plafond mémoire jamais obtenu. Un job arm64 tourne sur chaque PR : il refuse de passer si `uname -m` ne répond pas réellement `aarch64`, puis vérifie que l'audit sort proprement, que le microcode dégrade, qu'un UEFI absent n'est pas annoncé comme un BIOS, et que la section Raspberry Pi se déclenche sur une carte simulée. **v0.18.1 est la première version auditée sur un Pi physique** — un Zero W sous Raspbian 13 trixie — et elle a trouvé ce que l'émulation ne pouvait pas trouver : le contrôle de la partition de boot cherchait un fichier que trixie n'écrit plus, pendant que l'amorçage cloud-init d'à côté contenait l'empreinte actuelle du compte sudo, et la détection de force brute SSH était aveugle à OpenSSH ≥ 9.8. Une carte n'est pas une matrice : les retours sur d'autres modèles valent toujours plus que n'importe quel nombre d'exécutions émulées.
 
-Les mises à jour en attente sont lues par le gestionnaire de paquets de l'hôte — apt, dnf, zypper, pacman ou apk. Les mises à jour de sécurité en attente coûtent 2 points là où le gestionnaire sait distinguer un correctif de sécurité d'une mise à jour ordinaire (apt avec une suite `-security`, dnf, zypper). pacman, apk et une distribution apt « rolling » sans suite `-security` (Kali) ne le savent pas : BOB y signale les paquets en attente en INFO et dit qu'il ne peut pas les classer, plutôt que de lire « aucune mise à jour de sécurité » comme « à jour ». Le contrôle unattended-upgrades est propre à apt ; sur Linux Mint, l'automatisation du gestionnaire de mises à jour (`mintupdate-automation upgrade enable`) compte aussi comme mises à jour automatiques, depuis la 0.38.0. Les références CIS Ubuntu 22.04 restent émises quand le contrôle sous-jacent (flags sysctl, config SSH, permissions de fichiers) est indépendant de l'OS.
+Les mises à jour en attente sont lues par le gestionnaire de paquets de l'hôte — apt, dnf, zypper, pacman ou apk. Les mises à jour de sécurité en attente coûtent 2 points là où le gestionnaire sait distinguer un correctif de sécurité d'une mise à jour ordinaire (apt avec une suite `-security`, dnf, zypper). pacman, apk et une distribution apt « rolling » sans suite `-security` (Kali) ne le savent pas : BOB y signale les paquets en attente en INFO et dit qu'il ne peut pas les classer, plutôt que de lire « aucune mise à jour de sécurité » comme « à jour ». Le contrôle unattended-upgrades est propre à apt ; sur Linux Mint, l'automatisation du gestionnaire de mises à jour (`mintupdate-automation upgrade enable`) compte aussi comme mises à jour automatiques, depuis la 0.38.0. Les références CIS Ubuntu 22.04 restent émises quand le contrôle sous-jacent (flags sysctl, config SSH, permissions de fichiers) est indépendant de l'OS. Depuis la 0.42.0, l'écran cite le benchmark de l'hôte quand une citation existe pour lui — CIS Ubuntu 24.04 sur Linux Mint 22, lu dans `/etc/os-release` — et la référence CIS Ubuntu 22.04 sinon.
 
 **Les commandes de remédiation sont choisies pour votre gestionnaire de paquets** depuis la v0.17.0. Auparavant, chaque constat « installez ceci » affichait `sudo apt install …` sur tous les hôtes, avec les noms de paquets de Debian — or `sudo dnf install auditd` n'installe rien, Fedora l'appelant `audit`. Les noms ont été mesurés en conteneur, pas récités ; et là où BOB n'a pas de nom mesuré pour votre gestionnaire, il le dit au lieu d'inventer une commande : une instruction qui n'installe rien est pire qu'un aveu, puisque vous n'avez aucune raison d'en douter.
 

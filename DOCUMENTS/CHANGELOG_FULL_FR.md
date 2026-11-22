@@ -6,6 +6,190 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.42.0] — 22-11-2026
+
+**BREAKING (certitude du score, --target) — une version mineure tirée de l'audit du poste du
+développeur : l'intégrité des paquets lue sans debsums ; une commande de
+suppression de règle ufw orpheline qui la supprime ; une commande de régénération
+de clé d'hôte RSA qui conserve l'ancienne clé et teste sshd ; les ports UDP élevés
+ne sont plus silencieusement écartés ; le benchmark CIS de l'hôte ; des textes ramenés à ce que
+BOB mesure ; la sortie française en français.**
+
+BREAKING, pour un cas : un hôte de la famille Debian sans debsums, audité avec
+`--exhaustive` (section 1). Le score y cesse d'être un plafond et `--target` peut
+passer. Tout autre hôte a le même score sous la 0.41.0 et la 0.42.0, avec le même
+code de sortie. Aucune clé de constat retirée ni renommée ; deux ajoutées
+(`ports.high_udp_not_judged`, `package_integrity.verifier_failed`). Aucun
+changement d'option, de schéma JSON ni de colonne CSV ; une valeur JSON change : le
+`label` du domaine `detection`, « Threat Detection » → « Detection Tools » (la clé
+reste `detection`). Clés de traduction : 3526 → 3571 par langue (45 ajoutées,
+aucune retirée ni renommée), de nombreuses valeurs réécrites (sections 6 à 8).
+
+### 1. BREAKING — l'intégrité des paquets sans debsums : `dpkg --verify`
+
+Sur la famille Debian, `--exhaustive` comparait les fichiers installés à leurs
+empreintes enregistrées par `debsums -c` seulement. Sans debsums — absent par
+défaut —, la section restait non lue et le score était un plafond : `≤ 9/10` sur
+le poste du développeur (Linux Mint 22.3), alors que le texte d'AIDE de BOB
+lui-même recommande `dpkg --verify`, que dpkg livre. `dpkg --verify` prend
+désormais le relais quand debsums manque ; debsums, s'il est installé, reste le
+vérificateur. Comme pour debsums et rpm, seule une différence d'empreinte compte ;
+les fichiers de configuration, `/etc` et les lignes `missing` sont écartés.
+
+Mesuré sur la Linux Mint 22.3 de test (dpkg 1.22.6, 2025 paquets, sans debsums) :
+`dpkg --verify` a tourné 499 s et rendu le code 0 avec 25 lignes ; les 21 retenues
+sont des fichiers sous `/usr` qui diffèrent sur cette machine (fichier de
+distribution de Firefox, lanceurs, icônes, sons, page de test de CUPS) — autant que la 0.32.0 y avait mesuré avec
+debsums (le nombre a été gardé, pas la liste). De bout en bout avec le code de la
+0.42.0 sur cette machine, la section seule (`--check=package_integrity`, 441 s) :
+« 21 fichier(s) de paquet diffèrent de l'empreinte enregistrée par le
+gestionnaire », et la section n'est plus marquée non lue. Sur le poste, un audit
+complet : 28 fichiers, et le score `9/10` là où la 0.40.0 disait `≤ 9/10`.
+`dpkg --verify` rend le code 0 quand des fichiers diffèrent (mesuré) : un code non
+nul sans aucune sortie est désormais « non vérifié »
+(`package_integrity.verifier_failed`), jamais « propre ». Une limite commune aux
+deux vérificateurs : un paquet qui n'enregistre aucune empreinte (construit
+localement, par exemple) n'a rien à comparer, ses fichiers ne sont donc pas
+vérifiés — mesuré : aucun des 3085 paquets du poste n'installe de fichiers sans
+empreinte.
+
+Ce qui change pour un tel hôte : la section est lue, elle ne fait donc plus du score
+un plafond — `score_is_upper_bound` et la liste des sections non vérifiées de la
+sortie JSON changent, et **`--target N`, qui y sortait toujours avec le code 4 (la
+barrière échoue fermée sur un score incertain), sort désormais avec 0, 1 ou 2 quand
+le score atteint N**. Le nombre ne change pas : la section est en INFO seulement.
+L'exécution est longue (des minutes), comme `--exhaustive` le dit.
+
+### 2. La commande de suppression d'une règle ufw orpheline la supprime
+
+Pour `57621 ALLOW IN 192.168.1.0/24` (une règle de Spotify Connect sur le poste),
+BOB proposait `sudo ufw delete allow 57621`. Mesuré sur la Mint de test avec les
+deux règles du poste reproduites, commentaires compris : ufw a répondu « Could not
+delete non-existent rule », **est sorti avec le code 0**, et les deux règles sont
+restées — ufw ne supprime que la règle dont chaque champ correspond, et celle-ci a
+une source.
+
+La commande est désormais rebâtie à partir de la ligne entière : action, interface,
+source et port source, destination, port et protocole, profil d'application,
+`log` / `log-all`. Vérifié avec le vrai ufw (0.36.2) dans un espace de noms
+utilisateur et réseau jetable, sans toucher au pare-feu de l'hôte : 27 configurations
+de règles (ports, plages, listes, sources et ports source, destinations, interfaces,
+profils, `log`, `limit`, `deny`, une source IPv6), chaque commande a supprimé exactement sa règle, et sa copie `(v6)` quand elle en
+avait une, rien d'autre. Une règle qui couvre aussi un port où quelque chose écoute ne reçoit pas de
+commande (la supprimer fermerait aussi ce port, c'est dit) ; une ligne que BOB ne
+sait pas réécrire dit de la supprimer par son numéro (mesuré : ufw demande
+confirmation, la copie `(v6)` a son propre numéro).
+
+### 3. Régénérer une clé d'hôte RSA : l'ancienne paire gardée, sshd testé
+
+La commande pour une clé d'hôte RSA courte ou faible était `ssh-keygen -t rsa -b
+4096 -f <clé> -N '' && systemctl restart ssh`. Mesuré sur la Mint de test (OpenSSH
+9.6p1, dossier jetable) : sur une clé existante, ssh-keygen demande « Overwrite
+(y/n)? » ; avec la réponse oui, il écrasait la clé sans en garder de copie, et sshd
+redémarrait sans test ; lancé depuis un script (entrée fermée), il rendait le code 1
+et rien ne changeait. `--fix --apply` ne lance pas cette commande lui-même — elle
+enchaîne des commandes avec `&&`, ce que BOB laisse toujours à l'opérateur — : c'est
+la commande qu'une personne copie. Elle met désormais la paire de côté
+(`<clé>.bob-old`), génère la nouvelle, lance `sshd -t`, puis redémarre — mesuré
+avec l'entrée fermée : code 0, l'ancienne paire gardée avec son empreinte, la
+nouvelle clé en 4096 bits, les deux fichiers en mode 600. Ce n'est pas une
+transaction : si une étape échoue, la chaîne s'arrête là, sshd n'est pas redémarré,
+et ce qui a déjà été déplacé (la clé privée, ou la paire) attend dans `<clé>.bob-old`
+et `<clé>.pub.bob-old` d'être remis en place à la main. L'avis sur une clé de 3072 bits visait aussi `/etc/ssh/ssh_host_rsa_key` quel
+que soit le fichier que sshd sert ; il vise désormais celui-là.
+
+### 4. Ports UDP au-dessus de 32767 : toujours non jugés, plus cachés
+
+La vue générale des ports en écoute et l'analyse des ports écartaient sans un mot
+tout port UDP au-dessus de 32767 (attribué par le noyau, « sans intérêt pour la
+sécurité »), alors que la section IPv6 les comptait : celle du poste nommait
+`39479/udp`, absent de la vue générale de la même exécution. Mesuré avec un compte
+ordinaire : `[::]:39479` et `0.0.0.0:53050` appartiennent à avahi (uid 110). Ils
+sont désormais listés dans la vue générale, et une ligne INFO les nomme avec leur
+détenteur comme non jugés — « le verdict selon lequel les ports en écoute sont
+filtrés ne les comprend pas ». Aucun point ; surface d'attaque et comparaison
+inchangées.
+
+### 5. CIS : le benchmark de l'hôte
+
+La ligne sous un constat et le code du cadre de synthèse citaient CIS Ubuntu 22.04
+sur tout hôte. Ils citent désormais le benchmark qui couvre l'hôte quand une citation
+existe pour lui, lu dans `/etc/os-release` : Ubuntu et Debian par leur version, une
+dérivée par la base qu'elle déclare — Linux Mint 22 dit `UBUNTU_CODENAME=noble`, donc
+CIS Ubuntu 24.04 (le constat sur su du poste se lit désormais « CIS Ubuntu 24.04 —
+5.2.7 ») ; LMDE par `DEBIAN_CODENAME`. Un nom de version inconnu ou une distribution
+sans citation (Kali) garde la référence principale : un numéro n'est jamais deviné.
+Le texte de la liste noire des modules ne cite plus « CIS Ubuntu 22.04 §1.1.1 /
+§3.2 » écrit à la main.
+
+### 6. Des textes ramenés à ce que BOB mesure
+
+- « Port système interne — aucun danger » → « Port d'un service système reconnu,
+  rien n'est compté » ;
+- « Tous les binaires SUID sont connus et sûrs » → « Tous les binaires SUID figurent
+  dans la liste de référence de BOB … — leur contenu n'est pas vérifié ici » ;
+- ClamAV : « aucun compte ne peut couper l'antivirus » → « un compte non privilégié
+  ne peut pas l'arrêter par la commande SHUTDOWN » (ce qui a été mesuré) ;
+- auditd : les règles proposées « journalisent les modifications des chemins les
+  plus critiques (-p wa), pas les lectures » ; « journal infalsifiable » retiré ;
+- signature Samba : « il empêche de relayer une authentification NTLM vers ce
+  serveur SMB — pas vers d'autres services ni d'autres machines » ;
+- Samba : « Conçu pour des réseaux de confiance (LAN, VPN) » au lieu de
+  « exclusivement pour les réseaux locaux » ;
+- Telnet : « à remplacer immédiatement par SSH » (sur un service qui ne tourne pas)
+  → « SSH fait le même travail, chiffré » ;
+- syslog distant : « en garde une copie hors de l'hôte … à condition que le serveur
+  distant soit lui-même protégé », au lieu de « garantit leur conservation » ;
+- sans AIDE, une modification « peut passer inaperçue », au lieu de « passe
+  inaperçu » ;
+- unattended-upgrades : dit ce qui a été cherché (« aucun autre mécanisme de mise à
+  jour automatique connu de BOB n'a été trouvé »), et qu'un outil qu'il ne connaît
+  pas peut encore appliquer les correctifs ;
+- expiration des mots de passe : « Pas d'expiration des mots de passe par défaut
+  pour les nouveaux comptes (PASS_MAX_DAYS = … dans /etc/login.defs) » — seul
+  login.defs est lu ; la valeur de chaque compte existant dans `/etc/shadow` ne
+  l'est pas, et c'est dit ;
+- le contexte réseau « Réseau local uniquement » → « Aucune adresse publique sur
+  l'hôte ».
+
+### 7. Des libellés de posture
+
+BOB audite une posture de durcissement, pas des menaces (doctrine, principe 12). À
+l'écran et dans les rapports : le groupe et le domaine « DÉTECTION DES MENACES » →
+« OUTILS DE DÉTECTION » ; « Niveau de risque » → « Écart au durcissement » ; sur la
+fiche d'un service, « Contexte de risque » → « Sensibilité du service », « Menace
+potentielle » → « Si le service est atteint » ; dans le rapport détaillé,
+« CONTEXTE DE RISQUE — SERVICES DÉTECTÉS » → « SENSIBILITÉ DES SERVICES
+DÉTECTÉS ». Le champ `risk` des sorties JSON et CSV ne change pas.
+
+### 8. La sortie française en français
+
+Une passe de langue sur la traduction française (« bruteforce », « credentials »,
+« bindent », « service backing », « blocklist », « Top IP »… remplacés), les
+descriptions du catalogue de services affichées en français (« Samba (partage
+Windows) », « Ollama (modèle de langage local) ») — le libellé du catalogue reste
+l'identifiant (`--explain`, JSON, comparaison) —, les fiches de services du rapport
+détaillé avec le libellé affiché et « ne tourne pas » là où l'écran le disait,
+« (+N more) » écrit à la main à dix endroits désormais traduit — et le « (+N) » nu de
+sept autres listes aussi (cinq gardent le nombre seul : leur texte est reconstruit dans
+une autre langue à partir des valeurs du constat, où un mot traduit ferait entrer du
+français dans un rapport anglais) — et les deux-points
+de la ligne « Si le service est atteint » alignés sur ceux de « Exposition ».
+
+### 9. Tests et outillage
+
+**Tests** 23585 → **23944**, mutations 2240 → **2293**, toutes tuées. Une fuite
+d'état entre tests trouvée à l'assemblage : un test de `--diff` laissait la sortie à
+l'écran muette pour les tests suivants (aussi sur la 0.41.0, masqué par l'ordre de la
+suite) ; chaque test commence et finit désormais avec le module de sortie remis en
+état. Nouveaux fichiers de test : `test_v0420_orphan_delete.py` (les 27 lignes ufw
+mesurées), `test_v0420_dpkg_verify.py` (la sortie mesurée),
+`test_v0420_high_udp_said.py`, `test_v0420_rsa_host_key_regen.py`,
+`test_v0420_host_benchmark.py`, `test_v0420_more_items_translated.py`,
+`test_v0420_bounded_wording.py`, `test_v0420_posture_labels.py`,
+`test_v0420_french_wording.py`, `test_v0420_report_service_cards.py`,
+`test_v0420_output_state_restored.py`.
+
 ## [0.41.0] — 22-11-2026
 
 **Une version mineure qui purge le backlog : les dossiers que BOB crée dans le

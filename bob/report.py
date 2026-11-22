@@ -540,7 +540,7 @@ class AuditReport:
                 f"  {entry['label']:<32}  [{entry['level']}]"
             )
             self._writeln(f"  {entry['exposure_label']} : {entry['exposure']}")
-            self._writeln(f"  {entry['threat_label']}   : {entry['threat']}")
+            self._writeln(f"  {entry['threat_label']} : {entry['threat']}")   # v0.42.0 — as the exposure line
             self._writeln("")
 
     def write_next_steps(self, steps: list[str], title: str = "NEXT STEPS") -> None:

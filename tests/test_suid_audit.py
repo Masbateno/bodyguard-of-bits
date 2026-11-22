@@ -297,26 +297,26 @@ class TestTruncation:
         paths = self._make_paths(10)
         result = check_suid_audit(_snap(unexpected_suid=paths), t=_t_format)
         f = _finding(result, "suid_audit.unexpected_suid")
-        assert "+0 more" not in (f.message or "")
-        assert "more" not in (f.message or "")
+        assert "output.more_items: count=0" not in (f.message or "")
+        assert "output.more_items" not in (f.message or "")
 
     def test_11_shows_plus_1_more(self):
         paths = self._make_paths(11)
         result = check_suid_audit(_snap(unexpected_suid=paths), t=_t_format)
         f = _finding(result, "suid_audit.unexpected_suid")
-        assert "+1 more" in (f.message or "")
+        assert "output.more_items: count=1" in (f.message or "")
 
     def test_20_shows_plus_10_more(self):
         paths = self._make_paths(20)
         result = check_suid_audit(_snap(unexpected_suid=paths), t=_t_format)
         f = _finding(result, "suid_audit.unexpected_suid")
-        assert "+10 more" in (f.message or "")
+        assert "output.more_items: count=10" in (f.message or "")
 
     def test_sgid_truncation_11(self):
         paths = self._make_paths(11)
         result = check_suid_audit(_snap(unexpected_sgid=paths), t=_t_format)
         f = _finding(result, "suid_audit.unexpected_sgid")
-        assert "+1 more" in (f.message or "")
+        assert "output.more_items: count=1" in (f.message or "")
 
 
 # ---------------------------------------------------------------------------
@@ -443,7 +443,7 @@ class TestFromSystemUserWhitelist:
         )
         result = check_suid_audit(snap, t=_t_format)
         f = _finding(result, "suid_audit.whitelisted")
-        assert "+1 more" in (f.message or "")
+        assert "output.more_items: count=1" in (f.message or "")
 
 
 # ---------------------------------------------------------------------------

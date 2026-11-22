@@ -42,7 +42,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _identity_t, detect_install_manager
+from bob.checks._run import TranslationFunc, _identity_t, detect_install_manager, more_suffix
 from bob._atomic import read_text_capped
 from bob.scoring import CheckResult
 
@@ -263,8 +263,7 @@ def check_package_authenticity(snapshot: PackageAuthenticitySnapshot,
             message=_t("package_authenticity.disabled", count=len(snapshot.disabled),
                        mechanism=mechanism,
                        where="; ".join(snapshot.disabled[:10])
-                       + (f" (+{len(snapshot.disabled) - 10} more)"
-                          if len(snapshot.disabled) > 10 else "")),
+                       + more_suffix(_t, len(snapshot.disabled), 10)),
             reason=_t("package_authenticity.disabled_reason", count=len(snapshot.disabled)),
             points=1,
             detail=_t("package_authenticity.disabled_detail"),

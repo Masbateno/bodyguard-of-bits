@@ -303,7 +303,7 @@ sudo bob --webhook URL --webhook-format=generic  # force JSON générique
 
 Le message Slack inclut :
 
-- Une ligne de synthèse : version de BOB, hôte, score, niveau de risque, et nombre d'alertes et d'avertissements
+- Une ligne de synthèse : version de BOB, hôte, score, écart au durcissement (champ `risk`), et nombre d'alertes et d'avertissements
 - La liste des constats ALERT et WARN, chacun avec son détail, coupée à 2500 caractères (une ellipse marque la coupe)
 - Une pièce jointe colorée : rouge s'il y a une alerte, orange s'il n'y a que des avertissements, vert sinon
 
@@ -381,7 +381,7 @@ Relance l'audit toutes les `N` secondes jusqu'à interruption avec `Ctrl-C` :
 sudo bob --watch=60
 ```
 
-Chaque passe affiche une ligne — heure, score, barre de score et niveau de risque — puis *Aucun changement détecté depuis le dernier audit* ou les constats apparus ou résolus depuis la passe précédente, puis l'heure de la passe suivante ; la première passe ne fait que fixer le point de comparaison. La sortie défile ; rien n'est redessiné sur place. L'intervalle est d'au moins 10 s. Cas d'usage :
+Chaque passe affiche une ligne — heure, score, barre de score et écart au durcissement — puis *Aucun changement détecté depuis le dernier audit* ou les constats apparus ou résolus depuis la passe précédente, puis l'heure de la passe suivante ; la première passe ne fait que fixer le point de comparaison. La sortie défile ; rien n'est redessiné sur place. L'intervalle est d'au moins 10 s. Cas d'usage :
 
 - Observer un changement de durcissement prendre effet (`sudo sysctl -w ...` → la passe suivante voit le WARN disparaître)
 - Démontrer l'audit en live en réunion

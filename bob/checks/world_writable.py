@@ -35,7 +35,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import _C_LOCALE_ENV, TranslationFunc, _identity_t
+from bob.checks._run import _C_LOCALE_ENV, TranslationFunc, _identity_t, more_suffix
 from bob.checks.disk import _NETWORK_FS_TYPES, _PSEUDO_FS_TYPES
 from bob._atomic import read_text_capped
 from bob.scoring import CheckResult
@@ -254,9 +254,9 @@ def _traversable(directory: str) -> bool:
         return True
 
 
-def _sample(paths: "list[str]") -> str:
+def _sample(paths: "list[str]", _t) -> str:
     shown = ", ".join(paths[:_SAMPLE])
-    return shown + (f" (+{len(paths) - _SAMPLE} more)" if len(paths) > _SAMPLE else "")
+    return shown + more_suffix(_t, len(paths), _SAMPLE)
 
 
 def check_world_writable(snapshot: WorldWritableSnapshot,
@@ -274,22 +274,22 @@ def check_world_writable(snapshot: WorldWritableSnapshot,
 
     if snapshot.ww_files:
         result.info(message=_t("world_writable.files", count=len(snapshot.ww_files),
-                               paths=_sample(snapshot.ww_files)),
+                               paths=_sample(snapshot.ww_files, _t)),
                     detail=_t("world_writable.files_detail"),
                     key="world_writable.files")
     if snapshot.ww_dirs:
         result.info(message=_t("world_writable.dirs", count=len(snapshot.ww_dirs),
-                               paths=_sample(snapshot.ww_dirs)),
+                               paths=_sample(snapshot.ww_dirs, _t)),
                     detail=_t("world_writable.dirs_detail"),
                     key="world_writable.dirs")
     if snapshot.unowned:
         result.info(message=_t("world_writable.unowned", count=len(snapshot.unowned),
-                               paths=_sample(snapshot.unowned)),
+                               paths=_sample(snapshot.unowned, _t)),
                     detail=_t("world_writable.unowned_detail"),
                     key="world_writable.unowned")
     if snapshot.latent:
         result.info(message=_t("world_writable.latent", count=len(snapshot.latent),
-                               paths=_sample(snapshot.latent)),
+                               paths=_sample(snapshot.latent, _t)),
                     detail=_t("world_writable.latent_detail"),
                     key="world_writable.latent")
     if not snapshot.unowned_assessed:

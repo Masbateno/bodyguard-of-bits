@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 _DISCOVERY_KEYS = frozenset({
     "logs.local_dominance_discovery",
     "service_risk.avahi_local_network_discovery.threat",
+    "services.labels.avahi_local_network_discovery",      # v0.42.0 — « découverte du réseau local »
     "cups.browsing_on_detail",
     "explain.cpu_security.vulnerable.how",
 })

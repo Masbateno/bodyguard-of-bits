@@ -50,6 +50,74 @@ def get_cis_code(key: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# The host's own benchmark (v0.42.0, B-043)
+# ---------------------------------------------------------------------------
+
+#: Release codenames a derivative names in /etc/os-release (``UBUNTU_CODENAME``,
+#: ``DEBIAN_CODENAME``) → the version of the benchmark that covers its base.
+#: Only releases a citation exists for; an unknown codename falls back.
+_UBUNTU_CODENAMES = {"jammy": "22.04", "noble": "24.04"}
+_DEBIAN_CODENAMES = {"bookworm": "12", "trixie": "13"}
+
+
+def host_benchmark(os_release: "str | None" = None) -> "str | None":
+    """The CIS benchmark label that covers this host, from /etc/os-release.
+
+    Ubuntu and Debian by their ``VERSION_ID``; a derivative by the base it
+    declares — Linux Mint 22 says ``UBUNTU_CODENAME=noble``, so CIS Ubuntu
+    24.04; LMDE says ``DEBIAN_CODENAME=bookworm``, so CIS Debian 12. None when
+    nothing says it (Kali, an unknown codename): never guessed.
+    """
+    text = _read_os_release() if os_release is None else os_release
+    fields: "dict[str, str]" = {}
+    for line in text.splitlines():
+        name, sep, value = line.partition("=")
+        if sep:
+            fields[name.strip()] = value.strip().strip('"').strip("'")
+    distro, version = fields.get("ID", ""), fields.get("VERSION_ID", "")
+    if distro == "ubuntu" and version:
+        return f"CIS Ubuntu {version}"
+    if distro == "debian" and version:
+        return f"CIS Debian {version.split('.')[0]}"
+    if fields.get("UBUNTU_CODENAME") in _UBUNTU_CODENAMES:
+        return f"CIS Ubuntu {_UBUNTU_CODENAMES[fields['UBUNTU_CODENAME']]}"
+    if fields.get("DEBIAN_CODENAME") in _DEBIAN_CODENAMES:
+        return f"CIS Debian {_DEBIAN_CODENAMES[fields['DEBIAN_CODENAME']]}"
+    return None
+
+
+@lru_cache(maxsize=1)
+def _read_os_release() -> str:
+    try:
+        return Path("/etc/os-release").read_text(encoding="utf-8", errors="replace")[:8192]
+    except OSError:
+        return ""
+
+
+def host_cis(key: str, lang: "str | None" = None,
+             benchmark: "str | None" = None) -> "tuple[str | None, str | None]":
+    """``(reference, code)`` to show for *key* on this host.
+
+    v0.42.0 (B-043) — measured on the developer's workstation (Linux Mint 22.3,
+    base Ubuntu 24.04): the screen cited "CIS Ubuntu 22.04 L1 — 5.2.7" while
+    ``cis_refs.json`` holds the CIS Ubuntu 24.04 citation. Decided with the
+    user: the host's own benchmark when a citation exists for it — generated
+    from ComplianceAsCode like every other, never inferred — and the primary
+    reference otherwise. *benchmark* overrides the host (tests).
+    """
+    entry = _load().get(key)
+    if entry is None:
+        return None, None
+    label = benchmark if benchmark is not None else host_benchmark()
+    cited = (entry.get("benchmarks") or {}).get(label) if label else None
+    if cited and cited.get("code"):
+        title = cited.get("title", "")
+        return (f"{label} — {cited['code']} — {title}" if title else f"{label} — {cited['code']}",
+                f"CIS:{cited['code']}")
+    return get_cis_ref(key, lang), get_cis_code(key)
+
+
+# ---------------------------------------------------------------------------
 # Benchmark families — for grouping `--explain list` (v0.18.1)
 # ---------------------------------------------------------------------------
 

@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from bob.checks._run import (
+    more_suffix,
     TranslationFunc,
     _C_UTF8_LOCALE_ENV,
     _command_exists,
@@ -233,7 +234,7 @@ def check_firmware(snapshot: FirmwareSnapshot, t: TranslationFunc | None = None)
             count   = len(snapshot.fwupd_pending_updates)
             devices = ", ".join(snapshot.fwupd_pending_updates[:3])
             if count > 3:
-                devices += f" (+{count - 3})"
+                devices += more_suffix(_t, count, 3)
             result.warn_with_deduction(
                 key="firmware.fwupd_updates",
                 message=_t("firmware.fwupd_updates", count=count, devices=devices),

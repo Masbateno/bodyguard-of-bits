@@ -430,7 +430,7 @@ def print_risk_context(
         level_colour = _c.yellow_bold
     _p(f"    {_c.dim}┄ {title} — {level_colour}{level}{_c.reset}")
     _p(f"    {_c.dim}{exposure_label} : {_c.reset}{_c.dim}{exposure}{_c.reset}")
-    _p(f"    {_c.dim}{threat_label}   : {_c.reset}{_c.dim}{threat}{_c.reset}")
+    _p(f"    {_c.dim}{threat_label} : {_c.reset}{_c.dim}{threat}{_c.reset}")   # v0.42.0 — one colon rule, as exposure
     _p()
 
 

@@ -138,7 +138,7 @@ class TestFilteredReason:
         cfg = _config(check_only=["ssh"])
         lines = render_domain_scores(scores, t=None, engine=eng, profile=None, config=cfg)
         text = "\n".join(lines)
-        det_line = next(l for l in text.splitlines() if "Threat Detection" in l)
+        det_line = next(l for l in text.splitlines() if "Detection Tools" in l)
         assert "--check/--skip" in det_line
         assert "not installed" not in det_line
 
@@ -170,7 +170,7 @@ class TestRenderAllDomains:
         text = self._text(AuditProfile(name="container",
                                        skip_sections=set(_DETECTION_SECTIONS)))
         for label in ("Firewall & Network", "Exposure & Services", "Access Control",
-                      "System Hardening", "Health & Resilience", "Threat Detection"):
+                      "System Hardening", "Health & Resilience", "Detection Tools"):
             assert label in text, f"missing domain label: {label}"
 
     def test_active_domain_shows_score(self):
@@ -189,7 +189,7 @@ class TestRenderAllDomains:
     def test_profile_skipped_label(self):
         text = self._text(AuditProfile(name="container",
                                        skip_sections=set(_DETECTION_SECTIONS)))
-        det_line = next(l for l in text.splitlines() if "Threat Detection" in l)
+        det_line = next(l for l in text.splitlines() if "Detection Tools" in l)
         assert "not assessed (container profile)" in det_line
         assert "not installed" not in det_line
 
@@ -326,7 +326,7 @@ class TestADVB1MarkdownHtmlDomains:
         prof = AuditProfile(name="container", skip_sections=set(_DETECTION_SECTIONS))
         md = build_markdown_output(self._engine(), si, t=None, profile=prof, config=_config())
         assert "Domain Scores" in md
-        assert "Access Control" in md and "Threat Detection" in md
+        assert "Access Control" in md and "Detection Tools" in md
         assert "reported, not scored" in md      # health_resilience info_only
         assert "not assessed (container profile)" in md   # detection profile-skipped
 
@@ -339,7 +339,7 @@ class TestADVB1MarkdownHtmlDomains:
         prof = AuditProfile(name="container", skip_sections=set(_DETECTION_SECTIONS))
         html = build_html_output(self._engine(), si, t=None, profile=prof, config=_config())
         assert "Domain Scores" in html
-        assert "<td>Threat Detection</td>" in html
+        assert "<td>Detection Tools</td>" in html
         assert "not assessed (container profile)" in html
 
 
@@ -351,5 +351,5 @@ class TestLegacyRenderUnchanged:
         active = active_domains_from_engine(eng)
         lines = render_domain_scores(scores, t=None, active_domains=active)
         text = "\n".join(lines)
-        assert "Threat Detection" not in text   # inactive → hidden (legacy)
+        assert "Detection Tools" not in text   # inactive → hidden (legacy)
         assert "Access Control" in text          # active → shown

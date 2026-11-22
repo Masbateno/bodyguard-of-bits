@@ -47,6 +47,8 @@ _OPEN_ANY_RE = re.compile(
     re.IGNORECASE,
 )
 _ALLOW_IN_RE   = re.compile(r"\bALLOW\s+IN\b", re.IGNORECASE)
+#: v0.42.0 — the `[ N] ` that opens a `ufw status numbered` row.
+_NUMBER_PREFIX_RE = re.compile(r"^\s*\[\s*\d+\]\s*")
 _PORT_PROTO_RE = re.compile(r"\b(\d{1,5}/(?:tcp|udp))\b", re.IGNORECASE)
 # Matches a protocol-unspecified port in the UFW numbered-status "To" field,
 # e.g. "[ 2] 57621   ALLOW IN ...". UFW applies such rules to both TCP and UDP.
@@ -850,8 +852,18 @@ def _check_orphan_rules(
     result: "CheckResult",
     app_profiles: "dict[str, list[str]] | None" = None,
 ) -> None:
-    """Flag ALLOW IN rules for which no service is currently listening."""
-    orphans: set[str] = set()
+    """Flag ALLOW IN rules for which no service is currently listening.
+
+    v0.42.0 (B-035) — the delete command names the *rule*, not the port: it is
+    rebuilt from the whole line by ``_ufw.delete_command`` (until 0.42.0 it was
+    ``ufw delete allow <port>``, which ufw refuses — exit 0, rule kept — for a
+    rule with a source; measured on the test Mint). A rule that also covers a
+    port where something listens gets no command (deleting it closes that port
+    too), and one the grammar cannot rewrite says to delete it by number.
+    """
+    orphans: dict[str, list[int]] = {}
+    rules: list = []
+    partly_used: set[int] = set()
     for line in lines:
         if not _ALLOW_IN_RE.search(line):
             continue
@@ -860,6 +872,8 @@ def _check_orphan_rules(
         rule = _ufw.parse_rule(line)
         if rule is None or not rule.to_col:
             continue
+        idx = len(rules)
+        rules.append(rule)
         # v0.15.1: this used to search the line for a single `<port>/<proto>`,
         # so `6000:6007/tcp` yielded only 6007 and `80,443/tcp` only 443 — two
         # orphan ports reported out of eight. The shared grammar expands ranges,
@@ -872,23 +886,40 @@ def _check_orphan_rules(
                     # when neither protocol has a listener.
                     if (f"{port}/tcp" not in listening_ports
                             and f"{port}/udp" not in listening_ports):
-                        orphans.add(str(port))
+                        orphans.setdefault(str(port), []).append(idx)
+                    else:
+                        partly_used.add(idx)
                 elif f"{port}/{proto}" not in listening_ports:
-                    orphans.add(f"{port}/{proto}")
+                    orphans.setdefault(f"{port}/{proto}", []).append(idx)
+                else:
+                    partly_used.add(idx)
 
     for port_proto in sorted(orphans):
         # v0.11.1 F7: a protocol-unspecified rule is stored as a bare port
         # (e.g. "57621"); UFW applies it to both protocols. Display it as
         # ``57621/tcp+udp`` so the finding is consistent with proto-qualified
-        # entries (``41681/tcp``) and tells the operator it covers both. The
-        # delete command keeps the bare token (the only form UFW accepts).
+        # entries (``41681/tcp``) and tells the operator it covers both.
         display = port_proto if "/" in port_proto else f"{port_proto}/tcp+udp"
+        cmds: list[str] = []
+        extra: list[str] = []
+        for idx in dict.fromkeys(orphans[port_proto]):
+            rule = rules[idx]
+            shown = re.sub(r"\s+", " ", _strip_comment(_NUMBER_PREFIX_RE.sub("", rule.raw))).strip()
+            if idx in partly_used:
+                extra.append(t("firewall_rules.orphan_rule_partly_used", rule=shown))
+                continue
+            cmd = _ufw.delete_command(rule, app_profiles)
+            if cmd:
+                cmds.append(cmd)
+            else:
+                extra.append(t("firewall_rules.orphan_rule_by_number", rule=shown))
+        # v0.26.1 — nothing listening at audit time does not make the rule
+        # unused (Spotify Connect's on a Mint host: it listens while it runs).
+        detail = " ".join([t("firewall_rules.orphan_rule_detail"), *extra])
         result.info(
             message=t("firewall_rules.orphan_rule", port=display),
-            # v0.26.1 — nothing listening at audit time does not make the rule
-            # unused (Spotify Connect's on a Mint host: it listens while it runs).
-            detail=t("firewall_rules.orphan_rule_detail"),
-            cmd=f"sudo ufw delete allow {port_proto}",
+            detail=detail,
+            cmd=" && ".join(cmds),
             key="firewall_rules.orphan_rule",
         )
 

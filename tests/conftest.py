@@ -70,6 +70,22 @@ def _ensure_i18n_initialised_for_tests(request):
 
 
 @pytest.fixture(autouse=True)
+def _output_state_restored():
+    """v0.42.0 — ``bob.output`` keeps its mode in module globals (quiet,
+    colours, level threshold, width), set by ``output.init`` on every
+    CLI run. ``test_v0180``'s end-to-end ``--diff`` left ``_quiet`` True, and
+    the port-scan screen tests of ``test_v0270`` captured nothing when run
+    after it (measured: fails on 0.41.0 too, hidden by the suite's order until
+    new test files moved it). Each test now starts and ends in the same state."""
+    from bob import output
+    names = ("_c", "_no_color", "_quiet", "_min_level_threshold", "_TERM_WIDTH")
+    saved = {name: getattr(output, name) for name in names}
+    yield
+    for name, value in saved.items():
+        setattr(output, name, value)
+
+
+@pytest.fixture(autouse=True)
 def _no_live_ssh_session_for_fail2ban(monkeypatch):
     """v0.26.0 — ``Fail2banSnapshot.from_system`` reads the host's live SSH
     sessions and ``/var/log`` when there is no journal entry to compare a

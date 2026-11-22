@@ -29,7 +29,7 @@
     "access_control": "ACCESS CONTROL",
     "system_hardening": "SYSTEM HARDENING",
     "health_resilience": "HEALTH & RESILIENCE",
-    "detection": "THREAT DETECTION"
+    "detection": "DETECTION TOOLS"
   },
   "sections": {
     "prerequisites": "PREREQUISITES CHECK",
@@ -42,7 +42,7 @@
     "docker": "DOCKER ANALYSIS",
     "summary": "AUDIT SUMMARY",
     "fixes": "AVAILABLE FIXES",
-    "risk_context": "RISK CONTEXT — DETECTED SERVICES",
+    "risk_context": "SERVICE SENSITIVITY — DETECTED SERVICES",
     "virtualization": "VIRTUALISATION ANALYSIS",
     "network_context": "NETWORK CONTEXT",
     "hardening": "SYSTEM HARDENING ANALYSIS",
@@ -312,10 +312,53 @@
       "loopback_no_rule_netfilter_unweighed": "bound to localhost only — no external exposure",
       "not_listening": "not actively listening — port in registry but not detected on this system"
     },
-    "port_exposure": "Port {port} — {exposure}"
+    "port_exposure": "Port {port} — {exposure}",
+    "labels": {
+      "ssh_server": "SSH Server",
+      "vnc_server": "VNC Server",
+      "samba_windows_file_sharing": "Samba (Windows file sharing)",
+      "samba_netbios_nmbd": "Samba NetBIOS (nmbd)",
+      "ftp_server": "FTP Server",
+      "apache_web_server": "Apache Web Server",
+      "nginx_web_server": "Nginx Web Server",
+      "mysql___mariadb": "MySQL / MariaDB",
+      "postgresql": "PostgreSQL",
+      "transmission_web_ui": "Transmission (web UI)",
+      "qbittorrent_web_ui": "qBittorrent (web UI)",
+      "avahi_local_network_discovery": "Avahi (local network discovery)",
+      "cups_network_printing": "CUPS (network printing)",
+      "cockpit_web_admin": "Cockpit (web admin)",
+      "wireguard_vpn": "WireGuard VPN",
+      "redis": "Redis",
+      "jellyfin": "Jellyfin",
+      "plex_media_server": "Plex Media Server",
+      "home_assistant": "Home Assistant",
+      "nextcloud": "Nextcloud",
+      "gitea": "Gitea",
+      "mosquitto_mqtt": "Mosquitto (MQTT)",
+      "syncthing": "Syncthing",
+      "telnet_server": "Telnet Server",
+      "rdp___xrdp": "RDP / xRDP",
+      "mongodb": "MongoDB",
+      "elasticsearch": "Elasticsearch",
+      "memcached": "Memcached",
+      "smtp_server_postfix_exim": "SMTP Server (Postfix/Exim)",
+      "nfs_server": "NFS Server",
+      "jenkins": "Jenkins",
+      "openvpn": "OpenVPN",
+      "squid_proxy": "Squid Proxy",
+      "tailscale_vpn": "Tailscale VPN",
+      "caddy_web_server": "Caddy Web Server",
+      "adguard_home_dns_sinkhole": "AdGuard Home (DNS sinkhole)",
+      "vaultwarden_password_manager": "Vaultwarden Password Manager",
+      "ollama_local_llm": "Ollama (local LLM)",
+      "authelia_sso_auth_proxy": "Authelia (SSO/auth proxy)"
+    }
   },
   "ports": {
     "all_covered": "All ports listening on 0.0.0.0 are covered by a UFW rule",
+    "high_udp_not_judged": "{count} UDP port(s) above 32767 not judged: {ports}",
+    "high_udp_not_judged_detail": "The kernel usually hands ports above 32767 to client sockets (DNS, mDNS or DHCP replies). BOB does not judge them and counts nothing for them; the verdict that the listening ports are filtered does not include them. A service that really listens there is worth checking: ss -ulpn.",
     "all_covered_policy": "All ports listening on all interfaces are filtered by UFW — by an explicit rule or by the default deny policy",
     "all_covered_policy_ipv4": "All ports listening on all interfaces are filtered by UFW over IPv4 — by an explicit rule or by the default deny policy; over IPv6 (UFW's IPV6=no), what reaches them is not established — see the IPv6 section",
     "all_covered_policy_ipv6_closed": "All ports listening on all interfaces are filtered — over IPv4 by UFW, by an explicit rule or the default deny policy; over IPv6 inbound is closed by the host's rules, UFW running with IPV6=no — see the IPv6 section",
@@ -331,7 +374,7 @@
     "uncovered_bound_address_netfilter_unweighed": "Port {port} — bound to {address} only — the nftables/iptables input policy is accept, and rules or chains on the way in refuse traffic: whether this port is reachable from that network is not established",
     "uncovered_bound_address_netfilter_unknown": "Port {port} — bound to {address} only — the nftables/iptables ruleset was read in part (a table refused): whether this port is reachable from that network is not established",
     "uncovered_bound_address_firewalld_unread": "Port {port} — bound to {address} only — firewalld is installed but firewall-cmd gave no answer: whether this port is reachable from that network is not established",
-    "system_port": "Internal system port — no risk (legitimate OS service, no firewall rule needed): {port} ({service})",
+    "system_port": "Port of a recognised system service, nothing counted: {port} ({service})",
     "unreadable": "Listening ports could not be determined",
     "unreadable_detail": "`ss -tulnp` could not be run — the binary is absent (iproute2 is not installed on minimal images and many containers) or it failed. Its stdout is empty either way, which is indistinguishable from a host with nothing listening, so BOB reports the gap instead of claiming zero open ports. Check with: ss -tulnp",
     "listening_count": "{count} listening port(s) detected on this system",
@@ -435,7 +478,7 @@
   },
   "scoring": {
     "score_label": "Security score",
-    "risk_label": "Risk level",
+    "risk_label": "Hardening gap",
     "risk_at_best": "{level} at best",
     "risk_unverified": "{level} — unverified",
     "visibility_label": "Visibility",
@@ -453,7 +496,7 @@
       "critical": "CRITICAL"
     },
     "context": {
-      "local": "Local network only",
+      "local": "No public address on the host",
       "public": "Direct public IP",
       "ddns": "Public exposure via DDNS",
       "local_v6": "IPv4 behind NAT, public IPv6 (router filter unverified)"
@@ -832,9 +875,9 @@
   },
   "risk_context": {
     "not_running": "not running — the service's own risk, not a measured exposure",
-    "title": "Risk context",
+    "title": "Service sensitivity",
     "exposure": "Exposure",
-    "threat": "Potential threat"
+    "threat": "If the service is reached"
   },
   "config": {
     "found": "Configuration found: {path}",
@@ -857,12 +900,12 @@
     "field_warning": "Warning",
     "field_alert": "Alert",
     "field_score": "Score",
-    "field_risk": "Risk",
+    "field_risk": "Hardening gap",
     "field_context": "Context",
     "field_profile": "Profile"
   },
   "service_risk": {
-    "local_exposure_note": "Intrinsic risk (see above) — actual exposure: LOW (SSH not reachable from the internet on this network)",
+    "local_exposure_note": "Service sensitivity (see above) — actual exposure: LOW (SSH not reachable from the internet on this network)",
     "nonstandard_port_note": "Non-standard port — reduced exposure to automated scanners",
     "ssh_server": {
       "level": "CRITICAL",
@@ -906,7 +949,7 @@
     },
     "samba_windows_file_sharing": {
       "level": "CRITICAL",
-      "exposure": "Designed exclusively for local networks — inherently dangerous if exposed to the internet",
+      "exposure": "Designed for trusted networks (LAN, VPN) — exposing it directly to the internet is to be avoided",
       "threat": "File access and encryption (ransomware), lateral movement (EternalBlue/WannaCry), data exfiltration"
     },
     "samba_netbios_nmbd": {
@@ -982,7 +1025,7 @@
     "telnet_server": {
       "level": "CRITICAL",
       "exposure": "Unencrypted plaintext protocol — credentials, commands and all data transmitted in clear text over the network",
-      "threat": "Credential theft in transit, session hijacking, trivial interception on any network segment — replace with SSH immediately"
+      "threat": "Credential theft in transit, session hijacking, trivial interception on any network segment — SSH does the same job, encrypted"
     },
     "rdp___xrdp": {
       "level": "CRITICAL",
@@ -1642,8 +1685,8 @@
     "no_security_channel_detail": "On a rolling release (Kali, Arch) or Alpine, security fixes ship through the same channel as everything else, so '0 security pending' means 'unclassifiable', not 'secure'. Apply the pending updates and re-audit.",
     "mint_automation_on": "Automatic updates on: Linux Mint's Update Manager installs updates daily",
     "mint_automation_on_detail": "Its automation is enabled (marker /var/lib/linuxmint/mintupdate-automatic-upgrades-enabled and timer mintupdate-automation-upgrade.timer): every day it runs mintupdate-cli upgrade, which installs every pending update, security included. It does nothing while the machine runs on battery. Read from the files the automation writes; whether the last run succeeded is in /var/log/mintupdate.log.",
-    "unattended_not_configured": "unattended-upgrades not configured — security patches require manual intervention",
-    "unattended_not_configured_detail": "Unattended security upgrades are not configured, so patches wait for someone to remember. The package providing them is Debian's unattended-upgrades; Fedora and RHEL use dnf-automatic, whose own package name moved with dnf5, and the configuration differs.",
+    "unattended_not_configured": "unattended-upgrades not configured, and no other automatic update mechanism BOB knows was found — security patches wait for someone to apply them",
+    "unattended_not_configured_detail": "BOB found neither unattended-upgrades configured nor another automatic update mechanism it knows; a tool it does not know may still apply patches — check how this host is updated. The package providing them is Debian's unattended-upgrades; Fedora and RHEL use dnf-automatic, whose own package name moved with dnf5, and the configuration differs.",
     "unattended_not_configured_reason": "unattended-upgrades not configured",
     "apt_cache_stale": "APT cache is {days} day(s) old — pending updates may be under-reported",
     "apt_cache_stale_detail": "BOB reads /var/cache/apt/pkgcache.bin to decide what is pending. With a stale cache the dist-upgrade simulation may return 0 packages even when security updates are available upstream. Refresh first, then re-run the audit.",
@@ -1689,7 +1732,7 @@
   },
   "suid_audit": {
     "scan_skipped": "SUID/SGID scan timed out or failed — check skipped",
-    "ok": "All SUID binaries are known-safe ({suid_count} SUID, {sgid_count} SGID)",
+    "ok": "Every SUID binary is on BOB's reference list ({suid_count} SUID, {sgid_count} SGID) — their content is not checked here",
     "ok_partial": "No unexpected SUID/SGID binaries among those scanned ({suid_count} SUID, {sgid_count} SGID) — some directories could not be read, so the scan is partial",
     "unexpected_suid": "{count} unexpected root-owned SUID binary/binaries: {paths}",
     "unexpected_suid_detail": "These binaries run as root regardless of who launches them. Verify each one is intentional, then either remove the SUID bit (chmod u-s) or add it to your local whitelist.",
@@ -1730,7 +1773,8 @@
   },
   "output": {
     "recommendation_label": "What to do?",
-    "check_label": "Check:"
+    "check_label": "Check:",
+    "more_items": "(+{count} more)"
   },
   "domain_scores": {
     "title": "Domain Scores",
@@ -1739,7 +1783,7 @@
     "access_control": "Access Control",
     "system_hardening": "System Hardening",
     "health_resilience": "Health & Resilience",
-    "detection": "Threat Detection",
+    "detection": "Detection Tools",
     "reason": {
       "no_action": "reported, not scored",
       "unreadable": "could not be read",
@@ -3526,7 +3570,7 @@
     },
     "risk": {
       "escalated_posture": {
-        "title": "Risk level raised by posture (firewall structural gap)",
+        "title": "Hardening gap raised by the firewall posture (structural gap)",
         "why": "BOB derives the displayed risk level from the global score combined with the posture state. Pre-v0.7.0 the level was score-only — a host with UFW inactive but otherwise clean (score 8/10) displayed 'LOW risk', misleading operators about the actual exposure. v0.7.0 introduces a posture floor: when the firewall is structurally broken (inactive, INPUT ACCEPT, or firewall domain ≤ 3/10), the level is lifted out of LOW to reflect that the host is reachable on any port regardless of the cleanliness of the rest. The base score still drives the value; posture only raises the floor.",
         "how": "1. Identify which posture trigger fired (look at the parenthetical annotation next to the risk level):\n   - 'firewall inactive' → no UFW, no firewalld and no nftables/iptables ruleset dropping inbound traffic was found: enable one (sudo ufw enable, or sudo systemctl enable --now firewalld)\n   - 'iptables INPUT ACCEPT' → set deny default: sudo iptables -P INPUT DROP (or use UFW / firewalld)\n   - 'firewall domain low' → review the firewall section findings (rules, logging, default policy)\n2. Re-run the audit:\n   sudo bob\n3. The risk level returns to its score-derived value once the posture trigger no longer fires."
       }
@@ -3874,8 +3918,8 @@
     "weak_minlen": "Password minimum length too low (minlen = {minlen})",
     "weak_minlen_detail": "Passwords shorter than 8 characters are easily brute-forced. Increase minlen to at least 8 in /etc/security/pwquality.conf.",
     "weak_minlen_reason": "Password minimum length too low (minlen = {minlen})",
-    "no_expiry": "Password expiry not enforced (PASS_MAX_DAYS = {days})",
-    "no_expiry_detail": "Passwords never expire. Consider setting PASS_MAX_DAYS to a reasonable value (e.g. 365) if your policy requires periodic rotation. Note: NIST SP 800-63B no longer mandates expiration unless compromise is suspected.",
+    "no_expiry": "No password expiry by default for new accounts (PASS_MAX_DAYS = {days} in /etc/login.defs)",
+    "no_expiry_detail": "Accounts created from now on get no expiry; each existing account keeps its own value in /etc/shadow (chage -l <account>), which is not read here. Consider setting PASS_MAX_DAYS to a reasonable value (e.g. 365) if your policy requires periodic rotation. Note: NIST SP 800-63B no longer mandates expiration unless compromise is suspected.",
     "login_defs_unreadable": "/etc/login.defs exists but could not be read — password expiry and its default hashing method are unverified",
     "weak_hash": "Weak password-hashing algorithm configured ({where})",
     "weak_hash_reason": "weak password-hashing algorithm (crackable offline once /etc/shadow leaks)",
@@ -3905,7 +3949,7 @@
     "server_signing_disabled_detail": "Samba will accept unsigned connections, enabling NTLM relay attacks. Set 'server signing = mandatory' in [global].",
     "server_signing_mandatory": "Server signing is mandatory",
     "server_signing_auto": "Server signing is set to auto — signing negotiated but not enforced",
-    "server_signing_auto_detail": "Consider setting 'server signing = mandatory' to prevent NTLM relay attacks.",
+    "server_signing_auto_detail": "Consider 'server signing = mandatory': it stops an NTLM authentication from being relayed to this SMB server — not to other services or hosts.",
     "map_to_guest": "map to guest = bad user — failed logins silently fall back to guest",
     "map_to_guest_detail": "Users who authenticate with an invalid username are silently mapped to the guest account. Set 'map to guest = never' in [global].",
     "guest_writable": "Guest-writable share: [{share}]",
@@ -3935,7 +3979,7 @@
     "socket_open_to_all_detail": "Its Unix permissions — write on the socket, search on every directory above it — admit a connection from any account on this host (a MAC policy such as SELinux or AppArmor may still refuse one), so any of them can stop the daemon: measured on Debian and Alpine as packaged. This is how the package ships it (Debian, Ubuntu, Arch, openSUSE and Alpine). Restricting it — LocalSocketGroup and LocalSocketMode 660 in clamd's configuration, then a restart — keeps it working for the owner, the group and root, and cuts every other client: first check which users your mail filter or scanners run as, and add them to that group.",
     "socket_open_to_all_reason": "ClamAV daemon socket open to every local user (can be stopped)",
     "socket_open_shutdown_refused": "The ClamAV daemon's socket ({path}) admits every local user, who can send it commands such as a scan request; SHUTDOWN is refused — EnableShutdownCommand is set to false in its configuration",
-    "socket_open_shutdown_refused_detail": "Measured in Ubuntu 24.04 containers with its clamav-daemon 1.5.4, which writes EnableShutdownCommand false: an unprivileged user's SHUTDOWN got COMMAND UNAVAILABLE and clamd kept running; set to true, the same SHUTDOWN stopped it. No point: no account can turn the antivirus off. Any account can still ask it for scans. Restricting the socket — LocalSocketGroup and LocalSocketMode 660 in clamd's configuration, then a restart — keeps it for the owner, the group and root; check first which users your mail filter or scanners run as.",
+    "socket_open_shutdown_refused_detail": "Measured in Ubuntu 24.04 containers with its clamav-daemon 1.5.4, which writes EnableShutdownCommand false: an unprivileged user's SHUTDOWN got COMMAND UNAVAILABLE and clamd kept running; set to true, the same SHUTDOWN stopped it. No point: an unprivileged account cannot stop it with the SHUTDOWN command. Any account can still ask it for scans. Restricting the socket — LocalSocketGroup and LocalSocketMode 660 in clamd's configuration, then a restart — keeps it for the owner, the group and root; check first which users your mail filter or scanners run as.",
     "no_scan_log": "No ClamAV scan log found — last scan date unknown",
     "no_scan_log_detail": "No scan log found in standard paths (/var/log/clamav/). -r = recursive scan, --infected = show only infected files (reduces output noise), --log = save results for audit trail and future diff comparisons.",
     "scan_very_old": "Last scan found in the ClamAV logs: {days} day(s) ago ({date}) — very overdue",
@@ -4014,13 +4058,13 @@
     "subsystem_disabled": "The kernel audit subsystem is switched off",
     "subsystem_disabled_detail": "`auditctl -l` reports the audit system as disabled, so auditd is running but the kernel is recording nothing. This is a setting, not a gap in the audit: BOB reads it as switched off rather than as rules it could not list. Re-enable with: sudo auditctl -e 1",
     "not_installed": "Linux Audit Framework (auditd) is not installed",
-    "not_installed_detail": "auditd records system calls and file access events to a tamper-evident log. Without it, privilege escalation attempts, credential file access, and sudo abuse go completely unlogged. Install auditd and configure watch rules on sensitive files.",
+    "not_installed_detail": "auditd records system calls and file access events to its log. Without it, privilege escalation attempts, credential file access, and sudo abuse go completely unlogged. Install auditd and configure watch rules on sensitive files.",
     "service_inactive": "auditd is installed but the service is not running",
     "state_unknown": "auditd is installed, but neither systemd nor auditctl could be asked whether it is running",
     "service_inactive_detail": "auditd is installed but inactive — no system events are being logged. Enable it to restore audit trail coverage.",
     "service_inactive_reason": "auditd inactive — system event logging disabled",
     "no_rules": "auditd is running but no audit rules are loaded",
-    "no_rules_detail": "auditd is active but has no rules configured. Without watch rules, access to sensitive files (/etc/passwd, /etc/shadow, /etc/sudoers) is not logged. Run 'sudo auditctl -l' to verify. Apply the starter rules below to cover the most critical paths.",
+    "no_rules_detail": "auditd is active but has no rules configured. Without watch rules, access to sensitive files (/etc/passwd, /etc/shadow, /etc/sudoers) is not logged. Run 'sudo auditctl -l' to verify. The starter rules below log changes to the most critical paths (-p wa: writes and attribute changes), not reads.",
     "no_rules_reason": "auditd running with no audit rules",
     "immutable": "The audit configuration is locked until the next reboot (enabled 2) — rule changes load only at boot",
     "locked_detail": "The audit rules are locked (enabled 2): the rules file written now loads at the next boot — reboot to apply it; augenrules --load cannot change a locked configuration.",
@@ -4089,7 +4133,7 @@
     "proc_hidepid_restricted": "/proc hides other users' processes (hidepid={level})",
     "proc_hidepid_partial": "/proc partially restricts other users' processes (hidepid=noaccess) — their /proc/<pid> is unreadable but still listed",
     "proc_hidepid_off": "/proc lets every user see every process (hidepid not set)",
-    "proc_hidepid_detail": "Mounting /proc with hidepid=invisible (2) hides other users' /proc/<pid> entirely, so an unprivileged user can no longer list who runs what, read command lines (which sometimes carry passwords or tokens) or watch a privileged job's timing. It matters on hosts several people log into — a shared server or workstation — and little on a single-user desktop, so BOB reports it and never scores it. Set it in /etc/fstab: proc /proc proc defaults,hidepid=invisible,gid=<monitoring-group> 0 0 — the gid= group keeps visibility for monitoring tools, and some desktop components (polkit, systemd-logind) need it.",
+    "proc_hidepid_detail": "Mounting /proc with hidepid=invisible (2) hides other users' /proc/<pid> entirely, so an unprivileged user can no longer list who runs what, read command lines (which sometimes carry passwords or tokens) or watch a privileged job's timing. It matters on hosts several people log into — a shared server or workstation — and little on a single-user desktop, so BOB reports it and never scores it. Set it in /etc/fstab: proc /proc proc defaults,hidepid=invisible,gid=<monitoring-group> 0 0 — the gid= group keeps visibility for monitoring tools, and some desktop components (polkit, systemd-logind) may need it.",
     "proc_hidepid_unknown": "Whether /proc restricts process visibility (hidepid) could not be determined"
   },
   "core_dumps": {
@@ -4106,7 +4150,7 @@
   "module_blacklist": {
     "unreadable": "modprobe.d directories could not be read — module blacklist state unknown",
     "candidates": "Defense-in-depth: {count} rarely-needed module(s) are neither loaded nor blacklisted ({modules})",
-    "candidates_detail": "These modules are not loaded now, but nothing stops them from loading later (no `blacklist` or `install ... /bin/true` line under /etc/modprobe.d). They are rarely needed on a server (exotic filesystems, legacy network protocols, USB storage). Blacklisting the ones you do not use is pure defense-in-depth — CIS Ubuntu 22.04 §1.1.1 (filesystems) and §3.2 (network protocols). This is reported, not penalised: an un-blacklisted module is a hardening opportunity, not a vulnerability, and some of these are legitimately used (e.g. udf for optical media). A module that is currently loaded is reported by the kernel-module audit instead.",
+    "candidates_detail": "These modules are not loaded now, but nothing stops them from loading later (no `blacklist` or `install ... /bin/true` line under /etc/modprobe.d). They are rarely needed on a server (exotic filesystems, legacy network protocols, USB storage). Blacklisting the ones you do not use is pure defense-in-depth, as the CIS benchmarks recommend for filesystem and network-protocol kernel modules. This is reported, not penalised: an un-blacklisted module is a hardening opportunity, not a vulnerability, and some of these are legitimately used (e.g. udf for optical media). A module that is currently loaded is reported by the kernel-module audit instead.",
     "all_handled": "Every rarely-needed module is either blacklisted or already handled by the kernel-module audit"
   },
   "dev_privileged": {
@@ -4206,7 +4250,8 @@
     "changed": "{count} packaged file(s) differ from the manager's recorded digest: {files}",
     "changed_detail": "These files were installed by a package but their content no longer matches the digest the package manager recorded. That can be benign — a local recompile, a vendor hotfix applied by hand, a file patched by another tool — or it can be the trace of an intruder replacing a system binary or library. BOB cannot tell which, so this is reported, not scored: verify each path against what you expect (reinstall the owning package to compare, e.g. apt reinstall / dnf reinstall, or inspect the file). Configuration files, which are expected to be edited, are already excluded.",
     "clean": "No packaged file differs from the manager's recorded digest ({tool} verified)",
-    "local_digests_limit": "The reference digests live in the local package database: a compromised root can rewrite them together with the files. This check attests consistency with that database, not an external chain of trust — repository signatures are the package-authenticity check's."
+    "local_digests_limit": "The reference digests live in the local package database: a compromised root can rewrite them together with the files. This check attests consistency with that database, not an external chain of trust — repository signatures are the package-authenticity check's.",
+    "verifier_failed": "Package integrity not verified — {tool} failed (non-zero exit, no output)"
   },
   "kexec_lockdown": {
     "kexec_disabled": "kexec is locked (kernel.kexec_load_disabled=1) — no new kernel can be loaded until reboot",
@@ -4282,7 +4327,7 @@
   },
   "file_integrity": {
     "not_installed": "No file integrity monitor installed (AIDE / Tripwire)",
-    "not_installed_detail": "File integrity monitors detect unauthorised changes to system files, binaries, and configuration. Without one, an attacker who modifies a binary or config file (e.g. /etc/passwd, /usr/bin/sudo) will go undetected. Install AIDE and initialise its database. The database records the files as they are when it is taken: take it on a system you trust — a file already changed would become the reference. `dpkg --verify` (Debian family) or `rpm -Va` (RPM family) first compares installed files with their packages.",
+    "not_installed_detail": "File integrity monitors detect unauthorised changes to system files, binaries, and configuration. Without one, nothing compares those files with a reference state at regular intervals: a change to a binary or a configuration file (e.g. /etc/passwd, /usr/bin/sudo) can go unnoticed. Install AIDE and initialise its database. The database records the files as they are when it is taken: take it on a system you trust — a file already changed would become the reference. `dpkg --verify` (Debian family) or `rpm -Va` (RPM family) first compares installed files with their packages.",
     "no_db": "{tool} is installed but the integrity database has not been initialised",
     "no_db_detail": "Without an initialised database, {tool} has no baseline to compare against and cannot detect any changes. Initialise the database now. The database records the files as they are when it is taken: take it on a system you trust — a file already changed would become the reference. `dpkg --verify` (Debian family) or `rpm -Va` (RPM family) first compares installed files with their packages.",
     "db_unknown": "{tool} is installed but its database directory could not be read",
@@ -4348,7 +4393,7 @@
     "apparmor_off_in_kernel_detail_pi": "The kernel reports AppArmor as built in but not enabled (/sys/module/apparmor/parameters/enabled is N, and /sys/kernel/security/apparmor does not exist), so no profile is enforced — this is how the stock Raspberry Pi kernel ships it. apparmor.service carries ConditionSecurity=apparmor, so systemd skips it: enabling or starting it changes nothing. Adding apparmor=1 security=apparmor to cmdline.txt and rebooting enables it. Measured on a Pi Zero W: 121 profiles loaded, 22 in enforce mode. The first boot afterwards took about a minute and a half longer while AppArmor compiled and cached its profiles; the boots after it took the same time as before, about 3 min 15 s from shutdown to SSH. The command keeps cmdline.txt on one line and does nothing if the parameter is already there.",
     "apparmor_ok": "AppArmor enforcing — {enforcing} profile(s) enforce, {complain} complain",
     "apparmor_complain_profiles": "{complain} AppArmor profile(s) in complain mode — violations are logged but not blocked",
-    "apparmor_complain_detail": "In complain mode, AppArmor logs policy violations but does not block them. To enforce a profile, run sudo aa-enforce on its own file in /etc/apparmor.d (apparmor-utils) — one at a time, not /etc/apparmor.d/*: measured on Ubuntu Server 26.04, that set 97 files to enforce, 74 of them shipped unconfined on purpose (flags=(unconfined)), and left the snap profiles as they were.",
+    "apparmor_complain_detail": "In complain mode, AppArmor logs policy violations but does not block them. To enforce a profile, run sudo aa-enforce on that profile's file in /etc/apparmor.d (apparmor-utils) — one at a time, not /etc/apparmor.d/*: measured on Ubuntu Server 26.04, that set 97 files to enforce, 74 of them shipped unconfined on purpose (flags=(unconfined)), and left the snap profiles as they were.",
     "apparmor_complain_split": "Snap profiles among them (kept by snapd — aa-enforce on /etc/apparmor.d does not change them): {snap}; the others: {others}.",
     "apparmor_no_enforce": "AppArmor active but no profiles in enforce mode ({complain} in complain)",
     "apparmor_no_enforce_detail": "All profiles are in complain mode — violations are logged but not blocked. Switch to enforce mode to actively prevent attacks.",
@@ -4519,7 +4564,7 @@
     "journald_limit_ok": "systemd-journald disk limits configured: {settings}",
     "remote_syslog_ok": "{daemon} configured with remote log target",
     "remote_syslog_none": "{daemon} is installed but no remote log target is configured",
-    "remote_syslog_none_detail": "Forwarding logs to a remote syslog server (e.g. via rsyslog @@host:514) ensures logs are preserved even if the local system is compromised or wiped. Optional but recommended for servers."
+    "remote_syslog_none_detail": "Forwarding logs to a remote syslog server (e.g. via rsyslog @@host:514) keeps a copy off the host, which a compromise or a wipe of this host does not erase by itself — provided the remote server is protected too. Optional but recommended for servers."
   },
   "exposure": {
     "ssh_config_unknown": "unknown — sshd_config could not be read",
@@ -4585,7 +4630,7 @@
     "col_message": "Message",
     "col_fix_command": "Fix command",
     "field_score": "Score",
-    "field_risk_level": "Risk level",
+    "field_risk_level": "Hardening gap",
     "field_alerts": "Alerts",
     "field_warnings": "Warnings",
     "field_profile": "Audit profile",
@@ -4839,7 +4884,9 @@
     "ipv6_missing": "UFW rules exist for IPv4 but no equivalent IPv6 rules found",
     "ufw_status_detail": "UFW status (verbose):",
     "orphan_rule": "UFW rule open with no listening service: {port}",
-    "orphan_rule_detail": "Nothing listens on this port at the time of the audit. A program that listens only while it runs (Spotify Connect, a game, a media server) still needs the rule then: delete it only if nothing does."
+    "orphan_rule_detail": "Nothing listens on this port at the time of the audit. A program that listens only while it runs (Spotify Connect, a game, a media server) still needs the rule then: delete it only if nothing does.",
+    "orphan_rule_partly_used": "The rule \"{rule}\" also covers a port where a service listens: deleting it would close that port too, so no delete command is given.",
+    "orphan_rule_by_number": "BOB cannot rewrite the rule \"{rule}\" for ufw delete: list the rules with sudo ufw status numbered, then delete it with sudo ufw delete <number> (ufw shows the rule and asks for confirmation). Its (v6) copy, if there is one, has its own number and is deleted separately; numbers change after each deletion, so list them again."
   },
   "completion": {
     "data_missing": "Completion data file not found: {path}",

@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import install_fix, package_installed, _command_exists, _identity_t, _run, run_result, is_unit_active, path_exists
+from bob.checks._run import install_fix, package_installed, _command_exists, _identity_t, _run, run_result, is_unit_active, path_exists, more_suffix
 from bob.scoring import CheckResult
 from bob._atomic import read_text_capped
 
@@ -621,7 +621,7 @@ def check_updates(
         count = len(security)
         pkgs  = ", ".join(security[:5])
         if count > 5:
-            pkgs += f" (+{count - 5})"
+            pkgs += more_suffix(_t, count, 5)
         result.warn_with_deduction(
             key="updates.security_pending",
             message=_t("updates.security_pending", count=count, packages=pkgs),

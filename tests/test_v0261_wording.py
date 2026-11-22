@@ -59,7 +59,7 @@ def test_ssh_risk_says_where_it_is_reachable(lang):
 def test_an_orphan_rule_says_it_may_still_be_needed():
     from bob.checks import firewall
     src = inspect.getsource(firewall)
-    assert 'detail=t("firewall_rules.orphan_rule_detail"),' in src
+    assert 't("firewall_rules.orphan_rule_detail")' in src   # v0.42.0: joined with any extra
     for lang, words in (("en", "only while it runs"), ("fr", "que lorsqu'il tourne")):
         i18n.init(lang)
         try:

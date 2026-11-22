@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+import shlex
 from pathlib import Path
 from bob._atomic import read_text_capped
 
@@ -106,6 +107,92 @@ def read_app_profiles(directory: "Path | None" = None) -> "dict[str, list[str]]"
             elif name and stripped.lower().startswith("ports="):
                 apps[name] = [p for p in stripped.split("=", 1)[1].split("|") if p]
     return apps
+
+
+def _strip_trailing_comment(text: str) -> str:
+    """Drop the ``# comment`` that ``ufw allow ... comment 'x'`` appends."""
+    return text.split("#", 1)[0].rstrip()
+
+
+def _address_token(tok: str) -> bool:
+    try:
+        ipaddress.ip_network(tok, strict=False)
+    except ValueError:
+        return False
+    return True
+
+
+def delete_command(rule: "UfwRule", app_profiles: "dict[str, list[str]] | None" = None) -> "str | None":
+    """v0.42.0 (B-035) — a ``ufw delete`` that removes exactly *rule*, or None.
+
+    ufw deletes only the rule whose every field matches. Until 0.42.0 BOB
+    proposed ``ufw delete allow <port>`` for any orphan rule, which names a
+    different rule as soon as the real one has a source. Measured on the test
+    Mint (ufw 0.36.2, 21 November 2026): for ``57621 ALLOW IN 192.168.1.0/24``
+    it printed "Could not delete non-existent rule", exited 0, and the rule
+    stayed. The command is now rebuilt from every field of the line — action,
+    interface, source, destination, port, protocol, application profile — and
+    None is returned for a line this grammar does not read (a source port, a
+    profile on the source side, an outgoing or routed rule): no command rather
+    than one that does nothing. ufw's comparison ignores the comment.
+    """
+    profiles = app_profiles or {}
+    action = rule.action.lower()
+    if action not in ("allow", "deny", "reject", "limit"):
+        return None
+    words = _strip_trailing_comment(rule.from_col).replace("(v6)", " ").split()
+    if not words or words[0].upper() != "IN":
+        return None                                   # OUT / FWD: not this grammar
+    log = ""
+    if words[-1] in ("(log)", "(log-all)"):
+        log = " " + words.pop()[1:-1]                 # part of the rule ufw compares
+    source = words[1:]
+    sport = ""
+    if len(source) == 2 and _PORTSPEC_RE.match(source[1]):
+        sport = source.pop()
+    elif len(source) == 1 and _PORTSPEC_RE.match(source[0]):
+        # `from any port 53` prints the port alone: `ALLOW IN    53/udp`
+        sport, source = source[0], ["Anywhere"]
+    if len(source) != 1:
+        return None                                   # empty, or a profile on the source side
+    src = "any" if source[0] == "Anywhere" else source[0]
+    if src != "any" and not _address_token(src):
+        return None
+    to_col = rule.to_col
+    if to_col in profiles:
+        dst, kind, value = "any", "app", to_col
+    else:
+        head, _sep, last = to_col.rpartition(" ")
+        if _PORTSPEC_RE.match(last):
+            kind = "port"
+        elif last in profiles:
+            kind = "app"
+        else:
+            return None                               # Anywhere, or a shape not read here
+        value = last
+        dst = head.strip() or "any"
+        if dst != "any" and not _address_token(dst):
+            return None
+    iface = rule.iface
+    simple = src == "any" and dst == "any" and not iface and not sport
+    if kind == "app":
+        if sport:
+            return None
+        if simple:
+            return f"sudo ufw delete {action}{log} {shlex.quote(value)}"
+        target = f"to {dst} app {shlex.quote(value)}"
+    else:
+        if simple:
+            return f"sudo ufw delete {action}{log} {value}"
+        m = _PORTSPEC_RE.match(value)
+        ports, proto = m.group(1), (m.group(2) or "").lower()
+        if sport:
+            sm = _PORTSPEC_RE.match(sport)
+            proto = proto or (sm.group(2) or "").lower()
+            src = f"{src} port {sm.group(1)}"
+        target = f"to {dst} port {ports}" + (f" proto {proto}" if proto else "")
+    scope = f" in on {iface}" if iface else ""
+    return f"sudo ufw delete {action}{scope}{log} from {src} {target}"
 
 
 def expand_port_spec(spec: str) -> "list[tuple[int, int, str | None]]":

@@ -91,6 +91,21 @@ def service_label_to_subkey(label: str) -> str:
                  .replace(")", ""))
 
 
+def shown_label(label: str, t) -> str:
+    """v0.42.0 (B-039) — the label to *display* for a catalogue service.
+
+    The catalogue label is also an identifier — the ``service_risk.*`` subkey,
+    ``--explain services.exposed.<id>``, the JSON output, the run comparison —
+    so it stays as it is everywhere but on screen. The French output of the
+    developer's workstation audit read "Samba (Windows file sharing)" and
+    "Ollama (local LLM)"; ``services.labels.<subkey>`` now gives the words of
+    the interface language, the catalogue label when no translation exists.
+    """
+    key = "services.labels." + service_label_to_subkey(label)
+    text = t(key)
+    return text if isinstance(text, str) and text and not text.startswith(key) else label
+
+
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------

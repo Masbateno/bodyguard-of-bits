@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from bob.checks._run import (
+    more_suffix,
     TranslationFunc,
     _command_exists,
     _identity_t,
@@ -192,7 +193,7 @@ def check_systemd_timers(snapshot: SystemdTimersSnapshot, t: TranslationFunc | N
         count   = len(pipe_entries)
         entries = "; ".join(pipe_entries[:3])
         if count > 3:
-            entries += f" (+{count - 3})"
+            entries += more_suffix(_t, count, 3)
         result.warn_with_deduction(
             key="systemd_timers.pipe_to_shell",
             message=_t("systemd_timers.pipe_to_shell", count=count),
@@ -208,7 +209,7 @@ def check_systemd_timers(snapshot: SystemdTimersSnapshot, t: TranslationFunc | N
         scripts = ", ".join(writable[:3])
         count   = len(writable)
         if count > 3:
-            scripts += f" (+{count - 3})"
+            scripts += more_suffix(_t, count, 3)
         result.warn_with_deduction(
             key="systemd_timers.world_writable",
             message=_t("systemd_timers.world_writable", count=count, scripts=scripts),
@@ -225,7 +226,7 @@ def check_systemd_timers(snapshot: SystemdTimersSnapshot, t: TranslationFunc | N
         units = ", ".join(root_timers[:5])
         count = len(root_timers)
         if count > 5:
-            units += f" (+{count - 5})"
+            units += more_suffix(_t, count, 5)
         result.info(
             message=_t("systemd_timers.user_created_root", count=count, units=units),
             key="systemd_timers.user_created_root",

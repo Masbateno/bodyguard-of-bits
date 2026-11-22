@@ -31,7 +31,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t, service_restart_cmd
+from bob.checks._run import TranslationFunc, _C_LOCALE_ENV, _command_exists, _identity_t, more_suffix, service_restart_cmd
 from bob.checks._rootless_oci import is_exec_conmon as _is_exec_conmon
 from bob.checks._rootless_oci import rootless_containers as _rootless_oci
 from bob.checks._docker_daemon import containerd_elsewhere, moby_containers, rootless_dockerd, socket_listener, system_dockerd_state
@@ -518,7 +518,7 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
                     parts.append(_t("docker_hardening.rootless_shape_host_paths", paths=", ".join(c.host_paths[:3])
                                     + (f" (+{len(c.host_paths) - 3})" if len(c.host_paths) > 3 else "")))
                 return f"{c.name} ({c.user}, {c.runtime}: {'; '.join(parts)})"
-            shown = " · ".join(_shape(c) for c in wide[:5]) + (f" (+{len(wide) - 5})" if len(wide) > 5 else "")
+            shown = " · ".join(_shape(c) for c in wide[:5]) + (f" (+{len(wide) - 5})" if len(wide) > 5 else "")   # language-neutral: rebuilt from template_vars in another locale
             result.info(
                 message=_t("docker_hardening.rootless_shapes", count=len(wide), containers=shown),
                 detail=_t("docker_hardening.rootless_shapes_detail"),
@@ -731,8 +731,7 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
     if snapshot.privileged_containers:
         names = ", ".join(snapshot.privileged_containers[:5])
         suffix = (
-            f" (+{len(snapshot.privileged_containers) - 5} more)"
-            if len(snapshot.privileged_containers) > 5 else ""
+            more_suffix(_t, len(snapshot.privileged_containers), 5)
         )
         first = snapshot.privileged_containers[0]
         result.warn_with_deduction(
@@ -823,8 +822,7 @@ def check_docker_audit(snapshot: DockerAuditSnapshot, t: TranslationFunc | None 
     if snapshot.root_containers:
         names = ", ".join(snapshot.root_containers[:5])
         suffix = (
-            f" (+{len(snapshot.root_containers) - 5} more)"
-            if len(snapshot.root_containers) > 5 else ""
+            more_suffix(_t, len(snapshot.root_containers), 5)
         )
         result.info(
             message=_t(

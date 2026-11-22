@@ -6,6 +6,177 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.42.0] — 2026-11-22
+
+**BREAKING (score certainty, --target) — a minor release from the audit of the developer's
+workstation: package integrity read without debsums; the delete command of an
+orphan ufw rule that deletes it; an RSA host-key regeneration command that now
+keeps the old key and tests sshd; high UDP ports no longer silently omitted; the
+host's own CIS benchmark; texts brought back to what BOB measures; the French
+output in French.**
+
+BREAKING, for one case: a Debian-family host without debsums audited with
+`--exhaustive` (section 1). There the score stops being a ceiling and
+`--target` can pass. Every other host scores the same under 0.41.0 and 0.42.0,
+with the same exit code. No finding key removed or renamed; two added
+(`ports.high_udp_not_judged`, `package_integrity.verifier_failed`). No option,
+JSON-schema or CSV-column change; one JSON value changes: the `label` of the
+`detection` domain, "Threat Detection" → "Detection Tools" (the key stays
+`detection`). Translation keys: 3526 → 3571 per language (45 added, none
+removed or renamed), many values rewritten (sections 6 to 8).
+
+### 1. BREAKING — package integrity without debsums: `dpkg --verify`
+
+On the Debian family, `--exhaustive` compared installed files with their
+recorded digests through `debsums -c` only. Without debsums — not installed by
+default — the section stayed unread, and the score was a ceiling: `≤ 9/10` on
+the developer's workstation (Linux Mint 22.3), while BOB's own AIDE text
+recommends `dpkg --verify`, which dpkg ships. `dpkg --verify` now steps in when
+debsums is missing; debsums, when installed, stays the verifier. As with
+debsums and rpm, only a digest mismatch counts, configuration files, `/etc` and
+`missing` rows left out.
+
+Measured on the test Linux Mint 22.3 (dpkg 1.22.6, 2025 packages, no debsums):
+`dpkg --verify` ran 499 s, exited 0 with 25 lines; the 21 kept are files under
+`/usr` that differ on that machine (Firefox's distribution file, launchers,
+icons, sounds, a CUPS test page) — as many as 0.32.0 measured there with debsums (the count was kept, not
+the list). End to end with the 0.42.0 code on that machine, the section alone
+(`--check=package_integrity`, 441 s): "21 packaged file(s) differ from the
+manager's recorded digest", and the section no longer marked unread. On the
+workstation, a full audit: 28 files, the score `9/10` where 0.40.0 said `≤ 9/10`. `dpkg --verify` exits 0 when files differ (measured): a
+non-zero exit with no output is now "not verified"
+(`package_integrity.verifier_failed`), never "clean". A limit both verifiers
+share: a package that records no digests (a locally built one, say) has nothing to
+compare, so its files are not checked — measured: none of the 3085 packages on
+the workstation ships files without digests.
+
+What changes for such a host: the section is read, so it no longer makes the
+score a ceiling — `score_is_upper_bound` and the list of unverified sections in
+the JSON output change, and **`--target N`, which always exited 4 there (the
+gate fails closed on an uncertain score), now exits 0, 1 or 2 when the score
+reaches N**. The number does not change: the section is INFO only. The run is
+long (minutes), as `--exhaustive` says.
+
+### 2. The delete command of an orphan ufw rule deletes it
+
+For `57621 ALLOW IN 192.168.1.0/24` (a Spotify Connect rule on the
+workstation), BOB proposed `sudo ufw delete allow 57621`. Measured on the test
+Mint with the two workstation rules reproduced, comments included: ufw
+answered "Could not delete non-existent rule", **exited 0**, and both rules
+stayed — ufw deletes only the rule whose every field matches, and that one has
+a source.
+
+The command is now rebuilt from the whole line: action, interface, source and
+source port, destination, port and protocol, application profile, `log` /
+`log-all`. Checked against the real ufw (0.36.2) in a throw-away user and
+network namespace, the host's firewall untouched: 27 rule configurations (ports, ranges, lists, sources and source ports, destinations, interfaces, profiles, `log`, `limit`, `deny`, an IPv6 source), each command
+deleted exactly its rule, and its `(v6)` copy where it had one, nothing else. A rule that also
+covers a port where something listens gets no command (deleting it would close
+that port too, said); a line BOB cannot rewrite says to delete it by number
+(measured: ufw asks for confirmation, the `(v6)` copy has its own number).
+
+### 3. Regenerating an RSA host key: the old pair kept, sshd tested
+
+The command for a short or weak RSA host key was `ssh-keygen -t rsa -b 4096 -f
+<key> -N '' && systemctl restart ssh`. Measured on the test Mint (OpenSSH
+9.6p1, a throw-away directory): on an existing key ssh-keygen asks "Overwrite
+(y/n)?"; answered yes, it overwrote the key with no copy left, and sshd
+restarted untested; run from a script (stdin closed) it exited 1 and nothing
+changed. `--fix --apply` does not run this command itself — it chains commands
+with `&&`, which BOB always leaves to the operator — so this is the command a
+person copies. It now moves the pair to `<key>.bob-old`, generates the new one,
+runs `sshd -t`, then restarts — measured on a closed stdin: exit 0, the old pair
+kept with its fingerprint, the new key 4096 bits, both files mode 600. It is not
+a transaction: if a step fails, the chain stops there, sshd is not restarted, and
+what was already moved (the private key, or the pair) waits in `<key>.bob-old`
+and `<key>.pub.bob-old` to be put back by hand. The 3072-bit notice also named `/etc/ssh/ssh_host_rsa_key` whatever file
+sshd serves; it names the served one now.
+
+### 4. UDP ports above 32767: still not judged, no longer hidden
+
+The listening-ports overview and the ports check dropped every UDP port above
+32767 without a word (kernel-assigned, "no security relevance"), while the IPv6
+section counted them: the workstation's IPv6 section named `39479/udp`, absent
+from the overview of the same run. Measured with an ordinary account:
+`[::]:39479` and `0.0.0.0:53050` belong to avahi (uid 110). They are now listed
+in the overview, and an INFO line names them with their holder as not judged —
+"the verdict that the listening ports are filtered does not include them". No
+point; attack surface and run comparison unchanged.
+
+### 5. CIS: the host's own benchmark
+
+The line under a finding and the code in the summary box cited CIS Ubuntu 22.04
+on every host. They now cite the benchmark that covers the host when a
+citation exists for it, read from `/etc/os-release`: Ubuntu and Debian by their
+version, a derivative by the base it declares — Linux Mint 22 says
+`UBUNTU_CODENAME=noble`, so CIS Ubuntu 24.04 (the workstation's su finding now
+reads "CIS Ubuntu 24.04 — 5.2.7"); LMDE by `DEBIAN_CODENAME`. An unknown
+codename or a distribution with no citation (Kali) keeps the primary
+reference: a number is never guessed. The module-blacklist text no longer cites
+"CIS Ubuntu 22.04 §1.1.1 / §3.2" by hand.
+
+### 6. Texts brought back to what BOB measures
+
+- "Internal system port — no risk" → "Port of a recognised system service,
+  nothing counted";
+- "All SUID binaries are known-safe" → "Every SUID binary is on BOB's
+  reference list … — their content is not checked here";
+- ClamAV: "no account can turn the antivirus off" → "an unprivileged account
+  cannot stop it with the SHUTDOWN command" (what was measured);
+- auditd: the starter rules "log changes to the most critical paths (-p wa),
+  not reads"; "tamper-evident log" removed;
+- Samba signing: "stops an NTLM authentication from being relayed to this SMB
+  server — not to other services or hosts";
+- Samba: "Designed for trusted networks (LAN, VPN)" instead of "exclusively for
+  local networks";
+- Telnet: "replace with SSH immediately" (on a service that does not run) →
+  "SSH does the same job, encrypted";
+- remote syslog "keeps a copy off the host … provided the remote server is
+  protected too", instead of "ensures logs are preserved";
+- without AIDE a change "can go unnoticed", instead of "will go undetected";
+- unattended-upgrades: says what was looked for ("no other automatic update
+  mechanism BOB knows was found"), and that a tool it does not know may still
+  apply patches;
+- password expiry: "No password expiry by default for new accounts
+  (PASS_MAX_DAYS = … in /etc/login.defs)" — only login.defs is read; each
+  existing account's value in `/etc/shadow` is not, and that is said;
+- the network context "Local network only" → "No public address on the host".
+
+### 7. Posture labels
+
+BOB audits a hardening posture, not threats (doctrine, principle 12). On
+screen and in the reports: the group and domain "THREAT DETECTION" →
+"DETECTION TOOLS"; "Risk level" → "Hardening gap"; a service card's "Risk
+context" → "Service sensitivity", "Potential threat" → "If the service is
+reached"; in the detailed report "RISK CONTEXT — DETECTED SERVICES" → "SERVICE
+SENSITIVITY — DETECTED SERVICES". The JSON and CSV field `risk` is unchanged.
+
+### 8. The French output in French
+
+A language pass over the French locale ("bruteforce", "credentials",
+"bindent", "service backing", "blocklist", "Top IP"… replaced), the service
+catalogue's descriptions shown in French ("Samba (partage Windows)", "Ollama
+(modèle de langage local)") — the catalogue label stays the identifier
+(`--explain`, JSON, run comparison) —, the detailed report's service cards with
+the shown label and "not running" where the screen said it, "(+N more)" written
+by hand in ten places now translated — and the bare "(+N)" of seven more lists too (five
+keep the bare number: their text is rebuilt in another language from the finding's
+values, where a translated word would carry French into an English report) — and the threat line's colon aligned with
+the exposure line's.
+
+### 9. Tests and tooling
+
+**Tests** 23585 → **23944**, mutations 2240 → **2293**, all killed. A test
+state leak found while assembling: a test of `--diff` left the screen output
+silenced for the tests after it (also on 0.41.0, hidden by the order of the
+suite); each test now starts and ends with the output module restored. New test
+files: `test_v0420_orphan_delete.py` (the 27 measured ufw lines),
+`test_v0420_dpkg_verify.py` (the measured output), `test_v0420_high_udp_said.py`,
+`test_v0420_rsa_host_key_regen.py`, `test_v0420_host_benchmark.py`,
+`test_v0420_more_items_translated.py`, `test_v0420_bounded_wording.py`,
+`test_v0420_posture_labels.py`, `test_v0420_french_wording.py`,
+`test_v0420_report_service_cards.py`, `test_v0420_output_state_restored.py`.
+
 ## [0.41.0] — 2026-11-22
 
 **A minor release that clears the backlog: the directories BOB creates in a

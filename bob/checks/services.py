@@ -41,7 +41,7 @@ from bob.checks._run import (
     package_installed,
     path_exists,
 )
-from bob.registry import Service, ServiceRegistry
+from bob.registry import Service, ServiceRegistry, shown_label
 from bob.scoring import CheckResult
 from bob.sysinfo import _is_private_or_loopback_ipv4, _is_private_or_loopback_ipv6
 from bob._atomic import read_text_capped
@@ -475,11 +475,11 @@ def _check_single_service(
             # vector.
             result.info(
                 key="services.state.installed_inactive_critical",
-                message=_t("services.state.installed_inactive_critical", label=snap.label),
+                message=_t("services.state.installed_inactive_critical", label=shown_label(snap.label, _t)),
             )
         else:
             result.info(
-                message=_t("services.state.inactive_disabled", label=snap.label),
+                message=_t("services.state.inactive_disabled", label=shown_label(snap.label, _t)),
                 key="services.state.inactive_disabled",
             )
         return
@@ -489,7 +489,7 @@ def _check_single_service(
     if snap.state == ServiceState.CONDITION_UNMET:
         result.info(
             key="services.state.condition_unmet",
-            message=_t("services.state.condition_unmet", label=snap.label),
+            message=_t("services.state.condition_unmet", label=shown_label(snap.label, _t)),
             detail=_t("services.state.condition_unmet_detail"),
         )
         return
@@ -500,7 +500,7 @@ def _check_single_service(
         # +1pt so it counts in the score.
         result.warn_with_deduction(
             key="services.state.active_disabled",
-            message=_t("services.state.active_disabled", label=snap.label),
+            message=_t("services.state.active_disabled", label=shown_label(snap.label, _t)),
             points=1,
             nature="improvement",
         )
@@ -526,7 +526,7 @@ def _check_single_service(
         result.info(
             key="services.state.socket_activated",
             message=_t("services.state.socket_activated",
-                       label=snap.label,
+                       label=shown_label(snap.label, _t),
                        trigger=snap.activation_trigger or "a socket"),
             detail=_t("services.state.socket_activated_detail"),
         )
@@ -534,7 +534,7 @@ def _check_single_service(
     if snap.state == ServiceState.INACTIVE_ENABLED:
         result.warn_with_deduction(
             key="services.state.inactive_enabled",
-            message=_t("services.state.inactive_enabled", label=snap.label),
+            message=_t("services.state.inactive_enabled", label=shown_label(snap.label, _t)),
             detail=_t("services.state.inactive_enabled_detail"),
             points=1,
             nature="improvement",
@@ -791,7 +791,7 @@ def _check_port_exposure(
                 key=_exposure_key,
             )
         result.add_deduction(
-            reason=_t("deduction.service_open_world", label=snap.label, port=port),
+            reason=_t("deduction.service_open_world", label=shown_label(snap.label, _t), port=port),
             points=base_points,
             context=network_context,
             key=_exposure_key,
