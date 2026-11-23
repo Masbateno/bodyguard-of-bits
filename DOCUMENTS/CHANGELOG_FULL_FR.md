@@ -6,7 +6,7 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
-## [0.43.0] — 23-11-2026
+## [0.43.0] — 24-11-2026
 
 **Une version mineure : périmètres d'équipe et journaux d'opérations listées ;
 un seuil de taille pour les rapports ; les fichiers empaquetés sans empreinte

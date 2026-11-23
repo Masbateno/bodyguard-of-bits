@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 ---
 
-## [0.43.0] — 2026-11-23
+## [0.43.0] — 2026-11-24
 
 **A minor release: team perimeters and journals of listed operations; a size
 threshold for reports; packaged files with no recorded digest said; screens

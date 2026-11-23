@@ -95,7 +95,7 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
-* Mon Nov 23 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.43.0-1
+* Tue Nov 24 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.43.0-1
 - Team perimeters (--team, --manage-team): a confirmation and
   accountability mechanism, not access control. Chained local journals
   of listed operations (cron, admin), shown by --manage-logs and
