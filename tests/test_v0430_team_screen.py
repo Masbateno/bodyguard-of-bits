@@ -135,16 +135,33 @@ def test_create_the_team_on_the_screen(monkeypatch):
     assert any("No team declared" in f for f in scr.frames)
 
 
-def test_add_a_member_with_its_attributes(monkeypatch):
+def only_me_on_the_host(monkeypatch, tmp_path):
+    """The host's login accounts, fixed: ME alone. Found by the CI (23 November
+    2026): these tests took the first account of the real host's list and
+    typed ME's letters on the screen — green where ME was the only login
+    account and spelt no key (the developer's), red on the runner ("runner": u unmarks,
+    and another account sorts first)."""
+    from types import SimpleNamespace
+    defs = tmp_path / "login.defs"
+    defs.write_text("UID_MIN 1000\nUID_MAX 60000\n")
+    monkeypatch.setattr(team, "_LOGIN_DEFS", defs)
+    monkeypatch.setattr(team, "_accounts", lambda: [
+        SimpleNamespace(pw_name="root", pw_uid=0, pw_shell="/bin/bash"),
+        SimpleNamespace(pw_name=ME, pw_uid=1000, pw_shell="/bin/bash")])
+
+
+def test_add_a_member_with_its_attributes(monkeypatch, tmp_path):
+    only_me_on_the_host(monkeypatch, tmp_path)
     declare()
-    run(monkeypatch, ENTER, "n", ME, ENTER, DOWN, " ", ENTER, ESC, ESC, "q")
+    run(monkeypatch, ENTER, "n", ENTER, DOWN, " ", ENTER, ESC, ESC, "q")
     assert team.load().members[ME] == ["audit"]
     assert [e.data["op"] for e in J.load("team").events] == ["init", "grant"]
 
 
-def test_outside_the_perimeter_the_question_is_asked_on_the_screen(monkeypatch, capsys):
+def test_outside_the_perimeter_the_question_is_asked_on_the_screen(monkeypatch, capsys, tmp_path):
+    only_me_on_the_host(monkeypatch, tmp_path)
     declare(dave=["audit"])
-    scr = run(monkeypatch, ENTER, "n", ME, ENTER, DOWN, " ", ENTER, "n", ESC, ESC, "q", actor="dave")
+    scr = run(monkeypatch, ENTER, "n", ENTER, DOWN, " ", ENTER, "n", ESC, ESC, "q", actor="dave")
     assert ME not in team.load().members
     assert [e.data["outcome"] for e in J.load("team").events if e.kind == "attempt"] == ["abandoned"]
     assert capsys.readouterr().err == ""                 # nothing written over the screen

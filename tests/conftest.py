@@ -6,9 +6,34 @@ Auto-applied fixtures here run for every test in tests/.
 
 from __future__ import annotations
 
+import itertools
 import os
 
 import pytest
+
+#: v0.43.0 — numbers the directories the autouse fixtures below hand each
+#: test (see _host_dir).
+_HOST_DIRS = itertools.count()
+
+
+@pytest.fixture(scope="session")
+def _host_dirs_root(tmp_path_factory):
+    """One directory for the whole run, under pytest's own temporary root."""
+    return tmp_path_factory.mktemp("host-dirs")
+
+
+def _host_dir(root, name: str):
+    """A fresh empty directory for one test, made with a single mkdir.
+
+    Found by the CI (23 November 2026): three autouse fixtures each called
+    ``tmp_path_factory.mktemp`` for every test. pytest numbers those
+    directories by listing their parent on every call — measured 0.7 ms at
+    500 entries, 8.9 ms at 10 000 — and some 25 000 tests left tens of
+    thousands of entries there: the suite went from 9-16 minutes to 25, and
+    three Python versions hit the job's 30-minute limit."""
+    d = root / f"{name}-{next(_HOST_DIRS)}"
+    d.mkdir()
+    return d
 
 
 @pytest.fixture(autouse=True)
@@ -95,22 +120,22 @@ def _no_live_ssh_session_for_fail2ban(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _team_declaration_out_of_the_host(tmp_path_factory, monkeypatch):
+def _team_declaration_out_of_the_host(_host_dirs_root, monkeypatch):
     """v0.43.0 (B-045) — no test reads the host's ``/etc/bob/team.conf``: a
     declaration on the machine running the suite would put a question before
     every audit a test runs. Each test sees none, unless it writes its own."""
     from bob import team
-    monkeypatch.setattr(team, "CONF", tmp_path_factory.mktemp("team") / "team.conf")
+    monkeypatch.setattr(team, "CONF", _host_dir(_host_dirs_root, "team") / "team.conf")
     monkeypatch.setattr(team, "_CONF_UID", os.geteuid())
     # The same for what is recorded (bob/journals.py): the host's settings
     # would switch journals off under the suite.
     from bob import journals
-    monkeypatch.setattr(journals, "SETTINGS", tmp_path_factory.mktemp("journals") / "journals.conf")
+    monkeypatch.setattr(journals, "SETTINGS", _host_dir(_host_dirs_root, "journals") / "journals.conf")
     monkeypatch.setattr(journals, "_SETTINGS_UID", os.geteuid())
 
 
 @pytest.fixture(autouse=True)
-def _fix_journal_out_of_the_host(tmp_path_factory, monkeypatch):
+def _fix_journal_out_of_the_host(_host_dirs_root, monkeypatch):
     """v0.40.0 — every ``--fix --apply`` writes the journal of fixes and sends
     its witness to the system log. No test may write the host's
     ``/var/log/bob`` or send a line to its journald — not even a suite run as
@@ -118,7 +143,7 @@ def _fix_journal_out_of_the_host(tmp_path_factory, monkeypatch):
     running the tests, and the system log socket is one that does not exist.
     A test about the journal itself sets its own."""
     from bob import fix_journal
-    monkeypatch.setattr(fix_journal, "DIR", tmp_path_factory.mktemp("fix-journal") / "bob")
+    monkeypatch.setattr(fix_journal, "DIR", _host_dir(_host_dirs_root, "fix-journal") / "bob")
     monkeypatch.setattr(fix_journal, "_JOURNAL_UID", os.geteuid())
     monkeypatch.setattr(fix_journal, "_group_id", lambda: os.getegid())
     monkeypatch.setattr(fix_journal, "_SYSLOG_SOCKET", fix_journal.Path("/nonexistent/bob-test-log"))
