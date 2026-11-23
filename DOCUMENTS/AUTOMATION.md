@@ -446,7 +446,146 @@ Use this when the displayed score doesn't match your intuition and you want to k
 
 ---
 
+## Team perimeters
+
+*Since 0.43.0.* Several people run BOB on the same host, with different levels
+of trust. The team leader — the **master** — declares what each account is
+expected to do with BOB. **BOB prevents nothing**: an action outside the
+declared perimeter of the account behind it is announced, asked again, and
+written to the team journal, whether it is then carried out or abandoned. It
+measures a gap to a declaration; it does not judge a fault. What an account
+may really do stays Linux's (accounts, groups, sudoers).
+
+Without a declaration, nothing changes: no question, no journal, no line.
+
+### Declaring the team
+
+```bash
+sudo bob --team init                          # your login account becomes the master
+sudo bob --team grant carol audit,note,fix:firewall_network
+sudo bob --team grant dave audit
+sudo bob --team revoke carol fix:firewall_network
+sudo bob --team remove dave
+bob --team                                    # the declaration, and your own perimeter
+sudo bob --manage-team                        # the same, on a full screen
+```
+
+`--manage-team` is a full screen like `--manage-logs`: the team (the master,
+each member's attributes as boxes to tick — Space ticks, Enter applies; `n`
+adds an account, `d` removes one) and what is recorded; the journals are
+read in `--manage-logs`, the landing screen's third choice. Each
+change calls the same code as the commands, with the same checks, the same
+traces, and the same question outside a declared perimeter — asked on the
+screen. Without a terminal (a pipe, a script) it offers the same as a
+numbered menu.
+
+The declaration lives in `/etc/bob/team.conf` (root's, `0644`: everyone can
+read their perimeter) and is written by BOB only. Each write is recorded in
+the team journal with the file's digest; a declaration changed by hand is
+said at every action, written once to the journal, and still applied.
+
+| Attribute | Covers |
+|---|---|
+| `audit` | any audit run, `--exhaustive`, `--watch`, `--diff` included |
+| `fix:<domain>` | `--fix --apply` commands answering a finding of that score domain (`firewall_network`, `exposure_services`, `access_control`, `system_hardening`, `health_resilience`, `detection`); `fix:*` for all |
+| `note` | adding a note, editing or withdrawing one's own notes (`--manage-logs`) |
+| `note-autres` | editing or withdrawing another account's notes; purging notes |
+| `purge` | deleting reports (`--manage-logs`), `--reset-baseline` |
+| `config` | `--ignore`, `--unignore`, `--reconfigure`, `--install-cron`, `--manage-cron`, `--test-email`, `--test-webhook`, `--install-completion` |
+| `equipe` | `--team grant`, `revoke`, `remove` |
+
+The master holds every attribute. Reading (`--help`, `--explain`,
+`--history`, `--fix-journal`, `--team`, the views of `--manage-logs`) needs
+none.
+
+### Who acts
+
+The account BOB names is the one the kernel's login uid gives — the session
+that ran `sudo`, not root. A direct root login is an account like any other:
+not declared, all its actions are outside. With no login session (cron, a
+service), the action is **not attributed**: carried out, and written as such.
+
+### Outside the declared perimeter
+
+```
+⚠ a --fix --apply command: outside the perimeter declared for dave — it does
+  not include "fix:detection". If carried out, it is written to the team
+  journal as outside the declared perimeter (master: alice).
+  Carry it out anyway? [y/N]
+```
+
+- **y**: carried out, written *confirmed*; **anything else**: not carried out,
+  written *abandoned*.
+- `-y` does not answer this question — with `--fix --apply -y`, each command
+  outside the perimeter is still asked.
+- Without a terminal to ask (a script), the action is carried out and written
+  *not confirmed*.
+- The question goes to stderr: a `--json` output stays clean.
+
+### The journals: what was done, whoever did it
+
+For follow-up, an action leaves a trace **whoever runs it, the master
+included** — "outside the declared perimeter" is marked on top of it. One
+journal per domain, kept even without a team:
+
+| Journal | Holds |
+|---|---|
+| `team` | the declaration's changes, attempts outside a declared perimeter, actions with no login session, a declaration changed outside BOB |
+| `cron` | scheduled audits created, changed (schedule, addresses), removed; addresses added to or removed from the address book |
+| `admin` | `--ignore`, `--unignore`, `--reconfigure`, `--reset-baseline`, `--test-email`, `--test-webhook`, `--install-completion` when they succeed; reports deleted in `--manage-logs`; every change of what is recorded |
+
+```bash
+sudo bob --journals                       # what is recorded, each journal's chain
+sudo bob --journals show cron             # one journal (exit 0 intact, 2 broken, 4 unreadable)
+sudo bob --journals off rapports          # stop recording report deletions
+sudo bob --team-journal                   # = --journals show team
+```
+
+What can be switched off: `cron`, `carnet` (address book), `config`,
+`rapports`. **Never**: the team journal, and the changes of this setting —
+switching a journal off is itself written to the admin journal, so it cannot
+be done silently. Only the master sets it (`equipe`); anyone else is asked
+and marked, like any action outside their perimeter. A settings file
+(`/etc/bob/journals.conf`) changed by hand is said, written once, and still
+applied; one that cannot be read switches nothing off.
+
+Each journal (`/var/log/bob/<name>.journal`) is kept like the journal of
+`--fix --apply` ([FIX_JOURNAL.md](FIX_JOURNAL.md)): root's, `0640` group adm,
+each line chained to the one before, append-only where the file system allows
+it, each line also sent to the system log (`bob-team`, `bob-cron`,
+`bob-admin`). A line changed shows at the next one; the last line is the
+system log witness's to vouch for. In `--manage-logs`, the landing screen's
+third choice opens them: each line reads "action — details", the action in the
+colour of its effect (green adds or turns on, red removes, turns off or alarms,
+yellow the rest) and the account in cyan ([CONVENTIONS.md](CONVENTIONS.md#2-colour--curses-screens)); the text outputs carry no colour codes.
+
+### What BOB does not see
+
+BOB sees only its own actions: an edit of `sshd_config` by hand, a `ufw` run by
+hand, escape it — that is auditd's business. Root can rewrite the declaration
+and the journal; the chain and the system-log witness make a rewrite
+visible, not impossible.
+
+---
+
 ## Report management
+
+**A ceiling on the reports' size** (since v0.43.0). BOB never deletes a report
+on its own unless a ceiling is set — useful on a small machine (a Pi Zero's SD
+card) where a scheduled audit adds a report every day:
+
+```bash
+sudo bob --log-max-size=50M     # or 500K, 2G; off removes it (the default)
+```
+
+After each new report, the oldest reports of the folder where reports are
+written are deleted until it is back under the ceiling (older folders are not
+touched); a report counts with the files beside it (notes, state). Never deleted: the report just written, and a report that
+carries notes (its notes would go with it) — when only those are left above
+the ceiling, BOB says so. Each deletion is written to the admin journal. Setting
+a ceiling warns that, set too low, it limits how much proof is kept, and asks to
+confirm. In `--manage-logs`, the folder list shows the ceiling and the space
+used, and `p` sets it.
 
 To list and delete generated reports:
 
@@ -538,6 +677,7 @@ nested screen, so `Esc` returns to the list and `q` does not quit:
 | `c` | Show / hide the comparison with the previous report |
 | `h` | Show / hide the history of this host's reports |
 | `b` | Show / hide the computation of the score, as `--breakdown` prints it (since v0.40.0) |
+| `t` | Show everything at once — the notes with their journal, the comparison, the history, the computation, the line numbers (full log); again, hide them all (since v0.43.0) |
 | `#` | Number the report's lines (full log only) |
 | `Esc` | Return to report list |
 

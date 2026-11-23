@@ -1,7 +1,7 @@
 .\" Manpage for bob (Bodyguard Of Bits)
 .\" Format: man-7 (groff_man). Render with: man -l man/bob.1
 .\" Contact: cedricclauzel@mailo.com to correct errors or typos.
-.TH BOB 1 "2026-11-22" "BOB 0.42.0" "User Commands"
+.TH BOB 1 "2026-11-23" "BOB 0.43.0" "User Commands"
 .SH NAME
 bob \- Bodyguard Of Bits, a Linux hardening auditor with CIS benchmark mapping
 .
@@ -265,6 +265,100 @@ shown, 4 when something could not be checked. Read as root or as a member of
 the
 .B adm
 group.
+.TP
+.BI "\-\-team [" ACTION ]
+Team perimeters (0.43.0). Without arguments: show the declaration
+.RI ( /etc/bob/team.conf )
+and your own perimeter. With root,
+.I ACTION
+is one of
+.BR init ,
+which names the account of your login session as master;
+.BI "grant " "ACCOUNT ATTR" [, ATTR ]
+and
+.BI "revoke " "ACCOUNT ATTR" [, ATTR ]\fR;
+.BI "remove " ACCOUNT\fR.
+The attributes:
+.BR audit ,
+.BR note ,
+.BR note\-autres ,
+.BI fix: domain
+.RB ( fix:* ),
+.BR purge ,
+.BR config ,
+.BR equipe .
+BOB prevents nothing: an action outside the declared perimeter of the
+account behind it is announced and asked again (a question
+.B \-y
+does not answer), then written to the team journal, carried out or
+abandoned; without a terminal it is carried out and written as not
+confirmed. Without a declaration, nothing changes. BOB sees only its own
+actions; the perimeter is a declaration, not a permission.
+.TP
+.B \-\-team\-journal
+Print the team journal
+.RI ( /var/log/bob/team.journal ,
+root's): actions outside a declared perimeter, actions with no login session,
+changes to the declaration. Chained and witnessed like the journal of
+.BR "\-\-fix \-\-apply" .
+Exits 0 when intact, 2 when the chain is broken, 4 when it cannot be read.
+.TP
+.BI "\-\-journals [" ACTION ]
+What BOB records, whoever acts (0.43.0), in one journal per domain under
+.IR /var/log/bob :
+.B team
+(the team declaration's changes, attempts outside a declared perimeter,
+actions with no login session),
+.B cron
+(scheduled audits created, changed, removed; addresses added to or removed
+from the address book),
+.B admin
+(configuration changes, deleted reports, and every change of what is
+recorded). Without arguments: what is recorded and each journal's chain.
+.BI "on " CAT [, CAT ]
+and
+.BI "off " CAT [, CAT ]
+(root) switch a category
+.RB ( cron ,
+.BR carnet ,
+.BR config ,
+.BR rapports );
+the team journal and the changes of this setting are always written.
+.BI "show " NAME
+prints a journal (exit 0 intact, 2 broken, 4 unreadable).
+.TP
+.B \-\-manage\-team
+The team on a full screen, like
+.B \-\-manage\-logs
+(0.43.0): it offers what
+.B \-\-team
+and
+.B \-\-journals
+do \(em see the declaration and your perimeter, create the team, grant,
+revoke, remove, set what is recorded (the journals are read in
+.BR \-\-manage\-logs ).
+Each step calls the
+same code as the command: the same checks, the same questions outside a
+declared perimeter (asked on the screen), the same traces. Without a
+terminal, a numbered menu does the same.
+.TP
+.BI \-\-log\-max\-size= SIZE
+A ceiling on the size of the audit reports' folder (0.43.0):
+.I SIZE
+is
+.BR 50M ,
+.BR 500K ,
+.BR 2G ,
+a number of bytes, or
+.B off
+(the default: no ceiling). Once set, after each new report the oldest
+reports are deleted until the folder is back under it; the report just
+written and any report carrying notes are never deleted, and each deletion is
+written to the admin journal. Setting it warns that a ceiling too low limits
+how much proof is kept, and asks to confirm. Also set with
+.B p
+in the folder list of
+.BR \-\-manage\-logs .
 .TP
 .B \-\-breakdown ", " \-B
 Run the audit without its usual terminal output and print the complete score

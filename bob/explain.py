@@ -1303,7 +1303,7 @@ def _detail_screen(stdscr, key: str, t) -> None:
         h, w    = stdscr.getmaxyx()
         content = _build_lines(w)
         from bob.tui import _chrome as _ch
-        body_h  = max(1, h - 1 - _ch.chrome_height(t, _DETAIL_KEYS, w))
+        body_h  = max(1, h - _ch.BODY_TOP - _ch.chrome_height(t, _DETAIL_KEYS, w))
         max_scroll = max(0, len(content) - body_h)
 
         stdscr.erase()
@@ -1325,7 +1325,7 @@ def _detail_screen(stdscr, key: str, t) -> None:
                 break
             text, attr = content[idx]
             try:
-                stdscr.addstr(row + 1, 0, text[: w - 1], attr)
+                stdscr.addstr(row + _ch.BODY_TOP, 0, text[: w - 1], attr)
             except curses.error:
                 pass
 
@@ -1387,6 +1387,7 @@ def _draw_rows(stdscr, curses, rows, selected, scroll, list_h, w, has_color) -> 
     a folder or section heading gets the accent colour, the selected key the
     selection colour, the rest normal.
     """
+    from bob.tui import _chrome as _ch
     for row in range(list_h):
         idx = scroll + row
         if idx >= len(rows):
@@ -1402,7 +1403,7 @@ def _draw_rows(stdscr, curses, rows, selected, scroll, list_h, w, has_color) -> 
             attr = curses.color_pair(3) if has_color else 0
             line = text[: w - 1]
         try:
-            stdscr.addstr(row + 1, 0, line[: w - 1], attr)
+            stdscr.addstr(row + _ch.BODY_TOP, 0, line[: w - 1], attr)
         except curses.error:
             pass
 
@@ -1448,7 +1449,7 @@ def _family_picker(stdscr, families, t, selected=0) -> tuple:
     while True:
         h, w = stdscr.getmaxyx()
         from bob.tui import _chrome as _ch
-        list_h = max(1, h - 1 - _ch.chrome_height(t, _FAMILY_KEYS, w))
+        list_h = max(1, h - _ch.BODY_TOP - _ch.chrome_height(t, _FAMILY_KEYS, w))
         scroll = _visible_window(selected, scroll, list_h)
 
         stdscr.erase()
@@ -1509,7 +1510,7 @@ def _version_picker(stdscr, distro_label, benches, t) -> None:
     while True:
         h, w = stdscr.getmaxyx()
         from bob.tui import _chrome as _ch
-        list_h = max(1, h - 1 - _ch.chrome_height(t, _VERSION_KEYS, w))
+        list_h = max(1, h - _ch.BODY_TOP - _ch.chrome_height(t, _VERSION_KEYS, w))
         scroll = _visible_window(selected, scroll, list_h)
 
         stdscr.erase()
@@ -1577,7 +1578,7 @@ def _key_picker(stdscr, family_label, sections, t) -> None:
     while True:
         h, w = stdscr.getmaxyx()
         from bob.tui import _chrome as _ch
-        list_h = max(1, h - 1 - _ch.chrome_height(t, _KEY_PICKER_KEYS, w))
+        list_h = max(1, h - _ch.BODY_TOP - _ch.chrome_height(t, _KEY_PICKER_KEYS, w))
         # Pull in the section heading immediately above the selected key.
         if selected < scroll:
             scroll = selected - 1 if selected > 0 and rows[selected - 1][1] == "section" else selected

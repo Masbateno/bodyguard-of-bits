@@ -299,13 +299,15 @@ def _open_dir() -> int:
     return dfd
 
 
-def _open_locked() -> "tuple[int, int]":
+def _open_locked(name: "str | None" = None) -> "tuple[int, int]":
+    """v0.43.0 — *name*: another journal in the same directory (the team
+    journal, bob/team_journal.py), written the same way."""
     if os.geteuid() != _JOURNAL_UID:
         raise FixJournalError("needs_root")
     dfd = _open_dir()
     try:
         try:
-            fd = os.open(NAME, os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC,
+            fd = os.open(name or NAME, os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC,
                          _JOURNAL_MODE, dir_fd=dfd)
         except OSError as exc:
             if exc.errno == errno.ELOOP:
@@ -328,16 +330,16 @@ def _open_locked() -> "tuple[int, int]":
         raise
 
 
-def _last_digest(fd: int) -> str:
+def _last_digest(fd: int, genesis: "str | None" = None) -> str:
     """The digest of the journal's last line, the genesis for an empty one."""
     size = os.fstat(fd).st_size
     if size == 0:
-        return _GENESIS
+        return genesis or _GENESIS
     window = min(size, 1 << 20)
     data = os.pread(fd, window, size - window).decode("utf-8", errors="replace")
     lines = [ln for ln in data.splitlines() if ln.strip()]
     if not lines:
-        return _GENESIS
+        return genesis or _GENESIS
     try:
         event = json.loads(lines[-1])
     except ValueError:
@@ -390,12 +392,13 @@ def _has_witness() -> bool:
         return False
 
 
-def _send_witness(event: dict, digest: str) -> None:
+def _send_witness(event: dict, digest: str, tag: "str | None" = None,
+                  describe=None) -> None:
     """One line in the system log for *event*: best effort, never fatal."""
     try:
         import syslog
-        syslog.openlog(WITNESS_TAG, syslog.LOG_PID, syslog.LOG_AUTHPRIV)
-        syslog.syslog(syslog.LOG_NOTICE, witness_message(event, digest))
+        syslog.openlog(tag or WITNESS_TAG, syslog.LOG_PID, syslog.LOG_AUTHPRIV)
+        syslog.syslog(syslog.LOG_NOTICE, (describe or witness_message)(event, digest))
         syslog.closelog()
     except Exception:  # noqa: BLE001 — a witness that cannot be written must not stop a fix
         pass
@@ -415,13 +418,17 @@ def witness_message(event: dict, digest: str) -> str:
     return f"{head} of={event.get('of')} by={by}"
 
 
-def _append(event: dict) -> dict:
-    fd, dfd = _open_locked()
+def _append(event: dict, *, name: "str | None" = None, genesis: "str | None" = None,
+            tag: "str | None" = None, describe=None) -> dict:
+    """Write *event* as the journal's next line. v0.43.0 — *name*, *genesis*,
+    *tag* and *describe* (the witness line) name another journal kept the same
+    way; left out, this one."""
+    fd, dfd = _open_locked(name)
     try:
         event.update(v=_VERSION, at=_now(), by=_operator(), host=socket.gethostname())
         event["witness"] = "syslog" if _has_witness() else "none"
         event["append_only"] = _set_append_only(fd)
-        event["prev"] = _last_digest(fd)
+        event["prev"] = _last_digest(fd, genesis)
         line = json.dumps(event, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
         os.write(fd, line.encode())
         os.fsync(fd)
@@ -429,7 +436,10 @@ def _append(event: dict) -> dict:
         os.close(fd)
         os.close(dfd)
     if event["witness"] == "syslog":
-        _send_witness(event, _digest(_canonical(event)))
+        if tag is None and describe is None:
+            _send_witness(event, _digest(_canonical(event)))
+        else:
+            _send_witness(event, _digest(_canonical(event)), tag, describe)
     return event
 
 
@@ -438,10 +448,10 @@ def _operator() -> dict:
     return operator()
 
 
-def check_writable() -> None:
+def check_writable(name: "str | None" = None) -> None:
     """Raise FixJournalError when the journal cannot take an entry — asked
     before the first command, so that no command runs without one."""
-    fd, dfd = _open_locked()
+    fd, dfd = _open_locked(name)
     os.close(fd)
     os.close(dfd)
 

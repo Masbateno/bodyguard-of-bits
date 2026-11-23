@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import os
 import signal
+import stat
 import subprocess
 from dataclasses import dataclass, field
 
@@ -79,6 +80,16 @@ _VERIFIERS: "dict[str, tuple[str, tuple[str, ...]]]" = {
 _FALLBACK: "dict[str, tuple[str, tuple[str, ...]]]" = {
     "apt":    ("dpkg", ("dpkg", "--verify")),
 }
+
+
+#: v0.43.0 (B-046) — dpkg's database: the status file (installed packages and
+#: their conffiles) and, per package, the files it placed (``.list``) and the
+#: digests it recorded (``.md5sums``).
+_DPKG_STATUS = "/var/lib/dpkg/status"
+_DPKG_INFO = "/var/lib/dpkg/info"
+
+#: How many packages to name in the "no recorded digest" line before eliding.
+_SAMPLE_PACKAGES = 8
 
 
 def _is_config_path(path: str) -> bool:
@@ -143,11 +154,15 @@ def _parse_rpm(out: str) -> "list[str]":
 
 
 def _parse_debsums(out: str) -> "list[str]":
-    """``debsums -c`` prints one changed-file path per line; drop /etc edits."""
-    return [
-        p for p in (ln.strip() for ln in out.splitlines())
-        if p.startswith("/") and not _is_config_path(p)
-    ]
+    """``debsums -c`` prints one changed-file path per line; drop /etc edits.
+
+    v0.43.0 — a ``.md5sums`` that records absolute paths (one third-party package
+    on the developer's workstation does) makes debsums print ``//usr/bin/zcat``
+    (measured in a Mint 22.3 container, debsums 3.0.2.1): the path is brought
+    back to one leading slash, so ``//etc/…`` is still recognised as /etc.
+    """
+    paths = ("/" + ln.strip().lstrip("/") for ln in out.splitlines() if ln.strip().startswith("/"))
+    return [p for p in paths if not _is_config_path(p)]
 
 
 def _parse_apk(out: str) -> "list[str]":
@@ -213,6 +228,97 @@ def _parse_dpkg_verify(out: str) -> "list[str]":
     return changed
 
 
+def _dpkg_installed(status_text: str) -> "tuple[set[tuple[str, str]], set[str]]":
+    """Installed ``(package, architecture)`` pairs and every conffile path."""
+    installed: "set[tuple[str, str]]" = set()
+    conffiles: "set[str]" = set()
+    pkg = arch = status = ""
+    in_conffiles = False
+    for line in status_text.splitlines() + [""]:
+        if not line:
+            if pkg and status.endswith(" installed"):
+                installed.add((pkg, arch))
+            pkg = arch = status = ""
+            in_conffiles = False
+            continue
+        if line.startswith(" "):
+            if in_conffiles and line.split():
+                conffiles.add(line.split()[0])
+            continue
+        in_conffiles = line.startswith("Conffiles:")
+        if line.startswith("Package: "):
+            pkg = line[9:].strip()
+        elif line.startswith("Architecture: "):
+            arch = line[14:].strip()
+        elif line.startswith("Status: "):
+            status = line[8:].strip()
+    return installed, conffiles
+
+
+def _dpkg_undigested(status_path: str = _DPKG_STATUS,
+                     info_dir: str = _DPKG_INFO) -> "dict[str, int] | None":
+    """v0.43.0 (B-046) — per package, the regular files it placed outside /etc
+    that have no digest recorded, so neither debsums nor ``dpkg --verify``
+    compares them. ``None`` when dpkg's database cannot be read: not counted,
+    never "none".
+
+    Measured in a Mint 22.3 container (dpkg 1.22.6, debsums 3.0.2.1, 22
+    November 2026): a file modified after its line was removed from the
+    package's ``.md5sums``, or a package with no ``.md5sums`` at all — both
+    verifiers stay silent (debsums -c writes "no md5sums for less" on stderr,
+    which this check does not read). On the developer's workstation: no
+    package without digests, two with files left out (aspell-en: 23 files its
+    install script rewrites; a third-party office suite: 8).
+
+    Only ``lstat`` is called on the listed paths: nothing is opened but the
+    database's own files, which are root's.
+    """
+    try:
+        with open(status_path, encoding="utf-8", errors="replace") as fh:
+            installed, conffiles = _dpkg_installed(fh.read())
+    except OSError:
+        return None
+    found: "dict[str, int]" = {}
+    for pkg, arch in sorted(installed):
+        base = None
+        for name in (f"{pkg}:{arch}", pkg):
+            if os.path.exists(os.path.join(info_dir, name + ".list")):
+                base = name
+                break
+        if base is None:
+            continue  # a package that placed no file
+        try:
+            with open(os.path.join(info_dir, base + ".list"), encoding="utf-8", errors="replace") as fh:
+                listed = [ln.rstrip("\n") for ln in fh]
+        except OSError:
+            return None
+        digested: "set[str]" = set()
+        try:
+            with open(os.path.join(info_dir, base + ".md5sums"), encoding="utf-8", errors="replace") as fh:
+                for ln in fh:
+                    parts = ln.rstrip("\n").split(None, 1)
+                    if len(parts) == 2:
+                        # Debian writes paths without the leading slash; one
+                        # third-party package on the workstation writes it.
+                        digested.add("/" + parts[1].strip().lstrip("/"))
+        except FileNotFoundError:
+            pass  # no digests at all: every regular file it placed counts
+        except OSError:
+            return None
+        missing = 0
+        for path in listed:
+            if not path.startswith("/") or path in digested or path in conffiles or _is_config_path(path):
+                continue
+            try:
+                if stat.S_ISREG(os.lstat(path).st_mode):
+                    missing += 1
+            except OSError:
+                continue  # gone from disk: dpkg --verify says "missing", not this
+        if missing:
+            found[pkg] = found.get(pkg, 0) + missing
+    return found
+
+
 _PARSERS = {
     "debsums": _parse_debsums,
     "dpkg": _parse_dpkg_verify,
@@ -236,6 +342,10 @@ class PackageIntegritySnapshot:
         failed:         v0.42.0 — dpkg --verify exited non-zero with no output:
                         not verified (dpkg exits 0 with differences, measured).
         changed_files:  Non-config packaged files that differ from the manifest.
+        undigested_checked: v0.43.0 (B-046) — dpkg's database was looked at for
+                        files with no recorded digest (apt hosts, verifier run).
+        undigested:     package → number of such files; ``None`` when the
+                        database could not be read (not counted, never "none").
     """
     manager:        str = ""
     tool:           str = ""
@@ -244,6 +354,8 @@ class PackageIntegritySnapshot:
     timed_out:      bool = False
     failed:         bool = False
     changed_files:  "list[str]" = field(default_factory=list)
+    undigested_checked: bool = False
+    undigested:     "dict[str, int] | None" = None
 
     @classmethod
     def from_system(cls) -> "PackageIntegritySnapshot":
@@ -269,6 +381,9 @@ class PackageIntegritySnapshot:
         snap.ran = True
         parser = _PARSERS.get(snap.tool)
         snap.changed_files = parser(out) if parser else []
+        if mgr == "apt":
+            snap.undigested_checked = True
+            snap.undigested = _dpkg_undigested()
         return snap
 
 
@@ -325,5 +440,25 @@ def check_package_integrity(snapshot: PackageIntegritySnapshot,
                   # "clean" is not read as an external chain of trust.
                   detail=_t("package_integrity.local_digests_limit"),
                   key="package_integrity.clean")
+
+    if snapshot.undigested_checked:
+        # v0.43.0 (B-046) — a file with no recorded digest is compared by
+        # neither verifier (measured): said, so "no file differs" is not read
+        # as covering it. INFO, no point: the section was read.
+        if snapshot.undigested is None:
+            result.info(message=_t("package_integrity.no_digest_not_counted"),
+                        key="package_integrity.no_digest_not_counted")
+        elif snapshot.undigested:
+            names = sorted(snapshot.undigested)
+            shown = names[:_SAMPLE_PACKAGES]
+            listing = ", ".join(f"{n} ({snapshot.undigested[n]})" for n in shown) \
+                + more_suffix(_t, len(names), len(shown))
+            result.info(
+                message=_t("package_integrity.no_digest",
+                           files=sum(snapshot.undigested.values()),
+                           count=len(names), packages=listing),
+                detail=_t("package_integrity.no_digest_detail"),
+                key="package_integrity.no_digest",
+            )
 
     return result

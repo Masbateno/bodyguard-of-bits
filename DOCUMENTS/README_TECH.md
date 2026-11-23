@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.42.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.43.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -402,7 +402,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.42.0  │  Linux hardening auditor                                     ║
+║  BOB 0.43.0  │  Linux hardening auditor                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -551,6 +551,11 @@ The report opens with a 62-char ASCII art header and contains: system informatio
 | `--watch[=N]`           | Re-run the audit every N seconds (default 60) — Ctrl+C to quit     |
 | `--history`             | Show the score history sparkline and recent table, then exit       |
 | `--fix-journal`         | Print the journal of `--fix --apply` and whether it was changed outside BOB, then exit (0 intact, 2 falsified, 4 not demonstrated) |
+| `--team [ACTION]`       | Team perimeters (0.43.0): show the declaration and your perimeter; `init`, `grant ACCOUNT ATTR`, `revoke ACCOUNT ATTR`, `remove ACCOUNT` (root). An action outside the declared perimeter is asked again (`-y` does not answer) and written to the team journal; nothing is prevented; without a declaration nothing changes |
+| `--team-journal`        | Print the team journal (actions outside a declared perimeter, unattributed actions, changes to the declaration), then exit (0 intact, 2 broken, 4 unreadable) |
+| `--journals [ACTION]`   | What BOB records, whoever acts (0.43.0): journals `team`, `cron` (scheduled audits, address book), `admin` (configuration, deleted reports, changes of what is recorded); `on`/`off CAT` (root) for `cron`, `carnet`, `config`, `rapports` — the team journal and these changes are always written; `show NAME` prints one (exit 0/2/4) |
+| `--manage-team`         | The team on a full screen, like `--manage-logs` (0.43.0): the members and their attributes as boxes to tick, what is recorded — what `--team` and `--journals` do (the journals are read in `--manage-logs`), with the same checks, questions and traces; a numbered menu without a terminal |
+| `--log-max-size=SIZE`   | A ceiling on the reports' folder size (0.43.0): `50M`, `500K`, `2G`, bytes or `off` (default). After each new report the oldest go first; never the newest nor a report with notes; each deletion in the admin journal; setting it warns that a low ceiling limits the proof kept. Also `p` in `--manage-logs`'s folder list |
 | `--ignore=KEY`          | Add a finding key to the ignore list and exit                      |
 | `--unignore=KEY`        | Remove a finding key from the ignore list and exit                 |
 | `--show-ignored`        | Display suppressed findings in grey alongside normal output        |

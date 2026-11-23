@@ -80,8 +80,16 @@ class TestTheCaps:
         i18n.init(lang)
         for screen, actions in _declared_screens().items():
             for width in _WIDTHS:
-                assert _keys.footer_lines(i18n.t, actions, width) == _footer_0390(i18n.t, actions, width), (
-                    screen, width)
+                old = _footer_0390(i18n.t, actions, width)
+                new = _keys.footer_lines(i18n.t, actions, width)
+                if all(len(x) <= width for x in old):
+                    assert new == old, (screen, width)
+                else:
+                    # v0.43.0 — where the 0.39.0 split left its second line
+                    # too long, the banner wraps again: the same keys, in the
+                    # same order, on more lines.
+                    assert " ".join(new).split() == " ".join(old).split(), (screen, width)
+                    assert len(new) > len(old), (screen, width)
 
 
 class TestTheyAreDrawn:

@@ -655,7 +655,20 @@
     "block_breakdown": "Calcul du score (comme --breakdown l'affiche)",
     "breakdown_no_state": "Ce rapport n'a pas de fichier d'état à côté de lui : son calcul n'a pas été gardé.",
     "breakdown_older": "Ce rapport a été écrit avant BOB 0.40.0, qui ne gardait pas le calcul du score.",
-    "breakdown_unreadable": "Le calcul gardé à côté de ce rapport n'a pas pu être lu."
+    "breakdown_unreadable": "Le calcul gardé à côté de ce rapport n'a pas pu être lu.",
+    "home_journals": "Journaux de ce qui a été fait avec BOB — équipe, audits planifiés, administration ({count} événement(s))",
+    "journals_title": "Journaux",
+    "plain_journals": "Les journaux de ce qui a été fait avec BOB (équipe, audits planifiés, administration) : {cmd}",
+    "ceiling_prompt": "Plafond de taille des rapports (50M, 500K, 2G ou off)",
+    "ceiling_warning": "Un plafond de {limit} : au-delà, les rapports les plus anciens sont supprimés après chaque nouveau. Trop bas, il limite la preuve conservée (les rapports annotés ne sont jamais supprimés). Confirmer ?",
+    "ceiling_invalid": "Ce n'est pas une taille : {value} — 50M, 500K, 2G ou off",
+    "ceiling_set": "Plafond de taille des rapports : {limit}, appliqué après chaque nouveau rapport",
+    "ceiling_off": "Aucun plafond de taille pour les rapports",
+    "ceiling_pruned": "{count} ancien(s) rapport(s) supprimé(s) pour rester sous le plafond ({limit}) — inscrit au journal d'administration",
+    "ceiling_unreachable": "Les rapports restent au-dessus du plafond ({limit}) : les autres portent des notes ou sont les plus récents, jamais supprimés",
+    "ceiling_none": "aucun plafond (dossier courant : {used} ; tous les dossiers : {total})",
+    "ceiling_is": "plafond {limit} sur le dossier courant ({used} ; tous les dossiers : {total})",
+    "size_unknown_short": "inconnu"
   },
   "cron_ui": {
     "prompt_sep": " : ",
@@ -732,7 +745,9 @@
       "complete": "compléter",
       "pick": "par numéro",
       "removed": "lignes retirées",
-      "breakdown": "calcul"
+      "breakdown": "calcul",
+      "expand": "tout",
+      "ceiling": "plafond"
     },
     "mode_notes": "[NOTES]"
   },
@@ -836,7 +851,13 @@
     "email_store_added": "Adresse ajoutée : {email}",
     "email_store_removed": "Adresse supprimée : {email}",
     "email_store_cleared": "Toutes les adresses supprimées ({count})",
-    "cancelled": "Annulé."
+    "cancelled": "Annulé.",
+    "origin": "créé le {date} à {time} par {who}",
+    "origin_file": "créé le {date} à {time} par {who} (selon le fichier du cron)",
+    "origin_date_only": "créé le {date} — auteur non enregistré",
+    "origin_unknown": "création non enregistrée",
+    "address_origin": "ajoutée le {date} à {time} par {who}",
+    "address_origin_unknown": "ajout non enregistré"
   },
   "email_prompt": {
     "title": "Email(s) de notification :",
@@ -1321,7 +1342,12 @@
       "version": "Affiche la version puis sort",
       "help": "Affiche cette aide",
       "install_completion": "Installe la complétion bash dans /etc/bash_completion.d/",
-      "fix_journal": "Journal de --fix --apply, falsification vérifiée (sortie 0, 2 ou 4)"
+      "fix_journal": "Journal de --fix --apply, falsification vérifiée (sortie 0, 2 ou 4)",
+      "team": "Périmètres d'équipe : voir ; init, grant, revoke, remove (root)",
+      "team_journal": "Journal d'équipe : actions hors périmètre déclaré (code 0, 2 ou 4)",
+      "journals": "Ce qui est enregistré : voir ; on|off CAT[,CAT] (root) ; show NOM",
+      "manage_team": "L'équipe pas à pas : tout ce que font --team et --journals",
+      "log_max_size": "Plafond des rapports : 50M, 500K, 2G ou off (plus anciens d'abord)"
     },
     "example": {
       "standard": "Audit standard",
@@ -4251,7 +4277,10 @@
     "changed_detail": "Ces fichiers ont été installés par un paquet mais leur contenu ne correspond plus à l'empreinte enregistrée par le gestionnaire. Cela peut être bénin — une recompilation locale, un correctif éditeur appliqué à la main, un fichier patché par un autre outil — ou la trace d'un intrus remplaçant un binaire ou une bibliothèque système. BOB ne peut pas trancher, donc c'est signalé, pas scoré : vérifiez chaque chemin par rapport à ce que vous attendez (réinstaller le paquet propriétaire pour comparer, p. ex. apt reinstall / dnf reinstall, ou inspecter le fichier). Les fichiers de configuration, censés être édités, sont déjà exclus.",
     "clean": "Aucun fichier de paquet ne diffère de l'empreinte enregistrée par le gestionnaire ({tool} vérifié)",
     "local_digests_limit": "Les empreintes de référence vivent dans la base locale du gestionnaire de paquets : un root compromis peut les réécrire avec les fichiers. Ce contrôle atteste la cohérence avec cette base, pas une chaîne de confiance externe — les signatures des dépôts relèvent du contrôle d'authenticité des paquets.",
-    "verifier_failed": "Intégrité des paquets non vérifiée — {tool} a échoué (code de sortie non nul, aucune sortie)"
+    "verifier_failed": "Intégrité des paquets non vérifiée — {tool} a échoué (code de sortie non nul, aucune sortie)",
+    "no_digest": "{files} fichier(s) de {count} paquet(s) sans empreinte enregistrée, donc non comparés : {packages}",
+    "no_digest_detail": "Un paquet peut n'enregistrer aucune empreinte, ou en omettre pour une partie de ses fichiers — ceux que son script d'installation réécrit, par exemple. Ni debsums ni dpkg --verify ne comparent un tel fichier : une modification n'y est pas vue ici. Les fichiers de configuration et /etc sont écartés, comme dans la comparaison.",
+    "no_digest_not_counted": "Fichiers sans empreinte enregistrée non comptés — la base de dpkg (/var/lib/dpkg) n'a pas pu être lue"
   },
   "kexec_lockdown": {
     "kexec_disabled": "kexec est verrouillé (kernel.kexec_load_disabled=1) — aucun nouveau noyau ne peut être chargé jusqu'au reboot",
@@ -5029,5 +5058,165 @@
       "unconfirmed": "non confirmée",
       "started": "sans résultat"
     }
+  },
+  "team": {
+    "action": {
+      "audit": "un audit",
+      "fix": "une commande de --fix --apply",
+      "note_add": "l'ajout d'une note",
+      "note_edit": "la modification d'une note",
+      "note_withdraw": "le retrait de notes",
+      "note_purge": "la purge de notes",
+      "purge_report": "la suppression de rapports",
+      "reset_baseline": "la suppression de la base de comparaison",
+      "ignore": "l'ignorance d'un constat",
+      "unignore": "la fin de l'ignorance d'un constat",
+      "reconfigure": "la remise à zéro de la configuration",
+      "test_email": "un courriel d'essai",
+      "test_webhook": "un webhook d'essai",
+      "install_completion": "l'installation de la complétion",
+      "install_cron": "la planification d'audits",
+      "manage_cron": "la gestion des audits planifiés",
+      "team_grant": "l'attribution d'attributs",
+      "team_revoke": "le retrait d'attributs",
+      "team_remove": "le retrait d'un membre de l'équipe",
+      "journals": "le changement de ce qui est enregistré",
+      "log_max_size": "le réglage du plafond des rapports"
+    },
+    "outside": "{action} : hors du périmètre déclaré pour {account} — il ne comprend pas « {attribute} ». Si elle est faite, elle est inscrite au journal d'équipe comme hors du périmètre déclaré (maître : {master}).",
+    "confirm": "La faire quand même ? [y/N]",
+    "no_terminal": "Pas de terminal pour demander : faite, et inscrite au journal d'équipe comme non confirmée.",
+    "abandoned": "Non faite — la tentative est inscrite au journal d'équipe.",
+    "unattributed": "{action} : aucune session à qui l'attribuer (cron, service) — faite, inscrite au journal d'équipe comme non attribuée.",
+    "not_recorded": "Inscription au journal d'équipe impossible ({path}) : {reason}",
+    "altered": "La déclaration d'équipe ({path}) n'est pas celle que BOB a écrite en dernier : modifiée hors de BOB. Elle reste appliquée ; la modification est inscrite au journal d'équipe.",
+    "foreign_owner": "La déclaration d'équipe ({path}) appartient à {owner}, pas à root : elle n'a pas été écrite par BOB.",
+    "none": "Aucune déclaration d'équipe ({path}) : BOB ne demande rien et n'écrit aucun journal d'équipe. Pour en déclarer une : sudo bob --team init",
+    "header": "Déclaration d'équipe ({path})",
+    "master": "maître",
+    "no_attributes": "aucun attribut",
+    "unread_lines": "{count} ligne(s) non comprise(s) (modifiée(s) à la main ?) — ignorée(s) :",
+    "you": "Votre périmètre ({account}) : {attributes}",
+    "you_unattributed": "Aucune session : vos actions ne sont pas attribuées.",
+    "limits": "BOB ne voit que ses propres actions — une modification à la main lui échappe. Le périmètre est une déclaration, pas une autorisation : ce qu'un compte peut faire reste l'affaire de Linux (groupes, sudoers).",
+    "done": {
+      "init": "Déclaration d'équipe créée ({path}) ; maître : {account}.",
+      "grant": "{account} : {attributes}",
+      "revoke": "{account} : {attributes}",
+      "remove": "{account} retiré de la déclaration d'équipe."
+    },
+    "err": {
+      "unreadable": "La déclaration d'équipe ({path}) est illisible ({reason}) : périmètres non vérifiés.",
+      "needs_root": "Modifier la déclaration d'équipe demande root : sudo bob --team …",
+      "usage": "Usage : bob --team | --team init | --team grant COMPTE ATTR[,ATTR] | --team revoke COMPTE ATTR[,ATTR] | --team remove COMPTE",
+      "exists": "Une déclaration d'équipe existe déjà ({path}).",
+      "init_no_login": "Aucune session pour nommer le maître (login uid non défini) : lancez-la depuis votre propre session, avec sudo.",
+      "no_declaration": "Aucune déclaration d'équipe ({path}) : d'abord sudo bob --team init.",
+      "is_master": "{account} est le maître et a tous les attributs.",
+      "not_member": "{account} n'est pas dans la déclaration d'équipe.",
+      "no_account": "Aucun compte nommé {account} sur cet hôte — créez-le d'abord : sudo useradd -m {account}",
+      "unknown_attribute": "Attribut inconnu : {attribute}. Connus : {known}",
+      "no_attribute": "Aucun attribut donné.",
+      "journals_unknown": "Catégorie inconnue : {category}. Connues : {known}",
+      "journals_usage": "Usage : bob --journals | --journals on|off CAT[,CAT] | --journals show team|cron|admin"
+    },
+    "journal": {
+      "attempt_confirmed": "hors du périmètre déclaré, confirmée — {action} ({attribute})",
+      "attempt_abandoned": "hors du périmètre déclaré, abandonnée — {action} ({attribute})",
+      "attempt_unconfirmed": "hors du périmètre déclaré, non confirmée (sans terminal) — {action} ({attribute})",
+      "attempt_unattributed": "non attribuée — {action} ({attribute})",
+      "team": "déclaration : {op} {account} {attributes}",
+      "altered": "déclaration modifiée hors de BOB"
+    }
+  },
+  "journals": {
+    "not_recorded": "Inscription au journal impossible ({path}) : {reason}",
+    "altered": "Ce qui est enregistré ({path}) n'est pas ce que BOB a écrit en dernier : modifié hors de BOB. C'est toujours appliqué ; la modification est inscrite au journal d'administration.",
+    "header": "Ce que BOB enregistre ({path})",
+    "state_on": "enregistré",
+    "state_off": "NON enregistré",
+    "always": "team (toujours)",
+    "unread_lines": "{count} ligne(s) non comprise(s) — ignorée(s) (ce qui n'est pas lu est enregistré)",
+    "state_intact": "Journal {name} : {count} événement(s), chaîne intacte.",
+    "state_broken": "Journal {name} : la chaîne se rompt à la ligne {line} — modifié hors de BOB à partir de là.",
+    "state_unreadable": "Journal {name} : illisible ({reason}) — il appartient à root : sudo bob --journals",
+    "unreadable": "Le journal ({path}) est illisible ({reason}) — il appartient à root : utilisez sudo",
+    "foreign_owner": "Le journal ({path}) appartient à {owner}, pas à root : ce n'est pas celui de BOB.",
+    "done": "{categories} : {state}",
+    "ev": {
+      "cron_created": "audit planifié créé — {name} ({schedule}) → {email}",
+      "cron_schedule": "audit planifié modifié — {name} : horaire désormais {schedule}",
+      "cron_email": "audit planifié modifié — {name} : adresses désormais {email}",
+      "cron_removed": "audit planifié supprimé — {name}",
+      "address_added": "adresse ajoutée au carnet — {address}",
+      "address_removed": "adresse retirée du carnet — {address}",
+      "config": "configuration : {op} {value}",
+      "report_deleted": "rapport supprimé — {path}",
+      "journals": "ce qui est enregistré : {categories} {state}",
+      "journals_altered": "ce qui est enregistré a été modifié hors de BOB"
+    },
+    "size": "{size} (lu jusqu'à {limit} ; au-delà, dit trop grand)",
+    "size_absent": "pas encore créé",
+    "size_unknown": "taille inconnue (appartient à root)"
+  },
+  "team_wizard": {
+    "title": "BOB — gestion de l'équipe",
+    "opt": {
+      "show": "Voir la déclaration et votre périmètre",
+      "init": "Créer l'équipe (vous devenez le maître)",
+      "grant": "Donner des attributs à un compte",
+      "revoke": "Retirer des attributs à un compte",
+      "remove": "Retirer un compte de l'équipe",
+      "journals": "Ce qui est enregistré",
+      "quit": "Quitter"
+    },
+    "ask_choice": "Choix :",
+    "invalid": "Ce n'est pas un choix de ce menu.",
+    "ask_account": "Compte :",
+    "pick_grant": "Attributs à donner (ex. 1,3 ou 2-4) :",
+    "pick_revoke": "Attributs à retirer (ex. 1,3 ou 2-4) :",
+    "pick_remove": "Compte à retirer :",
+    "confirm_remove": "Retirer {account} de l'équipe ? [y/N]",
+    "no_members": "Aucun compte déclaré en dehors du maître.",
+    "pick_categories": "Catégories (ex. 1,3), vide pour sortir :",
+    "ask_on_off": "on ou off :",
+    "cancelled": "Rien n'a changé.",
+    "ask_account_or_number": "Compte (numéro ou nom) :"
+  },
+  "team_tui": {
+    "home_team": "L'équipe — maître {master}, {count} membre(s)",
+    "home_no_team": "L'équipe — aucune déclarée",
+    "home_recorded": "Ce qui est enregistré — {on} catégories sur {total}",
+    "team_title": "L'équipe",
+    "no_team": "Aucune équipe déclarée : BOB ne demande et ne marque rien ; ce qui est fait reste enregistré.",
+    "confirm_init": "Créer l'équipe, avec votre compte de session comme maître ?",
+    "master_all": "maître — tous les attributs",
+    "member_title": "Attributs de {account}",
+    "recorded_hint": "Coché : enregistré. Le journal d'équipe et les changements de ce réglage sont toujours enregistrés.",
+    "attr": {
+      "audit": "lancer un audit (--exhaustive, --watch, --diff compris)",
+      "note": "ajouter une note ; modifier ou retirer ses propres notes",
+      "note_autres": "modifier ou retirer les notes d'un autre ; purger des notes",
+      "purge": "supprimer des rapports ; --reset-baseline",
+      "config": "configuration, audits planifiés, courriel/webhook d'essai",
+      "equipe": "modifier la déclaration d'équipe et ce qui est enregistré",
+      "fix": "--fix --apply sur les constats de : {domain}",
+      "fix_all": "--fix --apply sur tous les constats"
+    },
+    "category": {
+      "cron": "audits planifiés créés, modifiés, supprimés",
+      "carnet": "carnet d'adresses : adresses ajoutées, retirées",
+      "config": "changements de configuration",
+      "rapports": "rapports supprimés"
+    },
+    "account_prompt": "Compte à ajouter",
+    "pick_title": "Ajouter un compte",
+    "pick_head": "Comptes de connexion de cet hôte pas encore déclarés (UID {low} à {high}, avec un shell) :",
+    "no_candidates": "Aucun autre compte de connexion sur cet hôte (UID {low} à {high}, avec un shell). Pour en créer un : sudo useradd -m NOM",
+    "other_account": "Un autre nom…",
+    "remove_prompt": "Membres à retirer (2, 1,3, 2-4 ou all)",
+    "confirm_remove_many": "Retirer de l'équipe : {accounts} ?",
+    "all_attributes": "tous les attributs",
+    "all_categories": "toutes les catégories"
   }
 }

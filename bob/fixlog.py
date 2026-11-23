@@ -58,6 +58,12 @@ def day_label(day: str, t) -> str:
 
 
 def who(entry_who: dict) -> str:
+    """The operator, marked as an account name (v0.43.0, bob/_names.py)."""
+    from bob import _names
+    return _names.mark(who_plain(entry_who))
+
+
+def who_plain(entry_who: dict) -> str:
     from bob.annotations import who_label
     return who_label(entry_who if isinstance(entry_who, dict) else {})
 
@@ -179,12 +185,21 @@ def entry_row(entry: "FJ.Entry", verdict: "W.Verdict", t, width: int = 200) -> "
     proof = entry_proof(entry, verdict)
     tag = f"  [{t('fixlog.proof.' + proof)}]" if proof_kind(proof) != "body" else ""
     short = f"{_MARK.get(entry.status, '?')} {t('fixlog.short.' + entry.status)}"
-    head = f"{clock(entry.at)}  {short:<14} {who(entry.who):<16} "
+    from bob import _names
+    # v0.43.0 (user, 23 November 2026) — the list row follows the conventions
+    # (CONVENTIONS.md): the status in the colour of its effect, the operator in
+    # the accounts' colour, the command in violet like in its detail.
+    tone = {"ok": "good", "failed": "bad"}.get(entry.status, "neutral")
+    # The status column as wide as the longest status in this language: the
+    # French "⚠ non confirmée" ran into the operator's name (CONVENTIONS.md).
+    status_w = max(len(f"{_MARK.get(st, '?')} {t('fixlog.short.' + st)}") for st in FJ.STATUSES + (FJ.STARTED,))
+    head = (f"{clock(entry.at)}  {_names.tone(short, tone)}{' ' * max(0, status_w - len(short))} "
+            f"{_names.cell(who_plain(entry.who), 16)} ")
     command = " ".join(entry.command.split())
-    room = max(10, width - len(head) - len(tag) - 1)
+    room = max(10, width - len(_names.plain(head)) - len(tag) - 1)
     if len(command) > room:
         command = command[:room - 1] + "…"
-    return head + command + tag, proof_kind(proof)
+    return head + _names.tone(command, "verbatim") + tag, proof_kind(proof)
 
 
 def entry_detail(entry: "FJ.Entry", verdict: "W.Verdict", t) -> "list[tuple[str, str]]":
@@ -262,8 +277,10 @@ def text_report(t) -> "tuple[list[tuple[str, str]], str]":
     ``unproven``, ``intact``)."""
     journal = FJ.load()
     verdict = W.verify(journal)
+    from bob.journals import file_size_text
     out = [(t("fixlog.title", path=FJ.path()), "body"), ("", "body")]
     out.extend(verdict_lines(verdict, journal, t))
+    out.append((file_size_text(FJ.path(), t), "body"))      # v0.43.0 — its size, after the verdict
     for day, entries in FJ.days(journal):
         out.append(("", "body"))
         out.append(day_row(day, entries, verdict, t))

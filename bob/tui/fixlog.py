@@ -53,14 +53,41 @@ def _attrs(curses, has_color: bool) -> dict:
             "title": curses.color_pair(ACCENT) | curses.A_BOLD}
 
 
+def put_marked(stdscr, curses, row: int, col: int, text: str, attr: int, has_color: bool,
+               width: int) -> None:
+    """Draw *text* at (*row*, *col*), its account names (bob/_names.py) in the
+    accounts' colour, the rest in *attr*, never past *width*. v0.43.0 — every
+    screen that draws a line goes through here, so no mark ever reaches the
+    terminal (one screen that did not, the report preview, showed ^N…^O)."""
+    from bob import _names
+    from bob.tui._palette import ACCENT, ACCOUNT, NEGATIVE, POSITIVE, VERBATIM
+    pair = {"name": ACCOUNT, "good": POSITIVE, "bad": NEGATIVE, "neutral": ACCENT, "verbatim": VERBATIM}
+    for piece, kind in _names.segments(text):
+        piece = piece[:max(0, width - 1 - col)]
+        if not piece:
+            break
+        if kind is None:
+            piece_attr = attr
+        elif has_color:
+            piece_attr = curses.color_pair(pair[kind]) | curses.A_BOLD
+        else:
+            piece_attr = curses.A_BOLD
+        try:
+            stdscr.addstr(row, col, piece, piece_attr)
+        except curses.error:
+            pass
+        col += len(piece)
+
+
 def _draw(stdscr, curses, t, title: str, body: "list[tuple[str, str]]", keys, has_color: bool,
           scroll: int, cursor: "int | None", status: str) -> int:
     """One screen: the header, *body* from *scroll* with the row *cursor*
     highlighted, the chrome. Returns the body's height."""
+    from bob import _names
     from bob.tui import _chrome
     from bob.tui._palette import SELECTION
     h, w = stdscr.getmaxyx()
-    body_h = max(1, h - 1 - _chrome.chrome_height(t, keys, w))
+    body_h = max(1, h - _chrome.BODY_TOP - _chrome.chrome_height(t, keys, w))
     attrs = _attrs(curses, has_color)
     stdscr.erase()
     _chrome.draw_header(stdscr, curses, title, has_color)
@@ -71,11 +98,16 @@ def _draw(stdscr, curses, t, title: str, body: "list[tuple[str, str]]", keys, ha
         text, kind = body[i]
         if i == cursor:
             attr = (curses.color_pair(SELECTION) | curses.A_BOLD) if has_color else curses.A_REVERSE
-            text = text[:w - 1].ljust(w - 1)
+            text = _names.plain(text)[:w - 1].ljust(w - 1)
         else:
             attr = attrs.get(kind, curses.A_NORMAL)
+        if i != cursor and any(c in text for c in (_names.OPEN, _names.GOOD, _names.BAD, _names.NEUTRAL,
+                                                   _names.VERBATIM)):
+            # v0.43.0 — account names in their colour (bob/_names.py).
+            put_marked(stdscr, curses, row + _chrome.BODY_TOP, 0, text, attr, has_color, w)
+            continue
         try:
-            stdscr.addstr(row + 1, 0, text[:w - 1], attr)
+            stdscr.addstr(row + _chrome.BODY_TOP, 0, _names.plain(text)[:w - 1], attr)
         except curses.error:
             pass
     _chrome.draw(stdscr, curses, t, keys, has_color, context=status)
@@ -86,10 +118,20 @@ def _draw(stdscr, curses, t, title: str, body: "list[tuple[str, str]]", keys, ha
 def _wrap(lines: "list[tuple[str, str]]", width: int) -> "list[tuple[str, str]]":
     """Long lines wrapped, never cut: a proof cut at the screen's edge proves
     nothing."""
+    import re
     import textwrap
+    from bob import _names
     out = []
+    room = max(20, width - 2)
     for text, kind in lines:
-        pieces = textwrap.wrap(text, max(20, width - 2), subsequent_indent="      ",
+        # v0.43.0 (user, 23 November 2026) — a line laid out in columns goes
+        # on under its last column (after its last run of two spaces or more)
+        # rather than six spaces in, which broke the alignment; plain prose
+        # keeps the six. Measured on the visible text, the colour marks out.
+        visible = _names.plain(text)
+        cols = [m.end() for m in re.finditer(r"\S {2,}", visible[:room])]
+        hang = cols[-1] if cols and cols[-1] <= room - 20 else 6
+        pieces = textwrap.wrap(text, room, subsequent_indent=" " * hang,
                                replace_whitespace=False, drop_whitespace=False) or [""]
         out.extend((p, kind) for p in pieces)
     return out
@@ -122,7 +164,7 @@ def _read(stdscr, curses, t, title, body, keys, has_color, status: str = ""):
     scroll = 0
     while True:
         h, w = stdscr.getmaxyx()
-        body_h = max(1, h - 1 - _chrome.chrome_height(t, keys, w))
+        body_h = max(1, h - _chrome.BODY_TOP - _chrome.chrome_height(t, keys, w))
         _draw(stdscr, curses, t, title, body, keys, has_color, scroll, None, status)
         status = ""
         ch = _keys.complete_escape(stdscr, curses, stdscr.getch())
@@ -162,7 +204,7 @@ def run(stdscr, curses, t, has_color: bool) -> None:
             cursor = rows[0] if rows else None
         keys = _FIXDAYS_CUT_KEYS if verdict.removed else _FIXDAYS_KEYS
         title = "  bob --manage-logs    " + t("manage_logs.fix_journal_title")
-        body_h = max(1, h - 1 - _chrome.chrome_height(t, keys, w))
+        body_h = max(1, h - _chrome.BODY_TOP - _chrome.chrome_height(t, keys, w))
         scroll = _follow(cursor, scroll, body_h) if cursor is not None else scroll
         if cursor is not None and cursor == rows[0]:
             scroll = 0                       # the verdict stays in view at the top
@@ -199,7 +241,7 @@ def _day(stdscr, curses, t, has_color: bool, day: str) -> None:
         h, w = stdscr.getmaxyx()
         body = [L.entry_row(e, verdict, t, w - 1) for e in entries]
         cursor = max(0, min(cursor, len(body) - 1))
-        body_h = max(1, h - 1 - _chrome.chrome_height(t, _FIXDAY_KEYS, w))
+        body_h = max(1, h - _chrome.BODY_TOP - _chrome.chrome_height(t, _FIXDAY_KEYS, w))
         scroll = _follow(cursor, scroll, body_h)
         title = "  bob --manage-logs    " + t("manage_logs.fix_journal_title") + " › " + L.day_label(day, t)
         _draw(stdscr, curses, t, title, body, _FIXDAY_KEYS, has_color, scroll, cursor, "")

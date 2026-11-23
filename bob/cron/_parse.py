@@ -44,6 +44,12 @@ class CronEntry:
     #: v0.26.0 — set when the job is a block of root's crontab
     #: (/etc/crontabs/root, BusyBox crond) rather than a file of /etc/cron.d.
     crontab_slug: str = ""
+    #: v0.43.0 — what the header says of the job's birth: the date of the
+    #: "generated" line (every version), and since 0.43.0 the "created" line
+    #: (time and account). A claim of the file; the cron journal holds the trace.
+    generated: str = ""
+    created_at: str = ""
+    created_by: str = ""
 
     @property
     def key(self) -> str:
@@ -77,6 +83,15 @@ def list_installed_crons() -> list[CronEntry]:
 
     return entries
 
+def _origin(text: str) -> dict:
+    """The header's account of the job's birth (see CronEntry)."""
+    gen = re.search(r"^# BOB cron — generated (\S+)", text, re.MULTILINE)
+    made = re.search(r"^# created: (\S+) by (.+)$", text, re.MULTILINE)
+    return {"generated": gen.group(1) if gen else "",
+            "created_at": made.group(1) if made else "",
+            "created_by": made.group(2).strip() if made else ""}
+
+
 def _parse_crontab_block(slug: str, body: str) -> "CronEntry | None":
     """A CronEntry from a BOB block of root's crontab (no user field)."""
     from bob.cron import _crontab
@@ -97,7 +112,7 @@ def _parse_crontab_block(slug: str, body: str) -> "CronEntry | None":
         schedule_expr=schedule_expr, hour=hour, minute=minute,
         script_path=Path(script), cron_path=_crontab.ROOT_CRONTAB,
         email=email_match.group(1).strip() if email_match else "",
-        time_simple=time_simple, crontab_slug=slug,
+        time_simple=time_simple, crontab_slug=slug, **_origin(body),
     )
 
 def parse_cron_file(path: Path, legacy: bool = False) -> CronEntry | None:
@@ -173,6 +188,7 @@ def parse_cron_file(path: Path, legacy: bool = False) -> CronEntry | None:
         email=email,
         legacy=legacy,
         time_simple=time_simple,
+        **_origin(text),
     )
 
 def cron_to_human(expr: str, lang: str = "en") -> str:

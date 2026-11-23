@@ -655,7 +655,20 @@
     "block_breakdown": "Score computation (as --breakdown prints it)",
     "breakdown_no_state": "This report has no state file beside it: its computation was not kept.",
     "breakdown_older": "This report was written before BOB 0.40.0, which did not keep the computation of the score.",
-    "breakdown_unreadable": "The computation kept beside this report could not be read."
+    "breakdown_unreadable": "The computation kept beside this report could not be read.",
+    "home_journals": "Journals of what was done with BOB — team, scheduled audits, administration ({count} event(s))",
+    "journals_title": "Journals",
+    "plain_journals": "The journals of what was done with BOB (team, scheduled audits, administration): {cmd}",
+    "ceiling_prompt": "Reports' size ceiling (50M, 500K, 2G or off)",
+    "ceiling_warning": "A ceiling of {limit}: past it, the oldest reports are deleted after each new one. Set too low, it limits how much proof is kept (reports with notes are never deleted). Confirm?",
+    "ceiling_invalid": "Not a size: {value} — 50M, 500K, 2G or off",
+    "ceiling_set": "Reports' size ceiling: {limit}, applied after each new report",
+    "ceiling_off": "No ceiling on the reports' size",
+    "ceiling_pruned": "{count} old report(s) deleted to stay under the ceiling ({limit}) — written to the admin journal",
+    "ceiling_unreachable": "The reports stay above the ceiling ({limit}): the rest carry notes or are the newest, never deleted",
+    "ceiling_none": "no size ceiling (current folder: {used}; all folders: {total})",
+    "ceiling_is": "ceiling {limit} on the current folder ({used}; all folders: {total})",
+    "size_unknown_short": "unknown"
   },
   "cron_ui": {
     "prompt_sep": ": ",
@@ -732,7 +745,9 @@
       "complete": "complete",
       "pick": "by number",
       "removed": "lines cut",
-      "breakdown": "computation"
+      "breakdown": "computation",
+      "expand": "all",
+      "ceiling": "size limit"
     },
     "mode_notes": "[NOTES]"
   },
@@ -836,7 +851,13 @@
     "email_store_added": "Address added: {email}",
     "email_store_removed": "Address deleted: {email}",
     "email_store_cleared": "All addresses deleted ({count})",
-    "cancelled": "Cancelled."
+    "cancelled": "Cancelled.",
+    "origin": "created on {date} at {time} by {who}",
+    "origin_file": "created on {date} at {time} by {who} (per the job's file)",
+    "origin_date_only": "created on {date} — author not recorded",
+    "origin_unknown": "creation not recorded",
+    "address_origin": "added on {date} at {time} by {who}",
+    "address_origin_unknown": "addition not recorded"
   },
   "email_prompt": {
     "title": "Notification email(s):",
@@ -1321,7 +1342,12 @@
       "version": "Show version and exit",
       "help": "Show this help message",
       "install_completion": "Install bash tab-completion to /etc/bash_completion.d/",
-      "fix_journal": "Journal of --fix --apply, checked for falsification (exit 0, 2 or 4)"
+      "fix_journal": "Journal of --fix --apply, checked for falsification (exit 0, 2 or 4)",
+      "team": "Team perimeters: show; init, grant, revoke, remove (root)",
+      "team_journal": "Team journal: actions outside a declared perimeter (exit 0, 2 or 4)",
+      "journals": "What is recorded: show; on|off CAT[,CAT] (root); show NAME",
+      "manage_team": "The team, step by step: everything --team and --journals do",
+      "log_max_size": "Reports' size ceiling: 50M, 500K, 2G or off (oldest go first)"
     },
     "example": {
       "standard": "Standard audit",
@@ -4251,7 +4277,10 @@
     "changed_detail": "These files were installed by a package but their content no longer matches the digest the package manager recorded. That can be benign — a local recompile, a vendor hotfix applied by hand, a file patched by another tool — or it can be the trace of an intruder replacing a system binary or library. BOB cannot tell which, so this is reported, not scored: verify each path against what you expect (reinstall the owning package to compare, e.g. apt reinstall / dnf reinstall, or inspect the file). Configuration files, which are expected to be edited, are already excluded.",
     "clean": "No packaged file differs from the manager's recorded digest ({tool} verified)",
     "local_digests_limit": "The reference digests live in the local package database: a compromised root can rewrite them together with the files. This check attests consistency with that database, not an external chain of trust — repository signatures are the package-authenticity check's.",
-    "verifier_failed": "Package integrity not verified — {tool} failed (non-zero exit, no output)"
+    "verifier_failed": "Package integrity not verified — {tool} failed (non-zero exit, no output)",
+    "no_digest": "{files} packaged file(s) in {count} package(s) have no recorded digest and were not compared: {packages}",
+    "no_digest_detail": "A package can record no digest at all, or leave some of its files out — files its install script rewrites, for instance. Neither debsums nor dpkg --verify compares such a file, so a change to it is not seen here. Configuration files and /etc are left out, as in the comparison.",
+    "no_digest_not_counted": "Files with no recorded digest not counted — dpkg's database (/var/lib/dpkg) could not be read"
   },
   "kexec_lockdown": {
     "kexec_disabled": "kexec is locked (kernel.kexec_load_disabled=1) — no new kernel can be loaded until reboot",
@@ -5029,5 +5058,165 @@
       "unconfirmed": "unconfirmed",
       "started": "no outcome"
     }
+  },
+  "team": {
+    "action": {
+      "audit": "an audit",
+      "fix": "a --fix --apply command",
+      "note_add": "adding a note",
+      "note_edit": "editing a note",
+      "note_withdraw": "withdrawing notes",
+      "note_purge": "purging notes",
+      "purge_report": "deleting reports",
+      "reset_baseline": "deleting the comparison baseline",
+      "ignore": "ignoring a finding",
+      "unignore": "un-ignoring a finding",
+      "reconfigure": "resetting the configuration",
+      "test_email": "a test email",
+      "test_webhook": "a test webhook",
+      "install_completion": "installing shell completion",
+      "install_cron": "scheduling audits",
+      "manage_cron": "managing scheduled audits",
+      "team_grant": "granting attributes",
+      "team_revoke": "revoking attributes",
+      "team_remove": "removing a team member",
+      "journals": "changing what is recorded",
+      "log_max_size": "setting the reports' size ceiling"
+    },
+    "outside": "{action}: outside the perimeter declared for {account} — it does not include \"{attribute}\". If carried out, it is written to the team journal as outside the declared perimeter (master: {master}).",
+    "confirm": "Carry it out anyway? [y/N]",
+    "no_terminal": "No terminal to ask: carried out, and written to the team journal as not confirmed.",
+    "abandoned": "Not carried out — the attempt is written to the team journal.",
+    "unattributed": "{action}: no login session to attribute it to (cron, a service) — carried out, written to the team journal as not attributed.",
+    "not_recorded": "Could not be written to the team journal ({path}): {reason}",
+    "altered": "The team declaration ({path}) is not the one BOB last wrote: changed outside BOB. It is still applied; the change is written to the team journal.",
+    "foreign_owner": "The team declaration ({path}) is owned by {owner}, not root: not written by BOB.",
+    "none": "No team declaration ({path}): BOB asks nothing and writes no team journal. To declare one: sudo bob --team init",
+    "header": "Team declaration ({path})",
+    "master": "master",
+    "no_attributes": "no attribute",
+    "unread_lines": "{count} line(s) not understood (changed by hand?) — ignored:",
+    "you": "Your perimeter ({account}): {attributes}",
+    "you_unattributed": "No login session: your actions are not attributed.",
+    "limits": "BOB sees only its own actions — an edit by hand escapes it. The perimeter is a declaration, not a permission: what an account may do stays Linux's (groups, sudoers).",
+    "done": {
+      "init": "Team declaration created ({path}); master: {account}.",
+      "grant": "{account}: {attributes}",
+      "revoke": "{account}: {attributes}",
+      "remove": "{account} removed from the team declaration."
+    },
+    "err": {
+      "unreadable": "The team declaration ({path}) cannot be read ({reason}): perimeters not checked.",
+      "needs_root": "Changing the team declaration needs root: sudo bob --team …",
+      "usage": "Usage: bob --team | --team init | --team grant ACCOUNT ATTR[,ATTR] | --team revoke ACCOUNT ATTR[,ATTR] | --team remove ACCOUNT",
+      "exists": "A team declaration already exists ({path}).",
+      "init_no_login": "No login session to name the master (the login uid is unset): run it from your own session, with sudo.",
+      "no_declaration": "No team declaration ({path}): sudo bob --team init first.",
+      "is_master": "{account} is the master and holds every attribute.",
+      "not_member": "{account} is not in the team declaration.",
+      "no_account": "No account named {account} on this host — create it first: sudo useradd -m {account}",
+      "unknown_attribute": "Unknown attribute: {attribute}. Known: {known}",
+      "no_attribute": "No attribute given.",
+      "journals_unknown": "Unknown category: {category}. Known: {known}",
+      "journals_usage": "Usage: bob --journals | --journals on|off CAT[,CAT] | --journals show team|cron|admin"
+    },
+    "journal": {
+      "attempt_confirmed": "outside the declared perimeter, confirmed — {action} ({attribute})",
+      "attempt_abandoned": "outside the declared perimeter, abandoned — {action} ({attribute})",
+      "attempt_unconfirmed": "outside the declared perimeter, not confirmed (no terminal) — {action} ({attribute})",
+      "attempt_unattributed": "not attributed — {action} ({attribute})",
+      "team": "declaration: {op} {account} {attributes}",
+      "altered": "declaration changed outside BOB"
+    }
+  },
+  "journals": {
+    "not_recorded": "Could not be written to the journal ({path}): {reason}",
+    "altered": "What is recorded ({path}) is not what BOB last wrote: changed outside BOB. It is still applied; the change is written to the admin journal.",
+    "header": "What BOB records ({path})",
+    "state_on": "recorded",
+    "state_off": "NOT recorded",
+    "always": "team (always)",
+    "unread_lines": "{count} line(s) not understood — ignored (what is not read is recorded)",
+    "state_intact": "Journal {name}: {count} event(s), chain intact.",
+    "state_broken": "Journal {name}: the chain breaks at line {line} — changed outside BOB from there.",
+    "state_unreadable": "Journal {name}: cannot be read ({reason}) — it is root's: sudo bob --journals",
+    "unreadable": "The journal ({path}) cannot be read ({reason}) — it is root's: use sudo",
+    "foreign_owner": "The journal ({path}) is owned by {owner}, not root: not BOB's.",
+    "done": "{categories}: {state}",
+    "ev": {
+      "cron_created": "scheduled audit created — {name} ({schedule}) → {email}",
+      "cron_schedule": "scheduled audit changed — {name}: schedule now {schedule}",
+      "cron_email": "scheduled audit changed — {name}: addresses now {email}",
+      "cron_removed": "scheduled audit removed — {name}",
+      "address_added": "address added to the book — {address}",
+      "address_removed": "address removed from the book — {address}",
+      "config": "configuration: {op} {value}",
+      "report_deleted": "report deleted — {path}",
+      "journals": "what is recorded: {categories} {state}",
+      "journals_altered": "what is recorded changed outside BOB"
+    },
+    "size": "{size} (read up to {limit}; past it, said too large)",
+    "size_absent": "not created yet",
+    "size_unknown": "size unknown (root's)"
+  },
+  "team_wizard": {
+    "title": "BOB — team management",
+    "opt": {
+      "show": "See the declaration and your perimeter",
+      "init": "Create the team (you become the master)",
+      "grant": "Grant attributes to an account",
+      "revoke": "Revoke attributes from an account",
+      "remove": "Remove an account from the team",
+      "journals": "What is recorded",
+      "quit": "Quit"
+    },
+    "ask_choice": "Choice:",
+    "invalid": "Not a choice of this menu.",
+    "ask_account": "Account:",
+    "pick_grant": "Attributes to grant (e.g. 1,3 or 2-4):",
+    "pick_revoke": "Attributes to revoke (e.g. 1,3 or 2-4):",
+    "pick_remove": "Account to remove:",
+    "confirm_remove": "Remove {account} from the team? [y/N]",
+    "no_members": "No account declared besides the master.",
+    "pick_categories": "Categories (e.g. 1,3), empty to leave:",
+    "ask_on_off": "on or off:",
+    "cancelled": "Nothing changed.",
+    "ask_account_or_number": "Account (number or name):"
+  },
+  "team_tui": {
+    "home_team": "The team — master {master}, {count} member(s)",
+    "home_no_team": "The team — none declared yet",
+    "home_recorded": "What is recorded — {on} of {total} categories",
+    "team_title": "The team",
+    "no_team": "No team declared: BOB asks nothing and marks nothing; what is done is still recorded.",
+    "confirm_init": "Create the team, with your login account as master?",
+    "master_all": "master — every attribute",
+    "member_title": "Attributes of {account}",
+    "recorded_hint": "Ticked: recorded. The team journal and changes of this setting are always recorded.",
+    "attr": {
+      "audit": "run an audit (--exhaustive, --watch, --diff included)",
+      "note": "add a note; edit or withdraw one's own notes",
+      "note_autres": "edit or withdraw another account's notes; purge notes",
+      "purge": "delete reports; --reset-baseline",
+      "config": "configuration, scheduled audits, test email/webhook",
+      "equipe": "change the team declaration and what is recorded",
+      "fix": "--fix --apply on findings of: {domain}",
+      "fix_all": "--fix --apply on every finding"
+    },
+    "category": {
+      "cron": "scheduled audits created, changed, removed",
+      "carnet": "address book: addresses added, removed",
+      "config": "configuration changes",
+      "rapports": "reports deleted"
+    },
+    "account_prompt": "Account to add",
+    "pick_title": "Add an account",
+    "pick_head": "Login accounts of this host not yet declared (UID {low}–{high}, with a shell):",
+    "no_candidates": "No other login account on this host (UID {low}–{high}, with a shell). To create one: sudo useradd -m NAME",
+    "other_account": "Another name…",
+    "remove_prompt": "Members to remove (2, 1,3, 2-4 or all)",
+    "confirm_remove_many": "Remove from the team: {accounts}?",
+    "all_attributes": "all attributes",
+    "all_categories": "all categories"
   }
 }

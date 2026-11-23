@@ -110,10 +110,42 @@ def _show_fix_journal(t) -> int:
     colour = {"alert": c.red_bold, "warn": c.yellow_bold, "ok": c.green_bold,
               "verbatim": c.violet_bold, "body": ""}
     lines, overall = text_report(t)
+    from bob import _names
     for text, kind in lines:
+        text = _names.plain(text)          # v0.43.0 — the screen's name marks, not printed
         tint = colour.get(kind, "")
         print(f"{tint}{text}{c.reset}" if tint else text)
     return {"intact": EXIT_OK, "tampered": EXIT_ALERTS}.get(overall, EXIT_TARGET_MISSED)
+
+
+def _manage_team(config) -> int:
+    """v0.43.0 (B-045) — ``--manage-team``: a full screen on a terminal (asked by
+    the user: "a real wizard, like --manage-logs"), the numbered menu
+    otherwise (a pipe, a script)."""
+    from bob import team_wizard
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return team_wizard.run(i18n.t)
+    import curses
+    from bob.tui import team as team_tui
+    os.environ.setdefault("ESCDELAY", "25")
+    try:
+        return curses.wrapper(lambda scr: team_tui.run(scr, config, i18n.t))
+    except (curses.error, OSError):
+        return team_wizard.run(i18n.t)
+
+
+def _trace_config(op: str, value: str) -> None:
+    """v0.43.0 (B-045) — a configuration change that succeeded leaves a trace in
+    the admin journal, whoever made it (bob/journals.py; category ``config``)."""
+    from bob import journals
+    journals.record("config", "config", op=op, value=str(value))
+
+
+def _team_gate(attribute: str, action: str) -> bool:
+    """v0.43.0 (B-045) — True to go on; see bob/team.py (nothing without a
+    team declaration)."""
+    from bob import team
+    return team.gate(attribute, action, i18n.t)
 
 
 def require_root() -> None:
@@ -178,6 +210,50 @@ def _run(argv=None) -> int:
         output.init(no_color=config.no_color)
         return _show_fix_journal(i18n.t)
 
+    # v0.43.0 (B-045) — the team declaration: shown to anyone, changed by root.
+    if config.team:
+        i18n.init(lang=config.lang)
+        output.init(no_color=config.no_color)
+        from bob import team
+        return team.run(config.team_args, i18n.t)
+
+    # v0.43.0 (B-050) — the reports' size ceiling.
+    if config.log_max_size is not None:
+        i18n.init(lang=config.lang)
+        output.init(no_color=config.no_color)
+        require_root()
+        from bob.manage_logs import ceiling_label, set_ceiling
+        user_config = UserConfig.load()
+        tone, lines = set_ceiling(user_config, config.log_max_size, i18n.t)
+        glyph = {"done": "✔", "refused": "✖"}.get(tone, "ℹ")
+        for line in lines:
+            print(f"{glyph} {line}")
+        print("  " + ceiling_label(user_config, i18n.t))
+        return EXIT_OK if tone != "refused" else EXIT_ERROR
+
+    # v0.43.0 (B-045) — the team, step by step.
+    if config.manage_team:
+        i18n.init(lang=config.lang)
+        output.init(no_color=config.no_color)
+        return _manage_team(config)
+
+    # v0.43.0 (B-045) — what is recorded, and the journals in text.
+    if config.journals:
+        i18n.init(lang=config.lang)
+        output.init(no_color=config.no_color)
+        from bob import journals
+        return journals.run(config.journals_args, i18n.t)
+
+    if config.team_journal:
+        i18n.init(lang=config.lang)
+        output.init(no_color=config.no_color)
+        from bob import team
+        lines, code = team.journal_lines(i18n.t)
+        from bob import _names
+        for line in lines:
+            print(_names.plain(line))
+        return code
+
     if config.list_checks:
         # I-3 (v0.7.4): --check=list now honours --lang for i18n.
         # v0.8.2: each section now displays a 1-line description sourced
@@ -225,6 +301,8 @@ def _run(argv=None) -> int:
     if config.ignore_key:
         i18n.init(lang=config.lang)
         output.init(no_color=config.no_color)
+        if not _team_gate('config', 'ignore'):
+            return EXIT_OK
         # M-5 (v0.7.1): validate the key against the canonical EXPLAIN_KEYS
         # pattern BEFORE attempting the write. Pre-v0.7.1 a typo or a
         # quoted-multi-word value silently truncated to the first whitespace
@@ -266,6 +344,7 @@ def _run(argv=None) -> int:
         added = add_ignore_key(config.ignore_key)
         if added:
             print("✔ " + i18n.t("cli.ignore.added", requested=config.ignore_key))
+            _trace_config("ignore", config.ignore_key)
             print("  " + i18n.t("cli.ignore.added_file", path=_ignore_file_path()))
         else:
             print("ℹ  " + i18n.t("cli.ignore.already_present", requested=config.ignore_key))
@@ -275,6 +354,8 @@ def _run(argv=None) -> int:
     if config.unignore_key:
         i18n.init(lang=config.lang)
         output.init(no_color=config.no_color)
+        if not _team_gate('config', 'unignore'):
+            return EXIT_OK
         if not is_valid_ignore_key(config.unignore_key):
             # Reuse the same invalid-key feedback as --ignore — the canonical
             # pattern is identical, the user's mental model shouldn't shift.
@@ -289,6 +370,7 @@ def _run(argv=None) -> int:
         removed = remove_ignore_key(config.unignore_key)
         if removed:
             print("✔ " + i18n.t("cli.ignore.removed", requested=config.unignore_key))
+            _trace_config("unignore", config.unignore_key)
             print("  " + i18n.t("cli.ignore.added_file", path=_ignore_file_path()))
         else:
             print("ℹ  " + i18n.t("cli.ignore.not_present", requested=config.unignore_key))
@@ -312,6 +394,8 @@ def _run(argv=None) -> int:
     if config.reconfigure:
         i18n.init(lang=config.lang)
         output.init(no_color=config.no_color)
+        if not _team_gate('config', 'reconfigure'):
+            return EXIT_OK
         user_config = UserConfig.load()
         if not user_config.exists():
             print("\u2139  " + i18n.t("cli.reconfigure.nothing"))
@@ -342,12 +426,15 @@ def _run(argv=None) -> int:
             )
             return EXIT_ERROR
         print("\u2714 " + i18n.t("cli.reconfigure.done", path=str(user_config.path)))
+        _trace_config("reconfigure", str(user_config.path))
         return EXIT_OK
 
     # v0.17.0 — --test-email: prove the transport, do not assume it
     if config.test_email:
         i18n.init(lang=config.lang)
         output.init(no_color=config.no_color)
+        if not _team_gate('config', 'test_email'):
+            return EXIT_OK
         from bob.config import EmailStore, _EMAIL_RE
 
         # Recipient: the address the cron job would notify. Saved addresses
@@ -401,6 +488,7 @@ def _run(argv=None) -> int:
             print("  " + i18n.t("cli.test_email.rejected_hint"), file=sys.stderr)
             return EXIT_ERROR
         print("✔ " + i18n.t("cli.test_email.accepted", to=_to))
+        _trace_config("test_email", _to)
         print("  " + i18n.t("cli.test_email.accepted_caveat"))
         return EXIT_OK
 
@@ -408,6 +496,8 @@ def _run(argv=None) -> int:
     if config.test_webhook:
         i18n.init(lang=config.lang)
         output.init(no_color=config.no_color)
+        if not _team_gate('config', 'test_webhook'):
+            return EXIT_OK
         t = i18n.t
         # v0.11.1 M-2: --offline is a global no-egress guard (air-gapped
         # environments). When it conflicts with the explicit --test-webhook
@@ -440,6 +530,7 @@ def _run(argv=None) -> int:
             print("ℹ  " + i18n.t("cli.test_webhook.posting", url=_safe))
             _status = test_webhook(_url, fmt=_fmt, t=t)
             print("✔ " + i18n.t("cli.test_webhook.success", url=_safe, status=_status))
+            _trace_config("test_webhook", _safe)
             return EXIT_OK
         except Exception as _exc:  # noqa: BLE001
             # The WebhookError message is already locale-formatted via the
@@ -468,16 +559,24 @@ def _run(argv=None) -> int:
                 file=sys.stderr,
             )
             return EXIT_ERROR
-        return install_completion()
+        if not _team_gate("config", "install_completion"):
+            return EXIT_OK
+        _rc = install_completion()
+        if _rc == 0:
+            _trace_config("install_completion", "")
+        return _rc
 
     if config.reset_baseline:
         require_root()
         # I-3 (v0.7.4): --reset-baseline output now honours --lang.
         i18n.init(lang=config.lang)
+        if not _team_gate('purge', 'reset_baseline'):
+            return EXIT_OK
         if path_exists(BASELINE_PATH):
             try:
                 BASELINE_PATH.unlink()
                 print(i18n.t("cli.baseline.deleted", path=BASELINE_PATH))
+                _trace_config("reset_baseline", str(BASELINE_PATH))
             except OSError as exc:
                 print(i18n.t("cli.baseline.delete_error", error=exc), file=sys.stderr)
                 return EXIT_ERROR
@@ -536,6 +635,16 @@ def _run(argv=None) -> int:
             _profile_prewarned = True
 
     require_root()
+
+    # v0.43.0 (B-045) — before the stdout of the machine modes is redirected,
+    # so the question stays visible: an audit needs ``audit``; scheduling and
+    # its management need ``config``; --manage-logs asks per action inside.
+    if config.install_cron or config.manage_cron:
+        if not _team_gate("config", "install_cron" if config.install_cron else "manage_cron"):
+            return EXIT_OK
+    elif not config.manage_logs:
+        if not _team_gate("audit", "audit"):
+            return EXIT_OK
 
     _machine_mode = config.json_mode or config.csv_mode or config.markdown_mode or config.html_mode
     # diff/breakdown suppress all audit output (bare print() calls bypass quiet=True)
@@ -905,6 +1014,9 @@ def _run(argv=None) -> int:
                 # v0.40.0 (B-032) — and the computation --breakdown prints.
                 save_report_state(report.path, curr_baseline, history_entry(**_history_args),
                                   breakdown_state(engine))
+                # v0.43.0 (B-050) — the reports' ceiling, when one is set.
+                from bob.manage_logs import apply_ceiling_after_report
+                apply_ceiling_after_report(report.path, user_config, t)
             # v0.26.1 — a write refused under a redirected home is said, not
             # dropped: the baseline, history or report the user expects is missing.
             from bob.sysinfo import say_refused_redirects

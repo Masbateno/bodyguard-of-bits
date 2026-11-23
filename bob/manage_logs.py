@@ -104,11 +104,13 @@ def _move_report(f: Path, dest_dir: Path) -> None:
         os.close(sfd)
 
 
-def _unlink_report(f: Path) -> None:
+def _unlink_report(f: Path, say=None) -> None:
     """Delete a report through a checked descriptor of its directory (v0.26.1):
     the directory swapped for a link after it was listed is refused.
 
-    v0.39.0 — its notes and its state are deleted with it."""
+    v0.39.0 — its notes and its state are deleted with it. v0.43.0 (B-045) —
+    the deletion is written to the admin journal; *say* carries what it has
+    to say on a full screen."""
     from bob.sysinfo import fd_real_path, refuse_if_redirected
     dfd = os.open(str(f.parent), os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
     try:
@@ -121,6 +123,8 @@ def _unlink_report(f: Path) -> None:
                 pass
     finally:
         os.close(dfd)
+    from bob import journals
+    journals.record("rapports", "report_deleted", say=say, path=str(f))
 
 # ---------------------------------------------------------------------------
 # Score history helpers
@@ -368,6 +372,7 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
     print()
     # v0.40.0 — the journal of --fix --apply has its own text form.
     print(f"  ℹ {t('manage_logs.plain_fix_journal', cmd=output.command('bob --fix-journal'))}")
+    print(f"  ℹ {t('manage_logs.plain_journals', cmd=output.command('sudo bob --journals show cron'))}")
     print()
 
     log_dir_str = user_config.get("log_dir")
@@ -507,7 +512,8 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
             confirm = safe_input(
                 f"  {t('manage_logs.confirm_all', count=len(all_logs))} [y/N] "
             ).strip().lower()
-            if confirm != "y":
+            from bob import team as _team
+            if confirm != "y" or not _team.gate("purge", "purge_report", t):
                 print(f"  {t('manage_logs.cancelled')}")
             else:
                 deleted = 0
@@ -531,8 +537,9 @@ def _run_manage_logs_plain(user_config, config, t) -> int:
             # by number it was not, only "all" was.
             if selected:
                 from bob._tty import safe_input
+                from bob import team as _team
                 if safe_input(f"  {t('manage_logs.confirm_prompt', count=len(selected))} [y/N] "
-                              ).strip().lower() != "y":
+                              ).strip().lower() != "y" or not _team.gate("purge", "purge_report", t):
                     print(f"  {t('manage_logs.cancelled')}")
                     selected = None
             if selected is None:
@@ -750,7 +757,13 @@ def _extract_summary_view(lines: list[str]) -> list[str]:
 #: history of that host's reports (h); ``a`` opens the notes' own actions, and
 #: ``#`` numbers the report's lines (the whole log only: the summary's lines are
 #: not consecutive, so a number there would not name a line of the file).
-_BLOCK_ACTIONS = (_keys.NOTES, _keys.ANNOTATE, _keys.COMPARE, _keys.HISTORY, _keys.BREAKDOWN)
+#: v0.43.0 — ``t`` opens every block at once, the notes with their journal
+#: (asked by the user, 22 November 2026); again, it closes them all.
+_BLOCK_ACTIONS = (_keys.NOTES, _keys.ANNOTATE, _keys.COMPARE, _keys.HISTORY, _keys.BREAKDOWN,
+                  _keys.EXPAND)
+#: What t opens together — the line numbers too (asked by the user; they
+#: apply to the whole log only, as # does).
+_ALL_BLOCKS = ("notes", "journal", "compare", "history", "breakdown", "numbers")
 _PREVIEW_KEYS = _keys.NAVIGATION + (_keys.SUMMARY,) + _BLOCK_ACTIONS + (_keys.NUMBERS,) + _keys.NESTED_EXIT
 
 #: Same screen once the condensed view is showing. `s` still works — it is what
@@ -845,7 +858,8 @@ def _notes_body(path: "Path", t, journal_view: bool) -> "list[tuple[str, str]] |
         return [(t("manage_logs.note_unreadable", reason=why), "warn")]
     if not j.events:
         return None
-    who = A.who_label
+    from bob import _names
+    who = lambda w: _names.mark(A.who_label(w))   # noqa: E731 — v0.43.0, names in colour
     body: "list[tuple[str, str]]" = []
     if j.foreign_owner is not None:
         body.append((t("manage_logs.note_foreign_owner", owner=j.foreign_owner), "warn"))
@@ -993,7 +1007,30 @@ def _ask_number(stdscr, t, actions) -> "int | None":
     return int(raw) if raw.isdigit() else -1
 
 
+def _team_ok(stdscr, t, attribute: str, action: str, said: "list[str]") -> bool:
+    """v0.43.0 (B-045) — the team perimeter, asked on the screen's context
+    row; what it has to say is kept in *said* for the status line."""
+    from bob import team
+    return team.gate(attribute, action, t, say=said.append,
+                     ask=lambda q: _context_confirm(stdscr, t, None, q))
+
+
+def _own_notes(notes) -> bool:
+    """Whether every note in *notes* was written by the account acting now."""
+    from bob import team
+    me = team._actor()
+    return me is not None and all(n.created.who.get("login") == me for n in notes)
+
+
 def _notes_action(stdscr, path: "Path", t, action: str) -> str:
+    """Carry out one of the notes' actions on *path*; the status line to show."""
+    said: "list[str]" = []
+    line = _notes_action_inner(stdscr, path, t, action, said)
+    extra = " — ".join(m.strip(" ⚠") for m in said if m.strip())
+    return f"{line} — {extra}" if extra else line
+
+
+def _notes_action_inner(stdscr, path: "Path", t, action: str, said: "list[str]") -> str:
     """Carry out one of the notes' actions on *path*; the status line to show."""
     from bob import annotations as A
     from bob.sysinfo import RedirectedOutOfHome
@@ -1003,6 +1040,8 @@ def _notes_action(stdscr, path: "Path", t, action: str) -> str:
         if action == _keys.NOTE_ADD:
             text = _context_input(stdscr, t, keys, t("manage_logs.note_prompt_add"))
             if text is None:
+                return info(t("manage_logs.note_cancelled"))
+            if not _team_ok(stdscr, t, "note", "note_add", said):
                 return info(t("manage_logs.note_cancelled"))
             j = A.add(path, text)
             return done(t("manage_logs.note_added", number=j.notes[-1].number))
@@ -1022,6 +1061,9 @@ def _notes_action(stdscr, path: "Path", t, action: str) -> str:
                                   default=current.text or "")
             if text is None:
                 return info(t("manage_logs.note_cancelled"))
+            if not _team_ok(stdscr, t, "note" if _own_notes([current]) else "note-autres",
+                            "note_edit", said):
+                return info(t("manage_logs.note_cancelled"))
             A.edit(path, number, text)
             return done(t("manage_logs.note_edited_ok", number=number))
         if action == _keys.NOTE_WITHDRAW:
@@ -1030,6 +1072,9 @@ def _notes_action(stdscr, path: "Path", t, action: str) -> str:
             question = (t("manage_logs.note_confirm_withdraw", number=chosen[0]) if len(chosen) == 1 else
                         t("manage_logs.note_confirm_withdraw_many", count=len(chosen), numbers=listed))
             if not _context_confirm(stdscr, t, keys, question):
+                return info(t("manage_logs.note_cancelled"))
+            mine = _own_notes([n for n in A.load(path).active if n.number in chosen])
+            if not _team_ok(stdscr, t, "note" if mine else "note-autres", "note_withdraw", said):
                 return info(t("manage_logs.note_cancelled"))
             A.withdraw_many(path, chosen)
             return done(t("manage_logs.note_withdrawn_ok", number=chosen[0]) if len(chosen) == 1 else
@@ -1045,6 +1090,8 @@ def _notes_action(stdscr, path: "Path", t, action: str) -> str:
             question = (t("manage_logs.note_confirm_purge", number=chosen[0]) if len(chosen) == 1 else
                         t("manage_logs.note_confirm_purge_many", count=len(chosen), numbers=listed))
             if not _context_confirm(stdscr, t, keys, question):
+                return info(t("manage_logs.note_cancelled"))
+            if not _team_ok(stdscr, t, "note-autres", "note_purge", said):
                 return info(t("manage_logs.note_cancelled"))
             A.purge_many(path, chosen, reason)
             return done(t("manage_logs.note_purged_ok", number=chosen[0]) if len(chosen) == 1 else
@@ -1062,6 +1109,7 @@ def _draw_preview(stdscr, path: "Path", t, view: dict, content, scroll: int, bod
                   actions, banner: str, status: str, has_color: bool) -> None:
     import curses
     from bob.tui import _chrome
+    from bob.tui import fixlog as _fl
     from bob.tui._palette import ACCENT, NOTICE
     h, w = stdscr.getmaxyx()
     stdscr.erase()
@@ -1077,12 +1125,13 @@ def _draw_preview(stdscr, path: "Path", t, view: dict, content, scroll: int, bod
         try:
             # v0.39.0 (user, 19 November 2026) — a block's bar keeps the frame's
             # colour; it took the colour of each line's text ("body", "warn").
+            # v0.43.0 — a note's author in the accounts' colour, never its
+            # marks on the screen (bob/tui/fixlog.put_marked).
             if kind in ("body", "warn") and text.startswith(_BAR):
-                stdscr.addstr(row + 1, 0, _BAR[:w - 1], attrs["frame"])
-                stdscr.addstr(row + 1, len(_BAR), text[len(_BAR):][:max(0, w - 1 - len(_BAR))],
-                              attrs[kind])
+                stdscr.addstr(row + _chrome.BODY_TOP, 0, _BAR[:w - 1], attrs["frame"])
+                _fl.put_marked(stdscr, curses, row + _chrome.BODY_TOP, len(_BAR), text[len(_BAR):], attrs[kind], has_color, w)
             else:
-                stdscr.addstr(row + 1, 0, text[:w - 1], attrs.get(kind, curses.A_NORMAL))
+                _fl.put_marked(stdscr, curses, row + _chrome.BODY_TOP, 0, text, attrs.get(kind, curses.A_NORMAL), has_color, w)
         except curses.error:
             pass
     _chrome.draw(stdscr, curses, t, actions, has_color, context=status)
@@ -1121,7 +1170,7 @@ def _curses_preview_log(stdscr, path: "Path", t, peers: "list[Path] | None" = No
 
         h, w = stdscr.getmaxyx()
         from bob.tui import _chrome as _ch
-        body_h = max(1, h - 1 - _ch.chrome_height(t, _actions, w))
+        body_h = max(1, h - _ch.BODY_TOP - _ch.chrome_height(t, _actions, w))
         content = _preview_content(path, t, view, lines, w)
         max_scroll = max(0, len(content) - body_h)
         scroll = max(0, min(scroll, max_scroll))
@@ -1177,6 +1226,10 @@ def _curses_preview_log(stdscr, path: "Path", t, peers: "list[Path] | None" = No
             view["history"] = not view["history"]
         elif action == _keys.BREAKDOWN:
             view["breakdown"] = not view["breakdown"]
+        elif action == _keys.EXPAND:                    # every block, or none
+            opened = not all(view[b] for b in _ALL_BLOCKS)
+            for b in _ALL_BLOCKS:
+                view[b] = opened
         elif action == _keys.NUMBERS:
             view["numbers"] = not view["numbers"]
         elif action == _keys.MOVE:
@@ -1196,13 +1249,13 @@ _DIR_FOLDER = "\U0001F4C1"
 #: v0.40.0 — the landing screen: two choices, the audit reports and the
 #: journal of --fix --apply, kept apart (decided with the user, 20 November
 #: 2026). q exits, l switches language.
-_HOME_KEYS = _keys.NAVIGATION + (_keys.SELECT, _keys.pick(2)) + _keys.LANDING_EXIT
+_HOME_KEYS = _keys.NAVIGATION + (_keys.SELECT, _keys.pick(3)) + _keys.LANDING_EXIT
 
 #: The directory picker, under the landing screen since v0.40.0: Esc goes back.
 #: Enter browses the selected directory, c changes/adds the write directory,
 #: d forgets a tracked (non-current) directory (its files are kept).
 _DIR_KEYS = _keys.NAVIGATION + (
-    _keys.SELECT, _keys.CHANGE, _keys.DELETE,
+    _keys.SELECT, _keys.CHANGE, _keys.DELETE, _keys.CEILING,
 ) + _keys.NESTED_EXIT
 
 #: The per-directory report list is nested: Esc goes back to the picker.
@@ -1262,7 +1315,186 @@ def _reports_size(path: Path) -> "tuple[int, int | None] | None":
         except (OSError, TypeError):
             total = None
             break
+        # v0.43.0 — with the files beside it (notes, state), as the ceiling
+        # counts it: the list and the ceiling said two sizes (found by the user).
+        for name in _companions(f.name):
+            try:
+                total += (f.parent / name).stat().st_size
+            except FileNotFoundError:
+                pass
+            except (OSError, TypeError):
+                total = None
+                break
+        if total is None:
+            break
     return len(names), total
+
+
+# ---------------------------------------------------------------------------
+# v0.43.0 (B-050) — a ceiling on the reports' size
+# ---------------------------------------------------------------------------
+#
+# Asked by the user (23 November 2026), for small machines (a Pi Zero's SD
+# card): reports piled up with nothing to bound them — BOB never deleted one
+# on its own. The ceiling is off by default. Set, it is applied after each
+# report written: the oldest reports go first, until the folder is back under
+# it. Never deleted: the report just written, and a report that carries notes
+# (they would go with it). Each deletion goes through _unlink_report, so it is
+# traced in the admin journal like a deletion by hand. Setting it warns that
+# a ceiling set too low limits how much proof is kept.
+
+_SIZE_UNITS = {"K": 1 << 10, "M": 1 << 20, "G": 1 << 30}
+
+
+def parse_size(text: str) -> int:
+    """``50M``, ``500K``, ``2G`` or a number of bytes; ``off`` (or ``0``) is no
+    ceiling, returned as 0. Raises ValueError on anything else."""
+    raw = text.strip().upper().replace(" ", "")
+    if raw in ("OFF", "0", "NONE"):
+        return 0
+    unit = _SIZE_UNITS.get(raw[-1:], 0)
+    number = raw[:-1] if unit else raw
+    try:
+        value = float(number.replace(",", "."))
+    except ValueError:
+        raise ValueError(text) from None
+    size = int(value * (unit or 1))
+    if size <= 0:
+        raise ValueError(text)
+    return size
+
+
+def ceiling(user_config) -> int:
+    """The ceiling in bytes, 0 for none (an unreadable value is none, said nowhere
+    else: it is shown as set in --manage-logs)."""
+    try:
+        return max(0, int(user_config.get("log_max_size") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _report_bytes(f: Path) -> int:
+    """A report and the files beside it (notes, state)."""
+    total = 0
+    for name in (f.name,) + _companions(f.name):
+        try:
+            total += (f.parent / name).stat().st_size
+        except OSError:
+            pass
+    return total
+
+
+def _has_notes(f: Path) -> bool:
+    from bob import annotations as A
+    try:
+        return A.note_path(f).exists() and bool(A.load(f).active)
+    except Exception:  # noqa: BLE001 — unknown is kept: a report is never deleted on a guess
+        return True
+
+
+def enforce_ceiling(directory: Path, limit: int, keep: "Path | None" = None,
+                    say=None) -> "tuple[list[str], bool]":
+    """Delete the oldest reports of *directory* until they fit under *limit*.
+    Returns the names deleted and whether the folder is now under it."""
+    try:
+        reports = sorted(e for e in directory.iterdir()
+                         if e.name.startswith("bob_") and e.name.endswith(".log"))
+    except OSError:
+        return [], False
+    sizes = {r: _report_bytes(r) for r in reports}
+    total = sum(sizes.values())
+    deleted: "list[str]" = []
+    for r in reports:                       # names carry the time: oldest first
+        if total <= limit:
+            break
+        if keep is not None and r.name == keep.name or _has_notes(r):
+            continue
+        try:
+            _unlink_report(r, say=say)
+        except OSError:
+            continue
+        deleted.append(r.name)
+        total -= sizes[r]
+    return deleted, total <= limit
+
+
+def apply_ceiling_after_report(report: Path, user_config, t) -> None:
+    """After a report is written: the ceiling, if one is set."""
+    limit = ceiling(user_config)
+    if not limit:
+        return
+    from bob import output
+    deleted, reached = enforce_ceiling(report.parent, limit, keep=report)
+    if deleted:
+        output.print_info(t("manage_logs.ceiling_pruned", count=len(deleted), limit=_format_size(limit, t)))
+    if not reached:
+        output.print_warn(t("manage_logs.ceiling_unreachable", limit=_format_size(limit, t)))
+
+
+def set_ceiling(user_config, text: str, t, *, ask=None, say=None) -> "tuple[str, list[str]]":
+    """Set the ceiling from *text*: (tone, lines) — tone is "done", "refused"
+    or "info". Warned and confirmed first (a ceiling too low limits the proof
+    kept); outside the declared perimeter, asked as any config change."""
+    from bob import journals, team
+    try:
+        limit = parse_size(text)
+    except ValueError:
+        return "refused", [t("manage_logs.ceiling_invalid", value=text)]
+    if not team.gate("config", "log_max_size", t, ask=ask, say=say):
+        return "info", [t("manage_logs.cancelled")]
+    if limit:
+        question = t("manage_logs.ceiling_warning", limit=_format_size(limit, t))
+        if ask is not None:
+            confirmed = bool(ask(question))
+        else:
+            from bob._tty import safe_input
+            print("  " + question + " [y/N] ", end="", flush=True)
+            confirmed = safe_input().strip().lower() in ("y", "yes", "o", "oui")
+        if not confirmed:
+            return "info", [t("manage_logs.cancelled")]
+    user_config.set("log_max_size", str(limit))
+    journals.record("config", "config", say=say, op="log_max_size", value=text.strip())
+    if not limit:
+        return "done", [t("manage_logs.ceiling_off")]
+    return "done", [t("manage_logs.ceiling_set", limit=_format_size(limit, t))]
+
+
+def ceiling_label(user_config, t) -> str:
+    """What the ceiling is, and how full the current folder is."""
+    limit = ceiling(user_config)
+    unknown = t("manage_logs.size_unknown_short")
+
+    def size_of(directory) -> "int | None":
+        sized = _reports_size(Path(directory))
+        return sized[1] if sized else None
+
+    log_dir = user_config.get("log_dir")
+    used = size_of(log_dir) if log_dir else None
+    sizes = [size_of(d) for d in (_declared_dirs(user_config) if log_dir else [])]
+    total = sum(sizes) if sizes and None not in sizes else None
+    used_text = _format_size(used, t) if used is not None else unknown
+    total_text = _format_size(total, t) if total is not None else unknown
+    if not limit:
+        return t("manage_logs.ceiling_none", used=used_text, total=total_text)
+    return t("manage_logs.ceiling_is", limit=_format_size(limit, t), used=used_text, total=total_text)
+
+
+def _ceiling_action(stdscr, user_config, t) -> str:
+    """``p`` in the directory picker: the ceiling typed on the context line,
+    warned and confirmed there; the status line it leaves."""
+    from bob.tui import _chrome as _ch
+    text = _context_input(stdscr, t, None, t("manage_logs.ceiling_prompt"))
+    if not text or not text.strip():
+        return _ch.info(t("manage_logs.cancelled"))
+    said: "list[str]" = []
+    tone, lines = set_ceiling(user_config, text, t, say=said.append,
+                              ask=lambda q: _context_confirm(stdscr, t, None, q))
+    message = " — ".join(lines + [m.strip(" ⚠") for m in said if m.strip()])
+    if tone == "done":
+        return _ch.done(message)
+    if tone == "refused":
+        return _ch.refused(message)
+    return _ch.info(message)
 
 
 def _format_size(size: int, t) -> str:
@@ -1303,13 +1535,16 @@ def _dir_report_label(path: Path, t) -> str:
     return ", ".join(parts)
 
 
-def _dir_picker(stdscr, user_config, config, t) -> "tuple[str, Path | None]":
+def _dir_picker(stdscr, user_config, config, t, anchor: "Path | None" = None) -> "tuple[str, Path | None]":
     """The landing screen: one folder row per tracked log directory.
 
     Returns ``("select", dir)`` when the operator opens a directory, or
     ``("quit", None)``. Changing the write directory (``c``) and forgetting a
     tracked directory (``d``) are handled here and loop; language toggles here
     too, so nothing deeper redraws in another language.
+
+    v0.43.0 — *anchor*: the directory just left; coming back, the selection
+    stays on it (CONVENTIONS.md).
     """
     import curses
 
@@ -1320,6 +1555,9 @@ def _dir_picker(stdscr, user_config, config, t) -> "tuple[str, Path | None]":
     has_color = _init_colors_ml()
 
     cursor = 0
+    if anchor is not None:
+        dirs0 = _declared_dirs(user_config)
+        cursor = dirs0.index(anchor) if anchor in dirs0 else 0
     scroll = 0
     status = ""
 
@@ -1333,7 +1571,7 @@ def _dir_picker(stdscr, user_config, config, t) -> "tuple[str, Path | None]":
 
         h, w = stdscr.getmaxyx()
         from bob.tui import _chrome as _ch
-        body_h = max(1, h - 1 - _ch.chrome_height(t, _DIR_KEYS, w))
+        body_h = max(1, h - _ch.BODY_TOP - _ch.chrome_height(t, _DIR_KEYS, w))
         if cursor - scroll >= body_h:
             scroll = cursor - body_h + 1
         if cursor < scroll:
@@ -1342,7 +1580,8 @@ def _dir_picker(stdscr, user_config, config, t) -> "tuple[str, Path | None]":
 
         stdscr.erase()
         header = ("  bob --manage-logs    "
-                  + t("manage_logs.dir_picker_header", count=n))
+                  + t("manage_logs.dir_picker_header", count=n)
+                  + "    " + ceiling_label(user_config, t))      # v0.43.0 (B-050)
         _ch.draw_header(stdscr, curses, header, has_color)
 
         cur_lbl = t("manage_logs.current_label")
@@ -1358,13 +1597,13 @@ def _dir_picker(stdscr, user_config, config, t) -> "tuple[str, Path | None]":
             if idx == cursor:
                 attr = (curses.color_pair(1) | curses.A_BOLD) if has_color else curses.A_REVERSE
                 try:
-                    stdscr.addstr(row + 1, 0, line[:w - 1].ljust(w - 1), attr)
+                    stdscr.addstr(row + _ch.BODY_TOP, 0, line[:w - 1].ljust(w - 1), attr)
                 except curses.error:
                     pass
             else:
                 attr = (curses.color_pair(2) | curses.A_BOLD) if has_color else curses.A_BOLD
                 try:
-                    stdscr.addstr(row + 1, 0, line[:w - 1], attr)
+                    stdscr.addstr(row + _ch.BODY_TOP, 0, line[:w - 1], attr)
                 except curses.error:
                     pass
 
@@ -1397,6 +1636,8 @@ def _dir_picker(stdscr, user_config, config, t) -> "tuple[str, Path | None]":
                 _forget_dir(user_config, chosen)
                 status = _ch.done(t("manage_logs.forgot", path=str(chosen)))
                 cursor = max(0, cursor - 1)
+        elif act == _keys.CEILING:                     # v0.43.0 (B-050)
+            status = _ceiling_action(stdscr, user_config, t)
 
 
 def _confirm_inline(stdscr, t, actions, prompt: str) -> bool:
@@ -1480,7 +1721,7 @@ def _browse_dir(stdscr, browse_dir: Path, user_config, config, t) -> None:
         # painted it: the bottom report sat hidden behind the footer, reachable
         # by cursor but never shown. body_h is now the true number of visible
         # body rows, so the scroll window and the draw loop agree.
-        body_h = max(1, h - 2 - _ch.chrome_height(t, _MARKED_KEYS, w))
+        body_h = max(1, h - _ch.BODY_TOP - 1 - _ch.chrome_height(t, _MARKED_KEYS, w))
         _last = max(0, n - 1)
         cursor = max(0, min(cursor, _last))
         if cursor - scroll >= body_h:
@@ -1503,7 +1744,7 @@ def _browse_dir(stdscr, browse_dir: Path, user_config, config, t) -> None:
 
         # A dim path line under the banner names the directory being browsed.
         try:
-            stdscr.addstr(1, 0, f"  {t('manage_logs.stored_in', path=str(browse_dir))}"[:w - 1],
+            stdscr.addstr(_ch.BODY_TOP, 0, f"  {t('manage_logs.stored_in', path=str(browse_dir))}"[:w - 1],
                           curses.A_DIM)
         except curses.error:
             pass
@@ -1544,9 +1785,9 @@ def _browse_dir(stdscr, browse_dir: Path, user_config, config, t) -> None:
                     attr = curses.color_pair(3) if has_color else 0
                 try:
                     if is_cursor:
-                        stdscr.addstr(row + 2, 0, line[:w - 1].ljust(w - 1)[:w - 1], attr)
+                        stdscr.addstr(row + _ch.BODY_TOP + 1, 0, line[:w - 1].ljust(w - 1)[:w - 1], attr)
                     else:
-                        stdscr.addstr(row + 2, 0, line[:w - 1], attr)
+                        stdscr.addstr(row + _ch.BODY_TOP + 1, 0, line[:w - 1], attr)
                 except curses.error:
                     pass
 
@@ -1569,14 +1810,19 @@ def _browse_dir(stdscr, browse_dir: Path, user_config, config, t) -> None:
 
         if confirm_delete:
             confirm_delete = False
-            if ch in (ord("y"), ord("Y")):
+            # v0.43.0 (B-045) — the team perimeter, asked after the y.
+            _said: "list[str]" = []
+            _yes = ch in (ord("y"), ord("Y")) and _team_ok(stdscr, t, "purge", "purge_report", _said)
+            _extra = " — ".join(m.strip(" ⚠") for m in _said if m.strip())
+            _sfx = f" — {_extra}" if _extra else ""
+            if _yes:
                 deleted = 0
                 deleted_name = None
                 deleted_before_cursor = 0
                 for li in sorted(pending_delete, reverse=True):
                     try:
                         name = logs[li].name
-                        _unlink_report(logs[li])
+                        _unlink_report(logs[li], say=_said.append)
                         deleted += 1
                         if li <= cursor:
                             deleted_before_cursor += 1
@@ -1586,12 +1832,17 @@ def _browse_dir(stdscr, browse_dir: Path, user_config, config, t) -> None:
                         pass
                 marked.clear()
                 cursor = max(0, cursor - deleted_before_cursor)
+                # what the deletions' traces had to say, too
+                _extra = " — ".join(m.strip(" ⚠") for m in _said if m.strip())
+                _sfx = f" — {_extra}" if _extra else ""
                 if deleted == 1 and deleted_name is not None:
-                    status = _ch.done(t("manage_logs.deleted_one", name=deleted_name))
+                    status = _ch.done(t("manage_logs.deleted_one", name=deleted_name) + _sfx)
                 elif deleted:
-                    status = _ch.done(t("manage_logs.deleted_multi", count=deleted))
+                    status = _ch.done(t("manage_logs.deleted_multi", count=deleted) + _sfx)
+                elif _extra:
+                    status = _ch.info(_extra)
             else:
-                status = _ch.info(t("manage_logs.cancelled"))
+                status = _ch.info(t("manage_logs.cancelled") + _sfx)
             pending_delete = []
             continue
 
@@ -1640,14 +1891,26 @@ def _home_rows(user_config, t) -> "list[tuple[str, str]]":
     kind = {"tampered": "alert", "unproven": "warn", "intact": "ok"}.get(state, "body")
     fixes = t("manage_logs.home_fixes", count=len(journal.entries),
               verdict=t(f"manage_logs.home_verdict.{state}"))
-    return [(f"1  {_DIR_FOLDER} {reports}", "body"), (f"2  {_FIX_SHIELD} {fixes}", kind)]
+    # v0.43.0 (user, 23 November 2026) — its size, as the other journals say theirs.
+    from bob.journals import file_size_text
+    fixes = fixes.rstrip(".") + " — " + file_size_text(FJ.path(), t)
+    # v0.43.0 (B-045) — the journals of what was done with BOB, whoever did it.
+    from bob import journals as J
+    count = sum(len(J.load(n).events) for n in J.CHANNELS)
+    admin = t("manage_logs.home_journals", count=count)
+    return [(f"1  {_DIR_FOLDER} {reports}", "body"), (f"2  {_FIX_SHIELD} {fixes}", kind),
+            (f"3  {_JOURNALS_BOOK} {admin}", "body")]
+
+
+#: The journals' row on the landing screen (v0.43.0).
+_JOURNALS_BOOK = "\U0001f4d2"
 
 
 #: The journal's row on the landing screen.
 _FIX_SHIELD = "\U0001f6e1"
 
 
-def _home(stdscr, user_config, config, t) -> str:
+def _home(stdscr, user_config, config, t, cursor: int = 0) -> str:
     """The landing screen (v0.40.0): ``reports``, ``fixes`` or ``quit``."""
     import curses
     from bob.tui import _chrome as _ch
@@ -1657,12 +1920,12 @@ def _home(stdscr, user_config, config, t) -> str:
     except curses.error:
         pass
     has_color = _init_colors_ml()
-    cursor, status = 0, ""
+    status = ""
     while True:
         rows = _home_rows(user_config, t)
         title = "  bob --manage-logs    " + t("manage_logs.home_header")
-        body = [("", "body")] + [("  " + text, kind) for text, kind in rows]
-        _fl._draw(stdscr, curses, t, title, body, _HOME_KEYS, has_color, 0, cursor + 1, status)
+        body = [("  " + text, kind) for text, kind in rows]
+        _fl._draw(stdscr, curses, t, title, body, _HOME_KEYS, has_color, 0, cursor, status)
         status = ""
         ch = _keys.complete_escape(stdscr, curses, stdscr.getch())
         act = _keys.resolve(curses, ch, _HOME_KEYS)
@@ -1671,13 +1934,13 @@ def _home(stdscr, user_config, config, t) -> str:
         if act == _keys.LANG:
             _keys.toggle_language(config)
         elif act in (_keys.MOVE, _keys.PAGE, _keys.EDGE):
-            cursor = _fl._move(curses, act, ch, cursor, [0, 1], 2)
+            cursor = _fl._move(curses, act, ch, cursor, [0, 1, 2], 3)
         elif act == _keys.SELECT or (act and act.startswith("pick:")):
             choice = cursor if act == _keys.SELECT else ch - ord("1")
             if choice == 0 and not user_config.get("log_dir"):
                 status = _ch.refused(t("manage_logs.home_no_reports"))
                 continue
-            return "reports" if choice == 0 else "fixes"
+            return ("reports", "fixes", "journals")[choice]
 
 
 def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
@@ -1690,19 +1953,27 @@ def _run_manage_logs_curses(stdscr, user_config, config, t) -> int:
     """
     import curses
     from bob.tui import fixlog as _fl
+    last = 0
     while True:
-        choice = _home(stdscr, user_config, config, t)
+        choice = _home(stdscr, user_config, config, t, cursor=last)   # v0.43.0 — back on the choice left
         if choice == "quit":
             return 0
+        last = ("reports", "fixes", "journals").index(choice)
         if choice == "fixes":
             _fl.run(stdscr, curses, t, _init_colors_ml())
             continue
+        if choice == "journals":
+            from bob.tui import journals as _jl
+            _jl.run(stdscr, curses, t, _init_colors_ml())
+            continue
+        left = None
         while True:
-            action, chosen = _dir_picker(stdscr, user_config, config, t)
+            action, chosen = _dir_picker(stdscr, user_config, config, t, anchor=left)
             if action == "quit":
                 break
             if action == "select" and chosen is not None:
                 _browse_dir(stdscr, chosen, user_config, config, t)
+                left = chosen
 
 
 # ---------------------------------------------------------------------------
@@ -1733,7 +2004,9 @@ def _run_manage_logs_dispatch(user_config, config, t) -> int:
     # prints the "run an audit first" guidance, rather than a landing screen
     # with nothing behind either choice.
     from bob import fix_journal as _FJ
-    if not user_config.get("log_dir") and not _FJ.path().exists():
+    from bob import journals as _J
+    if (not user_config.get("log_dir") and not _FJ.path().exists()
+            and not any(_J.path(n).exists() for n in _J.CHANNELS)):
         return _run_manage_logs_plain(user_config, config, t)
 
     import curses

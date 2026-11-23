@@ -119,7 +119,7 @@ class TestTheTwoSurfacesAgree:
                  if n.isupper() and isinstance(getattr(_palette, n), int)
                  and not n.endswith("_256")}
         # v0.39.0: nine, plus the context line's four tones (CONTEXT_PROMPT/OK/ERROR/INFO).
-        assert len(pairs) == 14, f"{len(pairs)} pairs: {sorted(pairs)}"   # v0.40.0 — KEYCAP
+        assert len(pairs) == 17, f"{len(pairs)} pairs: {sorted(pairs)}"   # v0.43.0 — ACCOUNT, POSITIVE, NEGATIVE
         doc = _DOC.read_text(encoding="utf-8")
         for name in pairs:
             assert f"`{name}`" in doc, f"pair {name} is not in the charter table"

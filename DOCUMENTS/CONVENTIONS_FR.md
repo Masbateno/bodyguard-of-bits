@@ -85,7 +85,7 @@ après une couleur qu'il contient.
 
 ## 2. Couleur — écrans curses
 
-Treize paires, définies une seule fois dans `bob/tui/_palette.py`. **N'appelez pas
+Dix-sept paires, définies une seule fois dans `bob/tui/_palette.py`. **N'appelez pas
 `init_pair` hors de ce module** — une garde le rejette, et elle existe parce que
 trois écrans ont un jour initialisé la même charte chacun de leur côté en étant
 d'accord, ce qui est ainsi que la ligne de curseur et le bandeau ont partagé un
@@ -107,6 +107,9 @@ fond sans que personne le voie.
 | `CONTEXT_ERROR` | la ligne de contexte disant qu'une action a été refusée ou a échoué (`✖`) — rouge sur noir |
 | `CONTEXT_INFO` | la ligne de contexte qui informe seulement (`ℹ`, une action annulée) — cyan sur noir |
 | `KEYCAP` | la pastille d'une touche dans le bandeau du bas — noir sur blanc (v0.40.0) |
+| `ACCOUNT` | un nom de compte, dans tous les assistants — cyan, gras (v0.43.0) |
+| `POSITIVE` | le terme d'un journal pour ce qui ajoute ou active — vert, gras (v0.43.0) |
+| `NEGATIVE` | le terme d'un journal pour ce qui retire, désactive ou alerte — rouge, gras (v0.43.0) |
 
 **La ligne de contexte dit ce que signifie un message** (v0.39.0, décidé avec
 l'utilisateur). Sa couleur est celle de la sortie texte pour le même sens — vert
@@ -200,6 +203,89 @@ carnet d'adresses en mode texte plafonnait un intervalle à mille numéros (et
 supprimait sans rien demander). *Gardé :* les formes · un numéro qui n'est pas
 une entrée · un intervalle à trous et au-delà de la fin · un intervalle vide ·
 les listes en mode texte.
+
+**Les noms de comptes et les termes d'action ont leur couleur** (v0.43.0,
+demandé par l'user les 22 et 23 novembre 2026, pour la lecture). Partout où un
+écran montre un compte — l'équipe, les comptes à ajouter, l'auteur d'une ligne
+de journal ou d'une note, l'opérateur de `--fix --apply` — le nom est en cyan
+(`ACCOUNT`). Dans les journaux (`team`, `cron`, `admin`), le terme qui dit ce
+qui a été fait prend la couleur de son effet :
+
+| Couleur | Termes |
+|---|---|
+| vert (`POSITIVE`) | ce qui ajoute ou active — `init`, `grant`, un audit planifié créé, une adresse ajoutée, une catégorie `on`, `unignore` |
+| rouge (`NEGATIVE`) | ce qui retire, désactive ou alerte — `revoke`, `remove`, un audit planifié supprimé, une adresse retirée, un rapport supprimé, une catégorie `off`, `ignore`, `reset_baseline`, une déclaration ou un réglage modifiés hors de BOB, une action faite hors d'un périmètre déclaré |
+| jaune (`ACCENT`) | le reste — l'horaire ou les adresses d'un audit planifié modifiés, `reconfigure`, les essais de courriel et de webhook, `install_completion`, une tentative abandonnée, une action non attribuée |
+
+Dans la liste du journal de `--fix --apply`, le statut de chaque commande prend
+les mêmes couleurs (appliquée en vert, échec en rouge, le reste en jaune) et la
+commande elle-même est en violet (`VERBATIM`), comme dans son détail. Une ligne
+de journal se lit « action — détails » : l'action est toujours là où l'œil
+commence. Le texte porte des marques autour d'un nom ou d'un terme
+(`bob/_names.py` : SO pour un nom, DC1/DC2/DC3 pour un ton, DC4 pour une commande, SI pour fermer) ;
+une seule fonction les dessine, `bob/tui/fixlog.put_marked`, que tout écran
+dessinant une telle ligne appelle — l'aperçu d'un rapport dessinait jadis ses
+lignes lui-même et affichait `^Nalice^O` (trouvé par l'user). Toute sortie texte
+— `--fix-journal`, `--journals show`, `--team-journal`, un menu numéroté, un
+tube — retire les marques. La ligne sous le curseur garde la couleur unique de
+la sélection. *Gardé :* le terme de chaque ton · la paire de chaque ton ·
+l'auteur d'une note dans l'aperçu · aucune marque dans une sortie texte.
+
+**Seul Échap revient ; une action reste sur son écran** (v0.43.0, demandé par
+l'user le 22 novembre 2026). Une touche qui agit — Entrée qui applique les
+cases cochées, `d` qui retire, `n` qui ajoute — laisse l'écran en place, relu
+depuis ce qui est désormais déclaré, son résultat sur la ligne de contexte.
+Sortir appartient à Échap seul (et à `q` sur un écran d'accueil, qu'annonce
+`LANDING_EXIT`). Trouvé en le faisant : Entrée sur « Ce qui est enregistré » de
+`--manage-team` appliquait, puis revenait à l'écran précédent. *Gardé :*
+l'image qui suit Entrée est le même écran, ses cases relues.
+
+**Une liste marque comme toutes les listes** (la liste des rapports de
+`--manage-logs`, v0.32.0 ; `--manage-team`, v0.43.0). Les entrées sont
+numérotées ; Espace en marque une, `a` les marque toutes ; dès qu'une est
+marquée, `u` retire les marques et le bandeau le dit ; un ✓ devant le numéro
+montre la marque. `d` agit sur les entrées marquées — sans marque, il demande
+lesquelles, lues comme toute sélection (`2`, `1,3`, `2-4`, `all`) — et confirme
+en les nommant. Entrée sur une liste de choix prend les marquées, sinon celle
+sous le curseur.
+
+**Au retour, la sélection reste sur l'entrée quittée** (v0.43.0, demandé par
+l'user le 23 novembre 2026). Échap depuis un écran ouvert depuis une liste
+ramène à cette liste, le curseur sur l'entrée ouverte — par son nom quand la
+liste peut changer entre-temps (un membre ajouté ou retiré), au même rang si
+l'entrée a disparu. Vérifié écran par écran : l'accueil et la liste de
+l'équipe de `--manage-team`, l'accueil et la liste des dossiers de
+`--manage-logs` ne le faisaient pas (corrigés) ; la liste des rapports, les
+journaux, les sélecteurs de `--explain` et les listes de `--manage-cron` le
+faisaient. *Gardé :* les quatre corrigés.
+
+**Une ligne vide sous le bandeau d'en-tête** (v0.43.0, demandé par l'user le
+23 novembre 2026). Sur chaque écran, la ligne 0 est le bandeau et la ligne 1
+reste vide — que l'on fasse défiler ou non ; le contenu commence à `BODY_TOP`
+(`bob/tui/_chrome.py`), et la hauteur du contenu vaut
+`h - BODY_TOP - chrome_height(...)`. Un écran n'ajoute pas de ligne vide à lui
+en tête. Trouvé en le faisant : les journaux, le journal de `--fix --apply`,
+`--explain`, l'aperçu d'un rapport et la liste des dossiers dessinaient juste
+sous le bandeau ; d'autres avaient leur propre ligne vide en tête, qui
+disparaissait au défilement. *Gardé :* le dessin commun (défilé aussi),
+l'aperçu, les listes de `--explain`, `--manage-team`.
+
+**Les colonnes s'alignent** (v0.43.0, demandé par l'user le 23 novembre 2026).
+Dans toute liste que BOB affiche ou dessine — un journal, l'équipe, ce qui est
+enregistré, le carnet d'adresses, les audits planifiés —, un champ qui suit un
+champ de longueur variable commence dans une seule colonne : le champ d'avant
+est complété jusqu'au plus long de la liste affichée (ou jusqu'à une largeur
+fixe quand la liste est dessinée morceau par morceau), mesuré sur le texte
+visible — jamais sur les marques de couleur — et le complément reste hors de
+la couleur. Une ligne trop longue pour l'écran reprend sous sa dernière colonne
+— après son dernier groupe d'au moins deux espaces —, jamais sous le début de
+la ligne. Une ligne de journal complète son action (la partie avant « — »)
+jusqu'à la plus longue action du journal, son auteur jusqu'au plus long
+auteur. Trouvé en le faisant : dans le journal d'équipe, comptes et attributs
+suivaient la longueur du mot d'avant ; dans le journal cron, les détails
+suivaient la longueur de l'action ; le « NON enregistré » français dépassait
+la colonne fixe de `--journals`. *Gardé :* les journaux team, cron et admin,
+`--team`, `--journals`, le carnet d'adresses.
 
 **Les deux surfaces s'accordent sur le sens.** L'orange marque ce qui est sous
 l'attention (ligne de curseur, bandeau de touches) ; le violet marque ce qui

@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.42.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.43.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -406,6 +406,7 @@ La même version a cessé de faire lire à BOB les noms de fichiers de Debian po
 - [Guide développeur](DOCUMENTS/README_DEV_FR.md)
 - [Guide d'automatisation](DOCUMENTS/AUTOMATION_FR.md)
 - [Le journal de `--fix --apply`, et comment une falsification se voit](DOCUMENTS/FIX_JOURNAL_FR.md)
+- [Périmètres d'équipe : qui peut faire quoi avec BOB, et ce qui est inscrit quand quelqu'un en sort](DOCUMENTS/AUTOMATION_FR.md#périmètres-déquipe)
 
 ---
 

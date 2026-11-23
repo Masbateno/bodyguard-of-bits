@@ -219,7 +219,9 @@ class TestTheScreens:
             fl.run(Scr([]), _Curses, _t, True)
         except _OutOfKeys:
             pass
-        first = next((text, attr) for row, text, attr in written if row == 1)
+        # v0.43.0 — the body starts under the empty row below the banner
+        from bob.tui._chrome import BODY_TOP
+        first = next((text, attr) for row, text, attr in written if row == BODY_TOP)
         assert first[0].startswith(_t("fixlog.verdict.tampered")[:20])
         assert first[1] == _Curses.color_pair(CONTEXT_ERROR) | _Curses.A_BOLD
 

@@ -128,6 +128,8 @@ class EmailStore:
         if email not in self._emails:
             self._emails.append(email)
             self._save()
+            from bob import journals   # v0.43.0 (B-045) — the address book's trace
+            journals.record("carnet", "address_added", address=email)
 
     def remove(self, email: str) -> None:
         """Remove email if present and persist to disk."""
@@ -135,6 +137,8 @@ class EmailStore:
         if email in self._emails:
             self._emails.remove(email)
             self._save()
+            from bob import journals   # v0.43.0 (B-045)
+            journals.record("carnet", "address_removed", address=email)
 
     def _ensure_dir(self) -> None:
         try:

@@ -456,6 +456,14 @@ def run_fixes(engine, config, t) -> None:
                 skipped_cmds += 1
                 print()
                 continue
+            # v0.43.0 (B-045) — each command needs the score domain of its
+            # finding (fix:<domain>); outside the declared perimeter it is
+            # said and asked again, whatever -y says (bob/team.py).
+            from bob import team as _team
+            if not _team.gate(_team.fix_attribute(key), "fix", t):
+                skipped_cmds += 1
+                print()
+                continue
             # Written before the command starts: a command during which BOB
             # dies (the firewall fix that cuts its SSH session) still shows.
             try:

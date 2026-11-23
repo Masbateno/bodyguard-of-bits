@@ -507,7 +507,7 @@ def _curses_email_list_sub(stdscr, current_email: str, t) -> "str | None":
         stdscr.erase()
         h, w = stdscr.getmaxyx()
         from bob.tui import _chrome as _ch
-        body_h = max(1, h - 1 - _ch.chrome_height(t, _EMAIL_KEYS, w))
+        body_h = max(1, h - _ch.BODY_TOP - _ch.chrome_height(t, _EMAIL_KEYS, w))
 
         hdr = f"  {t('cron_ui.select_emails')}    " + t("tui.email_selected", count=len(selected))
         _chrome.draw_header(stdscr, _curses, hdr, has_color)
@@ -532,7 +532,7 @@ def _curses_email_list_sub(stdscr, current_email: str, t) -> "str | None":
                     attr = marked_attr(_curses, has_color)
                 else:
                     attr = _curses.A_NORMAL
-                _draw(stdscr, row + 1, 0, line[:w - 1].ljust(w - 1), attr)
+                _draw(stdscr, row + _ch.BODY_TOP, 0, line[:w - 1].ljust(w - 1), attr)
 
         # v0.16.3 — a transient message when there is one, otherwise the
         # shared key line. The count belongs in the banner: it is context.
@@ -616,7 +616,7 @@ def _curses_email_store_sub(stdscr, t) -> None:
         h, w = stdscr.getmaxyx()
         from bob.tui import _chrome as _ch
         store_keys = _with_unmark(_STORE_KEYS, len(marked))   # v0.39.0 — u announced when it acts
-        body_h = max(1, h - 1 - _ch.chrome_height(t, store_keys, w))
+        body_h = max(1, h - _ch.BODY_TOP - _ch.chrome_height(t, store_keys, w))
 
         n_sel = len(marked)
         if n_sel:
@@ -629,6 +629,13 @@ def _curses_email_store_sub(stdscr, t) -> None:
             _draw(stdscr, 2, 2, t("manage_cron.email_store_empty"))
             _draw(stdscr, 4, 2, "n: " + t("manage_cron.email_store_ex_add"))
         else:
+            # v0.43.0 (user, 23 November 2026) — beside each address, when and
+            # by whom it was added, in a column (bob/journals.address_origin).
+            from bob import _names
+            from bob import journals as _J
+            from bob.tui import fixlog as _fl
+            _book_journal = _J.load("cron")
+            _addr_w = max((len(a) for a in emails), default=0)
             for row in range(body_h):
                 idx = scroll + row
                 if idx >= n:
@@ -638,7 +645,8 @@ def _curses_email_store_sub(stdscr, t) -> None:
                 mark = "✔ " if _is_marked else "  "
                 # v0.39.0 (user, 19 November 2026) — numbered, as the notes
                 # are, so that d can take numbers.
-                line = f"  {mark}{idx + 1:>{len(str(n))}}. {addr}"
+                line = (f"  {mark}{idx + 1:>{len(str(n))}}. {addr:<{_addr_w}}   "
+                        f"{_J.address_origin(addr, t, _book_journal)}")
                 is_cur = (idx == cursor)
                 if is_cur:
                     attr = (_curses.color_pair(1) | _curses.A_BOLD) if has_color else _curses.A_REVERSE
@@ -646,7 +654,10 @@ def _curses_email_store_sub(stdscr, t) -> None:
                     attr = marked_attr(_curses, has_color)
                 else:
                     attr = _curses.A_NORMAL
-                _draw(stdscr, row + 1, 0, line[:w - 1].ljust(w - 1), attr)
+                if is_cur:
+                    _draw(stdscr, row + _ch.BODY_TOP, 0, _names.plain(line)[:w - 1].ljust(w - 1), attr)
+                else:
+                    _fl.put_marked(stdscr, _curses, row + _ch.BODY_TOP, 0, line, attr, has_color, w)
 
         # v0.39.0 — on the context line, in its tone (it replaced the banner).
         _draw_footer(stdscr, t, store_keys, has_color, context=f"  {status}" if status else "")
@@ -1056,7 +1067,7 @@ _CRON_NAME_W = 20
 _CRON_SCHED_COL = 2 + _CRON_NAME_W + 1
 
 
-def _cron_render_lines(rows, width: int) -> "list[tuple[str, int]]":
+def _cron_render_lines(rows, width: int, origins: "list[str] | None" = None) -> "list[tuple[str, int]]":
     """Lay out the --manage-cron list at terminal *width*.
 
     ``rows`` is ``[(name, body, emails, is_marked)]`` where ``body`` is the
@@ -1103,6 +1114,8 @@ def _cron_render_lines(rows, width: int) -> "list[tuple[str, int]]":
             # addresses; fall back to the unpadded (still one) line then.
             line = aligned if len(aligned) <= width - 1 else f"{mark}{nf}{body}{sep}{emails}"
             display.append((line, idx))
+            if origins:
+                display.append((" " * _CRON_SCHED_COL + origins[idx], idx))
             continue
         indent = " " * _CRON_SCHED_COL
         avail = max(8, width - 1 - _CRON_SCHED_COL)
@@ -1110,12 +1123,16 @@ def _cron_render_lines(rows, width: int) -> "list[tuple[str, int]]":
         display.append((f"{mark}{nf}{segs[0]}", idx))
         for seg in segs[1:]:
             display.append((f"{indent}{seg}", idx))
+        if origins:
+            display.append((f"{indent}{origins[idx]}", idx))
     return display
 
 
 def _run_manage_cron_curses(stdscr, config, t) -> int:
     """Curses TUI for --manage-cron."""
     import curses as _curses
+    from bob import _names
+    from bob.tui import fixlog as _fl
 
     try:
         _init_colors_cron()
@@ -1138,7 +1155,9 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
         # Sized for the widest the banner ever gets on this screen — with
         # `u unmark all` present. Sizing it for the current selection would
         # make the list change height the moment an entry is marked.
-        body_h = max(1, h - 1 - _ch.chrome_height(t, _with_unmark(_MANAGE_KEYS, 1), w))
+        # v0.43.0 (user, 23 November 2026) — an empty line between the top
+        # banner and the first job: one row fewer for the list.
+        body_h = max(1, h - _ch.BODY_TOP - _ch.chrome_height(t, _with_unmark(_MANAGE_KEYS, 1), w))
 
         crons = list_installed_crons()
         lang = config.lang
@@ -1176,6 +1195,8 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
             # aligned line, wider ones wrapped, a dim separator (index -1)
             # between jobs. Scroll counts physical rows; the cursor counts jobs.
             rows = []
+            from bob import journals as _J
+            _cron_journal = _J.load("cron")
             for num, entry in enumerate(crons, 1):
                 is_marked = entry.key in marked
                 emails = (" ; ".join(a.strip() for a in entry.email.split(",") if a.strip())
@@ -1185,7 +1206,10 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
                 # v0.39.0 (user, 19 November 2026) — numbered, so that d can
                 # take numbers, as the notes and the address book do.
                 rows.append((f"{num:>{len(str(n))}}. {entry.name}", f"{human}{tag}", emails, is_marked))
-            display = _cron_render_lines(rows, w)
+            # v0.43.0 (user, 23 November 2026) — under each job, when and by
+            # whom it was created.
+            origins = [_J.cron_origin(entry, t, _cron_journal) for entry in crons]
+            display = _cron_render_lines(rows, w, origins)
 
             # Physical-row span of each job, to keep the whole cursor job visible.
             first = {}
@@ -1221,7 +1245,11 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
                         attr = _curses.color_pair(4)
                     else:
                         attr = _curses.A_NORMAL
-                _draw(stdscr, row + 1, 0, text[:w - 1].ljust(w - 1), attr)
+                if eidx == cursor:
+                    _draw(stdscr, row + _ch.BODY_TOP, 0, _names.plain(text)[:w - 1].ljust(w - 1), attr)
+                else:
+                    # the creator's name in the accounts' colour (bob/_names.py)
+                    _fl.put_marked(stdscr, _curses, row + _ch.BODY_TOP, 0, text, attr, has_color, w)
 
         # ── Footer ───────────────────────────────────────────────────────────
         # v0.16.3 — transient message, else the shared key line. The counts

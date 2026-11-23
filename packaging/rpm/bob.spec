@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.42.0
+Version:        0.43.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,15 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Mon Nov 23 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.43.0-1
+- Team perimeters (--team, --manage-team): a confirmation and
+  accountability mechanism, not access control. Chained local journals
+  of listed operations (cron, admin), shown by --manage-logs and
+  --journals. --log-max-size: a retention threshold for the reports.
+  --exhaustive names packaged files with no recorded digest. Screens
+  brought to written conventions. No score or exit code change without
+  a team declaration.
+
 * Sun Nov 22 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.42.0-1
 - BREAKING (score certainty, --target): without debsums, package
   integrity is read through dpkg --verify; the score stops being a

@@ -1,3 +1,18 @@
+bodyguard-of-bits (0.43.0-1) unstable; urgency=medium
+
+  * Team perimeters (--team, --manage-team): a confirmation and
+    accountability mechanism, not access control; an action outside the
+    declared perimeter is asked again and written to a team journal.
+  * Chained local journals of listed operations (cron, admin), shown by
+    --manage-logs and --journals; what is recorded can be chosen.
+  * --log-max-size: a retention threshold for the reports' folder.
+  * --exhaustive on the Debian family names packaged files with no
+    recorded digest, which no verifier compares.
+  * Screens brought to written conventions. No score or exit code
+    change without a team declaration.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Mon, 23 Nov 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.42.0-1) unstable; urgency=medium
 
   * BREAKING (score certainty, --target): without debsums, package

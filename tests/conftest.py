@@ -95,6 +95,21 @@ def _no_live_ssh_session_for_fail2ban(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _team_declaration_out_of_the_host(tmp_path_factory, monkeypatch):
+    """v0.43.0 (B-045) — no test reads the host's ``/etc/bob/team.conf``: a
+    declaration on the machine running the suite would put a question before
+    every audit a test runs. Each test sees none, unless it writes its own."""
+    from bob import team
+    monkeypatch.setattr(team, "CONF", tmp_path_factory.mktemp("team") / "team.conf")
+    monkeypatch.setattr(team, "_CONF_UID", os.geteuid())
+    # The same for what is recorded (bob/journals.py): the host's settings
+    # would switch journals off under the suite.
+    from bob import journals
+    monkeypatch.setattr(journals, "SETTINGS", tmp_path_factory.mktemp("journals") / "journals.conf")
+    monkeypatch.setattr(journals, "_SETTINGS_UID", os.geteuid())
+
+
+@pytest.fixture(autouse=True)
 def _fix_journal_out_of_the_host(tmp_path_factory, monkeypatch):
     """v0.40.0 — every ``--fix --apply`` writes the journal of fixes and sends
     its witness to the system log. No test may write the host's

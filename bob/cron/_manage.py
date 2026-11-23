@@ -47,8 +47,13 @@ def _manage_email_store(t) -> None:
         if not emails:
             print(f"  ℹ {t('manage_cron.email_store_empty')}")
         else:
+            # v0.43.0 — when and by whom each address was added
+            from bob import _names
+            from bob import journals as _J
+            _book_journal = _J.load("cron")
+            _w = max(len(a) for a in emails)
             for i, addr in enumerate(emails, 1):
-                print(f"  {i}. {addr}")
+                print(f"  {i}. {addr:<{_w}}   {_names.plain(_J.address_origin(addr, t, _book_journal))}")
 
         print()
         print(f"  {t('manage_cron.email_store_intro')}")
@@ -270,10 +275,15 @@ def _run_manage_cron_plain(config, t) -> int:
             continue
 
         lang = config.lang
+        from bob import _names
+        from bob import journals as _J
+        _cron_journal = _J.load("cron")
         for i, entry in enumerate(crons, 1):
             human = cron_to_human(entry.schedule_expr, lang)
             legacy_tag = f"  [{t('manage_cron.legacy_tag')}]" if entry.legacy else ""
             print(f"  {i}. {entry.name:<20} {human}{legacy_tag}")
+            # v0.43.0 — when and by whom it was created
+            print(f"     {_names.plain(_J.cron_origin(entry, t, _cron_journal))}")
             if entry.email:
                 for addr in entry.email.split(","):
                     addr = addr.strip()

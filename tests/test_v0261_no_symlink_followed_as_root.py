@@ -486,5 +486,6 @@ class TestManageLogsUnderARedirectedHome:
         lexical, _, inside = logs
         assert not manage_logs._listable(lexical) and manage_logs._listable(inside)
         assert "if browse_dir.exists() and _listable(browse_dir):" in inspect.getsource(manage_logs._browse_dir)
-        assert "_unlink_report(logs[li])" in inspect.getsource(manage_logs._browse_dir)
+        # v0.43.0 — the call also carries the screen's message channel (say=)
+        assert "_unlink_report(logs[li]" in inspect.getsource(manage_logs._browse_dir)
         assert "if log_dir.exists() and _listable(log_dir) else []" in inspect.getsource(manage_logs._change_log_dir)

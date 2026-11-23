@@ -75,6 +75,8 @@ REMOVED  = "removed"
 #: v0.40.0 (B-032) — b, in the report preview: show/hide the computation of
 #: the score, as --breakdown prints it.
 BREAKDOWN = "breakdown"
+EXPAND = "expand"       #: t — every block of the preview at once (v0.43.0)
+CEILING = "ceiling"     #: p — the reports' size ceiling (v0.43.0)
 #: v0.39.0 (user, 19 November 2026: the keys a screen accepts are exactly the
 #: keys it announces) — a numbered menu's digits, announced with the menu's own
 #: range: ``pick(4)`` is drawn "1-4" and binds 1 to 4, never 5. The digits were
@@ -148,6 +150,8 @@ _LITERAL: "dict[str, tuple[int, ...]]" = {
     COMPLETE: (9,),
     REMOVED: (ord("r"), ord("R")),
     BREAKDOWN: (ord("b"), ord("B")),
+    EXPAND: (ord("t"), ord("T")),
+    CEILING: (ord("p"), ord("P")),
 }
 
 #: The glyph cluster shown for each action. Navigation is drawn without a
@@ -161,7 +165,7 @@ _GLYPH = {
     PEER: "←/→",
     NOTES: "n", ANNOTATE: "a", COMPARE: "c", HISTORY: "h", NUMBERS: "#",
     NOTE_ADD: "a", NOTE_EDIT: "e", NOTE_WITHDRAW: "r", NOTE_PURGE: "p", NOTE_JOURNAL: "v",
-    COMPLETE: "Tab", REMOVED: "r", BREAKDOWN: "b",
+    COMPLETE: "Tab", REMOVED: "r", BREAKDOWN: "b", EXPAND: "t", CEILING: "p",
 }
 
 
@@ -364,11 +368,21 @@ def footer_layout(t, actions: "tuple[str, ...]", width: int = 78
     if len(first[0]) <= width or len(parts) < 2:
         return [first]
 
-    # Split on the last separator that still fits, so no cluster is broken.
-    cut = len(parts) - 1
-    while cut > 1 and len(line(parts[:cut])[0]) > width:
-        cut -= 1
-    return [line(parts[:cut]), line(parts[cut:])]
+    # Split on the last separator that still fits, so no cluster is broken —
+    # and again on what is left, as long as it does not fit (v0.43.0: the
+    # preview's French banner ran to 84 columns on its second line once `t`
+    # joined it; two lines were all this split had ever made). One or two
+    # lines that fit are cut exactly as before.
+    out = []
+    rest = parts
+    while len(line(rest)[0]) > width and len(rest) > 1:
+        cut = len(rest) - 1
+        while cut > 1 and len(line(rest[:cut])[0]) > width:
+            cut -= 1
+        out.append(line(rest[:cut]))
+        rest = rest[cut:]
+    out.append(line(rest))
+    return out
 
 
 def footer(t, actions: "tuple[str, ...]", width: int = 78) -> str:

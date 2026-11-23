@@ -40,6 +40,12 @@ _TONE_PAIR = {PROMPT: CONTEXT_PROMPT, OK: CONTEXT_OK, ERROR: CONTEXT_ERROR, INFO
 _GLYPH_TONE = {"✔": OK, "✖": ERROR, "ℹ": INFO}
 
 
+#: v0.43.0 (user, 23 November 2026) — the first row of a screen's body: row 0
+#: is the header banner, row 1 stays empty on every screen (CONVENTIONS.md),
+#: scrolled or not. A body's height is ``h - BODY_TOP - chrome_height(...)``.
+BODY_TOP = 2
+
+
 def tone_of(text: str) -> str:
     """The tone a status line's first glyph gives it; "" for none."""
     head = text.lstrip()[:1]

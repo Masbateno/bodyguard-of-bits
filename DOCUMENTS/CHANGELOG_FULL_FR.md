@@ -6,6 +6,181 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.43.0] — 23-11-2026
+
+**Une version mineure : périmètres d'équipe et journaux d'opérations listées ;
+un seuil de taille pour les rapports ; les fichiers empaquetés sans empreinte
+enregistrée sont dits ; les écrans ramenés à des conventions écrites.**
+
+Sans déclaration d'équipe, ni score ni code de sortie ne change : un hôte audité
+par 0.42.0 et par 0.43.0 obtient le même score et le même code de sortie. Avec
+une déclaration, un audit abandonné à la question de périmètre sort en 0 sans
+auditer (section 1). Ce qui change pour tout hôte : BOB tient désormais deux
+journaux d'opérations listées (section 2) ; l'en-tête d'un audit programmé
+nouvellement créé porte une ligne de commentaire de plus (section 2) ;
+`--exhaustive` sur la famille Debian peut afficher une ligne INFO de plus
+(section 4) ; les tailles de dossiers de `--manage-logs` comptent les fichiers
+annexes de chaque rapport (section 3) ; et les écrans changent d'aspect
+(section 5). Deux clés de constat ajoutées (`package_integrity.no_digest`,
+`package_integrity.no_digest_not_counted`), aucune retirée ni renommée ; aucun
+changement de schéma JSON ni de colonne CSV. Nouvelles options : `--team`,
+`--team-journal`, `--journals`, `--manage-team`, `--log-max-size`. Clés de
+traduction : 3571 → 3736 par langue (165 ajoutées, aucune retirée).
+
+### 1. Périmètres d'équipe (`--team`, `--manage-team`)
+
+Plusieurs personnes qui utilisent BOB sur un même hôte peuvent désormais avoir
+un périmètre déclaré. Le maître de l'équipe (`sudo bob --team init` désigne le
+compte de la session de connexion) donne à chaque compte des attributs :
+`audit`, `note`, `note-autres`, `fix:<domaine>` (un par domaine du score ;
+`fix:*` couvre tous les domaines), `purge`, `config`, `equipe`. **Un périmètre
+d'équipe est un mécanisme de confirmation et de traçabilité, pas une frontière
+de contrôle d'accès : BOB n'empêche rien.** Ce qu'un compte peut réellement
+faire reste l'affaire de Linux (comptes, groupes, sudoers), et root peut tout
+réécrire. Une action hors du périmètre déclaré est annoncée, redemandée (`-y`
+ne répond pas à cette question) et écrite dans le journal d'équipe, effectuée
+ou abandonnée. Sans terminal, elle n'est pas bloquée : elle est effectuée et
+consignée comme non confirmée. Le compte retenu est celui de la session de
+connexion d'origine, lu dans l'identifiant de connexion du noyau (login uid) —
+il survit à `sudo` et à `su` (mesuré en 0.39.0), et peut différer du compte
+effectif ou d'un compte intermédiaire dans une chaîne de changements de
+privilèges ; sans session de connexion (cron, un service), l'action est
+consignée comme non attribuée. Sans déclaration, rien n'est demandé ni marqué.
+La déclaration (`/etc/bob/team.conf`, à root, 0644) n'est écrite que par BOB ;
+une déclaration modifiée à la main est signalée et reste appliquée.
+
+`--manage-team` est un écran plein comme `--manage-logs` : le maître et les
+membres avec leurs attributs (cases cochées, une ligne « tous les attributs »),
+les comptes de connexion de l'hôte à ajouter (plage d'UID de `/etc/login.defs`,
+un shell de connexion ; plusieurs peuvent être marqués), le retrait par marque
+ou par sélection (`2`, `1,3`, `2-4`, `all`), et ce qui est consigné. Un compte
+qui n'existe pas est refusé, avec la commande qui le crée. Sans terminal,
+`--manage-team` propose la même chose sous forme de menu numéroté, qui lit ses
+réponses sur l'entrée standard (la fin de l'entrée le quitte).
+
+### 2. Journaux d'opérations listées, quel qu'en soit l'auteur (`--journals`)
+
+Pour le suivi, les opérations listées ci-dessous laissent désormais une trace
+quel qu'en soit l'auteur, le maître compris. Ces journaux ne consignent pas
+chaque usage de BOB — les audits et les écrans consultés ne sont pas consignés,
+et les correctifs appliqués gardent leur propre journal. Un journal par
+domaine sous `/var/log/bob`, tenu même sans équipe :
+
+| Catégorie (`--journals off …`) | Ce qui est consigné | Journal |
+|---|---|---|
+| — (jamais désactivable) | les changements de la déclaration d'équipe, les tentatives hors périmètre, les actions sans session de connexion | `team` |
+| `cron` | audits programmés créés, modifiés (horaire, adresses), supprimés | `cron` |
+| `carnet` | adresses ajoutées au carnet ou retirées | `cron` |
+| `config` | `--ignore`, `--unignore`, `--reconfigure`, `--reset-baseline`, `--test-email`, `--test-webhook`, `--install-completion`, `--log-max-size`, quand ils réussissent | `admin` |
+| `rapports` | rapports supprimés (à la main ou par le seuil) | `admin` |
+| — (jamais désactivable) | chaque changement de ce qui est consigné | `admin` |
+
+Une catégorie désactivée n'est ni écrite dans son fichier ni envoyée au
+journal système. Les journaux sont tenus comme celui de `--fix --apply` : à
+root, 0640 groupe adm, chaque ligne chaînée à la précédente, l'attribut
+« ajout seul » (`chattr +a`) posé là où le système de fichiers et les droits de
+BOB le permettent (root peut le retirer), chaque ligne aussi envoyée au journal
+système local (`bob-team`, `bob-cron`, `bob-admin`). **Ce que cela protège :**
+la chaîne d'empreintes montre une ligne modifiée, retirée ou déplacée dans un
+journal, à la ligne suivante ; la copie dans le journal système est un second
+témoin. Aucun des deux n'est un point d'ancrage de confiance indépendant : un
+administrateur qui contrôle les deux journaux locaux peut réécrire les deux.
+Contre cette menace, il faut des journaux tenus ailleurs (envoyés à un autre
+hôte, ou scellés) ; BOB ne les met pas en place et ne les exige pas.
+`--manage-logs` ouvre les journaux en troisième choix de son écran d'accueil,
+avec la taille de chacun et la borne jusqu'à laquelle BOB en lit un — 16 Mo par
+journal : au-delà, un journal n'est ni lu ni vérifié, et il est dit trop
+volumineux. Le journal de `--fix --apply` affiche aussi sa taille.
+
+`--manage-cron` affiche sous chaque audit programmé quand et par qui il a été
+créé, et le carnet d'adresses quand et par qui chaque adresse a été ajoutée —
+lu dans le journal cron. Une tâche créée à partir de maintenant porte aussi une
+ligne `# created: <heure> by <compte>` dans son en-tête, utilisée quand ce
+journal est désactivé ; elle garde la création, pas les modifications
+suivantes. Les tâches et adresses plus anciennes disent que leur auteur n'a pas
+été consigné.
+
+### 3. Un seuil de taille pour les rapports (`--log-max-size`)
+
+BOB ne supprimait jamais un rapport de lui-même : sur une petite machine avec
+un audit programmé quotidien, le dossier grossissait sans fin.
+`sudo bob --log-max-size=50M` (ou `500K`, `2G` ; `off`, la valeur par défaut,
+le retire), ou `p` dans la liste des dossiers de `--manage-logs`, fixe un seuil
+sur le dossier où s'écrivent les rapports (les anciens dossiers ne sont pas
+touchés). Après chaque nouveau rapport, les plus anciens partent d'abord,
+chacun avec ses fichiers annexes (notes, état), jusqu'à ce que le dossier
+repasse sous le seuil. Jamais supprimés : le rapport qui vient d'être écrit et
+un rapport qui porte des notes. **C'est un seuil de rétention, pas une limite
+stricte d'occupation du disque** : le dossier peut rester au-dessus quand ces
+rapports-là le dépassent à eux seuls, et BOB le dit. Chaque suppression est
+consignée dans le journal admin. Fixer un seuil avertit que, trop bas, il
+limite la quantité de preuves conservées, et demande confirmation. BOB mesure
+le dossier à la taille de ses fichiers, un rapport comptant avec ses fichiers
+annexes — dans la liste des dossiers aussi, qui ne comptait que les fichiers
+`.log`. Mesuré sur la Mint de test : cinq rapports de 675 Ko au compte de BOB
+(684 Ko de blocs disque selon `du`), un seuil de 300 Ko, un vrai audit `-d` —
+les trois plus anciens supprimés ; restent deux rapports anciens, le nouveau et
+son fichier d'état (296 Ko de blocs) ; le réglage et les trois suppressions
+dans le journal admin.
+
+### 4. Intégrité des paquets : les fichiers sans empreinte enregistrée sont dits
+
+`debsums -c` et `dpkg --verify` comparent un fichier à l'empreinte que son
+paquet a enregistrée. Dans les versions mesurées (dpkg 1.22.6, debsums 3.0.2.1,
+un conteneur Mint 22.3), un fichier sans empreinte enregistrée n'était comparé
+par aucun des deux : un fichier modifié après le retrait de sa ligne du
+`.md5sums` du paquet, ou dans un paquet sans `.md5sums` du tout — les deux
+vérificateurs restaient muets ; et sur la Mint de test elle-même, un fichier
+d'`aspell-en` sans empreinte, modifié, restait muet pendant qu'un fichier voisin
+qui en avait une était signalé. Avec `--exhaustive` sur la famille Debian, une
+ligne INFO nomme désormais les fichiers ordinaires inscrits dans la base de
+dpkg (hors `/etc`, fichiers de configuration écartés) pour lesquels aucune
+empreinte n'est enregistrée — « 23 fichier(s) de 1 paquet(s) sans empreinte
+enregistrée, donc non comparés : aspell-en (23) »
+sur la Mint de test ; 31 fichiers dans 2 paquets sur le poste du développeur —
+à côté de `package_integrity.clean`, qui reste vrai à la lettre. Aucun point :
+la section a été lue et le score ne change pas. Un `.md5sums` écrit avec des
+chemins absolus (un paquet tiers sur le poste) faisait afficher `//usr/...` à
+debsums (mesuré dans le conteneur) ; un chemin `//etc/...` aurait échappé au
+filtre `/etc` des fichiers de configuration. Le chemin est désormais ramené à
+une seule barre avant ce filtre. Le comptage lit la base de dpkg (`lstat`
+seulement sur les chemins listés) ; mesuré, le comptage seul a pris 2,4 s cache
+chaud sur le poste et 54 à 80 s cache froid sur la Mint de test — cela dépend
+du cache et de la machine, en plus d'une section qui prend déjà des minutes.
+
+### 5. Les écrans ramenés à des conventions écrites
+
+`DOCUMENTS/CONVENTIONS_FR.md` écrit désormais, et garde : une ligne vide sous
+le bandeau d'en-tête de chaque écran, défilé ou non ; des colonnes alignées —
+un champ qui suit un champ de longueur variable commence dans une même colonne,
+mesurée sur le texte visible, et une ligne repliée se poursuit sous sa dernière
+colonne ; les noms de comptes en cyan dans tous les écrans et les termes
+d'action des journaux dans la couleur de leur effet (vert ajoute ou active,
+rouge retire, désactive ou alerte, jaune le reste) ; dans la liste du journal
+de `--fix --apply`, chaque statut dans cette couleur et la commande en violet ;
+seules les touches annoncées par un bandeau agissent et seul Échap revient en
+arrière — une action reste sur son écran, son résultat sur la ligne de
+contexte ; les listes de `--manage-logs`, `--manage-cron` et `--manage-team`
+marquent de la même façon (numéros, Espace, `a`, `u`, `d` sur les entrées
+marquées ou sur une sélection) ; et au retour, la sélection reste sur l'entrée
+qu'on vient de quitter. L'aperçu d'un rapport reçoit `t`, qui affiche tous les
+blocs d'un coup (notes avec leur journal, comparaison, historique, calcul,
+numéros de ligne) et les masque tous ; le bandeau des touches passe sur une
+troisième ligne plutôt que de déborder.
+
+### 6. Tests et outillage
+
+**Tests** 23944 → **24635**, mutations 2293 → **2418**, toutes tuées.
+Quatorze nouveaux fichiers de tests : `test_v0430_team.py`,
+`test_v0430_team_gates.py`, `test_v0430_team_screen.py`,
+`test_v0430_team_accounts.py`, `test_v0430_team_wizard.py`,
+`test_v0430_journals.py`, `test_v0430_journal_tones.py`,
+`test_v0430_cron_origin.py`, `test_v0430_report_ceiling.py`,
+`test_v0430_no_digest.py`, `test_v0430_account_colour.py`,
+`test_v0430_preview_everything.py`, `test_v0430_blank_under_banner.py`,
+`test_v0430_selection_kept.py`. Chaque test d'écran tourne sur un faux écran
+qui lève une erreur quand ses touches sont épuisées.
+
 ## [0.42.0] — 22-11-2026
 
 **BREAKING (certitude du score, --target) — une version mineure tirée de l'audit du poste du

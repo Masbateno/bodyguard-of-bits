@@ -6,6 +6,169 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.43.0] — 2026-11-23
+
+**A minor release: team perimeters and journals of listed operations; a size
+threshold for reports; packaged files with no recorded digest said; screens
+brought to written conventions.**
+
+Without a team declaration, no score and no exit code change: a host audited by
+0.42.0 and 0.43.0 gets the same score and the same exit code. With one, an
+audit abandoned at the perimeter question exits 0 without auditing (section 1).
+What changes for every host: BOB now keeps two journals of listed operations
+(section 2); the header of a newly scheduled audit has one more comment line
+(section 2); `--exhaustive` on the Debian family may show one more INFO line
+(section 4); the folder sizes in `--manage-logs` count the files beside each
+report (section 3); and the screens look different (section 5). Two finding
+keys added (`package_integrity.no_digest`,
+`package_integrity.no_digest_not_counted`), none removed or renamed; no
+JSON-schema or CSV-column change. New options: `--team`, `--team-journal`,
+`--journals`, `--manage-team`, `--log-max-size`. Translation keys: 3571 → 3736
+per language (165 added, none removed).
+
+### 1. Team perimeters (`--team`, `--manage-team`)
+
+Several people running BOB on one host can now have a declared perimeter. The
+team's master (`sudo bob --team init` names the account of the login session)
+gives each account attributes: `audit`, `note`, `note-autres`, `fix:<domain>`
+(one per score domain; `fix:*` covers every domain), `purge`, `config`,
+`equipe`. **A team perimeter is a confirmation and accountability mechanism,
+not an access-control boundary: BOB prevents nothing.** What an account may
+really do stays Linux's (accounts, groups, sudoers), and root can rewrite
+anything. An action outside the declared perimeter is announced, asked again
+(`-y` does not answer that question), and written to the team journal, carried
+out or abandoned. Without a terminal it is not blocked: it is carried out and
+recorded as not confirmed. The account is the one of the originating login
+session, read from the kernel's login uid — it survives `sudo` and `su` (measured
+in 0.39.0), and may differ from the effective account or from an intermediate
+account in a chain of privilege changes; with no login session (cron, a
+service), the action is recorded as not attributed. Without a declaration
+nothing is asked and nothing is marked. The declaration (`/etc/bob/team.conf`,
+root's, 0644) is written by BOB only; one changed by hand is said and still
+applied.
+
+`--manage-team` is a full screen like `--manage-logs`: the master and the
+members with their attributes (ticked boxes, an "all attributes" row), the
+host's login accounts to add (UID range of `/etc/login.defs`, a login shell;
+several can be marked), removal by mark or by selection (`2`, `1,3`, `2-4`,
+`all`), and what is recorded. An account that does not exist is refused with
+the command that creates it. Without a terminal, `--manage-team` offers the
+same as a numbered menu, which reads its answers from standard input (end of
+input quits).
+
+### 2. Journals of listed operations, whoever performs them (`--journals`)
+
+For follow-up, the operations listed below now leave a trace whoever performs
+them, the master included. These journals do not record every use of BOB —
+audits and screens viewed are not recorded, and applied fixes keep their own
+journal. One journal per domain under `/var/log/bob`, kept even without a team:
+
+| Category (`--journals off …`) | What is recorded | Journal |
+|---|---|---|
+| — (never switched off) | the team declaration's changes, attempts outside a perimeter, actions with no login session | `team` |
+| `cron` | scheduled audits created, changed (schedule, addresses), removed | `cron` |
+| `carnet` | addresses added to or removed from the address book | `cron` |
+| `config` | `--ignore`, `--unignore`, `--reconfigure`, `--reset-baseline`, `--test-email`, `--test-webhook`, `--install-completion`, `--log-max-size`, when they succeed | `admin` |
+| `rapports` | reports deleted (by hand or by the threshold) | `admin` |
+| — (never switched off) | every change of what is recorded | `admin` |
+
+A category switched off is neither written to its file nor sent to the system
+log. The journals are kept like the journal of `--fix --apply`: root's, 0640
+group adm, each line chained to the one before, the append-only attribute
+(`chattr +a`) set where the file system and BOB's rights allow it (root can
+remove it), each line also sent to the local system log (`bob-team`,
+`bob-cron`, `bob-admin`). **What this protects against:** the hash chain shows
+a line changed, removed or reordered inside a journal, at the next line; the
+system-log copy is a second witness. Neither is an independent trust anchor:
+an administrator who controls both local logs can rewrite both. Logs kept
+elsewhere (forwarded to another host, or sealed) are needed against that
+threat; BOB neither sets up nor requires them. `--manage-logs` opens the
+journals as the third choice of its landing screen, with each journal's size
+and the bound up to which BOB reads one — 16 MB per journal: a larger journal
+is not read nor verified, and is reported as too large. The journal of
+`--fix --apply` shows its size too.
+
+`--manage-cron` shows under each scheduled audit when and by whom it was
+created, and the address book when and by whom each address was added — read
+from the cron journal. A job created from now on also carries a
+`# created: <time> by <account>` line in its header, used when that journal is
+switched off; it keeps the creation, not later changes. Older jobs and
+addresses say their author was not recorded.
+
+### 3. A size threshold for the reports (`--log-max-size`)
+
+BOB never deleted a report on its own: on a small machine with a daily
+scheduled audit, the folder grew without bound. `sudo bob --log-max-size=50M`
+(or `500K`, `2G`; `off`, the default, removes it), or `p` in the folder list of
+`--manage-logs`, sets a threshold on the folder where reports are written
+(older folders are not touched). After each new report, the oldest reports go
+first, each with the files beside it (notes, state), until the folder fits.
+Never deleted: the report just written and a report that carries notes. **This
+is a retention threshold, not a hard disk-usage limit**: the folder can remain
+above it when those reports alone exceed it, and BOB says so. Each deletion is
+recorded in the admin journal. Setting a threshold warns that, set too low, it
+limits how much proof is kept, and asks to confirm. BOB measures the folder by
+the size of its files, a report counting with the files beside it — in the
+folder list too, which counted the `.log` files only. Measured on the test
+Mint: five reports of 675 KB as BOB counts them (684 KB of disk blocks by
+`du`), a threshold of 300 KB, one real `-d` audit — the three oldest deleted;
+left: two older reports, the new one and its state file (296 KB of blocks);
+the setting and the three deletions in the admin journal.
+
+### 4. Package integrity: files with no recorded digest said
+
+`debsums -c` and `dpkg --verify` compare a file with the digest its package
+recorded. In the versions measured (dpkg 1.22.6, debsums 3.0.2.1, a Mint 22.3
+container), a file without a recorded digest was compared by neither: a file
+modified after its line was removed from the package's `.md5sums`, or in a
+package with no `.md5sums` at all — both verifiers stayed silent; and on the
+test Mint itself, an `aspell-en` file without a digest, modified, stayed silent
+while a file with one beside it was reported. With `--exhaustive` on the Debian
+family, an INFO line now names the regular files listed in dpkg's database
+(outside `/etc`, configuration files left out) for which no digest is recorded
+— "23 packaged file(s) in 1 package(s) have no recorded digest and were not
+compared: aspell-en (23)" on the test Mint; 31 files in 2 packages on the
+developer's workstation — beside `package_integrity.clean`, which stays true to
+the letter. No point: the section was read and the score does not change. A
+`.md5sums` written with absolute paths (one third-party package on the
+workstation) made debsums print `//usr/...` (measured in the container); a
+`//etc/...` path would have escaped the `/etc` filter for configuration files.
+The path is now brought back to one slash before that filter. The count reads
+dpkg's database (`lstat` only on the listed paths); measured, the count alone
+took 2.4 s with a warm cache on the workstation and 54–80 s cold on the test
+Mint — it depends on the cache and the machine, on top of a section that
+already takes minutes.
+
+### 5. Screens brought to written conventions
+
+`DOCUMENTS/CONVENTIONS.md` now writes down, and guards: an empty row under the
+header banner on every screen, scrolled or not; columns that line up — a field
+after a field of varying length starts in one column, measured on the visible
+text, and a wrapped line goes on under its last column; account names in cyan
+in every screen and the journals' action terms in the colour of their effect
+(green adds or turns on, red removes, turns off or alarms, yellow the rest);
+in the list of `--fix --apply`'s journal, each status in that colour and the
+command in violet; only the keys a banner announces act and only Esc goes
+back — an action stays on its screen with its outcome on the context line;
+the lists of `--manage-logs`, `--manage-cron` and `--manage-team` mark the same
+way (numbers, Space, `a`, `u`, `d` on the marked entries or on a selection);
+and coming back, the selection stays on the entry just left. The report
+preview gets `t` to show every block at once (notes with their journal,
+comparison, history, computation, line numbers) and to hide them all; the key
+banner wraps onto a third line rather than overflow.
+
+### 6. Tests and tooling
+
+**Tests** 23944 → **24635**, mutations 2293 → **2418**, all killed. Fourteen
+new test files: `test_v0430_team.py`, `test_v0430_team_gates.py`,
+`test_v0430_team_screen.py`, `test_v0430_team_accounts.py`,
+`test_v0430_team_wizard.py`, `test_v0430_journals.py`,
+`test_v0430_journal_tones.py`, `test_v0430_cron_origin.py`,
+`test_v0430_report_ceiling.py`, `test_v0430_no_digest.py`,
+`test_v0430_account_colour.py`, `test_v0430_preview_everything.py`,
+`test_v0430_blank_under_banner.py`, `test_v0430_selection_kept.py`. Every
+screen test runs on a fake screen that raises when its keys run out.
+
 ## [0.42.0] — 2026-11-22
 
 **BREAKING (score certainty, --target) — a minor release from the audit of the developer's

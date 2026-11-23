@@ -201,7 +201,10 @@ def apply_cron_schedule(entry, schedule_expr: str) -> str:
     read/write failure (caller renders it to the user).
     """
     if getattr(entry, "crontab_slug", ""):
-        return _apply_crontab_schedule(entry, schedule_expr)
+        err = _apply_crontab_schedule(entry, schedule_expr)
+        if not err:
+            _trace_cron("cron_schedule", entry, schedule=schedule_expr)
+        return err
     try:
         text = entry.cron_path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
@@ -225,7 +228,16 @@ def apply_cron_schedule(entry, schedule_expr: str) -> str:
         _atomic_write(entry.cron_path, new_text, mode=0o640)
     except OSError as exc:
         return str(exc)
+    _trace_cron("cron_schedule", entry, schedule=schedule_expr)
     return ""
+
+
+def _trace_cron(kind: str, entry=None, **data) -> None:
+    """v0.43.0 (B-045) — a scheduled audit created, changed or removed leaves
+    a trace in the cron journal, whoever did it (bob/journals.py)."""
+    from bob import journals
+    name = data.pop("name", None) or getattr(entry, "name", "") or getattr(entry, "crontab_slug", "")
+    journals.record("cron", kind, name=str(name), **{k: str(v) for k, v in data.items()})
 
 def apply_cron_email(entry, new_email: str) -> tuple[str, int]:
     """Patch *entry.cron_path* and the associated wrapper script with *new_email*.
@@ -271,6 +283,7 @@ def apply_cron_email(entry, new_email: str) -> tuple[str, int]:
             _atomic_write(entry.script_path, text, mode=0o755)
         except OSError as exc:
             return (str(exc), subst_count)
+    _trace_cron("cron_email", entry, email=new_email)
     return ("", subst_count)
 
 
@@ -347,14 +360,22 @@ def write_cron_job(slug: str, raw_name: str, notify_email: str, schedule_expr: s
     notify_email = re.sub(r"[\x00-\x1f\x7f]+", "", notify_email)
     header = [f"# BOB cron — generated {now_str} by bob --install-cron",
               f"# name: {raw_name}", f"# email: {notify_email}"]
+    # v0.43.0 — when and by whom, for --manage-cron (the cron journal holds
+    # the trace; this line serves when that journal is switched off).
+    from datetime import datetime
+    from bob.annotations import operator, who_label
+    who = re.sub(r"[\x00-\x1f\x7f]+", " ", who_label(operator())).strip() or "?"
+    header.append(f"# created: {datetime.now().astimezone().isoformat(timespec='seconds')} by {who}")
     if use_crontab():
         _crontab.put_block(slug, _crontab.block_text(slug, header, schedule_expr, script_path))
+        _trace_cron("cron_created", name=raw_name, schedule=schedule_expr, email=notify_email)
         return _crontab.ROOT_CRONTAB
     cron_path = CRON_DIR / f"bob-{slug}"
     _atomic_write(cron_path, "\n".join(header) + "\n"
                   "SHELL=/bin/sh\n"
                   "PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin\n\n"
                   f"{schedule_expr}  root  {script_path}\n", mode=0o640)
+    _trace_cron("cron_created", name=raw_name, schedule=schedule_expr, email=notify_email)
     return cron_path
 
 
@@ -365,3 +386,4 @@ def remove_cron_job(entry) -> None:
         _crontab.remove_block(entry.crontab_slug)
     else:
         entry.cron_path.unlink()
+    _trace_cron("cron_removed", entry)

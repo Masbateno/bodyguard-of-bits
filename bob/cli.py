@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -186,6 +186,28 @@ class AuditConfig:
     """--fix-journal (v0.40.0): print the journal of --fix --apply, whether it
     is the one BOB wrote first, and exit — 0 intact, 2 falsified, 4 not
     demonstrated."""
+
+    team: bool = False
+    """--team (v0.43.0, B-045): show the team declaration and one's perimeter,
+    or change it (``--team init|grant|revoke|remove …``, root)."""
+
+    team_args: "list[str]" = field(default_factory=list)
+    """The words after --team."""
+
+    log_max_size: "str | None" = None
+    """--log-max-size SIZE (v0.43.0): the reports' size ceiling (50M, 500K, off)."""
+
+    manage_team: bool = False
+    """--manage-team (v0.43.0): the team, managed step by step (bob/team_wizard.py)."""
+
+    journals: bool = False
+    """--journals (v0.43.0): what is recorded; ``on|off CAT``, ``show NAME``."""
+
+    journals_args: "list[str]" = field(default_factory=list)
+
+    team_journal: bool = False
+    """--team-journal (v0.43.0): print the team journal and exit — 0 intact,
+    2 broken, 4 unreadable."""
 
     check_only: frozenset[str] = frozenset()
     """--check=LIST: run only the named checks (comma-separated section names)."""
@@ -655,6 +677,33 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
         elif arg == "--fix-journal":
             config.fix_journal = True
 
+        elif arg == "--team":
+            config.team = True
+            while i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+                i += 1
+                config.team_args.append(argv[i])
+
+        elif arg == "--team-journal":
+            config.team_journal = True
+
+        elif arg.startswith("--log-max-size="):
+            config.log_max_size = arg.split("=", 1)[1]
+
+        elif arg == "--log-max-size":
+            if i + 1 >= len(argv):
+                raise CLIError("--log-max-size requires a size (50M, 500K, 2G) or off")
+            i += 1
+            config.log_max_size = argv[i]
+
+        elif arg == "--manage-team":
+            config.manage_team = True
+
+        elif arg == "--journals":
+            config.journals = True
+            while i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+                i += 1
+                config.journals_args.append(argv[i])
+
         elif arg.startswith("--check="):
             value = arg.split("=", 1)[1].strip()
             if not value:
@@ -938,6 +987,11 @@ def print_help(t, version: str) -> None:
     opt("    --show-ignored",    "help.opt.show_ignored")
     opt("    --history",         "help.opt.history")
     opt("    --fix-journal",     "help.opt.fix_journal")
+    opt("    --team [ACTION]",   "help.opt.team")
+    opt("    --team-journal",    "help.opt.team_journal")
+    opt("    --journals [ACTION]", "help.opt.journals")
+    opt("    --manage-team",     "help.opt.manage_team")
+    opt("    --log-max-size=SIZE", "help.opt.log_max_size")
 
     section("standalone")
     opt("-e, --explain [KEY]",   "help.opt.explain")

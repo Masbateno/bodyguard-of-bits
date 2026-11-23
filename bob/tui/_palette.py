@@ -50,6 +50,14 @@ CONTEXT_INFO   = 13
 #: so a key cannot run into its neighbour's label (decided with the user,
 #: 20 November 2026: on the plain orange line the keys were hard to tell apart).
 KEYCAP         = 14
+#: v0.43.0 — account names, in every wizard (asked by the user, 22 November
+#: 2026, for reading): cyan, bold, on the screen's own background.
+ACCOUNT        = 15
+#: v0.43.0 — the journals' action terms (asked by the user, 23 November 2026):
+#: green for what adds or turns on, red for what removes, turns off or alarms;
+#: the rest in the prompts' yellow (ACCENT).
+POSITIVE       = 16
+NEGATIVE       = 17
 
 #: xterm-256 index for orange. Used only when the terminal advertises 256
 #: colours; see the module docstring for the fallback.
@@ -115,6 +123,9 @@ def init_palette(curses, *, notice: "int | None" = None) -> bool:
         curses.init_pair(CONTEXT_ERROR,  curses.COLOR_RED,    curses.COLOR_BLACK)
         curses.init_pair(CONTEXT_INFO,   curses.COLOR_CYAN,   curses.COLOR_BLACK)
         curses.init_pair(KEYCAP,         curses.COLOR_BLACK,  curses.COLOR_WHITE)
+        curses.init_pair(ACCOUNT,        curses.COLOR_CYAN,   -1)
+        curses.init_pair(POSITIVE,       curses.COLOR_GREEN,  -1)
+        curses.init_pair(NEGATIVE,       curses.COLOR_RED,    -1)
         # Violet marks what must be reproduced exactly — a command to run
         # or a directive to write. The same lines read as ordinary prose
         # inside a wizard until v0.16.4: the convention stopped at the

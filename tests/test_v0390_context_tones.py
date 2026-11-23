@@ -122,9 +122,10 @@ def _status_values(rel: str) -> "list[str]":
 def test_every_status_says_what_it_means(rel):
     """A status with no glyph would be drawn white: neither done, refused nor
     information. Each one is built with its glyph, or comes from a function
-    that builds it (the notes' actions)."""
+    that builds it (the notes' actions; v0.43.0, the reports' ceiling, whose
+    glyph tests/test_v0430_report_ceiling.py checks)."""
     plain = [v for v in _status_values(rel)
-             if not re.match(r"""^(_ch(rome)?\.(done|refused|info)\(|f["'][✔✖ℹ] |_notes_action\()""", v)]
+             if not re.match(r"""^(_ch(rome)?\.(done|refused|info)\(|f["'][✔✖ℹ] |_notes_action\(|_ceiling_action\()""", v)]
     assert plain == [], plain
 
 

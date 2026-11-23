@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.42.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.43.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -402,7 +402,7 @@ Exemple (tronqué pour la lisibilité) :
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.42.0  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.43.0  │  Auditeur de durcissement Linux                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -551,6 +551,11 @@ Le rapport s'ouvre avec un en-tête ASCII art sur 62 caractères et contient : i
 | `--watch[=N]`           | Relancer l'audit toutes les N secondes (défaut 60) — Ctrl+C pour quitter |
 | `--history`             | Afficher la sparkline d'historique de score et la table récente, puis sortir |
 | `--fix-journal`         | Afficher le journal de `--fix --apply` et s'il a été modifié hors de BOB, puis sortir (0 intact, 2 falsifié, 4 non démontré) |
+| `--team [ACTION]`       | Périmètres d'équipe (0.43.0) : voir la déclaration et son périmètre ; `init`, `grant COMPTE ATTR`, `revoke COMPTE ATTR`, `remove COMPTE` (root). Une action hors du périmètre déclaré est redemandée (`-y` n'y répond pas) et inscrite au journal d'équipe ; rien n'est empêché ; sans déclaration, rien ne change |
+| `--team-journal`        | Afficher le journal d'équipe (actions hors d'un périmètre déclaré, actions non attribuées, changements de la déclaration), puis sortir (0 intact, 2 rompu, 4 illisible) |
+| `--journals [ACTION]`   | Ce que BOB enregistre, quel que soit l'auteur (0.43.0) : journaux `team`, `cron` (audits planifiés, carnet d'adresses), `admin` (configuration, rapports supprimés, changements de ce qui est enregistré) ; `on`/`off CAT` (root) pour `cron`, `carnet`, `config`, `rapports` — le journal d'équipe et ces changements sont toujours écrits ; `show NOM` en affiche un (code 0/2/4) |
+| `--manage-team`         | L'équipe sur un écran plein, comme `--manage-logs` (0.43.0) : les membres et leurs attributs en cases à cocher, ce qui est enregistré — ce que font `--team` et `--journals` (les journaux se lisent dans `--manage-logs`), avec les mêmes contrôles, questions et traces ; un menu numéroté sans terminal |
+| `--log-max-size=SIZE`   | Un plafond de taille du dossier des rapports (0.43.0) : `50M`, `500K`, `2G`, des octets ou `off` (défaut). Après chaque nouveau rapport, les plus anciens partent d'abord ; jamais le plus récent ni un rapport annoté ; chaque suppression au journal d'administration ; le réglage avertit qu'un plafond trop bas limite la preuve conservée. Aussi `p` dans la liste des dossiers de `--manage-logs` |
 | `--ignore=CLÉ`          | Ajouter une clé de constat à la liste d'exclusion et sortir        |
 | `--unignore=CLÉ`        | Retirer une clé de constat de la liste d'exclusion et sortir       |
 | `--show-ignored`        | Afficher en gris les constats supprimés à côté de la sortie normale |

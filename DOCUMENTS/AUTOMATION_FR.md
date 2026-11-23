@@ -451,7 +451,150 @@ sudo bob -B                       # forme courte
 
 ---
 
+## Périmètres d'équipe
+
+*Depuis la 0.43.0.* Plusieurs personnes utilisent BOB sur le même hôte, avec
+des niveaux de confiance différents. Le chef d'équipe — le **maître** —
+déclare ce que chaque compte est censé faire avec BOB. **BOB n'empêche rien** :
+une action hors du périmètre déclaré du compte qui la lance est annoncée,
+redemandée, et inscrite au journal d'équipe, qu'elle soit ensuite faite ou
+abandonnée. BOB mesure un écart à une déclaration ; il ne juge pas une faute.
+Ce qu'un compte peut réellement faire reste l'affaire de Linux (comptes,
+groupes, sudoers).
+
+Sans déclaration, rien ne change : aucune question, aucun journal, aucune ligne.
+
+### Déclarer l'équipe
+
+```bash
+sudo bob --team init                          # votre compte de session devient le maître
+sudo bob --team grant carol audit,note,fix:firewall_network
+sudo bob --team grant dave audit
+sudo bob --team revoke carol fix:firewall_network
+sudo bob --team remove dave
+bob --team                                    # la déclaration, et votre propre périmètre
+sudo bob --manage-team                        # la même chose, sur un écran plein
+```
+
+`--manage-team` est un écran plein comme `--manage-logs` : l'équipe (le
+maître, les attributs de chaque membre en cases à cocher — Espace coche,
+Entrée applique ; `n` ajoute un compte, `d` en retire un) et ce qui est
+enregistré ; les journaux se lisent dans `--manage-logs`, troisième choix de
+l'accueil. Chaque changement appelle le même code que les
+commandes, avec les mêmes contrôles, les mêmes traces, et la même question
+hors d'un périmètre déclaré — posée sur l'écran. Sans terminal (un tube, un
+script), il propose la même chose sous forme de menu numéroté.
+
+La déclaration est dans `/etc/bob/team.conf` (à root, `0644` : chacun peut lire
+son périmètre) et seul BOB l'écrit. Chaque écriture est inscrite au journal
+d'équipe avec l'empreinte du fichier ; une déclaration modifiée à la main est
+signalée à chaque action, inscrite une fois au journal, et reste appliquée.
+
+| Attribut | Couvre |
+|---|---|
+| `audit` | tout audit, y compris `--exhaustive`, `--watch`, `--diff` |
+| `fix:<domaine>` | les commandes de `--fix --apply` qui répondent à un constat de ce domaine de score (`firewall_network`, `exposure_services`, `access_control`, `system_hardening`, `health_resilience`, `detection`) ; `fix:*` pour tous |
+| `note` | ajouter une note, modifier ou retirer ses propres notes (`--manage-logs`) |
+| `note-autres` | modifier ou retirer les notes d'un autre compte ; purger des notes |
+| `purge` | supprimer des rapports (`--manage-logs`), `--reset-baseline` |
+| `config` | `--ignore`, `--unignore`, `--reconfigure`, `--install-cron`, `--manage-cron`, `--test-email`, `--test-webhook`, `--install-completion` |
+| `equipe` | `--team grant`, `revoke`, `remove` |
+
+Le maître a tous les attributs. Lire (`--help`, `--explain`, `--history`,
+`--fix-journal`, `--team`, les vues de `--manage-logs`) n'en demande aucun.
+
+### Qui agit
+
+Le compte que BOB nomme est celui que donne le login uid du noyau — la session
+qui a lancé `sudo`, pas root. Une connexion directe en root est un compte comme
+un autre : non déclaré, toutes ses actions sont hors périmètre. Sans session
+(cron, service), l'action n'est **pas attribuée** : faite, et inscrite comme
+telle.
+
+### Hors du périmètre déclaré
+
+```
+⚠ une commande de --fix --apply : hors du périmètre déclaré pour dave — il ne
+  comprend pas « fix:detection ». Si elle est faite, elle est inscrite au
+  journal d'équipe comme hors du périmètre déclaré (maître : alice).
+  La faire quand même ? [y/N]
+```
+
+- **y** : faite, inscrite *confirmée* ; **toute autre réponse** : non faite,
+  inscrite *abandonnée*.
+- `-y` ne répond pas à cette question : avec `--fix --apply -y`, chaque
+  commande hors périmètre est quand même demandée.
+- Sans terminal pour demander (un script), l'action est faite et inscrite
+  *non confirmée*.
+- La question part sur stderr : une sortie `--json` reste propre.
+
+### Les journaux : ce qui a été fait, quel que soit l'auteur
+
+Pour le suivi, une action laisse une trace **quel que soit l'auteur, maître
+compris** — « hors du périmètre déclaré » s'y ajoute. Un journal par domaine,
+tenu même sans équipe :
+
+| Journal | Contient |
+|---|---|
+| `team` | les changements de la déclaration, les tentatives hors d'un périmètre déclaré, les actions sans session, une déclaration modifiée hors de BOB |
+| `cron` | les audits planifiés créés, modifiés (horaire, adresses), supprimés ; les adresses ajoutées au carnet ou retirées |
+| `admin` | `--ignore`, `--unignore`, `--reconfigure`, `--reset-baseline`, `--test-email`, `--test-webhook`, `--install-completion` quand ils réussissent ; les rapports supprimés dans `--manage-logs` ; chaque changement de ce qui est enregistré |
+
+```bash
+sudo bob --journals                       # ce qui est enregistré, la chaîne de chaque journal
+sudo bob --journals show cron             # un journal (code 0 intact, 2 rompu, 4 illisible)
+sudo bob --journals off rapports          # ne plus enregistrer les suppressions de rapports
+sudo bob --team-journal                   # = --journals show team
+```
+
+Ce qui peut être coupé : `cron`, `carnet` (carnet d'adresses), `config`,
+`rapports`. **Jamais** : le journal d'équipe, et les changements de ce réglage
+— couper un journal est lui-même inscrit au journal d'administration, cela ne
+peut donc pas se faire en silence. Seul le maître le règle (`equipe`) ; tout
+autre compte est questionné et marqué, comme pour toute action hors de son
+périmètre. Un fichier de réglage (`/etc/bob/journals.conf`) modifié à la main
+est signalé, inscrit une fois, et reste appliqué ; un fichier illisible ne
+coupe rien.
+
+Chaque journal (`/var/log/bob/<nom>.journal`) est tenu comme le journal de
+`--fix --apply` ([FIX_JOURNAL_FR.md](FIX_JOURNAL_FR.md)) : à root, `0640`
+groupe adm, chaque ligne chaînée à la précédente, en ajout seul quand le
+système de fichiers le permet, chaque ligne aussi envoyée au journal système
+(`bob-team`, `bob-cron`, `bob-admin`). Une ligne modifiée se voit à la
+suivante ; la dernière, c'est le témoin du journal système qui en répond. Dans
+`--manage-logs`, le troisième choix de l'accueil les ouvre : chaque ligne se lit
+« action — détails », l'action dans la couleur de son effet (vert ajoute ou
+active, rouge retire, désactive ou alerte, jaune le reste) et le compte en cyan
+([CONVENTIONS_FR.md](CONVENTIONS_FR.md#2-couleur--écrans-curses)) ; les sorties texte ne portent aucun code de couleur.
+
+### Ce que BOB ne voit pas
+
+BOB ne voit que ses propres actions : une modification de `sshd_config` à la
+main, un `ufw` lancé à la main lui échappent — c'est l'affaire d'auditd. root
+peut réécrire la déclaration et le journal ; la chaîne et le témoin du journal
+système rendent une réécriture visible, pas impossible.
+
+---
+
 ## Gestion des rapports
+
+**Un plafond de taille pour les rapports** (depuis la v0.43.0). BOB ne
+supprime jamais un rapport de lui-même, sauf si un plafond est fixé — utile sur
+une petite machine (la carte SD d'un Pi Zero) où un audit planifié ajoute un
+rapport chaque jour :
+
+```bash
+sudo bob --log-max-size=50M     # ou 500K, 2G ; off le retire (par défaut)
+```
+
+Après chaque nouveau rapport, les plus anciens du dossier où s'écrivent les
+rapports sont supprimés jusqu'à repasser sous le plafond (les anciens dossiers
+ne sont pas touchés) ; un rapport compte avec ses fichiers annexes (notes, état). Jamais supprimés : le rapport qu'on vient d'écrire, et un
+rapport qui porte des notes (ses notes partiraient avec lui) — quand il ne reste
+que ceux-là au-dessus du plafond, BOB le dit. Chaque suppression est inscrite au
+journal d'administration. Fixer un plafond avertit que, trop bas, il limite la
+preuve conservée, et demande confirmation. Dans `--manage-logs`, la liste des
+dossiers montre le plafond et l'espace occupé, et `p` le règle.
 
 Pour lister et supprimer les rapports générés :
 
@@ -551,6 +694,7 @@ pas :
 | `c` | Afficher / masquer la comparaison avec le rapport précédent |
 | `h` | Afficher / masquer l'historique des rapports de cet hôte |
 | `b` | Afficher / masquer le calcul du score, comme `--breakdown` l'affiche (depuis la v0.40.0) |
+| `t` | Tout afficher d'un coup — les notes avec leur journal, la comparaison, l'historique, le calcul, la numérotation des lignes (journal complet) ; à nouveau, tout masquer (depuis la v0.43.0) |
 | `#` | Numéroter les lignes du rapport (log complet seulement) |
 | `Échap` | Revenir à la liste des rapports |
 

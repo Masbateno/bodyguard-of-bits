@@ -77,6 +77,9 @@ def _snapshot(monkeypatch, tools, run):
         calls.append(args)
         return run
     monkeypatch.setattr(P, "_run_capped", fake_run)
+    # v0.43.0 — the no-digest count reads the host's dpkg database; held out,
+    # so this test does not depend on the packages of the machine it runs on.
+    monkeypatch.setattr(P, "_dpkg_undigested", lambda *a: {})
     return P.PackageIntegritySnapshot.from_system(), calls
 
 

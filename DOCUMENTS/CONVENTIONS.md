@@ -80,7 +80,7 @@ embedded reset.
 
 ## 2. Colour — curses screens
 
-Thirteen pairs, defined once in `bob/tui/_palette.py`. **Do not call `init_pair`
+Seventeen pairs, defined once in `bob/tui/_palette.py`. **Do not call `init_pair`
 outside that module** — a guard rejects it, and it exists because three screens
 once initialised the same chart independently and agreed, which is how the
 cursor row and the banner shared a background unnoticed.
@@ -101,6 +101,9 @@ cursor row and the banner shared a background unnoticed.
 | `CONTEXT_ERROR` | the context line saying an action was refused or failed (`✖`) — red on black |
 | `CONTEXT_INFO` | the context line only informing (`ℹ`, an action cancelled) — cyan on black |
 | `KEYCAP` | a key's cap in the bottom banner — black on white (v0.40.0) |
+| `ACCOUNT` | an account name, in every wizard — cyan, bold (v0.43.0) |
+| `POSITIVE` | a journal's term for what adds or turns on — green, bold (v0.43.0) |
+| `NEGATIVE` | a journal's term for what removes, turns off or alarms — red, bold (v0.43.0) |
 
 **The context line says what a message means** (v0.39.0, decided with the
 user). Its colour is the text output's for the same meaning — green done, red
@@ -183,6 +186,81 @@ plain-text job list refused a range reaching past the end and any mix of forms,
 the plain-text address book capped a range at a thousand numbers (and deleted
 without asking). *Guarded:* the forms · a number that is not an entry · a range
 over holes and past the end · an empty range · the plain-text lists.
+
+**Account names and action terms carry their own colour** (v0.43.0, asked by
+the user, 22 and 23 November 2026, for reading). Wherever a screen shows an
+account — the team, the accounts to add, a journal's author, a note's author,
+the operator of `--fix --apply` — the name is drawn in `ACCOUNT`'s cyan. In the
+journals (`team`, `cron`, `admin`), the term that says what was done takes the
+colour of its effect:
+
+| Colour | Terms |
+|---|---|
+| green (`POSITIVE`) | what adds or turns on — `init`, `grant`, a scheduled audit created, an address added, a category `on`, `unignore` |
+| red (`NEGATIVE`) | what removes, turns off or alarms — `revoke`, `remove`, a scheduled audit removed, an address removed, a report deleted, a category `off`, `ignore`, `reset_baseline`, a declaration or a setting changed outside BOB, an action carried out outside a declared perimeter |
+| yellow (`ACCENT`) | the rest — a schedule or the addresses of a scheduled audit changed, `reconfigure`, the tests of e-mail and webhook, `install_completion`, an attempt abandoned, an action not attributed |
+
+In the list of `--fix --apply`'s journal, each command's status takes the same
+colours (applied green, failed red, the rest yellow) and the command itself is
+violet (`VERBATIM`), as in its detail. A journal line reads "action — details"
+so the action is always where the eye starts. The text carries marks around a name or a term (`bob/_names.py`:
+SO for a name, DC1/DC2/DC3 for a tone, DC4 for a command, SI to close); one function draws them,
+`bob/tui/fixlog.put_marked`, which every screen that draws such a line calls —
+the report preview once drew its own lines and showed `^Nalice^O` (found by the
+user). Every text output — `--fix-journal`, `--journals show`, `--team-journal`,
+a numbered menu, a pipe — strips the marks. The row under the cursor keeps the
+selection's single colour. *Guarded:* each tone's term · each tone's pair · the
+preview's note author · no mark in any text output.
+
+**Only Esc goes back; an action stays on its screen** (v0.43.0, asked by the
+user, 22 November 2026). A key that acts — Enter that applies the ticked
+boxes, `d` that removes, `n` that adds — leaves the screen where it is, read
+again from what is now declared, its outcome on the context line. Leaving is
+Esc's alone (and `q` on a landing screen, which `LANDING_EXIT` announces).
+Found while doing this: Enter on `--manage-team`'s "What is recorded" applied,
+then went back to the screen before. *Guarded:* the frame after Enter is still
+the same screen, its boxes read back.
+
+**A list marks the way every list marks** (the report list of
+`--manage-logs`, v0.32.0; `--manage-team`, v0.43.0). Entries are numbered;
+Space marks one, `a` marks all; once something is marked, `u` unmarks and the
+banner says so; a ✓ before the number shows a mark. `d` acts on the marked
+entries — with none marked, it asks which, read as every selection is read
+(`2`, `1,3`, `2-4`, `all`) — and confirms naming them. Enter on a list of
+choices takes the marked ones, else the one under the cursor.
+
+**Coming back, the selection stays on the entry just left** (v0.43.0, asked
+by the user, 23 November 2026). Esc from a screen opened from a list returns to
+that list with the cursor on the entry that was opened — by name where the
+list can change meanwhile (a member added or removed), at the same rank when
+that entry is gone. Checked screen by screen: `--manage-team`'s landing screen
+and team list, `--manage-logs`'s landing screen and folder list did not
+(fixed); the report list, the journals, `--explain`'s pickers and
+`--manage-cron`'s lists did. *Guarded:* each of the four fixed.
+
+**An empty row under the header banner** (v0.43.0, asked by the user, 23
+November 2026). On every screen, row 0 is the banner and row 1 stays empty —
+scrolled or not; the body starts at `BODY_TOP` (`bob/tui/_chrome.py`), and a
+body's height is `h - BODY_TOP - chrome_height(...)`. A screen does not add an
+empty first row of its own. Found while doing this: the journals, the journal
+of `--fix --apply`, `--explain`, the report preview and the folder list drew
+right under the banner; others had an empty first row of their own, which
+scrolled away. *Guarded:* the shared drawer (scrolled too), the report
+preview, `--explain`'s lists, `--manage-team`.
+
+**Columns line up** (v0.43.0, asked by the user, 23 November 2026). In any
+list BOB prints or draws — a journal, the team, what is recorded, the address
+book, the cron jobs — a field that follows a field of varying length starts in
+one column: the field before it is padded to the longest of the list shown
+(or to a fixed width when the list is drawn piece by piece), measured on the
+visible text — never on the colour marks — and the padding stays outside the
+colour. A line too long for the screen goes on under its last column — after
+its last run of two spaces or more — never under the line's start. A journal line pads its action (the part before " — ") to the longest
+action of the journal, its author to the longest author. Found while doing
+this: the team journal's accounts and attributes followed the length of the
+word before them, the cron journal's details the length of the action, and
+the French "NON enregistré" overran `--journals`'s fixed column. *Guarded:*
+the team, cron and admin journals, `--team`, `--journals`, the address book.
 
 **The two surfaces agree on meaning.** Orange marks the thing under attention
 (the cursor row, the key banner); violet marks what must be reproduced exactly,
