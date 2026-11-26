@@ -401,6 +401,7 @@ The same release stopped BOB reading Debian's filenames to decide. `/etc/pam.d/c
 - [Raspberry Pi guide](DOCUMENTS/RASPBERRY_PI.md)
 - [Full technical reference](DOCUMENTS/README_TECH.md)
 - [Changelog](CHANGELOG.md)
+- [Backlog — open items by severity, and an annex on running as root (B-055)](BACKLOG.md)
 - [Developer guide](DOCUMENTS/README_DEV.md)
 - [Automation guide](DOCUMENTS/AUTOMATION.md)
 - [The journal of `--fix --apply`, and how a falsification shows](DOCUMENTS/FIX_JOURNAL.md)

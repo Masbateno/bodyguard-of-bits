@@ -403,6 +403,7 @@ La même version a cessé de faire lire à BOB les noms de fichiers de Debian po
 - [Guide Raspberry Pi](DOCUMENTS/RASPBERRY_PI_FR.md)
 - [Référence technique complète](DOCUMENTS/README_TECH_FR.md)
 - [Journal des modifications](CHANGELOG_FR.md)
+- [Backlog — points ouverts par gravité, et une annexe sur l'exécution en root (B-055)](BACKLOG_FR.md)
 - [Guide développeur](DOCUMENTS/README_DEV_FR.md)
 - [Guide d'automatisation](DOCUMENTS/AUTOMATION_FR.md)
 - [Le journal de `--fix --apply`, et comment une falsification se voit](DOCUMENTS/FIX_JOURNAL_FR.md)
