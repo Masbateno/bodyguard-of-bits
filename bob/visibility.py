@@ -112,6 +112,9 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "cups.listen_localhost_localnet",
     "cups.listen_localhost_localnet_unread",
     "logs.window_partly_read",
+    # v0.44.0 (B-055) — the UFW log exists and could not be read, and journald
+    # showed none of its lines: the period is not analysed.
+    "logs.logfile_unreadable",
     "firewall_iptables.ruleset_unreadable",
     "firmware.microcode_unknown",
     "ipv6.kernel_state_unknown",
@@ -142,6 +145,9 @@ VISIBILITY_KEYS: frozenset[str] = frozenset({
     "services.state.unknown",
     "ssh.active_unknown",
     "ssh.config_unreadable",
+    # v0.44.0 (B-055) — ~/.ssh could not be opened: its permissions, keys and
+    # authorized_keys (which carry deductions) are not checked.
+    "ssh.dir_unreadable",
     # v0.32.0 — an RSA host key below 2048 bits whose serving sshd_config
     # could not tell: its −1 is unknown, not absent.
     "ssh.host_key_rsa_weak_unknown",
@@ -242,6 +248,12 @@ NOT_A_VISIBILITY_LIMIT: frozenset[str] = frozenset({
     # ports of a PARTIAL ruleset are by ``firewall.netfilter_unweighed``.
     "ports.uncovered_netfilter_unknown",
     "ports.uncovered_bound_address_netfilter_unknown",
+    # v0.44.0 (B-055) — grub.cfg unreadable: the superuser password is said not
+    # checked, but neither of its findings carries a point.
+    "grub.password_unknown",
+    # v0.44.0 (B-055) — the journal shows this account its own messages only:
+    # SSH logins are said not established; auth_log carries no point.
+    "auth_log.journal_partial",
 })
 
 

@@ -2013,8 +2013,11 @@ def _run_manage_logs_dispatch(user_config, config, t) -> int:
     import os as _os
     _os.environ.setdefault("ESCDELAY", "25")
     try:
+        # v0.44.0 (B-051) — through the switcher: F2-F5 and Ctrl+G reach the
+        # other wizards from this one's landing screen.
+        from bob.tui import switch
         return curses.wrapper(
-            lambda scr: _run_manage_logs_curses(scr, user_config, config, t)
+            lambda scr: switch.run(scr, "logs", user_config, config, t)
         )
     except (curses.error, OSError):
         return _run_manage_logs_plain(user_config, config, t)

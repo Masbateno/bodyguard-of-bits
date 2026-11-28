@@ -12,6 +12,7 @@ Plain-text flows and core data types live in bob.cron.
 from __future__ import annotations
 
 import re
+from bob import _names
 from bob.tui import _chrome, _keys
 from bob.tui._palette import marked_attr
 from bob._privilege import with_privilege
@@ -34,7 +35,6 @@ class _Schedule(IntEnum):
 
 from bob.cron import (
     _EMAIL_RE,
-    _CronQuit,
     SCRIPT_DIR,
     list_installed_crons,
     cron_to_human,
@@ -98,12 +98,11 @@ _STORE_KEYS    = _keys.NAVIGATION + (
 ) + _keys.NESTED_EXIT
 _EDIT_KEYS     = _keys.NAVIGATION + (_keys.SELECT,) + _keys.NESTED_EXIT
 _CHOICE_KEYS   = _keys.NAVIGATION + (_keys.SELECT, _keys.pick(9)) + _keys.NESTED_EXIT
-_LANDING_KEYS  = (_keys.CREATE,) + _keys.LANDING_EXIT
 # Space marks an entry for deletion here exactly as it does in
 # --manage-logs; v0.16.3 shipped the dispatch without the hint, so the
 # screen did something it never advertised.
 _MANAGE_KEYS   = _keys.NAVIGATION + (
-    _keys.SELECT, _keys.TOGGLE, _keys.ALL, _keys.DELETE, _keys.BOOK,
+    _keys.EDIT, _keys.TOGGLE, _keys.ALL, _keys.DELETE, _keys.NEW, _keys.BOOK,
 ) + _keys.LANDING_EXIT
 
 
@@ -130,7 +129,7 @@ def _manage_actions(n_sel: int):
     (the address book) do nothing, so they are not announced; u is."""
     if not n_sel:
         return _MANAGE_KEYS
-    return tuple(a for a in _with_unmark(_MANAGE_KEYS, n_sel) if a not in (_keys.SELECT, _keys.BOOK))
+    return tuple(a for a in _with_unmark(_MANAGE_KEYS, n_sel) if a not in (_keys.EDIT, _keys.BOOK))
 
 
 def _draw_footer(stdscr, t, actions, has_color: bool, *, context: str = "",
@@ -251,7 +250,10 @@ def _curses_status_flash(stdscr, t, msg: str) -> None:
 
     import textwrap
 
+    from bob.tui import fixlog as _fl
+
     has_color = _curses.has_colors()
+    attrs = _fl._attrs(_curses, has_color)
     stdscr.erase()
     h, w = stdscr.getmaxyx()
     _chrome.draw_header(stdscr, _curses, "", has_color)
@@ -263,19 +265,43 @@ def _curses_status_flash(stdscr, t, msg: str) -> None:
     # bindings because this screen has none.
     _banner = ["  " + t("cron_ui.press_any_key")]
     _room = max(1, h - 2 - _chrome.text_height(_banner))
-    _rendered: list[str] = []
+    # v0.44.0 (the user, 27 November 2026) — each paragraph in the colour its
+    # first glyph gives it (✔ green, ⚠ yellow, ✖ red, ℹ cyan), and the
+    # commands it names in violet (CONVENTIONS.md).
+    _rendered: "list[tuple[str, str]]" = []
     for _para in msg.split("\n"):
-        _rendered.extend(textwrap.wrap(_para, max(20, w - 4)) or [""])
-    for _i, _line in enumerate(_rendered):
+        _kind = _fl.glyph_kind(_para)
+        _para = _mark_commands(_para)
+        _lines = _fl.carry_marks(textwrap.wrap(_para, max(20, w - 4))) or [""]
+        _rendered.extend((_line, _kind) for _line in _lines)
+    for _i, (_line, _kind) in enumerate(_rendered):
         if _i >= _room:
             break
-        _draw(stdscr, 2 + _i, 2, _line)
+        _fl.put_marked(stdscr, _curses, 2 + _i, 2, _line, attrs[_kind], has_color, w)
     _chrome.draw_text(stdscr, _curses, has_color, _banner)
     stdscr.refresh()
     try:
         stdscr.get_wch()
     except _curses.error:
         pass
+
+
+#: v0.44.0 — the commands the wizard's messages name, to draw them in violet:
+#: ``bob`` (or the account's own copy, behind the host's privilege word) and
+#: its options, and the ``--webhook URL`` a script line takes. A value given
+#: with ``=`` never ends on the sentence's full stop.
+_COMMAND_RE = re.compile(
+    r"(?:\b(?:sudo|doas|run0|pkexec) )?(?:~/\.local/bin/)?\bbob(?: --?[a-z][\w-]*(?:=[\w:/.-]*\w)?)+"
+    r"|--webhook URL")
+
+
+def _mark_commands(text: str) -> str:
+    """*text* with the commands it names marked verbatim — unless it already
+    marks one itself (a whole command with its values, which the pattern would
+    cut short)."""
+    if _names.VERBATIM in text:
+        return text
+    return _COMMAND_RE.sub(lambda m: _names.tone(m.group(0), "verbatim"), text)
 
 
 def _init_colors_cron() -> None:
@@ -417,7 +443,9 @@ def _curses_schedule_wizard(stdscr, entry, config, t, title_prefix: "str | None"
         err = _validate_custom_cron(raw)
         if err:
             stdscr.erase()
-            _draw(stdscr, 2, 2, f"✖ {err}")
+            from bob.tui import fixlog as _fl
+            _refused = _fl._attrs(_curses, _curses.has_colors())[_fl.glyph_kind("✖")]
+            _draw(stdscr, 2, 2, f"✖ {err}", _refused)
             _draw(stdscr, 4, 2, t("cron_ui.press_any_cancel"))
             stdscr.refresh()
             try:
@@ -844,7 +872,13 @@ def _curses_choice_screen(stdscr, t, title: str, prompt: str, options: "list[str
 
 
 def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
-    """Curses TUI for --install-cron."""
+    """One new scheduled audit, from --manage-cron's list (``n``) or from
+    ``--install-cron``, which opens that list on it.
+
+    v0.44.0 (B-051, decided with the user on 27 November 2026) — --install-cron
+    is merged into --manage-cron: the list of jobs is the landing screen now,
+    and this wizard makes one job per call. Esc on the first step and a
+    success both return to the list."""
     import curses as _curses
     from pathlib import Path as _Path
 
@@ -866,205 +900,202 @@ def _run_install_cron_curses(stdscr, user_config, config, t) -> int:
 
     # State machine constants
     # v0.16.1: STEP_PROFILE/LANG/NETWORK pin what the scheduled audit runs.
-    (LANDING, STEP_NAME, STEP_SCHEDULE, STEP_EMAIL,
+    (STEP_NAME, STEP_SCHEDULE, STEP_EMAIL,
      STEP_PROFILE, STEP_LANG, STEP_NETWORK,
-     STEP_OVERWRITE, STEP_WRITE) = range(9)
+     STEP_OVERWRITE, STEP_WRITE) = range(8)
     from bob.cron._options import (
         CRON_LANGS, CRON_PROFILES, build_audit_options, default_dimensions,
     )
 
-    # Outer loop: one full landing→create cycle per iteration; continues back to LANDING after success
+    existing_names = [e.name for e in list_installed_crons()]
+    suggestion = suggest_name(existing_names)
+    head = "  bob --manage-cron    " + t("install_cron.new_title")
+    step = STEP_NAME
+    raw_name = ""
+    slug = ""
+    schedule_expr = ""
+    notify_email = ""
+    sel_profile, sel_lang, sel_offline = default_dimensions(config, user_config)
+    audit_options = ""
+
+    # Inner state machine
     while True:
-        existing_names = [e.name for e in list_installed_crons()]
-        suggestion = suggest_name(existing_names)
-        step = LANDING
-        raw_name = ""
-        slug = ""
-        schedule_expr = ""
-        notify_email = ""
-        sel_profile, sel_lang, sel_offline = default_dimensions(config, user_config)
-        audit_options = ""
-
-        # Inner state machine
-        while True:
-            if step == LANDING:
-                stdscr.erase()
-                h, w = stdscr.getmaxyx()
-                _chrome.draw_header(stdscr, _curses, "  bob --install-cron", has_color)
-                _draw(stdscr, 2, 2, t("install_cron.landing_prompt"))
-                _draw_footer(stdscr, t, _LANDING_KEYS, has_color)
-                stdscr.refresh()
-                ch_i = _read_key(stdscr)
-                if ch_i in (ord("q"), ord("Q")):
-                    raise _CronQuit()
-                if ch_i in (ord("l"), ord("L")):    # landing: switch language
-                    _keys.toggle_language(config)
-                    continue
-                if ch_i in (10, 13) or ch_i == _curses.KEY_ENTER:
-                    step = STEP_NAME
-
-            elif step == STEP_NAME:
-                stdscr.erase()
-                h, w = stdscr.getmaxyx()
-                _chrome.draw_header(stdscr, _curses, "  bob --install-cron", has_color)
-                _draw(stdscr, 2, 2, t("install_cron.prompt_name", suggestion=suggestion))
-                entered = _curses_readline(stdscr, t, _INPUT_KEYS, t("cron_ui.field_name"), default=raw_name or suggestion)
-                if entered is None:       # Esc → back to landing
-                    step = LANDING
-                    continue
-                raw_name = entered if entered else (raw_name or suggestion)
-                slug = make_slug(raw_name)
-                if not slug:
-                    _curses_status_flash(stdscr, t, f"✖ {t('install_cron.invalid_name')}")
-                    continue
-                step = STEP_SCHEDULE
-
-            elif step == STEP_SCHEDULE:
-                result = _curses_schedule_wizard(
-                    stdscr, _WizardEntry(raw_name), config, t, title_prefix=t("cron_ui.install_cron")
-                )
-                if result is None:        # Esc → back to name
-                    step = STEP_NAME
-                    continue
-                schedule_expr = result
-                step = STEP_EMAIL
-
-            elif step == STEP_EMAIL:
-                result = _curses_email_list_sub(stdscr, notify_email, t)
-                if result is None:        # Esc → back to schedule
-                    step = STEP_SCHEDULE
-                    continue
-                notify_email = result
-                # v0.17.0: the MTA notice moved to the end of the wizard —
-                # see describe_reporting.
-                step = STEP_PROFILE
-
-            elif step == STEP_PROFILE:
-                idx = _curses_choice_screen(
-                    stdscr, t, "bob --install-cron", t("install_cron.prompt_profile"),
-                    [t(f"install_cron.profile.{p}") for p in CRON_PROFILES],
-                    CRON_PROFILES.index(sel_profile),
-                    hint=t("install_cron.profile_hint"),
-                )
-                if idx is None:       # Esc → back to email
-                    step = STEP_EMAIL
-                    continue
-                sel_profile = CRON_PROFILES[idx]
-                step = STEP_LANG
-
-            elif step == STEP_LANG:
-                idx = _curses_choice_screen(
-                    stdscr, t, "bob --install-cron", t("install_cron.prompt_lang"),
-                    [t(f"install_cron.lang.{lang}") for lang in CRON_LANGS],
-                    CRON_LANGS.index(sel_lang),
-                    hint=t("install_cron.lang_hint"),
-                )
-                if idx is None:       # Esc → back to profile
-                    step = STEP_PROFILE
-                    continue
-                sel_lang = CRON_LANGS[idx]
-                step = STEP_NETWORK
-
-            elif step == STEP_NETWORK:
-                idx = _curses_choice_screen(
-                    stdscr, t, "bob --install-cron", t("install_cron.prompt_network"),
-                    [t("install_cron.network_online"), t("install_cron.network_offline")],
-                    1 if sel_offline else 0,
-                )
-                if idx is None:       # Esc → back to language
-                    step = STEP_LANG
-                    continue
-                sel_offline = (idx == 1)
-                audit_options = build_audit_options(sel_profile, sel_lang, sel_offline)
-                # Both dimensions that decide whether anyone hears from this
-                # job — the address and the network stance — are settled by
-                # now, so the verdict is given once, here, rather than guessed
-                # at the email step.
-                _glyph, _key, _kw = describe_reporting(
-                    [e for e in notify_email.split(",") if e.strip()], sel_offline,
-                )
-                _curses_status_flash(stdscr, t, t(
-                    "install_cron.audit_command",
-                    command=f"bob --quiet --detailed {audit_options}",
-                ) + "\n\n" + f"{_glyph} {with_privilege(t(_key, **_kw))}")
-                step = STEP_OVERWRITE
-
-            elif step == STEP_OVERWRITE:
-                # v0.26.0: a cron.d file, or a block of root's crontab.
-                cron_path, _exists = cron_job_location(slug)
-                if not _exists:
-                    step = STEP_WRITE
-                    continue
-                # v0.16.3 — no q here: this confirmation is nested three
-                # screens into the wizard, and one keystroke must not abandon
-                # everything entered so far: a refusal steps back.
-                # v0.39.0 (user, 19 November 2026) — asked on the context line
-                # in the shared wording: y overwrites, any other key steps back
-                # to the previous screen (it waited for y or Esc and ignored
-                # every other key).
-                stdscr.erase()
-                _chrome.draw_header(stdscr, _curses, "  bob --install-cron", has_color)
-                _draw(stdscr, 2, 2, t("install_cron.overwrite_exists", path=str(cron_path)))
-                step = (STEP_WRITE if _chrome.ask_confirm(stdscr, _curses, t,
-                                                          t("install_cron.overwrite_question"))
-                        else STEP_NETWORK)
+        if step == STEP_NAME:
+            stdscr.erase()
+            h, w = stdscr.getmaxyx()
+            _chrome.draw_header(stdscr, _curses, head, has_color)
+            _draw(stdscr, 2, 2, t("install_cron.prompt_name", suggestion=suggestion))
+            entered = _curses_readline(stdscr, t, _INPUT_KEYS, t("cron_ui.field_name"), default=raw_name or suggestion)
+            if entered is None:       # Esc → back to the list (v0.44.0)
+                return 0
+            raw_name = entered if entered else (raw_name or suggestion)
+            slug = make_slug(raw_name)
+            if not slug:
+                _curses_status_flash(stdscr, t, f"✖ {t('install_cron.invalid_name')}")
                 continue
+            step = STEP_SCHEDULE
 
-            elif step == STEP_WRITE:
-                break   # exit inner loop → write files
+        elif step == STEP_SCHEDULE:
+            result = _curses_schedule_wizard(
+                stdscr, _WizardEntry(raw_name), config, t, title_prefix=t("cron_ui.install_cron")
+            )
+            if result is None:        # Esc → back to name
+                step = STEP_NAME
+                continue
+            schedule_expr = result
+            step = STEP_EMAIL
 
-        # ── Write files ──────────────────────────────────────────────────────
-        cron_path, _exists = cron_job_location(slug)
-        script_path = SCRIPT_DIR / f"bob-{slug}"
+        elif step == STEP_EMAIL:
+            result = _curses_email_list_sub(stdscr, notify_email, t)
+            if result is None:        # Esc → back to schedule
+                step = STEP_SCHEDULE
+                continue
+            notify_email = result
+            # v0.17.0: the MTA notice moved to the end of the wizard —
+            # see describe_reporting.
+            step = STEP_PROFILE
 
-        script_content = build_script_content(notify_email, log_dir, audit_options)
+        elif step == STEP_PROFILE:
+            idx = _curses_choice_screen(
+                stdscr, t, "bob --manage-cron", t("install_cron.prompt_profile"),
+                [t(f"install_cron.profile.{p}") for p in CRON_PROFILES],
+                CRON_PROFILES.index(sel_profile),
+                hint=t("install_cron.profile_hint"),
+            )
+            if idx is None:       # Esc → back to email
+                step = STEP_EMAIL
+                continue
+            sel_profile = CRON_PROFILES[idx]
+            step = STEP_LANG
 
-        # I-1 (v0.6.1): atomic_write on creation paths. v0.5.7 #I-3 closed
-        # the mutation path (apply_cron_schedule) but the curses install
-        # kept raw os.open(O_TRUNC). Same fix as bob/cron/_install.py.
+        elif step == STEP_LANG:
+            idx = _curses_choice_screen(
+                stdscr, t, "bob --manage-cron", t("install_cron.prompt_lang"),
+                [t(f"install_cron.lang.{lang}") for lang in CRON_LANGS],
+                CRON_LANGS.index(sel_lang),
+                hint=t("install_cron.lang_hint"),
+            )
+            if idx is None:       # Esc → back to profile
+                step = STEP_PROFILE
+                continue
+            sel_lang = CRON_LANGS[idx]
+            step = STEP_NETWORK
+
+        elif step == STEP_NETWORK:
+            idx = _curses_choice_screen(
+                stdscr, t, "bob --manage-cron", t("install_cron.prompt_network"),
+                [t("install_cron.network_online"), t("install_cron.network_offline")],
+                1 if sel_offline else 0,
+            )
+            if idx is None:       # Esc → back to language
+                step = STEP_LANG
+                continue
+            sel_offline = (idx == 1)
+            audit_options = build_audit_options(sel_profile, sel_lang, sel_offline)
+            # Both dimensions that decide whether anyone hears from this
+            # job — the address and the network stance — are settled by
+            # now, so the verdict is given once, here, rather than guessed
+            # at the email step.
+            _glyph, _key, _kw = describe_reporting(
+                [e for e in notify_email.split(",") if e.strip()], sel_offline,
+            )
+            _curses_status_flash(stdscr, t, t(
+                "install_cron.audit_command",
+                command=_names.tone(f"bob --quiet --detailed {audit_options}", "verbatim"),
+            ) + "\n\n" + f"{_glyph} {with_privilege(t(_key, **_kw))}")
+            step = STEP_OVERWRITE
+
+        elif step == STEP_OVERWRITE:
+            # v0.26.0: a cron.d file, or a block of root's crontab.
+            cron_path, _exists = cron_job_location(slug)
+            if not _exists:
+                step = STEP_WRITE
+                continue
+            # v0.16.3 — no q here: this confirmation is nested three
+            # screens into the wizard, and one keystroke must not abandon
+            # everything entered so far: a refusal steps back.
+            # v0.39.0 (user, 19 November 2026) — asked on the context line
+            # in the shared wording: y overwrites, any other key steps back
+            # to the previous screen (it waited for y or Esc and ignored
+            # every other key).
+            stdscr.erase()
+            _chrome.draw_header(stdscr, _curses, head, has_color)
+            _draw(stdscr, 2, 2, t("install_cron.overwrite_exists", path=str(cron_path)))
+            step = (STEP_WRITE if _chrome.ask_confirm(stdscr, _curses, t,
+                                                      t("install_cron.overwrite_question"))
+                    else STEP_NETWORK)
+            continue
+
+        elif step == STEP_WRITE:
+            break   # exit inner loop → write files
+
+    # ── Write files ──────────────────────────────────────────────────────
+    cron_path, _exists = cron_job_location(slug)
+    script_path = SCRIPT_DIR / f"bob-{slug}"
+
+    script_content = build_script_content(notify_email, log_dir, audit_options)
+
+    # I-1 (v0.6.1): atomic_write on creation paths. v0.5.7 #I-3 closed
+    # the mutation path (apply_cron_schedule) but the curses install
+    # kept raw os.open(O_TRUNC). Same fix as bob/cron/_install.py.
+    try:
+        _atomic_write(script_path, script_content, mode=0o755)
+    except OSError as exc:
+        _curses_status_flash(stdscr, t, f"✖ {t('cron_ui.cannot_write', path=script_path, error=exc)}")
+        return 1
+
+    now_str = datetime.now().strftime("%Y-%m-%d")
+    human = cron_to_human(schedule_expr, lang=config.lang)
+    try:
+        cron_path = write_cron_job(slug, raw_name, notify_email, schedule_expr, script_path, now_str)
+    except OSError as exc:
+        _curses_status_flash(stdscr, t, f"✖ {t('cron_ui.cannot_write', path=cron_path, error=exc)}")
         try:
-            _atomic_write(script_path, script_content, mode=0o755)
-        except OSError as exc:
-            _curses_status_flash(stdscr, t, f"✖ {t('cron_ui.cannot_write', path=script_path, error=exc)}")
-            return 1
-
-        now_str = datetime.now().strftime("%Y-%m-%d")
-        human = cron_to_human(schedule_expr, lang=config.lang)
-        try:
-            cron_path = write_cron_job(slug, raw_name, notify_email, schedule_expr, script_path, now_str)
-        except OSError as exc:
-            _curses_status_flash(stdscr, t, f"✖ {t('cron_ui.cannot_write', path=cron_path, error=exc)}")
-            try:
-                script_path.unlink()   # v0.25.1: no orphan script
-            except OSError:
-                pass
-            return 1
-
-        root_config_path = _Path("/root/.config/bob/config.conf")
-        try:
-            from bob.config import UserConfig as _UC
-            root_cfg = _UC.load(path=root_config_path)
-            if not root_cfg.get("log_dir"):
-                root_cfg.set("log_dir", str(log_dir))
+            script_path.unlink()   # v0.25.1: no orphan script
         except OSError:
             pass
+        return 1
 
-        _done = f"✔ {t('install_cron.done_schedule', name=raw_name, schedule=human)}"
-        _bin, _bin_exists = resolve_audit_binary()
-        if not _bin_exists:
-            _done += f"\n\n⚠ {with_privilege(t('install_cron.bob_binary_missing', path=_bin))}"
-        _curses_status_flash(stdscr, t, _done)
-        # Continue outer loop → refresh suggestion and return to LANDING
+    root_config_path = _Path("/root/.config/bob/config.conf")
+    try:
+        from bob.config import UserConfig as _UC
+        root_cfg = _UC.load(path=root_config_path)
+        if not root_cfg.get("log_dir"):
+            root_cfg.set("log_dir", str(log_dir))
+    except OSError:
+        pass
+
+    _done = f"✔ {t('install_cron.done_schedule', name=raw_name, schedule=human)}"
+    _bin, _bin_exists = resolve_audit_binary()
+    if not _bin_exists:
+        _done += f"\n\n⚠ {with_privilege(t('install_cron.bob_binary_missing', path=_bin))}"
+    _curses_status_flash(stdscr, t, _done)
+    return 0
 
 
 # ---------------------------------------------------------------------------
 # Curses management TUI
 # ---------------------------------------------------------------------------
 
-#: Width of the name column: ``mark(2) + name.ljust(20) + " "`` → the schedule
-#: (and any continuation line) begins at this column.
-_CRON_NAME_W = 20
+#: Width of the name column: ``mark(2) + name.ljust(40) + " "`` → the schedule
+#: (and any continuation line) begins at this column. v0.44.0 (the user,
+#: 27 November 2026): doubled from 20 — names were cut short by the eye, and a
+#: longer one pushed its schedule and addresses out of their columns.
+_CRON_NAME_W = 40
 _CRON_SCHED_COL = 2 + _CRON_NAME_W + 1
+#: The room the schedule keeps on a narrow terminal: below 80 columns the
+#: name column gives way (down to its old 20), never the schedule.
+_CRON_SCHED_MIN = 36
+
+
+def _cron_name_w(width: int) -> int:
+    """The name column at terminal *width*: 40 from 80 columns up."""
+    return max(20, min(_CRON_NAME_W, width - 1 - 3 - _CRON_SCHED_MIN))
+
+
+def _cron_sched_col(width: int) -> int:
+    """Where the schedule starts at terminal *width*."""
+    return 2 + _cron_name_w(width) + 1
 
 
 def _cron_render_lines(rows, width: int, origins: "list[str] | None" = None) -> "list[tuple[str, int]]":
@@ -1076,60 +1107,98 @@ def _cron_render_lines(rows, width: int, origins: "list[str] | None" = None) -> 
     index, and a **separator** drawn between jobs carries ``-1`` (so the caller
     dims it and never lands the cursor on it).
 
-    Layout:
-      * a job whose ``name schedule … addresses`` fits stays on **one line**,
-        addresses aligned in a column measured across the fitting jobs only —
-        so one month-long day list cannot inflate the column and drag every
-        short job onto two lines;
-      * a job too wide to fit **wraps** — schedule and addresses flow together
-        (the addresses land at the end of the wrapped text, not on a line of
-        their own), and every continuation line is indented to the schedule
-        column so it lines up under the jobs above.
+    Layout — every column holds (CONVENTIONS.md, "Columns line up"):
+      * the schedule always starts at one column — :data:`_CRON_SCHED_COL`
+        from 80 columns up, nearer on a narrower terminal (the name column
+        gives way, the schedule keeps 36 columns). A name longer
+        than its column takes a line of its own (wrapped, never cut) and the
+        schedule starts in its column on the line below: a long name never
+        pushes the columns after it (v0.44.0, the user, 27 November 2026);
+      * a job whose ``schedule … addresses`` fits stays on **one line**, its
+        addresses in one column across those jobs — measured on the jobs that
+        still fit once padded to it, so one month-long day list cannot drag
+        every short job onto two lines, and a padded job never overruns;
+      * a job too wide to fit **wraps** — its schedule under the schedule
+        column, its addresses on the next line, in the address column when
+        they fit there, else under the schedule.
 
     Everything adapts to ``width``, so shrinking the terminal reflows.
     """
     import textwrap
 
-    def field(name: str) -> str:
-        return f"{name:<{_CRON_NAME_W}} "
+    room = width - 1
+    name_w, sched_col = _cron_name_w(width), _cron_sched_col(width)
 
-    def fits(name: str, body: str, emails: str) -> bool:
-        sep = 3 if emails else 0
-        return 2 + len(field(name)) + len(body) + sep + len(emails) <= width - 1
+    def tail(body: str, emails: str, body_w: int) -> int:
+        return sched_col + (body_w + 3 + len(emails) if emails else len(body))
 
-    body_w = max((len(body) for name, body, em, _ in rows if fits(name, body, em)),
-                 default=0)
+    # The jobs that fit on one line, and the address column they share: a job
+    # that no longer fits once padded to the column leaves it, and the column
+    # is measured again on the others.
+    fitting = {i for i, (_n, body, emails, _m) in enumerate(rows)
+               if tail(body, emails, len(body)) <= room}
+    while True:
+        body_w = max((len(rows[i][1]) for i in fitting if rows[i][2]), default=0)
+        keep = {i for i in fitting if tail(rows[i][1], rows[i][2], max(body_w, len(rows[i][1]))) <= room}
+        if keep == fitting:
+            break
+        fitting = keep
     separator = "  " + "─" * max(4, width - 4)
+    indent = " " * sched_col
+    # An address is never cut in two: a line breaks between words only.
+    wrap = textwrap.TextWrapper(break_long_words=False, break_on_hyphens=False)
 
     display: list[tuple[str, int]] = []
     for idx, (name, body, emails, is_marked) in enumerate(rows):
         if idx > 0:
             display.append((separator, -1))
         mark = "✔ " if is_marked else "  "
-        nf = field(name)
+        if len(name) > name_w:
+            for k, piece in enumerate(textwrap.wrap(name, max(8, room - 4)) or [name]):
+                display.append(((mark if k == 0 else "    ") + piece, idx))
+            head = indent
+        else:
+            head = f"{mark}{name:<{name_w}} "
         sep = "   " if emails else ""
-        if fits(name, body, emails):
-            aligned = f"{mark}{nf}{body.ljust(body_w)}{sep}{emails}"
-            # Padding to the column can itself overrun a job with long
-            # addresses; fall back to the unpadded (still one) line then.
-            line = aligned if len(aligned) <= width - 1 else f"{mark}{nf}{body}{sep}{emails}"
-            display.append((line, idx))
-            if origins:
-                display.append((" " * _CRON_SCHED_COL + origins[idx], idx))
-            continue
-        indent = " " * _CRON_SCHED_COL
-        avail = max(8, width - 1 - _CRON_SCHED_COL)
-        segs = textwrap.wrap(f"{body}{sep}{emails}", avail) or [""]
-        display.append((f"{mark}{nf}{segs[0]}", idx))
-        for seg in segs[1:]:
-            display.append((f"{indent}{seg}", idx))
+        if idx in fitting:
+            display.append((f"{head}{body.ljust(body_w)}{sep}{emails}" if emails else f"{head}{body}", idx))
+        else:
+            # Too wide padded: the schedule wraps under its column, and the
+            # addresses take the next line — in the address column when they
+            # fit there, else under the schedule. Never at a column of their
+            # own (v0.44.0, the user: every column holds).
+            wrap.width = max(8, room - sched_col)
+            segs = wrap.wrap(body) or [""]
+            display.append((f"{head}{segs[0]}", idx))
+            for seg in segs[1:]:
+                display.append((f"{indent}{seg}", idx))
+            if emails:
+                addr_col = sched_col + body_w + 3
+                if body_w and addr_col + len(emails) <= room:
+                    display.append((" " * addr_col + emails, idx))
+                else:
+                    for seg in wrap.wrap(emails) or [emails]:
+                        display.append((f"{indent}{seg}", idx))
         if origins:
             display.append((f"{indent}{origins[idx]}", idx))
     return display
 
 
-def _run_manage_cron_curses(stdscr, config, t) -> int:
-    """Curses TUI for --manage-cron."""
+def _create_here(stdscr, config, t) -> str:
+    """v0.44.0 (B-051) — a new scheduled audit, from the list it joins. Refused,
+    and said, where the host has neither /etc/cron.d nor a crontab: what
+    --install-cron itself refuses before its first question."""
+    from bob.cron import CRON_DIR, use_crontab
+    if not CRON_DIR.is_dir() and not use_crontab():
+        return _chrome.refused(with_privilege(t("install_cron.no_cron_d", path=str(CRON_DIR))))
+    from bob.config import UserConfig
+    _run_install_cron_curses(stdscr, UserConfig.load(), config, t)
+    return ""
+
+
+def _run_manage_cron_curses(stdscr, config, t, start_create: bool = False) -> int:
+    """Curses TUI for --manage-cron; with *start_create* (--install-cron), a
+    new job is begun before the list is shown (v0.44.0, B-051)."""
     import curses as _curses
     from bob import _names
     from bob.tui import fixlog as _fl
@@ -1147,6 +1216,8 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
     confirm_delete = False
     pending_delete: list = []
     marked: set = set()   # set of cron_path strings for selected entries
+    if start_create:
+        status = _create_here(stdscr, config, t)
 
     while True:
         stdscr.erase()
@@ -1186,8 +1257,7 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
 
         # ── Body ─────────────────────────────────────────────────────────────
         if not crons:
-            _draw(stdscr, 2, 2, t("manage_cron.no_crons",
-                                  cmd=with_privilege("sudo bob --install-cron")))
+            _draw(stdscr, 2, 2, t("manage_cron.no_crons_new"))
             _draw(stdscr, 4, 2, "m: " + t("manage_cron.prompt_ex_email_book"))
         else:
             # Lay the list out for this width (see _cron_render_lines): a flat
@@ -1300,6 +1370,18 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
             pending_delete = []
             continue
 
+        # v0.44.0 (B-051) — F2-F5 and Ctrl+G open another wizard, from this
+        # landing screen only (the user, 27 November 2026: not from the
+        # screens below it, nor from a field being typed).
+        hit, target = _keys.switch_request(_curses, ch)
+        if hit:
+            raise _keys.SwitchScreen(target)
+
+        # v0.44.0 (user, 27 November 2026) — Esc on this landing screen opens
+        # the menu of every wizard (bob --bob-tui); q still leaves BOB.
+        if ch == 27:
+            raise _keys.SwitchScreen("hub")
+
         # ── Navigation ───────────────────────────────────────────────────────
         # Cursor moves in entry units; scroll is recomputed at render time to
         # keep the (variable-height) cursor entry fully visible, so navigation
@@ -1358,6 +1440,10 @@ def _run_manage_cron_curses(stdscr, config, t) -> int:
                     confirm_delete = True
                 except SelectionError as exc:
                     status = _chrome.refused(t("selection." + exc.kind, **exc.vars))
+
+        elif ch in (ord("n"), ord("N")):
+            # v0.44.0 (B-051, user 27 November 2026) — --install-cron merged in.
+            status = _create_here(stdscr, config, t)
 
         elif ch in (ord("m"), ord("M")):
             if not n_sel:

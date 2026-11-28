@@ -35,6 +35,15 @@ def tone(text: str, kind: str) -> str:
     return f"{_TONE_OPEN[kind]}{text}{CLOSE}" if kind in _TONE_OPEN else text
 
 
+def verbatim_in(text: str, *commands: str) -> str:
+    """*text* with each of *commands* it holds marked as material to reproduce
+    exactly (violet). v0.44.0 (the user, 27 November 2026): the information
+    lines of the wizards in colour, as CONVENTIONS.md says, commands included."""
+    for command in commands:
+        text = text.replace(command, tone(command, "verbatim"))
+    return text
+
+
 def cell(name: str, width: int) -> str:
     """*name* marked, padded to *width* visible columns."""
     return mark(name) + " " * max(0, width - len(name))

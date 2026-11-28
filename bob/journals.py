@@ -102,11 +102,15 @@ class Journal:
     broken_at: "int | None" = None
     unreadable: str = ""
     foreign_owner: str = ""
+    #: v0.44.0 (B-050) — the files read, oldest first (archives, then the
+    #: journal), with the number of each one's first line; archives unread.
+    files: "list[tuple[str, int]]" = field(default_factory=list)
+    skipped: int = 0
 
 
-def parse(raw: str, name: str) -> Journal:
+def parse(raw: str, name: str, start: "str | None" = None) -> Journal:
     journal = Journal(name=name)
-    prev = _genesis(name)
+    prev = start or _genesis(name)
     for number, line in enumerate(raw.splitlines(), 1):
         if not line.strip():
             continue
@@ -129,15 +133,21 @@ def parse(raw: str, name: str) -> Journal:
 def load(name: str) -> Journal:
     """Journal *name* as it stands; absent is empty; unreadable says why (it
     is root's: an ordinary account cannot read it)."""
-    from bob.annotations import _read_raw
-    raw, why, uid = _read_raw(path(name), FJ.MAX_FILE)
-    if raw is None:
-        return Journal(name=name, intact=False, unreadable=why)
-    journal = parse(raw, name)
-    if raw and uid is not None and uid != FJ._JOURNAL_UID:
+    chain = FJ.read_chain(CHANNELS[name][0], _genesis(name))
+    if chain.raw is None:
+        return Journal(name=name, intact=False, unreadable=chain.why or "")
+    journal = parse(chain.raw, name, chain.start)
+    journal.files, journal.skipped = chain.files, chain.skipped
+    if chain.foreign:
         journal.intact = False
-        journal.foreign_owner = FJ._owner_name(uid)
+        journal.foreign_owner = chain.foreign
     return journal
+
+
+def broken_where(journal, t) -> str:
+    """Where a chain read over several files breaks: the line, and — when
+    archives were read — the file and its line there."""
+    return FJ.line_label(journal.files, journal.broken_at or 0, t)
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +157,8 @@ def load(name: str) -> Journal:
 @dataclass
 class Settings:
     off: "set[str]" = field(default_factory=set)
+    #: v0.44.0 (B-050) — the journals' ceiling in bytes; 0: the default.
+    max_size: int = 0
     digest: str = ""
     exists: bool = False
     unread_lines: "list[str]" = field(default_factory=list)
@@ -164,6 +176,13 @@ def parse_settings(text: str) -> Settings:
         if not line or line.startswith("#"):
             continue
         cat, sep, value = (p.strip() for p in line.partition(":"))
+        if sep and cat == "max-size":
+            limit = _ceiling_value(value)
+            if limit:
+                s.max_size = limit
+            else:
+                s.unread_lines.append(raw)
+            continue
         if not sep or cat not in CATEGORIES or value not in ("on", "off"):
             s.unread_lines.append(raw)
             continue
@@ -172,8 +191,19 @@ def parse_settings(text: str) -> Settings:
     return s
 
 
-def render_settings(off: "set[str]") -> str:
-    return _HEADER + "".join(f"{c}: {'off' if c in off else 'on'}\n" for c in CATEGORIES)
+def _ceiling_value(text: str) -> int:
+    """A ceiling as written (``8M``, ``512K``, bytes) within its bounds, else 0."""
+    from bob.manage_logs import parse_size
+    try:
+        limit = parse_size(text)
+    except ValueError:
+        return 0
+    return limit if FJ.CEILING_MIN <= limit <= FJ.CEILING_MAX else 0
+
+
+def render_settings(off: "set[str]", max_size: int = 0) -> str:
+    text = _HEADER + "".join(f"{c}: {'off' if c in off else 'on'}\n" for c in CATEGORIES)
+    return text + (f"max-size: {max_size}\n" if max_size else "")
 
 
 def load_settings() -> Settings:
@@ -189,12 +219,15 @@ def load_settings() -> Settings:
     return s
 
 
-def write_settings(off: "set[str]") -> str:
+def write_settings(off: "set[str]", max_size: "int | None" = None) -> str:
+    """*max_size* None keeps the ceiling as it is set."""
     if os.geteuid() != _SETTINGS_UID:
         from bob.team import TeamError
         raise TeamError("needs_root")
     from bob._atomic import atomic_write
-    text = render_settings(off)
+    if max_size is None:
+        max_size = load_settings().max_size
+    text = render_settings(off, max_size)
     SETTINGS.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
     atomic_write(SETTINGS, text, mode=_SETTINGS_MODE)
     return _digest_text(text)
@@ -227,7 +260,9 @@ def _settings_checked(say) -> Settings:
     journal = load("admin")
     if journal.unreadable:
         return s
-    last = next((e.data.get("digest") for e in reversed(journal.events) if e.kind == "journals"), None)
+    # v0.44.0 — the ceiling's changes rewrite the settings too.
+    last = next((e.data.get("digest") for e in reversed(journal.events)
+                 if e.kind in ("journals", "journals_ceiling")), None)
     if last == s.digest and not s.foreign_owner:
         return s
     (say or _say)("  " + _t()("journals.altered", path=str(SETTINGS)))
@@ -257,16 +292,16 @@ def set_categories(cats: "list[str]", on: bool, t, *, ask=None, say=None) -> "li
         return []
     current = _settings_checked(say).off
     off = (current - set(cats)) if on else (current | set(cats))
-    digest = write_settings(off)
+    digest = write_settings(off)        # the ceiling kept as set
     _write("admin", "journals", say, categories=sorted(cats), state="on" if on else "off",
            off=sorted(off), digest=digest)
     return [t("journals.done", categories=", ".join(cats), state=t("journals.state_on") if on else t("journals.state_off"))]
 
 
 def size_text(name: str, t) -> str:
-    """How large journal *name* is, and how far BOB reads one (v0.43.0, asked
-    by the user): a journal past that bound is said too large, never read in
-    part. Absent and unreadable are said apart."""
+    """How large journal *name* is (v0.43.0, asked by the user), against its
+    ceiling, and its archives (v0.44.0, B-050). Absent and unreadable are
+    said apart."""
     return file_size_text(path(name), t)
 
 
@@ -274,12 +309,27 @@ def file_size_text(file: Path, t) -> str:
     """The same for any journal file — the journal of --fix --apply too."""
     from bob.manage_logs import _format_size
     try:
+        archives = FJ.archive_names(file.name, file.parent)
+    except OSError:
+        archives = []
+    archived = 0
+    for name in archives:
+        try:
+            archived += (file.parent / name).stat().st_size
+        except OSError:
+            pass
+    try:
         size = file.stat().st_size
     except FileNotFoundError:
-        return t("journals.size_absent")
+        size = None
     except OSError:
         return t("journals.size_unknown")
-    return t("journals.size", size=_format_size(size, t), limit=_format_size(FJ.MAX_FILE, t))
+    if size is None and not archives:
+        return t("journals.size_absent")
+    text = t("journals.size", size=_format_size(size or 0, t), ceiling=_format_size(FJ.ceiling(), t))
+    if archives:
+        text += t("journals.archives", count=len(archives), size=_format_size(archived, t))
+    return text
 
 
 def state_rows(t) -> "list[tuple[str, str]]":
@@ -293,7 +343,7 @@ def state_rows(t) -> "list[tuple[str, str]]":
         elif j.intact and not j.foreign_owner:
             state, kind = t("journals.state_intact", name=name, count=len(j.events)), ("ok" if j.events else "body")
         else:
-            state, kind = t("journals.state_broken", name=name, line=j.broken_at or 0), "alert"
+            state, kind = t("journals.state_broken", name=name, line=broken_where(j, t)), "alert"
         states.append((state.rstrip("."), kind, name))
     width = max(len(s) for s, _k, _n in states)
     return [(f"{s:<{width}} — {size_text(n, t)}", k) for s, k, n in states]
@@ -315,6 +365,9 @@ def show(t) -> "list[str]":
     lines.append(f"  {always:<{lead_w}} → {path('team')}")
     if s.unread_lines:
         lines += ["", t("journals.unread_lines", count=len(s.unread_lines))]
+    from bob.manage_logs import _format_size
+    lines += ["", t("journals.ceiling_line", ceiling=_format_size(FJ.ceiling(), t),
+                    default=_format_size(FJ.CEILING_DEFAULT, t), max=_format_size(FJ.CEILING_MAX, t))]
     lines.append("")
     lines += [text for text, _kind in state_rows(t)]
     return lines
@@ -373,6 +426,15 @@ def event_text(event: Event, t) -> str:
                  attributes=", ".join(d.get("attributes") or []) or "—")
     if k == "altered":
         return _lead(t("team.journal.altered"), "bad")
+    if k == "rotate":
+        from bob.manage_logs import _format_size
+        try:
+            ceiling = _format_size(int(d.get("ceiling") or 0), t)
+        except (TypeError, ValueError):
+            ceiling = "?"
+        return _lead(t("journals.ev.rotate", archive=str(d.get("archive", "")), ceiling=ceiling), "neutral")
+    if k == "journals_ceiling":
+        return _lead(t("journals.ev.journals_ceiling", value=str(d.get("value", ""))), "neutral")
     if k in ("config", "journals"):
         fields = {f: str(d.get(f, "")) for f in _EVENT_FIELDS}
         word = "op" if k == "config" else "state"
@@ -464,8 +526,11 @@ def journal_lines(name: str, t) -> "tuple[list[str], int]":
     if journal.foreign_owner:
         lines.append(t("journals.foreign_owner", path=str(path(name)), owner=journal.foreign_owner))
     lines.append((t("journals.state_intact", name=name, count=len(journal.events)) if journal.intact
-                  else t("journals.state_broken", name=name, line=journal.broken_at or 0)).rstrip(".")
+                  else t("journals.state_broken", name=name, line=broken_where(journal, t))).rstrip(".")
                  + " — " + size_text(name, t))
+    if journal.skipped:
+        from bob.manage_logs import _format_size
+        lines.append(t("journals.skipped", count=journal.skipped, budget=_format_size(FJ.CHAIN_BUDGET, t)))
     lines.append("")
     # v0.43.0 (user, 23 November 2026) — the columns line up, as everywhere in
     # BOB (CONVENTIONS.md): the author padded to the longest author of this
@@ -484,8 +549,42 @@ def journal_lines(name: str, t) -> "tuple[list[str], int]":
     return lines, (0 if journal.intact and not journal.foreign_owner else 2)
 
 
+def set_max_size(text: str, t, *, ask=None, say=None) -> "tuple[str, list[str]]":
+    """``sudo bob --journals max-size SIZE`` (v0.44.0, B-050): the journals'
+    ceiling, 64 KiB to 16 MiB; ``default`` for 8 MiB. Said before it is set,
+    as decided with the user: nothing is cut — past the ceiling a journal is
+    archived and the next one chained to it; BOB deletes no archive, so the
+    space they take keeps growing. Always written to the admin journal.
+    Returns (tone, lines): tone "done", or "info" when abandoned."""
+    from bob import team
+    from bob.manage_logs import _format_size
+    raw = text.strip()
+    limit = 0 if raw.lower() in ("default", "défaut", "defaut") else _ceiling_value(raw)
+    if not limit and raw.lower() not in ("default", "défaut", "defaut"):
+        raise team.TeamError("journals_max_size", value=raw, min=_format_size(FJ.CEILING_MIN, t),
+                             max=_format_size(FJ.CEILING_MAX, t))
+    if os.geteuid() != _SETTINGS_UID:
+        raise team.TeamError("needs_root")
+    if not team.gate("equipe", "journals_ceiling", t, ask=ask, say=say):
+        return "info", [t("manage_logs.cancelled")]
+    shown = _format_size(limit or FJ.CEILING_DEFAULT, t)
+    question = t("journals.max_size_warning", ceiling=shown)
+    if ask is not None:
+        confirmed = bool(ask(question))
+    else:
+        from bob._tty import safe_input
+        print("  " + question + " [y/N] ", end="", flush=True)
+        confirmed = safe_input().strip().lower() in ("y", "yes", "o", "oui")
+    if not confirmed:
+        return "info", [t("manage_logs.cancelled")]
+    current = _settings_checked(say)
+    digest = write_settings(current.off, limit)
+    _write("admin", "journals_ceiling", say, value=raw, max_size=limit, digest=digest)
+    return "done", [t("journals.max_size_set", ceiling=shown)]
+
+
 def run(args: "list[str]", t) -> int:
-    """``bob --journals [on|off CAT[,CAT] | show NAME]``."""
+    """``bob --journals [on|off CAT[,CAT] | show NAME | max-size SIZE]``."""
     from bob import team
     try:
         if not args:
@@ -495,6 +594,10 @@ def run(args: "list[str]", t) -> int:
             lines, code = set_categories(cats, args[0] == "on", t), 0
         elif args[0] == "show" and len(args) == 2 and args[1] in CHANNELS:
             lines, code = journal_lines(args[1], t)
+        elif args[0] == "max-size" and len(args) == 2:
+            lines, code = set_max_size(args[1], t)[1], 0
+        elif args[0].startswith("max-size=") and len(args) == 1:
+            lines, code = set_max_size(args[0].split("=", 1)[1], t)[1], 0
         else:
             raise team.TeamError("journals_usage")
     except team.TeamError as exc:

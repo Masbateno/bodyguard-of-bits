@@ -214,7 +214,6 @@ class TestAnAdvertisedKeyDoesSomething:
 _LANDING = {
     "bob.explain._FAMILY_KEYS",
     "bob.manage_logs._HOME_KEYS",       # v0.40.0 — reports or the journal of fixes
-    "bob.tui.cron._LANDING_KEYS",
     "bob.tui.cron._MANAGE_KEYS",
 }
 _NESTED = {
@@ -300,6 +299,13 @@ class TestTheContractIsInternallyConsistent:
 
         for action, codes in _keys._LITERAL.items():
             for code in codes:
+                if action in (_keys.SCREENS, _keys.HOME):
+                    # v0.44.0 (B-051) — their keys do not come back as an action:
+                    # they leave the wizard, from any depth (HOME: Esc on a
+                    # landing screen opens the menu of every wizard).
+                    with pytest.raises(_keys.SwitchScreen):
+                        _keys.resolve(curses, code, (action,))
+                    continue
                 assert _keys.resolve(curses, code, (action,)) == action, (action, code)
 
     def test_an_unbound_key_resolves_to_nothing(self):

@@ -41,16 +41,51 @@ def _is_root() -> bool:
 
 
 def _attrs(curses, has_color: bool) -> dict:
-    from bob.tui._palette import ACCENT, CONTEXT_ERROR, CONTEXT_OK, VERBATIM
+    from bob.tui._palette import ACCENT, CONTEXT_ERROR, CONTEXT_INFO, CONTEXT_OK, VERBATIM
     if not has_color:
         return {"alert": curses.A_BOLD, "warn": curses.A_BOLD, "ok": curses.A_NORMAL,
+                "info": curses.A_NORMAL,
                 "verbatim": curses.A_NORMAL, "body": curses.A_NORMAL, "title": curses.A_BOLD}
     return {"alert": curses.color_pair(CONTEXT_ERROR) | curses.A_BOLD,
             "warn": curses.color_pair(ACCENT) | curses.A_BOLD,
             "ok": curses.color_pair(CONTEXT_OK) | curses.A_BOLD,
+            # v0.44.0 (the user, 27 November 2026) — a line that only informs,
+            # in the text output's cyan for information.
+            "info": curses.color_pair(CONTEXT_INFO),
             "verbatim": curses.color_pair(VERBATIM),
             "body": curses.A_NORMAL,
             "title": curses.color_pair(ACCENT) | curses.A_BOLD}
+
+
+#: v0.44.0 (the user, 27 November 2026) — a message's first glyph says what
+#: it means, as in the text output: its colour follows (CONVENTIONS.md).
+_GLYPH_KIND = {"✔": "ok", "✖": "alert", "⚠": "warn", "ℹ": "info"}
+
+
+def glyph_kind(text: str) -> str:
+    """The kind (see :func:`_attrs`) *text*'s first glyph gives it; "body" for none."""
+    from bob import _names
+    return _GLYPH_KIND.get(_names.plain(text).lstrip()[:1], "body")
+
+
+def carry_marks(lines: "list[str]") -> "list[str]":
+    """Wrapped *lines* with a marked piece cut by the wrap closed at the end of
+    its line and opened again at the start of the next: a command split over
+    two lines stays violet on both."""
+    from bob import _names
+    opens = set(_names._KINDS)
+    out, carry = [], ""
+    for line in lines:
+        line = carry + line
+        state = ""
+        for ch in line:
+            if ch in opens:
+                state = ch
+            elif ch == _names.CLOSE:
+                state = ""
+        out.append(line + (_names.CLOSE if state else ""))
+        carry = state
+    return out
 
 
 def put_marked(stdscr, curses, row: int, col: int, text: str, attr: int, has_color: bool,

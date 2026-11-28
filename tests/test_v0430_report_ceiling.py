@@ -89,7 +89,7 @@ def test_an_unreachable_ceiling_is_said(tmp_path, capsys, monkeypatch):
     output.init(no_color=True)
     ml.apply_ceiling_after_report(rs[-1], _Config(log_max_size=str(10)), i18n.t)
     out = capsys.readouterr().out
-    assert "1 old report(s) deleted" in out and "stay above the ceiling" in out
+    assert "1 old report(s) deleted" in out and "stay above the retention threshold" in out
 
 
 def test_setting_warns_and_is_traced(monkeypatch):
@@ -138,7 +138,7 @@ def test_the_header_says_the_current_folder_and_all_folders(tmp_path, monkeypatc
     reports(a, 1, size=2048); reports(b, 2, size=2048)
     monkeypatch.setattr(ml, "_declared_dirs", lambda uc: [a, b])
     label = ml.ceiling_label(_Config(log_dir=str(a)), i18n.t)
-    assert label == "no size ceiling (current folder: 2 KB; all folders: 6 KB)"
+    assert label == "no retention threshold (current folder: 2 KB; all folders: 6 KB)"
 
 
 def test_a_deleted_report_takes_the_files_beside_it(tmp_path):

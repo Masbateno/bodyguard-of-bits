@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.43.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.44.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -280,6 +280,7 @@ sudo bob --output-dir /var/reports --format json
 **Cron scheduling:**
 ```
 sudo bob --install-cron           # interactive wizard
+sudo bob --bob-tui                # every wizard in one menu (F2-F5, Ctrl+G, Esc)
 sudo bob --manage-cron            # manage installed jobs
 ```
 Jobs live in `/etc/cron.d/bob-{name}`. Email notification on exit code > 0.
@@ -405,7 +406,7 @@ The same release stopped BOB reading Debian's filenames to decide. `/etc/pam.d/c
 - [Developer guide](DOCUMENTS/README_DEV.md)
 - [Automation guide](DOCUMENTS/AUTOMATION.md)
 - [The journal of `--fix --apply`, and how a falsification shows](DOCUMENTS/FIX_JOURNAL.md)
-- [Team perimeters: who may do what with BOB, and what is written when someone steps outside](DOCUMENTS/AUTOMATION.md#team-perimeters)
+- [Team perimeters: who is expected to do what with BOB, and what is written when someone steps outside](DOCUMENTS/AUTOMATION.md#team-perimeters)
 
 ---
 

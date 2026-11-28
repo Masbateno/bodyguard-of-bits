@@ -624,7 +624,15 @@ def _check_weak_algo(
 
 def _check_ssh_dir(snapshot: SSHSnapshot, result: CheckResult, _t) -> None:
     """Check ~/.ssh directory permissions."""
-    user = snapshot.sudo_user or "root"
+    user = snapshot.ssh_user or snapshot.sudo_user or "root"
+    if not snapshot.ssh_dir_readable:
+        result.info(
+            message=_t("ssh.dir_unreadable", user=user,
+                       path=str(snapshot.user_home / ".ssh") if snapshot.user_home else "~/.ssh"),
+            detail=_t("ssh.dir_unreadable_detail"),
+            key="ssh.dir_unreadable",
+        )
+        return
     if not snapshot.ssh_dir_exists:
         result.info(
             message=_t("ssh.dir_not_found", user=user),

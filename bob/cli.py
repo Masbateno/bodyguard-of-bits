@@ -200,6 +200,9 @@ class AuditConfig:
     manage_team: bool = False
     """--manage-team (v0.43.0): the team, managed step by step (bob/team_wizard.py)."""
 
+    bob_tui: bool = False
+    """--bob-tui (v0.44.0): the menu of every wizard (bob/tui/switch.py)."""
+
     journals: bool = False
     """--journals (v0.43.0): what is recorded; ``on|off CAT``, ``show NAME``."""
 
@@ -698,6 +701,9 @@ def parse_args(argv: list[str] | None = None) -> AuditConfig:
         elif arg == "--manage-team":
             config.manage_team = True
 
+        elif arg == "--bob-tui":
+            config.bob_tui = True
+
         elif arg == "--journals":
             config.journals = True
             while i + 1 < len(argv) and not argv[i + 1].startswith("-"):
@@ -991,6 +997,7 @@ def print_help(t, version: str) -> None:
     opt("    --team-journal",    "help.opt.team_journal")
     opt("    --journals [ACTION]", "help.opt.journals")
     opt("    --manage-team",     "help.opt.manage_team")
+    opt("    --bob-tui",         "help.opt.bob_tui")
     opt("    --log-max-size=SIZE", "help.opt.log_max_size")
 
     section("standalone")

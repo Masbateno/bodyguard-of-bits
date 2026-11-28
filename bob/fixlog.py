@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from bob import _names
 from bob import fix_journal as FJ
 from bob import fix_witness as W
 
@@ -101,11 +102,13 @@ def verdict_lines(verdict: "W.Verdict", journal: "FJ.Journal", t) -> "list[tuple
     elif journal.seen:
         out.append((t("fixlog.verdict.intact", count=len(verdict.confirmed)), "ok"))
     elif not verdict.removed:
-        out.append((t("fixlog.verdict.empty"), "body"))
+        out.append((t("fixlog.verdict.empty"), "info"))
     if verdict.foreign_owner:
         out.append(("  " + t("fixlog.finding.foreign_owner", owner=verdict.foreign_owner), "alert"))
     if verdict.chain_broken_at:
-        out.append(("  " + t("fixlog.finding.chain", line=verdict.chain_broken_at), "alert"))
+        # v0.44.0 (B-050) — with archives, the file it breaks in.
+        line = FJ.line_label(journal.files, verdict.chain_broken_at, t)
+        out.append(("  " + t("fixlog.finding.chain", line=line), "alert"))
     if verdict.differs:
         out.append(("  " + t("fixlog.finding.differs", count=len(verdict.differs)), "alert"))
     if verdict.conflicting:
@@ -119,12 +122,20 @@ def verdict_lines(verdict: "W.Verdict", journal: "FJ.Journal", t) -> "list[tuple
     if verdict.append_only_removed:
         out.append(("  " + t("fixlog.finding.append_only_removed"), "warn"))
     if verdict.witness_gone:
-        out.append(("  " + t("fixlog.finding.witness_gone", count=len(verdict.witness_gone)), "body"))
+        out.append(("  " + t("fixlog.finding.witness_gone", count=len(verdict.witness_gone)), "info"))
     no_witness = len(verdict.no_witness)
     if no_witness:
-        out.append(("  " + t("fixlog.finding.no_witness", count=no_witness), "body"))
+        out.append(("  " + t("fixlog.finding.no_witness", count=no_witness), "info"))
     out.extend(_guards(verdict, journal, t))
+    if journal.skipped:                       # v0.44.0 (B-050) — archives beyond the read budget
+        out.append(("  " + t("journals.skipped", count=journal.skipped,
+                             budget=_size(FJ.CHAIN_BUDGET, t)), "info"))
     return out
+
+
+def _size(size: int, t) -> str:
+    from bob.manage_logs import _format_size
+    return _format_size(size, t)
 
 
 def _guards(verdict: "W.Verdict", journal: "FJ.Journal", t) -> "list[tuple[str, str]]":
@@ -133,19 +144,24 @@ def _guards(verdict: "W.Verdict", journal: "FJ.Journal", t) -> "list[tuple[str, 
     witness = verdict.witness
     state = witness.state if witness else "failed"
     detail = (witness.detail if witness else "") or ""
-    kind = "body" if state == "ok" else "warn"
+    # v0.44.0 (the user, 27 November 2026) — each line in the colour of what
+    # it says (CONVENTIONS.md): a guard in place green, one missing yellow,
+    # what only informs cyan; the commands in violet.
+    kind = "ok" if state == "ok" else "warn"
     out.append(("  " + t(f"fixlog.witness.{state}", detail=detail), kind))
     if witness and witness.persistent is False:
         out.append(("  " + t("fixlog.witness.volatile"), "warn"))
     if witness and witness.sealed is not None:
-        out.append(("  " + t("fixlog.sealed.yes" if witness.sealed else "fixlog.sealed.no"), "body"))
+        text = t("fixlog.sealed.yes" if witness.sealed else "fixlog.sealed.no")
+        text = _names.verbatim_in(text, "journalctl --setup-keys", "journalctl --verify")
+        out.append(("  " + text, "ok" if witness.sealed else "warn"))
     if journal.seen:
         if verdict.append_only_now is True:
-            out.append(("  " + t("fixlog.append_only.set"), "body"))
+            out.append(("  " + t("fixlog.append_only.set"), "ok"))
         elif not verdict.append_only_removed:
             last = journal.seen[-1].append_only
             key = "fixlog.append_only.unavailable" if last is False else "fixlog.append_only.unknown"
-            out.append(("  " + t(key), "body"))
+            out.append(("  " + t(key), "warn"))
     return out
 
 

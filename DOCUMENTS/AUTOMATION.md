@@ -12,6 +12,11 @@ This document explains how to configure BOB to run automatically on a schedule a
 sudo bob --install-cron
 ```
 
+Since v0.44.0 the creation is part of `--manage-cron`: `--install-cron` opens
+its list of scheduled audits on a new one, and `n` in that list starts another.
+Once the job is written — or abandoned with Esc on its first step — you are back
+on the list.
+
 The wizard guides you through 7 steps:
 
 1. **Name** — a short label for this cron job (e.g. `nightly`, `weekly`). Press Enter to use the suggested name.
@@ -538,6 +543,7 @@ journal per domain, kept even without a team:
 sudo bob --journals                       # what is recorded, each journal's chain
 sudo bob --journals show cron             # one journal (exit 0 intact, 2 broken, 4 unreadable)
 sudo bob --journals off rapports          # stop recording report deletions
+sudo bob --journals max-size 8M           # every journal's ceiling (0.44.0): archived past it, never cut
 sudo bob --team-journal                   # = --journals show team
 ```
 
@@ -559,6 +565,27 @@ third choice opens them: each line reads "action — details", the action in the
 colour of its effect (green adds or turns on, red removes, turns off or alarms,
 yellow the rest) and the account in cyan ([CONVENTIONS.md](CONVENTIONS.md#2-colour--curses-screens)); the text outputs carry no colour codes.
 
+### The ceiling: archived, never cut (0.44.0)
+
+Each journal — these three and the journal of `--fix --apply` — has a size
+ceiling: **8 MiB by default, settable from 64 KiB up to 16 MiB** (the size BOB
+reads a file to, so a journal always stays readable), with
+`sudo bob --journals max-size SIZE` or `p` on the journals screen of
+`--manage-logs`. Decided with the user (27 November 2026): **past the ceiling
+nothing is cut**. A last line says the journal is archived; the file becomes
+`<name>.0001` (then `.0002`…, never renamed again) and keeps its append-only
+attribute; the new journal's first line chains onto that last line. Read end to
+end, the archives and the journal are one chain: an archive deleted or changed
+breaks it, and the break is said in its own file ("line 812 (cron.journal.0002,
+line 3)"). **BOB deletes no archive** — the space they take keeps growing,
+and the screen says how much; their deletion, by the master or the accounts they
+delegate it to, comes later. A viewer reads the archives back, newest first, up
+to 32 MiB (a small machine is not asked for more); the older ones left unread
+are counted and said, and their lines in the system log are not taken for
+lines removed. Setting the ceiling is warned, confirmed, outside the declared
+perimeter asked like any team setting (`equipe`), and written to the admin
+journal.
+
 ### What BOB does not see
 
 BOB sees only its own actions: an edit of `sshd_config` by hand, a `ufw` run by
@@ -570,8 +597,8 @@ visible, not impossible.
 
 ## Report management
 
-**A ceiling on the reports' size** (since v0.43.0). BOB never deletes a report
-on its own unless a ceiling is set — useful on a small machine (a Pi Zero's SD
+**A retention threshold for the reports** (since v0.43.0, called a ceiling up to
+v0.44.0). BOB never deletes a report on its own unless a threshold is set — useful on a small machine (a Pi Zero's SD
 card) where a scheduled audit adds a report every day:
 
 ```bash
@@ -579,13 +606,14 @@ sudo bob --log-max-size=50M     # or 500K, 2G; off removes it (the default)
 ```
 
 After each new report, the oldest reports of the folder where reports are
-written are deleted until it is back under the ceiling (older folders are not
+written are deleted until it is back under the threshold (older folders are not
 touched); a report counts with the files beside it (notes, state). Never deleted: the report just written, and a report that
 carries notes (its notes would go with it) — when only those are left above
-the ceiling, BOB says so. Each deletion is written to the admin journal. Setting
-a ceiling warns that, set too low, it limits how much proof is kept, and asks to
-confirm. In `--manage-logs`, the folder list shows the ceiling and the space
-used, and `p` sets it.
+the threshold, BOB says so: it is a retention threshold, not a hard disk-usage
+limit. Each deletion is written to the admin journal. Setting a threshold warns
+that, set too low, it limits how much proof is kept, and asks to confirm. In
+`--manage-logs`, the folder list shows the threshold and the space used, and
+`p` sets it.
 
 To list and delete generated reports:
 
@@ -628,14 +656,17 @@ the colour of what it says, as the text output does: a **prompt** or a question
 waiting for an answer in **yellow**; an action that took effect in **green**,
 `✔`; an action refused or failed — nothing was changed — in **red**, `✖`;
 information (an action you cancelled) in **cyan**, `ℹ`. The same in every
-wizard: `--manage-logs`, `--manage-cron`, `--install-cron`, `--explain`.
+wizard: `--manage-logs`, `--manage-cron` (where `--install-cron` opens since v0.44.0),
+`--manage-team`, `--explain`.
 
 | Key | Action |
 |-----|--------|
 | `↑` / `↓` or `j` / `k` | Move cursor |
 | `PgUp` / `PgDn` | Page |
 | `g` / `G` | Jump to top / bottom |
-| `Enter` | Select |
+| `Enter` | Select (on `--manage-cron`'s list: edit the job, announced "edit", v0.44.0) |
+| `F2` / `F3` / `F4` / `F5` | Open `--manage-logs` / `--manage-cron` / `--manage-team` / `--explain`, from a wizard's first page only (v0.44.0) |
+| `Ctrl+G` | `bob --bob-tui`, the menu of those four (v0.44.0) |
 
 **Text fields.** Where a screen asks you to type something — a job name, an
 e-mail address, a time — the prompt sits on the reserved line and the banner
@@ -645,7 +676,9 @@ before v0.16.3 they were English on a French wizard.
 
 **Exits.** `q` quits, and only from a wizard's **first page** — deeper in, `Esc`
 steps back one screen and nothing leaves outright, so a single keystroke cannot
-abandon a half-entered cron job from three screens down.
+abandon a half-entered cron job from three screens down. On a first page, `Esc`
+opens `bob --bob-tui`, the menu of every wizard (v0.44.0); in that menu, `q`
+leaves BOB and `Esc` does nothing.
 
 **`l` switches the interface language**, on first pages only. It exists because
 these wizards run under `sudo` and sudo resets the environment: an operator

@@ -70,7 +70,9 @@ class TestWillAnyoneHearFromThisJob:
 
     def test_address_and_a_transport_is_not_a_promise(self, tmp_path, _has_mta):
         glyph, key, kw = describe_reporting(["a@b.co"], False, root_config_path=_cfg(tmp_path))
-        assert (glyph, key) == ("✔", "install_cron.mta_found")
+        # v0.44.0 (decided with the user): ℹ, information — presence is not
+        # delivery, so no ✔ (green on screen) for it.
+        assert (glyph, key) == ("ℹ", "install_cron.mta_found")
         assert kw == {"mta": "Postfix"} or "mta" in kw
 
     def test_address_without_a_transport_is_a_warning(self, tmp_path, _no_mta):
@@ -87,7 +89,8 @@ class TestWillAnyoneHearFromThisJob:
     def test_no_address_but_a_webhook_is_the_other_way_out(self, tmp_path, _has_mta):
         glyph, key, _ = describe_reporting(
             [], False, root_config_path=_cfg(tmp_path, "https://example.com/h"))
-        assert (glyph, key) == ("✔", "install_cron.reports_webhook")
+        # v0.44.0 (decided with the user): ℹ — a webhook saved is not a POST received.
+        assert (glyph, key) == ("ℹ", "install_cron.reports_webhook")
 
     def test_offline_suppresses_the_webhook_so_that_job_is_mute(self, tmp_path, _has_mta):
         # bob/__main__.py: `if _webhook_url and not config.offline`. Offering

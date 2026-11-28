@@ -455,8 +455,11 @@ def describe_reporting(notify_emails, offline: bool,
     """
     if notify_emails:
         available, name = _detect_mta()
+        # v0.44.0 (decided with the user, 27 November 2026) — ℹ, not ✔: a
+        # transport present is not a delivery proven, as the text itself says;
+        # a ✔ (green on screen) affirmed what nothing measured.
         if available:
-            return "✔", "install_cron.mta_found", {"mta": name or "sendmail"}
+            return "ℹ", "install_cron.mta_found", {"mta": name or "sendmail"}
         return "⚠", "install_cron.mta_missing", {}
 
     url = ""
@@ -470,4 +473,7 @@ def describe_reporting(notify_emails, offline: bool,
         return "⚠", "install_cron.reports_nobody", {}
     if offline:
         return "⚠", "install_cron.reports_webhook_offline", {}
-    return "✔", "install_cron.reports_webhook", {}
+    # v0.44.0 (decided with the user, 27 November 2026) — ℹ, as for the mail
+    # transport: a webhook saved is not a POST received; the text asks for
+    # --test-webhook because nothing here has measured it.
+    return "ℹ", "install_cron.reports_webhook", {}

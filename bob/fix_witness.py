@@ -60,7 +60,11 @@ _MACHINE_ID = Path("/etc/machine-id")
 _JOURNAL_ROOTS = (Path("/var/log/journal"), Path("/run/log/journal"))
 _TIMEOUT = 30
 
-_HEAD = re.compile(r"^(run|result|note) id=([0-9a-f]{6,32}) sha256=([0-9a-f]{64}) body=([0-9a-f]{64})\b")
+#: v0.44.0 (B-050) — ``rotate``, the line that says the journal was archived:
+#: measured as root on the test Mint (27 November 2026), left out it was the
+#: one line of 241 "not shown", and every rotation would leave the verdict
+#: unproven.
+_HEAD = re.compile(r"^(run|result|note|rotate) id=([0-9a-f]{6,32}) sha256=([0-9a-f]{64}) body=([0-9a-f]{64})\b")
 
 
 @dataclass
@@ -243,7 +247,13 @@ def verify(journal: "FJ.Journal | None" = None, witness: "WitnessRead | None" = 
         by_id.setdefault(item.id, set()).add((item.digest, item.body))
     in_file = {line.id for line in journal.seen}
     if witness.state == "ok":
-        verdict.removed = [item for item in witness.items if item.id not in in_file]
+        # v0.44.0 (B-050) — the oldest archives left unread (bob/fix_journal
+        # CHAIN_BUDGET): their lines are not in what was read, and are not
+        # removed for that. What the system log holds from before the first
+        # line read is left out; the archives unread are said.
+        first = _at(journal.seen[0].at) if journal.skipped and journal.seen else None
+        verdict.removed = [item for item in witness.items if item.id not in in_file
+                           and not (first and item.at and item.at < first)]
     for line in journal.seen:
         # By id first, whatever the line claims: a falsifier flipping
         # "witness" to "none" changes the line, and the witness still has it.

@@ -446,7 +446,9 @@
     "geoip2_no_db": "GeoIP2 installed but no GeoLite2-Country database found — IP geolocation disabled",
     "geoip2_no_db_cmd": "sudo mkdir -p /usr/share/GeoIP && sudo wget -O /usr/share/GeoIP/GeoLite2-Country.mmdb https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb",
     "local_dominance": "Local source {ip} accounts for {count}/{total} blocks ({pct}%) — {protos} to {ports} distinct destination port(s); BOB does not identify this traffic: check which device it is",
-    "local_dominance_discovery": "Local source {ip} accounts for {count}/{total} blocks ({pct}%) — only to the conventional discovery ports ({ports}: SSDP, mDNS, LLMNR, NetBIOS…) — the ports, not the packets, which BOB does not read"
+    "local_dominance_discovery": "Local source {ip} accounts for {count}/{total} blocks ({pct}%) — only to the conventional discovery ports ({ports}: SSDP, mDNS, LLMNR, NetBIOS…) — the ports, not the packets, which BOB does not read",
+    "logfile_unreadable": "UFW log file present but unreadable ({path}), and no UFW line readable in journald — the period is not analysed: a scan or repeated attempts are not established — the score is a ceiling",
+    "logfile_unreadable_detail": "The file exists but this account may not read it (on Debian and Ubuntu it is 0640, owner syslog, group adm), and the journal shows it none of the kernel's UFW lines either. This is not \"no log\". Run BOB with sudo, or from an account in the adm group, to read it."
   },
   "ddns": {
     "none": "No DDNS client detected — no DDNS-based external exposure identified",
@@ -659,15 +661,15 @@
     "home_journals": "Journals of what was done with BOB — team, scheduled audits, administration ({count} event(s))",
     "journals_title": "Journals",
     "plain_journals": "The journals of what was done with BOB (team, scheduled audits, administration): {cmd}",
-    "ceiling_prompt": "Reports' size ceiling (50M, 500K, 2G or off)",
-    "ceiling_warning": "A ceiling of {limit}: past it, the oldest reports are deleted after each new one. Set too low, it limits how much proof is kept (reports with notes are never deleted). Confirm?",
+    "ceiling_prompt": "Reports' retention threshold (50M, 500K, 2G or off)",
+    "ceiling_warning": "A retention threshold of {limit}: past it, the oldest reports are deleted after each new one. Set too low, it limits how much proof is kept (reports with notes are never deleted). Confirm?",
     "ceiling_invalid": "Not a size: {value} — 50M, 500K, 2G or off",
-    "ceiling_set": "Reports' size ceiling: {limit}, applied after each new report",
-    "ceiling_off": "No ceiling on the reports' size",
-    "ceiling_pruned": "{count} old report(s) deleted to stay under the ceiling ({limit}) — written to the admin journal",
-    "ceiling_unreachable": "The reports stay above the ceiling ({limit}): the rest carry notes or are the newest, never deleted",
-    "ceiling_none": "no size ceiling (current folder: {used}; all folders: {total})",
-    "ceiling_is": "ceiling {limit} on the current folder ({used}; all folders: {total})",
+    "ceiling_set": "Reports' retention threshold: {limit}, applied after each new report",
+    "ceiling_off": "No retention threshold for the reports",
+    "ceiling_pruned": "{count} old report(s) deleted to come back under the retention threshold ({limit}) — written to the admin journal",
+    "ceiling_unreachable": "The reports stay above the retention threshold ({limit}): the rest carry notes or are the newest, never deleted",
+    "ceiling_none": "no retention threshold (current folder: {used}; all folders: {total})",
+    "ceiling_is": "retention threshold {limit} on the current folder ({used}; all folders: {total})",
     "size_unknown_short": "unknown"
   },
   "cron_ui": {
@@ -694,7 +696,7 @@
     "hint_skip_email": "Press  Enter  to skip (no email notification).",
     "cannot_write": "Cannot write {path}: {error}",
     "edit_schedule": "Edit schedule",
-    "install_cron": "Install cron",
+    "install_cron": "New scheduled audit",
     "address_book": "Email address book",
     "edit": "Edit: {name}",
     "select_emails": "Select notification emails"
@@ -718,6 +720,7 @@
       "page": "page",
       "edge": "top/bottom",
       "select": "select",
+      "edit": "edit",
       "back": "back",
       "quit": "quit",
       "toggle": "toggle",
@@ -747,13 +750,14 @@
       "removed": "lines cut",
       "breakdown": "computation",
       "expand": "all",
-      "ceiling": "size limit"
+      "ceiling": "threshold",
+      "screens": "screens",
+      "home": "BOB menu"
     },
     "mode_notes": "[NOTES]"
   },
   "install_cron": {
     "title": "BOB CRON SETUP",
-    "landing_prompt": "Create a new scheduled audit",
     "quit_hint": "Enter 'q' at any prompt to cancel.",
     "cancelled": "Wizard cancelled.",
     "prompt_name": "Name for this cron job (Enter for '{suggestion}')",
@@ -805,7 +809,8 @@
     "network_offline": "Disabled — no HTTP calls (--offline)",
     "invalid_network": "Unrecognised choice",
     "audit_command": "Scheduled command: {command}",
-    "bob_binary_missing": "The script calls {path}, which does not exist on this host, so every scheduled run would fail. Run sudo ~/.local/bin/bob --install-completion first (it creates /usr/local/bin/bob), then install the job again."
+    "bob_binary_missing": "The script calls {path}, which does not exist on this host, so every scheduled run would fail. Run sudo ~/.local/bin/bob --install-completion first (it creates /usr/local/bin/bob), then install the job again.",
+    "new_title": "New scheduled audit"
   },
   "manage_cron": {
     "title": "BOB CRON MANAGEMENT",
@@ -857,7 +862,8 @@
     "origin_date_only": "created on {date} — author not recorded",
     "origin_unknown": "creation not recorded",
     "address_origin": "added on {date} at {time} by {who}",
-    "address_origin_unknown": "addition not recorded"
+    "address_origin_unknown": "addition not recorded",
+    "no_crons_new": "No scheduled audit yet — n creates one"
   },
   "email_prompt": {
     "title": "Notification email(s):",
@@ -1325,8 +1331,8 @@
       "french": "Shortcut for --lang=fr (overrides detection)",
       "english": "Shortcut for --lang=en (overrides detection)",
       "reconfigure": "Delete the saved configuration (~/.config/bob/config.conf) and exit",
-      "install_cron": "Install an automated audit cron job (schedule wizard)",
-      "manage_cron": "List, edit or delete installed cron jobs",
+      "install_cron": "Create a scheduled audit (opens --manage-cron on a new one)",
+      "manage_cron": "Scheduled audits: list, create (n), edit or delete",
       "manage_logs": "List and delete saved audit log files",
       "breakdown": "Run audit silently and print full score computation path",
       "reset_baseline": "Delete the stored audit baseline and exit",
@@ -1345,9 +1351,10 @@
       "fix_journal": "Journal of --fix --apply, checked for falsification (exit 0, 2 or 4)",
       "team": "Team perimeters: show; init, grant, revoke, remove (root)",
       "team_journal": "Team journal: actions outside a declared perimeter (exit 0, 2 or 4)",
-      "journals": "What is recorded: show; on|off CAT[,CAT] (root); show NAME",
+      "journals": "Journals: show; on|off CAT[,CAT]; show NAME; max-size SIZE (root)",
       "manage_team": "The team, step by step: everything --team and --journals do",
-      "log_max_size": "Reports' size ceiling: 50M, 500K, 2G or off (oldest go first)"
+      "log_max_size": "Reports' retention threshold: 50M, 500K, 2G or off (oldest first)",
+      "bob_tui": "The menu of every wizard: arrows and Enter, or F2-F5"
     },
     "example": {
       "standard": "Standard audit",
@@ -1658,7 +1665,9 @@
       "sshd": "sshd not found",
       "answer": "sshd did not answer",
       "root": "BOB not run as root"
-    }
+    },
+    "dir_unreadable": "~/.ssh of {user} ({path}) could not be read — its keys and permissions are not checked",
+    "dir_unreadable_detail": "The directory may exist: this account is not allowed to open it, or the directory above it. This is not \"no ~/.ssh\". Run BOB with sudo for the answer."
   },
   "file_perms": {
     "world_writable": "{path} is world-writable ({mode}) — any user can modify this critical file",
@@ -1831,7 +1840,13 @@
       "crashed": "Plugin {plugin} crashed: {error}",
       "serialize_failed": "Plugin {plugin} returned a result that could not be serialized: {error}",
       "unreadable": "Plugin {plugin} could not be read: {error}",
-      "syntax_error": "Plugin {plugin} has a syntax error: {error}"
+      "syntax_error": "Plugin {plugin} has a syntax error: {error}",
+      "privilege_drop_failed": "Plugin {plugin} not run: BOB could not give up root before running it ({error})",
+      "not_run_link": "Plugin {plugin} not run: a symbolic link, which BOB does not follow",
+      "not_run_not_regular": "Plugin {plugin} not run: not a regular file",
+      "not_run_replaced": "Plugin {plugin} not run: not the file BOB checked (replaced or redirected since)",
+      "not_run_outside_home": "Plugin {plugin} not run: it resolves outside the calling user's home",
+      "not_run_unopened": "Plugin {plugin} not run: it could not be opened ({error})"
     }
   },
   "explain": {
@@ -4034,7 +4049,9 @@
     "no_logins_no_range": "No successful SSH logins recorded in the available auth.log",
     "summary": "{count} successful SSH login(s) in the last {days} day(s) — top sources: {top}",
     "public_login": "{count} successful SSH login(s) from public IP(s): {ips}",
-    "brute_force": "{count} failed SSH login attempt(s) over {days} day(s) — consider installing fail2ban"
+    "brute_force": "{count} failed SSH login attempt(s) over {days} day(s) — consider installing fail2ban",
+    "journal_partial": "Authentication journal read in part: this account sees only its own messages, not the system's or other accounts' — SSH logins are not established",
+    "journal_partial_detail": "journalctl said so itself: the messages of other accounts and of the system are hidden from this account. This is not \"no login\". Run BOB with sudo, or from an account in the adm or systemd-journal group (wheel on Fedora), to see them."
   },
   "umask": {
     "sources_unreadable": "Effective umask is {umask} from {source}, but {files} could not be read",
@@ -4142,7 +4159,9 @@
     "cfg_perms_ok": "GRUB config {path} is owner-only (mode {mode})",
     "no_password": "No GRUB superuser password set — anyone at the console can edit boot entries",
     "no_password_detail": "Without a GRUB superuser (password_pbkdf2), a person at the physical console can press 'e' to edit a menu entry and boot with init=/bin/bash for an unauthenticated root shell, or drop to single-user mode. This is a physical/console-access control; it is reported for awareness (no score deduction), as setting it can block unattended reboots and its absence is common. To set one: run grub-mkpasswd-pbkdf2, then add 'set superusers' and 'password_pbkdf2' in /etc/grub.d/40_custom and run update-grub.",
-    "password_set": "GRUB superuser password is configured"
+    "password_set": "GRUB superuser password is configured",
+    "password_unknown": "GRUB superuser password not checked: {path} could not be read",
+    "password_unknown_detail": "grub.cfg exists but this account may not read it (it is usually 0600, owned by root — the good setting). Whether a superuser password is set is not known; run BOB with sudo for the answer."
   },
   "mount_hardening": {
     "unreadable": "/proc/self/mounts could not be read — mount options unknown",
@@ -5081,7 +5100,8 @@
       "team_revoke": "revoking attributes",
       "team_remove": "removing a team member",
       "journals": "changing what is recorded",
-      "log_max_size": "setting the reports' size ceiling"
+      "log_max_size": "setting the reports' retention threshold",
+      "journals_ceiling": "changing the journals' ceiling"
     },
     "outside": "{action}: outside the perimeter declared for {account} — it does not include \"{attribute}\". If carried out, it is written to the team journal as outside the declared perimeter (master: {master}).",
     "confirm": "Carry it out anyway? [y/N]",
@@ -5118,7 +5138,8 @@
       "unknown_attribute": "Unknown attribute: {attribute}. Known: {known}",
       "no_attribute": "No attribute given.",
       "journals_unknown": "Unknown category: {category}. Known: {known}",
-      "journals_usage": "Usage: bob --journals | --journals on|off CAT[,CAT] | --journals show team|cron|admin"
+      "journals_usage": "Usage: bob --journals | --journals on|off CAT[,CAT] | --journals show team|cron|admin | --journals max-size SIZE",
+      "journals_max_size": "Journals' ceiling not understood: {value} — between {min} and {max} (512K, 8M, 16M), or default."
     },
     "journal": {
       "attempt_confirmed": "outside the declared perimeter, confirmed — {action} ({attribute})",
@@ -5153,11 +5174,21 @@
       "config": "configuration: {op} {value}",
       "report_deleted": "report deleted — {path}",
       "journals": "what is recorded: {categories} {state}",
-      "journals_altered": "what is recorded changed outside BOB"
+      "journals_altered": "what is recorded changed outside BOB",
+      "rotate": "archived — {archive} (ceiling {ceiling}); the journal goes on, chained to it",
+      "journals_ceiling": "journals' ceiling set — {value}"
     },
-    "size": "{size} (read up to {limit}; past it, said too large)",
+    "size": "{size} of {ceiling} (past it, archived — nothing is cut)",
     "size_absent": "not created yet",
-    "size_unknown": "size unknown (root's)"
+    "size_unknown": "size unknown (root's)",
+    "line_in_file": "{line} ({file}, line {local})",
+    "archives": " · {count} archive(s), {size}",
+    "ceiling_line": "Ceiling of each journal: {ceiling} (default {default}, at most {max}) — past it, the journal is archived (<name>.0001…) and the next one is chained to it; BOB deletes no archive.",
+    "skipped": "{count} older archive(s) not read here (beyond {budget}) — the chain is checked from the first line read.",
+    "max_size_warning": "Ceiling of every journal: {ceiling}. Nothing is cut: past it, a journal is archived and the next one is chained to it. BOB deletes no archive — the space they take keeps growing, and the proof is lost only if an archive is deleted (the gap then shows in the chain). Set it?",
+    "max_size_set": "Journals' ceiling: {ceiling}.",
+    "max_size_prompt": "Journals' ceiling (512K to 16M, or default for 8M)",
+    "line_not_following": "{line} ({file}, line 1: it does not follow the line before it — an archive deleted or changed, or this line rewritten)"
   },
   "team_wizard": {
     "title": "BOB — team management",
@@ -5218,5 +5249,15 @@
     "confirm_remove_many": "Remove from the team: {accounts}?",
     "all_attributes": "all attributes",
     "all_categories": "all categories"
+  },
+  "switch": {
+    "title": "BOB's wizards",
+    "here": "last opened",
+    "logs": "Reports and journals (--manage-logs)",
+    "cron": "Scheduled audits (--manage-cron)",
+    "team": "The team (--manage-team)",
+    "explain": "What the findings mean (--explain)",
+    "needs_root": "This screen needs root: open it with {cmd}",
+    "plain": "BOB's wizards need a terminal; each opens with its command:"
   }
 }

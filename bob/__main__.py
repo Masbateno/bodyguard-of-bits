@@ -108,14 +108,36 @@ def _show_fix_journal(t) -> int:
     from bob.fixlog import text_report
     c = output._c
     colour = {"alert": c.red_bold, "warn": c.yellow_bold, "ok": c.green_bold,
-              "verbatim": c.violet_bold, "body": ""}
+              "info": c.cyan, "verbatim": c.violet_bold, "body": ""}
     lines, overall = text_report(t)
     from bob import _names
     for text, kind in lines:
-        text = _names.plain(text)          # v0.43.0 — the screen's name marks, not printed
         tint = colour.get(kind, "")
+        # v0.43.0 — the screen's name marks, not printed; v0.44.0 — a command
+        # marked inside a line in violet, the rest of the line in its colour.
+        pieces = []
+        for piece, mark in _names.segments(text):
+            if mark == "verbatim" and c.violet_bold:
+                pieces.append(f"{c.violet_bold}{piece}{c.reset}{tint}")
+            else:
+                pieces.append(piece)
+        text = "".join(pieces)
         print(f"{tint}{text}{c.reset}" if tint else text)
     return {"intact": EXIT_OK, "tampered": EXIT_ALERTS}.get(overall, EXIT_TARGET_MISSED)
+
+
+def _bob_tui(config) -> int:
+    """``--bob-tui``: the menu of every wizard on a terminal; without one, what
+    each wizard is and the command that opens it."""
+    from bob.tui import switch
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        print(i18n.t("switch.plain"))
+        for target in switch.TARGETS:
+            print(f"  {switch._FKEY[target]}  {i18n.t('switch.' + target)}")
+        return EXIT_OK
+    import curses
+    os.environ.setdefault("ESCDELAY", "25")
+    return curses.wrapper(lambda scr: switch.run(scr, "hub", None, config, i18n.t))
 
 
 def _manage_team(config) -> int:
@@ -126,10 +148,10 @@ def _manage_team(config) -> int:
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         return team_wizard.run(i18n.t)
     import curses
-    from bob.tui import team as team_tui
     os.environ.setdefault("ESCDELAY", "25")
     try:
-        return curses.wrapper(lambda scr: team_tui.run(scr, config, i18n.t))
+        from bob.tui import switch       # v0.44.0 (B-051) — F2-F5, Ctrl+G
+        return curses.wrapper(lambda scr: switch.run(scr, "team", None, config, i18n.t))
     except (curses.error, OSError):
         return team_wizard.run(i18n.t)
 
@@ -192,7 +214,7 @@ def _run(argv=None) -> int:
         output.init(no_color=config.no_color)
         from bob.explain import run_explain, run_explain_interactive
         if config.explain_key == "__interactive__":
-            run_explain_interactive(i18n.t)
+            run_explain_interactive(i18n.t, config)
             return EXIT_OK
         # F4 (v0.12.0): an unknown key returns a non-zero exit so scripts can
         # tell "explained" from "no such key" (the exit codes are a stable API).
@@ -236,6 +258,12 @@ def _run(argv=None) -> int:
         i18n.init(lang=config.lang)
         output.init(no_color=config.no_color)
         return _manage_team(config)
+
+    # v0.44.0 (asked by the user, 27 November 2026) — the menu of every wizard.
+    if config.bob_tui:
+        i18n.init(lang=config.lang)
+        output.init(no_color=config.no_color)
+        return _bob_tui(config)
 
     # v0.43.0 (B-045) — what is recorded, and the journals in text.
     if config.journals:
@@ -634,6 +662,12 @@ def _run(argv=None) -> int:
                   file=sys.stderr)
             _profile_prewarned = True
 
+    # v0.44.0 (B-055) — the audit stays root's (decided with the user, 27
+    # November 2026). Measured without root on three distributions, it was
+    # honest but incomplete, and on Fedora 44 misleading: two whole domains
+    # unread, the score up from 8 to 9, the exit code down from 2 to 1. What
+    # B-055 needed was BOB not staying root for everything: plugins now run as
+    # the calling account (bob/_sandbox.py, _drop_privileges).
     require_root()
 
     # v0.43.0 (B-045) — before the stdout of the machine modes is redirected,

@@ -224,6 +224,10 @@ class LogsSnapshot:
     #: is not established.
     files_cut:      tuple = ()
     window_gap:     bool = False
+    #: v0.44.0 (B-055) — False when the log file exists but could not be read
+    #: (measured: /var/log/ufw.log, 0640 syslog:adm, was called "not found" for
+    #: an ordinary account). Its path is then in ``files_unread``.
+    logfile_readable: bool = True
 
     @property
     def total(self) -> int:
@@ -246,6 +250,7 @@ class LogsSnapshot:
             Populated LogsSnapshot. Never raises.
         """
         cutoff_dt = datetime.now() - timedelta(days=log_days)
+        primary_denied = False
 
         # --- Primary source: /var/log/ufw.log, then its rotations ---
         # v0.27.0 — the rotated files are read, newest first, until the window
@@ -256,6 +261,7 @@ class LogsSnapshot:
                 content, cut = _read_log_tail_flagged(log_path)
             except OSError as exc:
                 logger.warning("Cannot read %s: %s", log_path, exc)
+                primary_denied = True
             else:
                 files_read, files_unread = [str(log_path)], []
                 files_cut = [str(log_path)] if cut else []
@@ -311,7 +317,9 @@ class LogsSnapshot:
                        log_days=log_days, log_found=True, log_source="journald")
 
         return cls(entries=[], days_available=0,
-                   log_days=log_days, log_found=False, log_source="none")
+                   log_days=log_days, log_found=False, log_source="none",
+                   logfile_readable=not primary_denied,
+                   files_unread=(str(log_path),) if primary_denied else ())
 
 # ---------------------------------------------------------------------------
 # Pure check logic
@@ -342,7 +350,15 @@ def check_logs(
     result = CheckResult()
 
     if not snapshot.log_found:
-        result.info(message=_t("logs.no_logfile"), key="logs.no_logfile")
+        if not snapshot.logfile_readable:
+            result.info(
+                message=_t("logs.logfile_unreadable",
+                           path=(snapshot.files_unread or (str(UFW_LOG_PATH),))[0]),
+                detail=_t("logs.logfile_unreadable_detail"),
+                key="logs.logfile_unreadable",
+            )
+        else:
+            result.info(message=_t("logs.no_logfile"), key="logs.no_logfile")
         return result, None
 
     if snapshot.log_source == "journald":

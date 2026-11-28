@@ -1,7 +1,7 @@
 %global pypi_name bodyguard-of-bits
 
 Name:           bob
-Version:        0.43.0
+Version:        0.44.0
 Release:        1%{?dist}
 Summary:        Linux hardening auditor with CIS benchmark mapping
 License:        MIT
@@ -95,6 +95,14 @@ install -D -m 0644 SECURITY.md       %{buildroot}%{_docdir}/%{name}/SECURITY.md
 # ---------------------------------------------------------------------------
 
 %changelog
+* Sat Nov 28 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.44.0-1
+- BREAKING (plugins): under sudo or doas, a plugin from the calling
+  user's checks.d runs with that user's uid and groups, no longer
+  root's; root no longer follows a symbolic link to read a plugin.
+  BREAKING (score certainty): an unreadable UFW log or ~/.ssh is
+  reported unread, no longer treated as absent. F2-F5 and --bob-tui
+  link the wizards; journals archived past a size ceiling, never cut.
+
 * Tue Nov 24 2026 Cédric Clauzel <cedricclauzel@mailo.com> - 0.43.0-1
 - Team perimeters (--team, --manage-team): a confirmation and
   accountability mechanism, not access control. Chained local journals

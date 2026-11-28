@@ -290,6 +290,15 @@ def _load_one(plugin_path: Path) -> PluginCheck | None:
     # the machine ran out of memory: the audit died (exit 3, zero bytes of
     # stdout) or was killed outright by the OOM killer. Only regular files are
     # plugins.
+    # v0.44.0 — found after the external review of the 0.44.0 changelog: BOB,
+    # root under sudo, read the plugin by its name, following links — a link
+    # put in the calling user's checks.d to a root-only file was read by root
+    # (the 0.26.1 family). A link is now refused, and a plugin that resolves
+    # outside the calling user's home through a linked directory too.
+    if plugin_path.is_symlink():
+        logger.warning("Plugin %s: a symbolic link — skipped (BOB does not follow a link in this directory)",
+                       plugin_path.name)
+        return None
     try:
         # strict_is_file: from Python 3.14 Path.is_file() answers False to a
         # denial, and the log said "not a regular file" about a file BOB
@@ -300,6 +309,11 @@ def _load_one(plugin_path: Path) -> PluginCheck | None:
         size = plugin_path.stat().st_size
     except OSError as exc:
         logger.warning("Plugin %s: cannot stat: %s — skipped", plugin_path.name, exc)
+        return None
+    from bob.sysinfo import invoking_user_name, redirected_out_of_home
+    import os as _os
+    if invoking_user_name() and redirected_out_of_home(plugin_path, _os.path.realpath(str(plugin_path))):
+        logger.warning("Plugin %s: resolves outside the calling user's home — skipped", plugin_path.name)
         return None
 
     if size > _MAX_PLUGIN_SIZE:
@@ -313,8 +327,17 @@ def _load_one(plugin_path: Path) -> PluginCheck | None:
     # Bounded read, mirroring ``i18n._load_locale``: the cap above is advisory
     # (a file can grow between stat and read, and some file types lie about
     # their size), so the read itself must not be able to run away.
+    # v0.44.0 — looked at before it is opened (see open_plugin_checked): a
+    # plugin swapped for a link, a FIFO or a device after the checks above is
+    # never opened by root.
+    from bob._sandbox import _plugin_place, open_plugin_checked
+    fd, why, error = open_plugin_checked(str(plugin_path), *_plugin_place(plugin_path))
+    if fd is None:
+        logger.warning("Plugin %s: not read (%s%s) — skipped", plugin_path.name, why,
+                       f": {error}" if error else "")
+        return None
     try:
-        with plugin_path.open(encoding="utf-8", errors="replace") as fh:
+        with _os.fdopen(fd, encoding="utf-8", errors="replace") as fh:
             source = fh.read(_MAX_PLUGIN_SIZE + 1)
     except OSError as exc:
         logger.warning("Plugin %s: cannot read: %s — skipped", plugin_path.name, exc)

@@ -108,4 +108,11 @@ def test_the_no_job_hint_uses_the_hosts_privilege_word():
     import bob.cron._manage as manage
     import bob.tui.cron as tui
     assert "with_privilege('sudo bob --install-cron')" in inspect.getsource(manage)
-    assert 'with_privilege("sudo bob --install-cron")' in inspect.getsource(tui)
+    # v0.44.0 (B-051): --install-cron is merged into --manage-cron, and the
+    # screen's hint names `n`, which makes the job on the spot — no command
+    # left to print, so no privilege word to get wrong there.
+    assert 't("manage_cron.no_crons_new")' in inspect.getsource(tui)
+    import json
+    from pathlib import Path
+    en = json.loads((Path(manage.__file__).resolve().parents[1] / "locales" / "en.json").read_text(encoding="utf-8"))
+    assert "n creates one" in en["manage_cron"]["no_crons_new"]

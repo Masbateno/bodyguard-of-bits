@@ -119,6 +119,19 @@ confirmation goes on the context line above it. Found while doing this:
 glyph's tone · each tone's pair · every status built with its glyph · no write
 on the banner's row · prompts in the prompts' colour.
 
+**A message on a screen's body says what it means too** (v0.44.0, asked by
+the user, 27 November 2026, "ici comme ailleurs"). Each paragraph or line that
+informs takes the text output's colour for its meaning — green done or a guard
+in place (`✔`), yellow a warning or a guard missing (`⚠`), red refused (`✖`),
+cyan information (`ℹ`) — and every command it names is violet, inside the
+line (`_names.verbatim_in`, `_names.tone(…, "verbatim")`). A line built with
+its glyph gets its colour from it (`bob/tui/fixlog.glyph_kind`); a line built
+without one declares its kind (`ok`, `warn`, `alert`, `info`). A marked
+command cut by a wrap stays violet on both lines (`carry_marks`). Found while
+doing this: the message closing a new scheduled audit and the guards of
+`--manage-logs`' journal of fixes were drawn in plain white. *Guarded:* the
+closing message, the journal's guards and its empty verdict, both surfaces.
+
 **Each key sits in its own cap** (v0.40.0, decided with the user, 20 November
 2026: on the plain orange line the keys were hard to tell apart). In the
 bottom banner every key — `⏎`, `Esc`, `d`, `1-4` — is drawn black on white
@@ -216,7 +229,9 @@ preview's note author · no mark in any text output.
 user, 22 November 2026). A key that acts — Enter that applies the ticked
 boxes, `d` that removes, `n` that adds — leaves the screen where it is, read
 again from what is now declared, its outcome on the context line. Leaving is
-Esc's alone (and `q` on a landing screen, which `LANDING_EXIT` announces).
+Esc's alone (and `q` on a landing screen, which `LANDING_EXIT` announces). The
+one exception, since v0.44.0: Esc on a landing screen does not go back — there
+is nothing before it — it opens the menu of every wizard (below).
 Found while doing this: Enter on `--manage-team`'s "What is recorded" applied,
 then went back to the screen before. *Guarded:* the frame after Enter is still
 the same screen, its boxes read back.
@@ -237,6 +252,38 @@ that entry is gone. Checked screen by screen: `--manage-team`'s landing screen
 and team list, `--manage-logs`'s landing screen and folder list did not
 (fixed); the report list, the journals, `--explain`'s pickers and
 `--manage-cron`'s lists did. *Guarded:* each of the four fixed.
+
+**F2 to F5 open another wizard; Ctrl+G a selector of them** (v0.44.0, asked by
+the user, 23 November 2026). F2 `--manage-logs`, F3 `--manage-cron`, F4
+`--manage-team`, F5 `--explain`, from the landing screen of any of them —
+**and from there only** (the user, 27 November 2026, the same day: not from
+the screens below a landing one, nor from a field being typed). Switching
+replaces the wizard. The keys are announced on the landing screens ("F2-F5 ^G
+screens", carried by `LANDING_EXIT` alone in `bob/tui/_keys.py`) and act only
+where they are announced. A
+wizard the session cannot open (`--manage-logs` and `--manage-cron` need root,
+as their own commands do; the reports before a first audit) is said on a
+screen of its own, and Esc returns to the wizard the key was pressed in.
+Measured by the user: the five keys reach curses in a local terminal, over
+`ssh -t`, in tmux, and in tmux over ssh. *Guarded:* the keys, the
+announcement on landing screens only, the switcher (`bob/tui/switch.py`), the
+menu key by key, the screens below a landing one and both text fields, where
+they do nothing.
+
+**`bob --bob-tui`, the menu of every wizard; Esc on a landing screen opens it**
+(v0.44.0, asked by the user, 27 November 2026 — an exception to "Esc goes
+back one step", decided knowingly and written here). The menu lists the four
+wizards with their keys: the arrows and Enter, a digit, or F2-F5 open one; the
+wizard just left is marked and selected. Some prefer the function keys, others
+the arrows, Enter and Esc alone: with this menu, both move freely between every
+wizard. Ctrl+G opens it from anywhere; **Esc on any wizard's landing screen
+opens it too, however the wizard was opened** (directly by its command, or from
+the menu). `q` on a landing screen still leaves BOB, and so does `q` in the menu;
+there, Esc does nothing (it would only repeat `q`). Below a landing screen, Esc goes back one step as always. The menu
+opens without root; the reports and the scheduled audits still ask for it,
+said on a screen of their own. *Guarded:* Esc raises the menu on landing
+screens only, announced "Esc BOB menu"; the menu key by key; the cron list
+(which reads raw keys); the option, and its text fallback without a terminal.
 
 **An empty row under the header banner** (v0.43.0, asked by the user, 23
 November 2026). On every screen, row 0 is the banner and row 1 stays empty —
@@ -261,6 +308,15 @@ this: the team journal's accounts and attributes followed the length of the
 word before them, the cron journal's details the length of the action, and
 the French "NON enregistré" overran `--journals`'s fixed column. *Guarded:*
 the team, cron and admin journals, `--team`, `--journals`, the address book.
+**A value longer than its column never pushes the columns after it** (v0.44.0,
+asked by the user, 27 November 2026, as the default for the whole project): it
+takes a line of its own — wrapped, never cut — and the fields after it start
+in their columns on the line below; a row that no longer fits once padded to
+a column puts what follows on the next line, in its column when it fits
+there, else under the column before. Found while doing this: `--manage-cron`'s
+20-column name field (now doubled to 40, giving way below 80 columns, down to
+20, so the schedule keeps 36), which a longer name overran, and a job padded
+past the screen that fell back to an unpadded line. *Guarded:* the cron list.
 
 **The two surfaces agree on meaning.** Orange marks the thing under attention
 (the cursor row, the key banner); violet marks what must be reproduced exactly,

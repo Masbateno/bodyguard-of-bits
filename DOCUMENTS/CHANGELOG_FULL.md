@@ -6,6 +6,249 @@ All notable changes to this project are documented here.
 
 ---
 
+## [0.44.0] — 2026-11-28
+
+**BREAKING for plugins and for score certainty: plugins no longer run as root;
+a read that is refused is no longer treated as an absence; the wizards are
+linked; the journals are archived past a size ceiling, never cut.**
+
+The two BREAKING changes are of different kinds. The first is a change of
+behaviour, measured on three distributions (section 1). The second is a
+correction of meaning: it acts only where root itself is denied a read, a
+case its tests reproduce but that was not measured as root (section 2).
+
+What changes for which host:
+
+- **A host with plugins in the calling user's `~/.config/bob/checks.d`, audited
+  under `sudo` or `doas`**: each plugin now runs with that user's uid and
+  groups (section 1). A plugin that read a root-only file gets a denial, and its
+  findings — hence the score and the exit code — can change. A plugin that is
+  a symbolic link, or that resolves outside the caller's home, is skipped.
+- **A host where root itself is denied a read** (a home on NFS with
+  `root_squash`, some FUSE mounts): the UFW log or the invoking user's `~/.ssh`
+  is reported unread and joins the sections BOB could not read whole: the score
+  is shown as an upper bound — or, when it already was for another reason, its
+  range may widen; the number shown may stay the same — where 0.43.0 treated it
+  as absent (section 2).
+- **Measured**: on the test Linux Mint 22.3, as root, with no plugin,
+  `--exhaustive`, the score, the exit code and the findings are unchanged from
+  0.43.0 (section 2). By the code, the changes of sections 1–2 act only when a
+  plugin runs or a read is refused.
+- **For every host**: the screens change (section 3); a journal is archived
+  when its next line would no longer fit under its ceiling, 8 MiB by default
+  (section 4). Text outputs that change: `--install-cron`,
+  when it ends, says the mail transport and a saved webhook with `ℹ`, no longer
+  `✔` (section 3); `--journals` and `--fix-journal` give each journal's size
+  against its ceiling ("52 KB of 64 KB (past it, archived — nothing is cut)",
+  where 0.43.0 said "read up to 16.0 MB"), its archives, and a line for the
+  ceiling (section 4).
+
+Four finding keys added (`logs.logfile_unreadable`, `ssh.dir_unreadable`,
+`grub.password_unknown`, `auth_log.journal_partial`), none removed or renamed;
+no JSON-schema or CSV-column change. One new option, `--bob-tui`; one new
+`--journals` action, `max-size`. The audit still requires root, as in 0.43.0.
+Translation keys: 3736 → 3775 per language (40 added, 1 removed).
+
+### 1. BREAKING — plugins no longer run as root
+
+Under `sudo` (or `doas`), BOB loads the plugins found in the calling user's
+`~/.config/bob/checks.d/`. Until 0.43.0 it ran them in a child process that
+kept root's rights — measured on the test Linux Mint 22.3 on 26 November 2026:
+a plugin taken from that directory reported its own ids as `Uid: 0 0 0 0`. A
+user who could write a plugin could therefore have code run as root by whoever
+ran `sudo bob`.
+
+Now the child gives up root before reading a line of the plugin. It takes the
+uid, the gid and the supplementary groups of the account behind `sudo` or
+`doas`; nothing else changes — an SELinux context, for one, stays BOB's. The
+descriptor it opened beforehand pins the file object, so a later replacement
+of the path cannot change the source being read. With no such account — BOB run
+from a root login, or by a scheduled audit — the child takes the identity of the
+plugin file's owner; a root-owned plugin in root's own directory still runs as
+root. If the change of identity fails, the plugin is not run, and BOB says so
+(`plugin.sandbox.privilege_drop_failed`). Measured with the 0.44.0 code: the
+same plugin reported the caller's uid on Linux Mint 22.3 (`sudo`, uid 1001),
+Fedora 44 with SELinux in enforcing mode (`sudo`, uid 1001) and Alpine 3.24
+(`doas`, uid 1002).
+
+The opening of the file itself, which happens as root, is now checked too —
+found while answering the external review of this changelog. BOB read each
+plugin by its name, following symbolic links, both in the parent (the syntax
+check) and in the child: a link in the caller's `checks.d` to a root-only file
+was opened and read by root, as in the 0.26.1 fix. Now the parent skips a plugin
+that is a link, or that resolves outside the caller's home (a linked
+directory); the child opens without following the last component, accepts only a
+regular file, only the one the parent resolved, and, run for another user, only
+inside that user's home — otherwise the plugin is not run, and the reason is
+said (`plugin.sandbox.not_run_*`). Both look at the file before opening it —
+found while answering the third review: the parent checked, then reopened by the
+name, and the child opened as root before checking, so a plugin swapped after
+the checks (for a link, a FIFO, a device) was opened by root all the same. Now
+an `O_PATH` descriptor comes first (nothing is opened), the checks are made on
+it, and the same file is reopened for reading through `/proc/self/fd`, as for
+container configurations since 0.38.0. Covered by tests and mutations, as a
+plain account; not measured again as root on a real host after this change.
+
+What it changes: a plugin that read a root-only file (`/etc/shadow`, a `0600`
+configuration) now gets a denial, as it would for the calling user; a plugin
+installed as a symbolic link is skipped. What it does not change: the sandbox
+is still not a security boundary in itself (BOB's source says so); allowing
+someone `sudo bob` still amounts to giving them root. Both are the subject of
+B-055 in the public [backlog](../BACKLOG.md).
+
+### 2. BREAKING (score certainty) — a refused read is no longer an absence
+
+Four places treated a refused read as an absence. They were found by running
+the same audit as root and as ordinary accounts on the test Linux Mint 22.3,
+then on Fedora 44 and Alpine 3.24 (26–27 November 2026), during work on an
+audit without root; that work was dropped — **the audit still requires root**
+— because without root the audit was incomplete, and on Fedora misleading (two
+whole domains unread, the score up from 8 to 9). The four fixes were kept: root
+can be denied too.
+
+| Place | 0.43.0 | 0.44.0 | Score |
+|---|---|---|---|
+| UFW log (`/var/log/ufw.log`) that exists and cannot be read, with no UFW line in journald | "no log file" | `logs.logfile_unreadable`: the period is not analysed | the score becomes an upper bound |
+| `~/.ssh` of the invoking user that cannot be opened (a denial on it or on a directory above) | "no `~/.ssh`" | `ssh.dir_unreadable`: keys, permissions and `authorized_keys` not checked; what was read of it is dropped | the score becomes an upper bound |
+| `grub.cfg` that cannot be read | nothing said about the GRUB password | `grub.password_unknown`: not checked | no point (as `grub.no_password`) |
+| journald answering with the account's own messages only | "no SSH login" | `auth_log.journal_partial`: logins not established | no point |
+
+"Upper bound" is not new: since 0.16.0 a score is shown as a ceiling with its
+range whenever a section that carries points could not be read whole. What is
+new is that these two refusals now count among those sections — the score
+becomes an upper bound, or its range may widen when it already was one; the
+number itself changes only if the section, read, would have cost points. As root these cases happen only where
+root itself is denied (an NFS home exported with `root_squash`, some FUSE
+mounts); that case was not measured as root — the fixes are measured as an
+ordinary account, and their tests deny the read directly. On the test Mint,
+where root reads everything it reads, the same `--exhaustive` audit as root
+with no plugin gave the same result under 0.43.0 and 0.44.0 (27 November 2026):
+score 8 (range 7–8), exit code 2, the same 138 findings (keys and levels) and
+the same four deductions. There the score was already an upper bound in both
+versions, for two things BOB cannot establish from the host — the verdict on
+forwarded traffic (`firewall_iptables.forward_unknown`) and the router's IPv6
+filtering (`ipv6.router_filter_unverified`), measured on 0.44.0 the same night
+— unrelated to the changes of this release.
+
+### 3. Direct navigation between the wizards: F2–F5, Ctrl+G, `bob --bob-tui`
+
+Asked by the user (23 and 27 November 2026). On a wizard's landing screen,
+F2 opens `--manage-logs`, F3 `--manage-cron`, F4 `--manage-team`, F5
+`--explain`; switching replaces the wizard. Ctrl+G, and Esc on any wizard's
+landing screen, open `bob --bob-tui`: the menu of the four wizards (arrows and
+Enter, a digit, or F2–F5), the wizard just left marked and selected. `q` on a
+landing screen and in the menu leaves BOB; Esc in the menu does nothing.
+Below a landing screen, the switch keys do nothing and Esc goes back one step,
+as before. Esc opening the menu on a landing screen is an exception to the
+convention "Esc goes back one step", written in
+[CONVENTIONS.md](CONVENTIONS.md). The menu opens without root;
+`--manage-logs` and `--manage-cron` still require it, and a wizard that
+cannot open is said on a screen of its own. Measured by the user: the five
+keys reach the screen in a local terminal, over `ssh -t`, in tmux, and in tmux
+over ssh. Without a terminal, `--bob-tui` lists the wizards and the command
+that opens each.
+
+`--install-cron` is merged into `--manage-cron`: the list of jobs is the landing
+screen, `n` creates a job there, Enter (announced "edit") changes one, and
+`--install-cron` opens the list on a new job; its old landing page is gone.
+The name column of the list is doubled (40 columns, giving way down to 20
+below 80 columns so the schedule keeps 36); a name longer than its column takes
+a line of its own instead of pushing the schedule and the addresses out of
+their columns, and an address is never cut in two. "A value longer than its
+column never pushes the columns after it" is now a written convention.
+
+Colours: the menu was drawn in two greys before a wizard had set the colours,
+and switching left fragments of the previous screen; each screen now starts
+from the shared colours and a full repaint. Lines that only inform are drawn
+in the text output's colour for their meaning — the message closing a new
+scheduled audit, the guards of the journal of fixes (in `--manage-logs` and in
+`--fix-journal`), commands in violet. The mail transport found and a saved
+webhook are said with `ℹ` (information), no longer `✔`: a transport present
+is not a delivery proven, and a webhook saved is not a POST received — both
+texts already said so; the glyph now agrees, on screen and in the text printed
+by `--install-cron`.
+
+### 4. The journals: archived past a ceiling, never cut
+
+Asked by the user (23 November 2026); decided with them (27 November 2026).
+Each journal — team, cron, admin, and the journal of `--fix --apply` — has a
+size ceiling: **8 MiB by default, settable from 64 KiB to 16 MiB**, with
+`sudo bob --journals max-size SIZE` or `p` on the journals screen of
+`--manage-logs`; setting it is warned, confirmed, asked outside the declared
+perimeter like any team setting, and written to the admin journal. A journal
+is archived **before** a line is written that would leave no room under the
+ceiling for that line and for the line that will close the archive: no file —
+journal or archive — exceeds the ceiling, so at 16 MiB, the size BOB reads a
+file to, every file stays readable. The archive's last line says it is archived;
+the file becomes `<name>.0001` (then `.0002`…, never renamed again) and keeps
+its append-only attribute; the new journal's first line chains onto that last
+line. Nothing is cut. If the archive cannot be made (no right to link the file),
+the line is written past the ceiling rather than dropped; past 16 MiB that
+journal is then said too large to read, as in 0.43.0.
+
+The archives and the journal form one chain; a viewer checks the part it reads,
+up to 32 MiB, newest first — older archives are counted, but neither read nor
+checked. In the part read, an archive deleted or changed breaks the chain, and
+the break is said in its own file ("line 812
+(cron.journal.0002, line 3)"), or, at a file's first line, as a line that does
+not follow the one before it. The chain shows a missing or altered line as long
+as the journal files and the system-log witness are not both rewritten — a
+root acting on purpose can rewrite both; logs kept on another host are needed
+against that ([FIX_JOURNAL.md](FIX_JOURNAL.md)). An entry of the journal of
+fixes begun in an archive and finished in the new journal reads whole. **BOB
+deletes no archive**: the space they take keeps growing, and the screens and
+`--journals` say how much. Past the 32 MiB read back, the chain is checked from
+the first line read, and the lines of the archives left unread are not taken,
+in the system log, for lines removed.
+
+Measured as root on the test Linux Mint 22.3 (a throwaway directory, a 64 KiB
+ceiling, 400 cron events and 120 commands, the system-log witness sent under a
+bench tag): archives kept the append-only attribute and stayed under the
+ceiling (65,438 bytes for the cron archive against 65,536; before the fix found in
+review, 65,736), `rm` was refused until the attribute was taken off, the chain held
+across the files, all 120 entries read whole, and the witness confirmed 241 of
+241 lines. A first run had found the witness did not recognise the archive's
+last line — one line of 241 "not shown", which would have left the journal of
+fixes "unproven" after every rotation; fixed.
+
+Three things to know. A journal already near or above 8 MiB is archived when its
+next line is written; one already past 16 MiB — which 0.43.0 already said too
+large to read — stays unreadable as an archive, and with it the chain. And a
+0.43.0 BOB reading a journal archived by 0.44.0 reads the current file alone,
+whose first line follows a line it does not see: it says the chain is broken at
+line 1.
+
+### 5. Wording and documentation
+
+- The reports' threshold of 0.43.0 (`--log-max-size`) is called a "retention
+  threshold" in the help, the screens, the `p` key and the documentation, as
+  in the 0.43.0 changelog: the newest report and annotated ones are never
+  deleted, so the folder may stay above it. Option and settings unchanged.
+- README: the team perimeters' link says "who is expected to do what", no
+  longer "who may do what" — perimeters announce, ask again and record; they
+  prevent nothing.
+- [CONVENTIONS.md](CONVENTIONS.md): the switch keys, the menu and its exception
+  for Esc, columns that hold, information lines in colour.
+- The public [backlog](../BACKLOG.md) (English and French, linked from the
+  READMEs) and its annex on running as root (B-055) state what 0.44.0 did and
+  what is planned.
+
+### 6. Tests and tooling
+
+**Tests** 24635 → **25223**, mutations 2418 → **2529**, all killed. Ten new test
+files:
+`test_v0440_plugins_drop_root.py` (16), `test_v0440_plugin_links.py` (16),
+`test_v0440_unreadable_not_absent.py` (17), `test_v0440_audit_needs_root.py` (6),
+`test_v0440_switch_screens.py` (39), `test_v0440_cron_merged.py` (11),
+`test_v0440_cron_columns.py` (5), `test_v0440_info_colours.py` (13),
+`test_v0440_journal_ceiling.py` (25), `test_v0440_suite_hygiene.py` (3). The last checks that no automatic fixture creates a temporary
+directory for each test (`tmp_path`, `mktemp`): pytest lists the parent
+directory at each creation, which slowed the 0.43.0 CI runs until they were cut
+at 30 minutes. Before a push, the maintainer also runs the screen and team tests
+with one more login account on the host (0.43.0's CI was red for that). Every
+screen test runs on a fake screen that, when its keys run out, raises an
+exception the code under test cannot catch.
+
 ## [0.43.0] — 2026-11-24
 
 **A minor release: team perimeters and journals of listed operations; a size

@@ -76,6 +76,21 @@ _PRIVATE_NETWORKS = (
     ipaddress.ip_network("fe80::/10"),
 )
 
+#: v0.44.0 (B-055) — what journalctl prints on stderr, C locale, when the account
+#: sees only its own messages. Measured on Fedora 44 (26 November 2026), as an
+#: account in none of adm, systemd-journal, wheel: exit 0, "-- No entries --" on
+#: stdout, and "Hint: You are currently not seeing messages from other users
+#: and the system." — BOB read that as "no SSH login".
+_JOURNAL_PARTIAL_HINT = "not seeing messages from other users"
+
+
+class JournalText(str):
+    """journald's output, and whether journalctl said this account sees only
+    its own messages (v0.44.0). A plain ``str`` — what a test stub returns —
+    reads as not partial."""
+    partial: bool = False
+
+
 def _read_auth_from_journald(max_days: int = 90) -> str:
     """
     Read SSH authentication events from journald.
@@ -107,7 +122,10 @@ def _read_auth_from_journald(max_days: int = 90) -> str:
             env=_C_LOCALE_ENV,
         )
         if result.returncode == 0:
-            return result.stdout
+            text = JournalText(result.stdout)
+            stderr = getattr(result, "stderr", "")
+            text.partial = isinstance(stderr, str) and _JOURNAL_PARTIAL_HINT in stderr
+            return text
     except (OSError, subprocess.SubprocessError, subprocess.TimeoutExpired):
         pass
     return ""
@@ -161,6 +179,9 @@ class AuthLogSnapshot:
     # "auth.log" or "journald" — the command BOB offers has to read the same
     # place it did: /var/log/auth.log does not exist on a journald-only host.
     source:        str  = "auth.log"
+    #: v0.44.0 (B-055) — False when journalctl said this account sees only its
+    #: own messages: the system's (sshd's) are hidden, so no login is not known.
+    journal_readable: bool = True
 
     @classmethod
     def from_text(cls, text: str) -> AuthLogSnapshot:
@@ -204,9 +225,11 @@ class AuthLogSnapshot:
         if not snap.log_available:
             # Fallback: journald (Debian 13+ without /var/log/auth.log)
             journald_text = _read_auth_from_journald()
+            partial = getattr(journald_text, "partial", False)
             if journald_text.strip():
                 snap = cls.from_text(journald_text)
                 snap.source = "journald"
+                snap.journal_readable = not partial
                 return snap
             return snap
 
@@ -244,6 +267,16 @@ def check_auth_log(snapshot: AuthLogSnapshot, t: TranslationFunc | None = None) 
         result.info(
             message=_t("auth_log.not_available"),
             key="auth_log.not_available",
+        )
+        return result
+
+    if not snapshot.journal_readable:
+        # v0.44.0 (B-055) — the journal answered, but with this account's own
+        # messages only: no login seen is not no login (measured on Fedora).
+        result.info(
+            message=_t("auth_log.journal_partial"),
+            detail=_t("auth_log.journal_partial_detail"),
+            key="auth_log.journal_partial",
         )
         return result
 

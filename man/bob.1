@@ -1,7 +1,7 @@
 .\" Manpage for bob (Bodyguard Of Bits)
 .\" Format: man-7 (groff_man). Render with: man -l man/bob.1
 .\" Contact: cedricclauzel@mailo.com to correct errors or typos.
-.TH BOB 1 "2026-11-24" "BOB 0.43.0" "User Commands"
+.TH BOB 1 "2026-11-28" "BOB 0.44.0" "User Commands"
 .SH NAME
 bob \- Bodyguard Of Bits, a Linux hardening auditor with CIS benchmark mapping
 .
@@ -326,6 +326,24 @@ and
 the team journal and the changes of this setting are always written.
 .BI "show " NAME
 prints a journal (exit 0 intact, 2 broken, 4 unreadable).
+.BI "max-size " SIZE
+(root, 0.44.0) sets every journal's ceiling, the journal of
+.B \-\-fix \-\-apply
+included: 8M by default, from 64K to 16M. Past it a journal is archived
+.RI ( name .0001,
+never renamed again) and the next one chained to it; nothing is cut, and
+BOB deletes no archive.
+.TP
+.B \-\-bob\-tui
+The menu of every wizard (0.44.0):
+.BR \-\-manage\-logs ,
+.BR \-\-manage\-cron ,
+.BR \-\-manage\-team ,
+.BR \-\-explain ,
+chosen with the arrows and Enter, a digit, or F2 to F5. From a wizard's
+first page, F2 to F5 open another, Ctrl+G this menu, and Esc comes back to
+it; q there leaves BOB. Opens without root; the reports and
+the scheduled audits still need it.
 .TP
 .B \-\-manage\-team
 The team on a full screen, like

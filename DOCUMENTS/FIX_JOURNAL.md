@@ -63,6 +63,13 @@ cannot be written (a full disk) is not run, and BOB says why.
 Where to read it: `sudo bob --manage-logs`, second choice on the landing screen
 (*Journal of fixes*), or `bob --fix-journal` in text.
 
+**Its ceiling (0.44.0).** Like the other journals: 8 MiB by default, settable
+up to 16 MiB (`sudo bob --journals max-size SIZE`). Past it, the journal is
+archived — `fixes.journal.0001`, never renamed again, append-only kept — and the
+next one chains onto its last line, so an entry begun in the archive and
+finished in the new journal reads whole; nothing is cut and BOB deletes no
+archive ([AUTOMATION.md](AUTOMATION.md#the-ceiling-archived-never-cut-0440)).
+
 ## 3. How a falsification shows — four measures
 
 None of these is enough alone; each covers what the others cannot.

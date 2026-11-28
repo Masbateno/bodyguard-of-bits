@@ -35,6 +35,9 @@ MOVE     = "move"       #: ↑↓ / j k
 PAGE     = "page"       #: PgUp / PgDn
 EDGE     = "edge"       #: g / G
 SELECT   = "select"     #: Enter
+#: v0.44.0 (the user, 27 November 2026) — Enter on --manage-cron's list: it
+#: opens the job to change it, so it says "edit", not "select".
+EDIT     = "edit"       #: Enter
 BACK     = "back"       #: Esc
 QUIT     = "quit"       #: q
 TOGGLE   = "toggle"     #: Space
@@ -77,6 +80,48 @@ REMOVED  = "removed"
 BREAKDOWN = "breakdown"
 EXPAND = "expand"       #: t — every block of the preview at once (v0.43.0)
 CEILING = "ceiling"     #: p — the reports' size ceiling (v0.43.0)
+#: v0.44.0 (B-051, asked by the user) — F2 to F5 open another wizard, Ctrl+G a
+#: small selector of them. Measured by the user (27 November 2026): all five
+#: keys reach curses in a local terminal, over ``ssh -t``, in tmux, and in tmux
+#: over ssh. Declared in LANDING_EXIT alone: the user (27 November 2026, the
+#: same day) wants them on a wizard's landing screen only — a screen below one
+#: neither announces nor acts on them. Only a screen that announces it acts.
+SCREENS = "screens"
+#: v0.44.0 (asked by the user, 27 November 2026) — Esc on a wizard's landing
+#: screen opens ``bob --bob-tui``, the menu of every wizard, wherever the wizard
+#: was opened from: an exception to "Esc goes back one step", written down in
+#: CONVENTIONS.md. A landing screen declares it (``LANDING_EXIT``); a screen
+#: below one declares BACK; never both.
+HOME = "home"
+
+
+class SwitchScreen(Exception):
+    """Raised by :func:`resolve` when a switch key is pressed on a screen that
+    announces it — a landing screen: the wizard is left, and the switcher
+    (``bob/tui/switch.py``) opens *target* — or the selector, for ``None``."""
+
+    def __init__(self, target: "str | None"):
+        super().__init__(target)
+        self.target = target
+
+
+#: The wizard each function key opens. Ctrl+G (7) opens the selector.
+SWITCH_KEYS = (("KEY_F2", "logs"), ("KEY_F3", "cron"), ("KEY_F4", "team"), ("KEY_F5", "explain"))
+CTRL_G = 7
+
+
+def switch_request(curses, ch) -> "tuple[bool, str | None]":
+    """``(True, target)`` when *ch* is a switch key — *target* None for the
+    selector — else ``(False, None)``. A ``str`` from ``get_wch`` is accepted.
+    A fake curses without the function-key constants matches none of them."""
+    if isinstance(ch, str):
+        ch = ord(ch) if len(ch) == 1 else -1
+    if ch == CTRL_G:
+        return True, None
+    for name, target in SWITCH_KEYS:
+        if ch == getattr(curses, name, None):
+            return True, target
+    return False, None
 #: v0.39.0 (user, 19 November 2026: the keys a screen accepts are exactly the
 #: keys it announces) — a numbered menu's digits, announced with the menu's own
 #: range: ``pick(4)`` is drawn "1-4" and binds 1 to 4, never 5. The digits were
@@ -101,8 +146,9 @@ NAVIGATION = (MOVE, PAGE, EDGE)
 #: back one step and nothing leaves outright: a single keystroke should not
 #: abandon a half-entered cron job from three screens down. So a landing screen
 #: declares QUIT and not BACK — it has nowhere to go back to — and every screen
-#: below it declares BACK and not QUIT.
-LANDING_EXIT = (LANG, QUIT)
+#: below it declares BACK and not QUIT. v0.44.0 (the user, 27 November 2026):
+#: a landing screen's Esc is HOME — the menu of every wizard, ``bob --bob-tui``.
+LANDING_EXIT = (SCREENS, HOME, LANG, QUIT)
 NESTED_EXIT  = (BACK,)
 
 #: ``tui.keys.lang`` deliberately holds the name of the *other* language, in
@@ -122,6 +168,7 @@ _LITERAL: "dict[str, tuple[int, ...]]" = {
     MOVE:    tuple(ord(c) for c in "jkJK"),
     EDGE:    (ord("g"), ord("G")),
     SELECT:  (10, 13),
+    EDIT:    (10, 13),
     CREATE:  (10, 13),
     SUBMIT:  (10, 13),
     BACK:    (27,),
@@ -152,6 +199,8 @@ _LITERAL: "dict[str, tuple[int, ...]]" = {
     BREAKDOWN: (ord("b"), ord("B")),
     EXPAND: (ord("t"), ord("T")),
     CEILING: (ord("p"), ord("P")),
+    SCREENS: (CTRL_G,),
+    HOME: (27,),
 }
 
 #: The glyph cluster shown for each action. Navigation is drawn without a
@@ -159,13 +208,15 @@ _LITERAL: "dict[str, tuple[int, ...]]" = {
 #: locales with room for a screen's own actions.
 _GLYPH = {
     MOVE: "↑↓ jk", PAGE: "PgUp/PgDn", EDGE: "g/G",
-    SELECT: "⏎", CREATE: "⏎", SUBMIT: "⏎", BACK: "Esc", QUIT: "q",
+    SELECT: "⏎", EDIT: "⏎", CREATE: "⏎", SUBMIT: "⏎", BACK: "Esc", QUIT: "q",
     TOGGLE: "Spc", ALL: "a", UNMARK: "u", DELETE: "d",
     CHANGE: "c", SUMMARY: "s", FULL: "s", CONFIRM: "y", NEW: "n", LANG: "l", BOOK: "m",
     PEER: "←/→",
     NOTES: "n", ANNOTATE: "a", COMPARE: "c", HISTORY: "h", NUMBERS: "#",
     NOTE_ADD: "a", NOTE_EDIT: "e", NOTE_WITHDRAW: "r", NOTE_PURGE: "p", NOTE_JOURNAL: "v",
     COMPLETE: "Tab", REMOVED: "r", BREAKDOWN: "b", EXPAND: "t", CEILING: "p",
+    SCREENS: "F2-F5 ^G",
+    HOME: "Esc",
 }
 
 
@@ -194,6 +245,7 @@ _SPECIAL = {
     PAGE: ("KEY_PPAGE", "KEY_NPAGE"),
     PEER: ("KEY_LEFT", "KEY_RIGHT"),
     SELECT: ("KEY_ENTER",),
+    EDIT: ("KEY_ENTER",),
     CREATE: ("KEY_ENTER",),
     SUBMIT: ("KEY_ENTER",),
 }
@@ -260,6 +312,12 @@ def resolve(curses, ch: int, actions: "tuple[str, ...]") -> "str | None":
     Order matters only in that a screen must not declare two actions sharing a
     key; :func:`conflicts` is the guard for that.
     """
+    if SCREENS in actions:
+        hit, target = switch_request(curses, ch)
+        if hit:
+            raise SwitchScreen(target)
+    if HOME in actions and ch == 27:
+        raise SwitchScreen("hub")
     for action in actions:
         if ch in _literal(action) or ch in _special(curses, action):
             return action
@@ -274,6 +332,9 @@ def accepted(curses, actions: "tuple[str, ...]") -> "set[int]":
     for action in actions:
         keys.update(_literal(action))
         keys.update(_special(curses, action))
+        if action == SCREENS:
+            keys.update(k for name, _t in SWITCH_KEYS
+                        if (k := getattr(curses, name, None)) is not None)
     return keys
 
 

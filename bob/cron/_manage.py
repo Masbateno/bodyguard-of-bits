@@ -405,10 +405,11 @@ def run_manage_cron(config, t) -> int:
         return _run_manage_cron_plain(config, t)
     import curses as _curses
     import os as _os
-    from bob.tui.cron import _run_manage_cron_curses
+    from bob.tui import switch
     _os.environ.setdefault("ESCDELAY", "25")
     try:
-        return _curses.wrapper(lambda scr: _run_manage_cron_curses(scr, config, t))
+        # v0.44.0 (B-051) — through the switcher (F2-F5, Ctrl+G).
+        return _curses.wrapper(lambda scr: switch.run(scr, "cron", None, config, t))
     except _CronQuit:
         return 0
     except (_curses.error, OSError):

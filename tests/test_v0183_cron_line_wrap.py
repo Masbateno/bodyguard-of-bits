@@ -11,7 +11,7 @@ column so it lines up under the jobs above, and it adapts to the width.
 
 from __future__ import annotations
 
-from bob.tui.cron import _cron_render_lines, _CRON_SCHED_COL
+from bob.tui.cron import _cron_render_lines, _cron_sched_col
 
 _LONG = ", ".join(f"{n}th" for n in range(1, 32)) + " of every month at 12:03"
 _EMAILS = "cedricclauzel30@gmail.com ; cedricclauzel@mailo.com"
@@ -33,8 +33,8 @@ def test_a_wide_row_wraps_instead_of_truncating():
 
 
 def test_the_addresses_flow_onto_the_schedule_continuation():
-    """The addresses ride the wrapped flow (end of the last line), not a
-    separate line of their own."""
+    """The addresses come after the schedule, on the job's last line —
+    v0.44.0: a line of their own, under a column (CONVENTIONS.md)."""
     lines = _lines(60)
     assert "cedricclauzel" in lines[-1]
 
@@ -45,9 +45,10 @@ def test_continuation_lines_align_under_the_schedule_column():
     # so the row must actually wrap at this width — otherwise the loop below is
     # empty and this test would verify nothing.
     assert len(lines) > 1, "row did not wrap at width 60 — nothing to align"
+    col = _cron_sched_col(60)               # v0.44.0: the name column gives way below 80
     for cont in lines[1:]:
-        assert cont.startswith(" " * _CRON_SCHED_COL)
-        assert cont[_CRON_SCHED_COL] != " "               # real content there
+        assert cont.startswith(" " * col)
+        assert cont[col] != " "               # real content there
 
 
 def test_narrower_screen_reflows_to_more_lines():

@@ -81,6 +81,27 @@ _LONG = struct.calcsize("l")
 _FS_IOC_GETFLAGS = (2 << 30) | (_LONG << 16) | (ord("f") << 8) | 1
 _FS_IOC_SETFLAGS = (1 << 30) | (_LONG << 16) | (ord("f") << 8) | 2
 
+#: v0.44.0 (B-050) — the size ceiling of every journal kept this way (this one,
+#: and team, cron, admin — bob/journals.py). Decided with the user (27 November
+#: 2026): 8 MiB by default, settable up to 16 MiB — the size BOB reads a file
+#: to, so a journal always stays readable — through ``bob --journals max-size``.
+#: Past it, the journal is **archived, never cut**: a last line says so, the
+#: file becomes ``<name>.0001`` (``.0002``…, never renamed again), and the new
+#: journal's first line chains onto that last line — the archives and the
+#: journal, read end to end, are one chain. BOB deletes no archive.
+CEILING_DEFAULT = 8 << 20
+CEILING_MAX = MAX_FILE
+#: Below this a single entry (command, message, error) might not fit.
+CEILING_MIN = 64 << 10
+#: How far back the archives are read, newest first, for a viewer (bytes): on a
+#: small machine (a Pi Zero's 512 MiB) a long history is not read whole; the
+#: archives left unread are counted and said.
+CHAIN_BUDGET = 32 << 20
+_ARCHIVE_DIGITS = 4
+#: What a rotation line may differ by from the one measured beforehand (a
+#: longer archive number, a different second): kept free under the ceiling.
+_ROTATE_SLACK = 64
+
 
 class FixJournalError(Exception):
     """Why nothing was written: *key* names it, *vars* fill its message."""
@@ -143,6 +164,10 @@ class Journal:
     broken_at: "int | None" = None      # 1-based line where the chain first fails
     unreadable: "str | None" = None     # a key: link, denied, not_regular, too_large — else the system's words
     foreign_owner: "str | None" = None  # not owned by root: not written by BOB
+    #: v0.44.0 (B-050) — the files read, oldest first, each with the number of
+    #: its first line in the chain; and the oldest archives left unread.
+    files: "list[tuple[str, int]]" = field(default_factory=list)
+    skipped: int = 0
 
 
 def path() -> Path:
@@ -190,12 +215,14 @@ def _owner_name(uid: int) -> str:
 # Reading
 # ---------------------------------------------------------------------------
 
-def parse(raw: str) -> Journal:
-    """The journal rebuilt from its text, its chain checked line by line."""
+def parse(raw: str, start: "str | None" = None) -> Journal:
+    """The journal rebuilt from its text, its chain checked line by line.
+    *start*: the digest its first line must follow — the genesis by default;
+    the first line's own link when the oldest archives were not read."""
     entries: "dict[str, Entry]" = {}
     order: "list[str]" = []
     journal = Journal(entries=[])
-    prev = _GENESIS
+    prev = start or _GENESIS
     for number, line in enumerate(raw.splitlines(), 1):
         if not line.strip():
             continue
@@ -244,16 +271,121 @@ def parse(raw: str) -> Journal:
 
 
 def load() -> Journal:
-    """The journal as it stands; an absent journal is an empty one."""
-    from bob.annotations import _read_raw
-    raw, why, uid = _read_raw(path(), MAX_FILE)
-    if raw is None:
-        return Journal(entries=[], intact=False, unreadable=why)
-    journal = parse(raw)
-    if raw and uid is not None and uid != _JOURNAL_UID:
+    """The journal as it stands, its archives before it; absent is empty."""
+    chain = read_chain()
+    if chain.raw is None:
+        return Journal(entries=[], intact=False, unreadable=chain.why)
+    journal = parse(chain.raw, chain.start)
+    journal.files, journal.skipped = chain.files, chain.skipped
+    if chain.foreign:
         journal.intact = False
-        journal.foreign_owner = _owner_name(uid)
+        journal.foreign_owner = chain.foreign
     return journal
+
+
+# ---------------------------------------------------------------------------
+# v0.44.0 (B-050) — the ceiling, the archives, a chain over several files
+# ---------------------------------------------------------------------------
+
+def ceiling() -> int:
+    """The ceiling in bytes: the one set (``bob --journals max-size``), else
+    8 MiB. An unreadable setting is the default — never no ceiling."""
+    try:
+        from bob import journals as J
+        return J.load_settings().max_size or CEILING_DEFAULT
+    except Exception:  # noqa: BLE001 — a setting not read leaves the default
+        return CEILING_DEFAULT
+
+
+def archive_names(name: "str | None" = None, directory: "Path | None" = None) -> "list[str]":
+    """The archives of journal *name*, oldest first (``<name>.0001``…).
+    Raises OSError when the directory cannot be listed."""
+    name = name or NAME
+    found = []
+    for entry in os.listdir(str(directory or DIR)):
+        head, dot, number = entry.rpartition(".")
+        if dot and head == name and len(number) >= _ARCHIVE_DIGITS and number.isdigit():
+            found.append((int(number), entry))
+    return [entry for _n, entry in sorted(found)]
+
+
+@dataclass
+class ChainText:
+    raw: "str | None"
+    why: "str | None" = None
+    foreign: "str | None" = None
+    files: "list[tuple[str, int]]" = field(default_factory=list)
+    skipped: int = 0
+    start: "str | None" = None
+
+
+def read_chain(name: "str | None" = None, genesis: "str | None" = None) -> ChainText:
+    """Journal *name* and its archives as one text, oldest first, read back
+    newest first within CHAIN_BUDGET. One file unreadable makes the whole
+    unreadable, said why (a chain with a hole is not read as whole)."""
+    from bob.annotations import _read_raw
+    name = name or NAME
+    try:
+        names = archive_names(name)
+    except FileNotFoundError:
+        names = []
+    except OSError:
+        names = []                      # the active file's read says why
+    order = names + [name]
+    texts: "list[tuple[str, str]]" = []
+    foreign, total, skipped = None, 0, 0
+    for index in range(len(order) - 1, -1, -1):
+        file = order[index]
+        raw, why, uid = _read_raw(DIR / file, MAX_FILE)
+        if raw is None:
+            return ChainText(raw=None, why=why)
+        if texts and total + len(raw) > CHAIN_BUDGET:
+            skipped = index + 1
+            break
+        if raw and uid is not None and uid != _JOURNAL_UID and foreign is None:
+            foreign = _owner_name(uid)
+        texts.insert(0, (file, raw))
+        total += len(raw)
+    files, number, parts = [], 1, []
+    for file, raw in texts:
+        files.append((file, number))
+        text = raw if not raw or raw.endswith("\n") else raw + "\n"
+        number += text.count("\n")
+        parts.append(text)
+    start = genesis
+    if skipped:
+        # The oldest archives not read: the chain is checked from the first
+        # line read, which is taken as it says it follows (said by the viewer).
+        first = next((ln for ln in "".join(parts).splitlines() if ln.strip()), "")
+        try:
+            start = json.loads(first).get("prev")
+        except (ValueError, AttributeError):
+            start = None
+    return ChainText(raw="".join(parts), foreign=foreign, files=files, skipped=skipped, start=start)
+
+
+def line_label(files: "list[tuple[str, int]]", number: int, t) -> str:
+    """Where a chain read over *files* breaks, said for a reader: the line;
+    with archives, its file and its line there; at a file's first line, that
+    it does not follow the line before it — measured as root on the test Mint
+    (27 November 2026): an archive deleted read only "line 1"."""
+    if not files:
+        return str(number)
+    file, local = where(files, number)
+    if local == 1:
+        return t("journals.line_not_following", line=number, file=file)
+    if len(files) <= 1:
+        return str(number)
+    return t("journals.line_in_file", line=number, file=file, local=local)
+
+
+def where(files: "list[tuple[str, int]]", number: int) -> "tuple[str, int]":
+    """Line *number* of a chain read over *files*: the file, and its line there."""
+    current = (files[0] if files else (NAME, 1))
+    for file, first in files:
+        if first <= number:
+            current = (file, first)
+    return current[0], number - current[1] + 1
 
 
 def days(journal: Journal) -> "list[tuple[str, list[Entry]]]":
@@ -315,6 +447,23 @@ def _open_locked(name: "str | None" = None) -> "tuple[int, int]":
             raise
         fcntl.flock(fd, fcntl.LOCK_EX)
         st = os.fstat(fd)
+        # v0.44.0 (B-050) — archived while we waited for the lock: what we
+        # hold is an archive now, no longer the journal. Reopen, bounded.
+        for _attempt in range(20):
+            try:
+                now = os.stat(name or NAME, dir_fd=dfd, follow_symlinks=False)
+            except FileNotFoundError:
+                now = None
+            if now is not None and (now.st_ino, now.st_dev) == (st.st_ino, st.st_dev):
+                break
+            os.close(fd)
+            fd = os.open(name or NAME, os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC,
+                         _JOURNAL_MODE, dir_fd=dfd)
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            st = os.fstat(fd)
+        else:
+            os.close(fd)
+            raise FixJournalError("busy")
         if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
             os.close(fd)
             raise FixJournalError("not_regular")
@@ -330,9 +479,26 @@ def _open_locked(name: "str | None" = None) -> "tuple[int, int]":
         raise
 
 
-def _last_digest(fd: int, genesis: "str | None" = None) -> str:
-    """The digest of the journal's last line, the genesis for an empty one."""
+def _last_digest(fd: int, genesis: "str | None" = None, dfd: "int | None" = None,
+                 name: "str | None" = None) -> str:
+    """The digest of the journal's last line, the genesis for an empty one —
+    v0.44.0: for an empty journal that has archives, the last archive's last
+    line (a journal left empty after its archive was made goes on the chain)."""
     size = os.fstat(fd).st_size
+    if size == 0 and dfd is not None:
+        try:
+            archives = archive_names(name)
+        except OSError:
+            archives = []
+        if archives:
+            try:
+                afd = os.open(archives[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dfd)
+            except OSError:
+                return genesis or _GENESIS
+            try:
+                return _last_digest(afd, genesis)
+            finally:
+                os.close(afd)
     if size == 0:
         return genesis or _GENESIS
     window = min(size, 1 << 20)
@@ -368,6 +534,57 @@ def _set_append_only(fd: int) -> bool:
         return bool(_flags(fd) & _FS_APPEND_FL)
     except OSError:
         return False
+
+
+def _clear_append_only(fd: int) -> None:
+    """``chattr -a``, for the archive to be made: the kernel refuses to link or
+    rename an append-only file. Put back on the archive right after."""
+    flags = _flags(fd)
+    if flags & _FS_APPEND_FL:
+        buf = bytearray(8)
+        struct.pack_into("i", buf, 0, flags & ~_FS_APPEND_FL)
+        fcntl.ioctl(fd, _FS_IOC_SETFLAGS, buf, False)
+
+
+def _rotate(fd: int, dfd: int, name: str, prev: str, stamp) -> "tuple[int, dict | None]":
+    """Archive the journal *fd* holds: link it under the next archive name
+    (never over an existing one), write the line that says so — its last —
+    put the append-only attribute back on it, and open the new journal.
+    Returns the new journal's descriptor (locked) and the archive's last
+    event; when the archive cannot be made, the same descriptor and None
+    (the entry is then written past the ceiling: a trace is never dropped)."""
+    try:
+        existing = archive_names(name)
+    except OSError:
+        existing = []
+    number = int(existing[-1].rpartition(".")[2]) + 1 if existing else 1
+    archive = f"{name}.{number:0{_ARCHIVE_DIGITS}d}"
+    try:
+        _clear_append_only(fd)
+    except OSError:
+        pass                            # no such attribute here: the link says
+    try:
+        os.link(name, archive, src_dir_fd=dfd, dst_dir_fd=dfd, follow_symlinks=False)
+    except OSError:
+        _set_append_only(fd)
+        return fd, None
+    os.unlink(name, dir_fd=dfd)
+    rotated = {"kind": "rotate", "id": secrets.token_hex(6), "archive": archive,
+               "ceiling": ceiling()}
+    stamp(rotated)
+    rotated["append_only"] = bool(_set_append_only(fd))
+    rotated["prev"] = prev
+    os.write(fd, (json.dumps(rotated, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+                  + "\n").encode())
+    os.fsync(fd)
+    _set_append_only(fd)
+    new = os.open(name, os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                  _JOURNAL_MODE, dir_fd=dfd)
+    fcntl.flock(new, fcntl.LOCK_EX)
+    os.fchown(new, _JOURNAL_UID, _group_id())
+    os.fchmod(new, _JOURNAL_MODE)
+    os.close(fd)                        # the archive's lock: a waiter reopens the journal
+    return new, rotated
 
 
 def append_only_now() -> "bool | None":
@@ -415,6 +632,8 @@ def witness_message(event: dict, digest: str) -> str:
                 f"cmd={event.get('command', '')[:500]!r}")
     if event["kind"] == "result":
         return f"{head} of={event.get('of')} status={event.get('status')} rc={event.get('rc')}"
+    if event["kind"] == "rotate":
+        return f"{head} archive={event.get('archive')} ceiling={event.get('ceiling')} by={by}"
     return f"{head} of={event.get('of')} by={by}"
 
 
@@ -424,17 +643,49 @@ def _append(event: dict, *, name: "str | None" = None, genesis: "str | None" = N
     *tag* and *describe* (the witness line) name another journal kept the same
     way; left out, this one."""
     fd, dfd = _open_locked(name)
+    rotated = None
+
+    def stamp(ev: dict) -> None:
+        ev.update(v=_VERSION, at=_now(), by=_operator(), host=socket.gethostname())
+        ev["witness"] = "syslog" if _has_witness() else "none"
+
+    def encoded(ev: dict) -> bytes:
+        return (json.dumps(ev, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
+
     try:
-        event.update(v=_VERSION, at=_now(), by=_operator(), host=socket.gethostname())
-        event["witness"] = "syslog" if _has_witness() else "none"
+        stamp(event)
         event["append_only"] = _set_append_only(fd)
-        event["prev"] = _last_digest(fd, genesis)
-        line = json.dumps(event, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
-        os.write(fd, line.encode())
+        event["prev"] = _last_digest(fd, genesis, dfd, name or NAME)
+        line = encoded(event)
+        size = os.fstat(fd).st_size
+        # v0.44.0 (B-050) — past the ceiling, the journal is archived first.
+        # Room is kept for the line that says so, which the archive receives
+        # last: an archive never exceeds the ceiling, so one at 16 MiB — the
+        # size BOB reads a file to — stays readable. Found after the external
+        # review of the 0.44.0 changelog: measured archives of 65,736 and
+        # 65,407 bytes for a 64 KiB ceiling (the rotation line on top).
+        limit = ceiling()
+        probe = {"kind": "rotate", "id": "0" * 12, "archive": f"{name or NAME}.{'9' * _ARCHIVE_DIGITS}",
+                 "ceiling": limit}
+        stamp(probe)
+        probe.update(append_only=False, prev="0" * 64)
+        reserve = len(encoded(probe)) + _ROTATE_SLACK
+        if size and size + len(line) + reserve > limit:
+            fd, rotated = _rotate(fd, dfd, name or NAME, event["prev"], stamp)
+            if rotated is not None:
+                event["append_only"] = _set_append_only(fd)
+                event["prev"] = _digest(_canonical(rotated))
+                line = encoded(event)
+        os.write(fd, line)
         os.fsync(fd)
     finally:
         os.close(fd)
         os.close(dfd)
+    if rotated is not None and rotated["witness"] == "syslog":
+        if tag is None and describe is None:
+            _send_witness(rotated, _digest(_canonical(rotated)))
+        else:
+            _send_witness(rotated, _digest(_canonical(rotated)), tag, describe)
     if event["witness"] == "syslog":
         if tag is None and describe is None:
             _send_witness(event, _digest(_canonical(event)))

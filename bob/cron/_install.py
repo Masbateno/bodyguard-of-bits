@@ -4,9 +4,11 @@ Extracted from bob/cron.py in v0.6.0 (#14 split). ``prompt_emails`` and
 ``prompt_email`` live here because they're shared between the install flow
 and the management flow (``_manage.py`` imports them).
 
-The ``_CronQuit`` exception is raised by the curses TUI (``bob/tui/cron.py``)
-to escape any sub-screen back to the dispatcher, and is caught here in
-``run_install_cron`` plus in ``run_manage_cron`` (defined in ``_manage.py``).
+The ``_CronQuit`` exception was raised by ``--install-cron``'s landing screen
+(``bob/tui/cron.py``) to leave the wizard. v0.44.0 (B-051) merged that wizard
+into ``--manage-cron``, whose ``q`` returns instead: nothing raises it now. The
+class and its ``except`` clauses (here, ``_manage.py``, ``bob/tui/switch.py``)
+are kept so an importer of ``bob.cron._CronQuit`` does not break.
 """
 
 from __future__ import annotations
@@ -425,10 +427,11 @@ def run_install_cron(user_config, config, t) -> int:
         return _run_install_cron_plain(user_config, config, t)
     import curses as _curses
     import os as _os
-    from bob.tui.cron import _run_install_cron_curses
+    from bob.tui import switch
     _os.environ.setdefault("ESCDELAY", "25")
     try:
-        return _curses.wrapper(lambda scr: _run_install_cron_curses(scr, user_config, config, t))
+        # v0.44.0 (B-051) — through the switcher (F2-F5, Ctrl+G).
+        return _curses.wrapper(lambda scr: switch.run(scr, "install", user_config, config, t))
     except _CronQuit:
         return 0
     except (_curses.error, OSError):

@@ -127,6 +127,21 @@ et deux confirmations de `--manage-logs`, remplaçaient encore le bandeau.
 message construit avec son symbole · aucune écriture sur la ligne du bandeau ·
 les invites dans la couleur des invites.
 
+**Un message dans le corps d'un écran dit aussi ce qu'il signifie** (v0.44.0,
+demandé par l'user le 27 novembre 2026, « ici comme ailleurs »). Chaque
+paragraphe ou ligne qui informe prend la couleur de la sortie texte pour son
+sens — vert réussi ou une protection en place (`✔`), jaune un avertissement ou
+une protection absente (`⚠`), rouge refusé (`✖`), cyan information (`ℹ`) — et
+chaque commande qu'il nomme est violette, dans la ligne
+(`_names.verbatim_in`, `_names.tone(…, "verbatim")`). Une ligne construite avec
+son symbole en tire sa couleur (`bob/tui/fixlog.glyph_kind`) ; une ligne sans
+symbole déclare sa nature (`ok`, `warn`, `alert`, `info`). Une commande marquée
+coupée par un retour à la ligne reste violette sur les deux lignes
+(`carry_marks`). Trouvé en le faisant : le message qui clôt un nouvel audit
+planifié et les protections du journal des correctifs de `--manage-logs`
+s'affichaient en blanc uni. *Gardé :* le message de clôture, les protections
+du journal et son verdict vide, les deux surfaces.
+
 **Chaque touche a sa pastille** (v0.40.0, décidé avec l'utilisateur, 20 novembre
 2026 : sur la ligne orange uniforme, on distinguait mal les touches). Dans le
 bandeau du bas, chaque touche — `⏎`, `Échap`, `d`, `1-4` — est dessinée noir sur
@@ -236,7 +251,9 @@ l'user le 22 novembre 2026). Une touche qui agit — Entrée qui applique les
 cases cochées, `d` qui retire, `n` qui ajoute — laisse l'écran en place, relu
 depuis ce qui est désormais déclaré, son résultat sur la ligne de contexte.
 Sortir appartient à Échap seul (et à `q` sur un écran d'accueil, qu'annonce
-`LANDING_EXIT`). Trouvé en le faisant : Entrée sur « Ce qui est enregistré » de
+`LANDING_EXIT`). La seule exception, depuis la v0.44.0 : Échap sur un écran
+d'accueil ne revient pas en arrière — il n'y a rien avant lui —, il ouvre le
+menu de tous les assistants (plus bas). Trouvé en le faisant : Entrée sur « Ce qui est enregistré » de
 `--manage-team` appliquait, puis revenait à l'écran précédent. *Gardé :*
 l'image qui suit Entrée est le même écran, ses cases relues.
 
@@ -258,6 +275,41 @@ l'équipe de `--manage-team`, l'accueil et la liste des dossiers de
 `--manage-logs` ne le faisaient pas (corrigés) ; la liste des rapports, les
 journaux, les sélecteurs de `--explain` et les listes de `--manage-cron` le
 faisaient. *Gardé :* les quatre corrigés.
+
+**F2 à F5 ouvrent un autre assistant ; Ctrl+G un sélecteur** (v0.44.0, demandé
+par l'user le 23 novembre 2026). F2 `--manage-logs`, F3 `--manage-cron`, F4
+`--manage-team`, F5 `--explain`, depuis l'écran d'accueil de chacun d'eux —
+**et de là seulement** (l'user, le 27 novembre 2026, le même jour : ni depuis
+les écrans sous un écran d'accueil, ni depuis une saisie en cours). Basculer
+remplace l'assistant. Les touches sont annoncées sur les écrans d'accueil
+(« F2-F5 ^G écrans », portées par `LANDING_EXIT` seul dans `bob/tui/_keys.py`)
+et n'agissent que là où elles sont annoncées. Un assistant
+que la session ne peut pas ouvrir (`--manage-logs` et `--manage-cron` exigent
+root, comme leurs commandes ; les rapports avant un premier audit) est dit sur
+un écran à part, et Échap ramène à l'assistant où la touche a été pressée.
+Mesuré par l'user : les cinq touches arrivent jusqu'à curses dans un terminal
+local, en `ssh -t`, dans tmux, et dans tmux puis ssh. *Gardé :* les touches,
+l'annonce sur les seuls écrans d'accueil, l'aiguilleur (`bob/tui/switch.py`),
+le menu touche par touche, les écrans sous un écran d'accueil et les deux
+saisies de texte, où elles ne font rien.
+
+**`bob --bob-tui`, le menu de tous les assistants ; Échap sur un écran d'accueil
+l'ouvre** (v0.44.0, demandé par l'user le 27 novembre 2026 — une exception à
+« Échap remonte d'une étape », décidée en connaissance de cause et écrite ici).
+Le menu liste les quatre assistants avec leurs touches : les flèches et Entrée,
+un chiffre, ou F2-F5 en ouvrent un ; l'assistant qu'on vient de quitter est
+marqué et sélectionné. Certains préfèrent les touches de fonction, d'autres les
+flèches, Entrée et Échap seulement : avec ce menu, les deux circulent librement
+entre tous les assistants. Ctrl+G l'ouvre de partout ; **Échap sur l'écran
+d'accueil de n'importe quel assistant l'ouvre aussi, quelle que soit la façon
+dont l'assistant a été ouvert** (directement par sa commande, ou depuis le
+menu). `q` sur un écran d'accueil quitte toujours BOB, et `q` dans le menu aussi ;
+là, Échap ne fait rien (il ne ferait que répéter `q`). Sous un écran d'accueil, Échap remonte d'une étape comme
+toujours. Le menu s'ouvre sans root ; les rapports et les audits programmés le
+demandent toujours, dit sur un écran à part. *Gardé :* Échap lève le menu sur
+les écrans d'accueil seulement, annoncé « Esc menu BOB » ; le menu touche par
+touche ; la liste cron (qui lit ses touches brutes) ; l'option, et son repli
+texte sans terminal.
 
 **Une ligne vide sous le bandeau d'en-tête** (v0.43.0, demandé par l'user le
 23 novembre 2026). Sur chaque écran, la ligne 0 est le bandeau et la ligne 1
@@ -285,7 +337,17 @@ auteur. Trouvé en le faisant : dans le journal d'équipe, comptes et attributs
 suivaient la longueur du mot d'avant ; dans le journal cron, les détails
 suivaient la longueur de l'action ; le « NON enregistré » français dépassait
 la colonne fixe de `--journals`. *Gardé :* les journaux team, cron et admin,
-`--team`, `--journals`, le carnet d'adresses.
+`--team`, `--journals`, le carnet d'adresses. **Une valeur plus longue que sa
+colonne ne pousse jamais les colonnes suivantes** (v0.44.0, demandé par l'user
+le 27 novembre 2026, comme comportement par défaut de tout le projet) : elle
+prend une ligne à elle — repliée, jamais coupée — et les champs suivants
+commencent dans leurs colonnes à la ligne d'en dessous ; une ligne qui ne tient
+plus une fois complétée jusqu'à une colonne met la suite à la ligne suivante,
+dans sa colonne si elle y tient, sinon sous la colonne d'avant. Trouvé en le
+faisant : le champ de nom de 20 colonnes de `--manage-cron` (doublé à 40, qui
+cède sous 80 colonnes, jusqu'à 20, pour que l'horaire garde 36 colonnes), qu'un
+nom plus long débordait, et une tâche complétée au-delà de l'écran qui
+retombait sur une ligne non complétée. *Gardé :* la liste des audits planifiés.
 
 **Les deux surfaces s'accordent sur le sens.** L'orange marque ce qui est sous
 l'attention (ligne de curseur, bandeau de touches) ; le violet marque ce qui

@@ -683,11 +683,97 @@ def _deserialize_check_result(data: dict) -> CheckResult:
 # TestWorkerFallbacksMatchLocale rather than left to trust.
 _WORKER_FALLBACKS = {
     "plugin.sandbox.rejected": "Plugin {plugin} rejected: {error}",
+    "plugin.sandbox.not_run_link": "Plugin {plugin} not run: a symbolic link, which BOB does not follow",
+    "plugin.sandbox.not_run_not_regular": "Plugin {plugin} not run: not a regular file",
+    "plugin.sandbox.not_run_replaced": "Plugin {plugin} not run: not the file BOB checked (replaced or redirected since)",
+    "plugin.sandbox.not_run_outside_home": "Plugin {plugin} not run: it resolves outside the calling user's home",
+    "plugin.sandbox.not_run_unopened": "Plugin {plugin} not run: it could not be opened ({error})",
     "plugin.sandbox.missing_run_check": "Plugin {plugin} missing run_check",
     "plugin.sandbox.bad_return": "Plugin {plugin} returned {actual_type}, not CheckResult",
     "plugin.sandbox.serialize_failed": "Plugin {plugin} returned a result that could not be serialized: {error}",
     "plugin.sandbox.crashed": "Plugin {plugin} crashed: {error}",
+    "plugin.sandbox.privilege_drop_failed": "Plugin {plugin} not run: BOB could not give up root before running it ({error})",
 }
+
+
+def _invoker_identity(_os=None, _pwd=None) -> "tuple[int, int, list[int]] | None":
+    """v0.44.0 (B-055) — the account a plugin runs as when BOB is root.
+
+    The account behind sudo or doas, resolved here in the parent: the child
+    must not lean on ``pwd`` once its ``os`` module is stripped. None when BOB
+    is not root (there is nothing to give up) or when no invoking account is
+    named or known (the child then falls back to the plugin file's owner).
+    """
+    import os as _real_os
+    import pwd as _real_pwd
+    _os = _os or _real_os
+    _pwd = _pwd or _real_pwd
+    if _os.geteuid() != 0:
+        return None
+    from bob.sysinfo import invoking_user_name
+    name = invoking_user_name()
+    if not name:
+        return None
+    try:
+        pw = _pwd.getpwnam(name)
+    except KeyError:
+        return None
+    try:
+        groups = list(_os.getgrouplist(name, pw.pw_gid))
+    except OSError:
+        groups = [pw.pw_gid]
+    return (pw.pw_uid, pw.pw_gid, groups)
+
+
+def _plugin_place(plugin_path: Path) -> "tuple[str, str | None]":
+    """Where the plugin really is, resolved by the parent, and — run for
+    another user — that user's real home (see :func:`_plugin_fd_refusal`)."""
+    import os as _real_os
+    from bob.sysinfo import get_user_home, invoking_user_name
+    home = _real_os.path.realpath(str(get_user_home())) if invoking_user_name() else None
+    return _real_os.path.realpath(str(plugin_path)), home
+
+
+def _drop_privileges(fd: int, invoker, _os=None, _pwd=None) -> "str | None":
+    """v0.44.0 (B-055) — give up root before any plugin code is read.
+
+    Measured on a test host (26 November 2026): under sudo, the child running
+    a plugin taken from the calling user's ~/.config/bob/checks.d had uid 0.
+    Now it becomes the invoking account (sudo, doas) when there is one, else
+    the owner of the plugin file — read on the descriptor the source is read
+    from, so the file cannot be swapped between the check and the read. Root's
+    own root-owned plugin, or a BOB that is not root, changes nothing.
+
+    Returns why the drop could not be made (the plugin is then not run), or
+    None.
+    """
+    import os as _real_os
+    import pwd as _real_pwd
+    _os = _os or _real_os
+    _pwd = _pwd or _real_pwd
+    if _os.geteuid() != 0:
+        return None
+    if invoker is not None:
+        uid, gid, groups = invoker
+    else:
+        st = _os.fstat(fd)
+        if st.st_uid == 0:
+            return None
+        try:
+            pw = _pwd.getpwuid(st.st_uid)
+            uid, gid = pw.pw_uid, pw.pw_gid
+            groups = list(_os.getgrouplist(pw.pw_name, pw.pw_gid))
+        except (KeyError, OSError):
+            uid, gid, groups = st.st_uid, st.st_gid, []
+    try:
+        _os.setgroups(list(groups))
+        _os.setresgid(gid, gid, gid)
+        _os.setresuid(uid, uid, uid)
+    except OSError as exc:
+        return f"{type(exc).__name__}: {exc}"
+    if tuple(_os.getresuid()) != (uid, uid, uid) or tuple(_os.getresgid()) != (gid, gid, gid):
+        return "the process kept other ids"
+    return None
 
 
 def _worker_error(plugin_path: str, key: str, **params: Any) -> tuple:
@@ -706,7 +792,78 @@ def _worker_error(plugin_path: str, key: str, **params: Any) -> tuple:
     return ("error", {"key": key, "fallback": fallback, "params": fmt})
 
 
-def _worker_main(plugin_path: str, result_queue) -> None:
+def _plugin_fd_refusal(fd: int, expected: "str | None", home: "str | None", _os) -> "str | None":
+    """v0.44.0 — why the plugin opened on *fd* is not the one BOB checked, or
+    None. Found after the external review of the 0.44.0 changelog: root opened
+    the plugin by its name in the calling user's directory, following links —
+    a link there to a root-only file was read by root (the 0.26.1 family). Now
+    the last component is never followed (O_NOFOLLOW at the open), the file
+    must be a regular one, it must be where the parent resolved it
+    (*expected*), and, run for another user, inside that user's home."""
+    import stat as _stat
+    if not _stat.S_ISREG(_os.fstat(fd).st_mode):
+        return "not_regular"
+    try:
+        real = _os.readlink(f"/proc/self/fd/{fd}")
+    except OSError:
+        real = None
+    if expected is not None and real != expected:
+        return "replaced"
+    if home is not None and (real is None or not (real == home or real.startswith(home.rstrip("/") + "/"))):
+        return "outside_home"
+    return None
+
+
+def open_plugin_checked(plugin_path: str, expected: "str | None", home: "str | None",
+                        _os=None) -> "tuple[int | None, str | None, str | None]":
+    """v0.44.0 — open the plugin for reading as root without opening anything
+    else: ``(fd, None, None)``, or ``(None, why, error)`` with *why* the end of
+    a ``plugin.sandbox.not_run_*`` key.
+
+    Found after the third external review of the 0.44.0 changelog: the parent
+    checked the plugin (not a link, a regular file, inside the caller's home)
+    and then opened it again by its name, following links; the child opened
+    it as root before checking the descriptor. A plugin swapped between the
+    check and the open — for a link to a root-only file, a FIFO, a device —
+    was opened by root all the same (a FIFO hangs the parent; a device's
+    open() has side effects: a watchdog arms on open). As in
+    ``_rootless_oci.read_config`` (0.38.0): an ``O_PATH`` descriptor first (no
+    open() reaches the file), the checks on it, then the same inode reopened
+    for reading through ``/proc/self/fd``.
+    """
+    import errno as _errno
+    _os = _os or __import__("os")
+    try:
+        pfd = _os.open(plugin_path, _os.O_PATH | _os.O_NOFOLLOW | _os.O_CLOEXEC)
+    except OSError as exc:
+        if exc.errno == _errno.ELOOP:
+            return None, "link", None
+        return None, "unopened", exc.strerror or type(exc).__name__
+    try:
+        import stat as _stat
+        # With O_PATH, O_NOFOLLOW does not fail on a link: the descriptor is
+        # the link itself (open(2)).
+        if _stat.S_ISLNK(_os.fstat(pfd).st_mode):
+            return None, "link", None
+        where = _plugin_fd_refusal(pfd, expected, home, _os)
+        if where:
+            return None, where, None
+        st = _os.fstat(pfd)
+        try:
+            fd = _os.open(f"/proc/self/fd/{pfd}", _os.O_RDONLY | _os.O_NONBLOCK | _os.O_NOCTTY | _os.O_CLOEXEC)
+        except OSError as exc:
+            return None, "unopened", exc.strerror or type(exc).__name__
+    finally:
+        _os.close(pfd)
+    again = _os.fstat(fd)
+    if (again.st_dev, again.st_ino) != (st.st_dev, st.st_ino):
+        _os.close(fd)
+        return None, "replaced", None
+    return fd, None, None
+
+
+def _worker_main(plugin_path: str, result_queue, invoker=None, expected: "str | None" = None,
+                 home: "str | None" = None) -> None:
     """Worker process entry point.
 
     Loads the plugin under the restricted environment, runs ``run_check``,
@@ -718,13 +875,31 @@ def _worker_main(plugin_path: str, result_queue) -> None:
     ``_sanitize_for_transport`` flattening pass.
     """
     try:
+        # v0.44.0 (B-055) — open the plugin, give up root, then read it from
+        # the same descriptor: first of all, while ``os`` is still whole.
+        import os as _os
+        fd, where, error = open_plugin_checked(plugin_path, expected, home, _os)
+        if fd is None:
+            params = {"error": error} if where == "unopened" else {}
+            result_queue.put(_worker_error(plugin_path, f"plugin.sandbox.not_run_{where}", **params))
+            return
+        try:
+            refused = _drop_privileges(fd, invoker)
+        except Exception as exc:  # noqa: BLE001 — never run on a failed drop
+            refused = f"{type(exc).__name__}: {exc}"
+        if refused:
+            _os.close(fd)
+            result_queue.put(_worker_error(
+                plugin_path, "plugin.sandbox.privilege_drop_failed", error=refused))
+            return
+
         # Apply environmental restrictions BEFORE loading plugin code.
         _apply_resource_limits()
         _strip_os_dangerous_attrs()
         _patch_pathlib_writes()
 
-        # Read source and compile.
-        with builtins.open(plugin_path, "r", encoding="utf-8") as f:
+        # Read source and compile — from the descriptor opened above.
+        with builtins.open(fd, "r", encoding="utf-8", closefd=True) as f:
             source = f.read()
 
         # Optional RestrictedPython bytecode-level restriction (Q1').
@@ -852,7 +1027,7 @@ class SandboxRunner:
         q: Any = ctx.Queue()
         proc = ctx.Process(
             target=_worker_main,
-            args=(str(plugin_path), q),
+            args=(str(plugin_path), q, _invoker_identity(), *_plugin_place(plugin_path)),
         )
         try:
             proc.start()

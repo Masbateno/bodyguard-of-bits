@@ -1,3 +1,18 @@
+bodyguard-of-bits (0.44.0-1) unstable; urgency=medium
+
+  * BREAKING (plugins): under sudo or doas, a plugin from the calling
+    user's checks.d runs with that user's uid and groups, no longer
+    root's; root no longer follows a symbolic link to read a plugin.
+  * BREAKING (score certainty): a UFW log or a ~/.ssh that exists but
+    cannot be read is reported unread, no longer treated as absent.
+  * From a wizard's landing screen, F2-F5 open the other wizards; Ctrl+G
+    or Esc opens --bob-tui, the menu of all four; --install-cron opens
+    --manage-cron on a new job.
+  * Each journal is archived past a size ceiling (8 MiB by default, up
+    to 16 MiB, --journals max-size) and chained to the next, never cut.
+
+ -- Cédric Clauzel <cedricclauzel@mailo.com>  Sat, 28 Nov 2026 12:00:00 +0000
+
 bodyguard-of-bits (0.43.0-1) unstable; urgency=medium
 
   * Team perimeters (--team, --manage-team): a confirmation and

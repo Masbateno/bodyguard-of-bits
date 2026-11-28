@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.43.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.44.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -130,8 +130,8 @@ BOB is a Linux hardening auditor for sysadmins and power users. It runs 57 check
 
 - **Detailed report** — timestamped log file with ASCII art header, system info, findings, and recommendations; created with `-d`; filename: `bob_YYYYMMDD_HHMMSS.log`. Each finding carries its explanation, its command (`→` fix, `?` check) and its key — unconditionally, and under `-q` too, since an archive cannot be re-run with `-v`
 - **`--manage-logs`** — interactive UI to list, preview, and delete saved report files; scrollable preview with full/summary toggle, and ←/→ to the older/newer report without leaving it (0.32.0). Opens on a folder picker (📁) of every tracked log directory — the current one and any previous ones, kept until you explicitly forget one so a directory change never loses sight of old reports; pick a folder to browse its reports. Since 0.39.0 the preview shows, above the report and apart from it, its notes (dated, author recorded through sudo, edits kept, withdrawn or purged — a root-owned journal, written by `sudo bob`, whose chained digests show a change made outside BOB; tamper-evident, not tamper-proof), the comparison with the previous report of the same host (as `--diff` says it) and that host's history (as `--history` draws it), from a state file written beside each `-d` report; `#` numbers the lines. Since 0.40.0 it opens on two choices — the audit reports, and the journal of `--fix --apply` (every command launched, its operator, finding, exact command and outcome; notes added, never edited; chained, `chattr +a`, a witness line in the system log read back — a falsification is shown with what the system log recorded; `bob --fix-journal` in text, exit 0/2/4; [FIX_JOURNAL.md](FIX_JOURNAL.md)) — and `b` shows a report's score computation as `--breakdown` printed it. Details: [AUTOMATION.md](AUTOMATION.md#report-preview-viewer)
-- **`--install-cron`** — schedule wizard: name the job, choose schedule type (daily / specific days / custom cron expression), set time and optional email, then pin the audit's profile, language and outbound-probe stance (v0.16.1 — a cron runs as root, so without these it would read root's saved profile and cron's bare `$LANG`); MTA auto-detection (Postfix, Exim, msmtp, ssmtp) — warns when no `sendmail` found; natural-language preview; resulting command line shown before writing; curses TUI with plain fallback; named cron jobs in `/etc/cron.d/bob-{name}`, or — BusyBox crond, no `/etc/cron.d` — a marked block of `/etc/crontabs/root` (0.26.0)
-- **`--manage-cron`** — looping TUI: list installed cron jobs, edit schedule or notification email, delete; email address book accessible from the menu even without any cron installed
+- **`--install-cron`** — opens `--manage-cron`'s list on a new job since v0.44.0 (`n` there makes another) — schedule wizard: name the job, choose schedule type (daily / specific days / custom cron expression), set time and optional email, then pin the audit's profile, language and outbound-probe stance (v0.16.1 — a cron runs as root, so without these it would read root's saved profile and cron's bare `$LANG`); MTA auto-detection (Postfix, Exim, msmtp, ssmtp) — warns when no `sendmail` found; natural-language preview; resulting command line shown before writing; curses TUI with plain fallback; named cron jobs in `/etc/cron.d/bob-{name}`, or — BusyBox crond, no `/etc/cron.d` — a marked block of `/etc/crontabs/root` (0.26.0)
+- **`--manage-cron`** — looping TUI: list installed cron jobs, create one with `n` (v0.44.0: `--install-cron` merged in), edit schedule or notification email, delete; email address book accessible from the menu even without any cron installed
 
 ---
 
@@ -383,7 +383,9 @@ Inside the sandbox child:
 - No `__import__` of arbitrary modules — only an allowlist (bob.scoring, pathlib, json, etc.).
 - No network I/O.
 
-If a plugin attempts any of the above, it raises in the sandbox child, the parent records a WARN finding under one of twelve `plugin.sandbox.*` keys (`error`, `rejected`, `crashed`, `timeout`, `syntax_error`, `unreadable`, `bad_payload`, `bad_return`, `no_result`, `missing_run_check`, `runner_error`, `serialize_failed`) — an `--ignore plugin.sandbox.error` suppresses one of them, not plugin failures in general, and the audit continues unaffected.
+If a plugin attempts any of the above, it raises in the sandbox child, the parent records a WARN finding under one of eighteen `plugin.sandbox.*` keys (`error`, `rejected`, `crashed`, `timeout`, `syntax_error`, `unreadable`, `bad_payload`, `bad_return`, `no_result`, `missing_run_check`, `runner_error`, `serialize_failed`, `privilege_drop_failed`, `not_run_link`, `not_run_not_regular`, `not_run_replaced`, `not_run_outside_home`, `not_run_unopened`) — an `--ignore plugin.sandbox.error` suppresses one of them, not plugin failures in general, and the audit continues unaffected.
+
+**Since v0.44.0, a plugin does not run as root.** When BOB runs as root, the sandbox child gives up root before it reads the plugin: it becomes the account behind `sudo` or `doas`, else the owner of the plugin file (read on the very file descriptor the source is then read from). Root's own root-owned plugin keeps root. If the change of account cannot be made, the plugin is not run and `plugin.sandbox.privilege_drop_failed` says why. Measured on a test host: a plugin taken from the calling user's directory reported its own user id as 0 under 0.43.0, and as that user's under 0.44.0. **Nor is it opened through a link:** root never follows a symbolic link to read a plugin. A plugin that is a link, or that resolves outside the calling user's home (through a linked directory), is skipped; the child opens it without following the last component, accepts a regular file only, only the one the parent resolved, and only inside the calling user's home — otherwise the plugin is not run and `plugin.sandbox.not_run_*` says why. Parent and child look at the file before opening it: an `O_PATH` descriptor first, the checks on it, then the same file reopened for reading through `/proc/self/fd` — a plugin swapped after the checks for a link, a FIFO or a device is never opened by root. Install a plugin as a file, not as a link.
 
 ---
 
@@ -402,7 +404,7 @@ Example (trimmed for readability):
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.43.0  │  Linux hardening auditor                                     ║
+║  BOB 0.44.0  │  Linux hardening auditor                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -537,7 +539,7 @@ The report opens with a 62-char ASCII art header and contains: system informatio
 | `-o`, `--offline`       | Skip external IP lookup and webhook call (no HTTP calls)           |
 | `--exhaustive`          | Also run slow full-coverage checks held out of the default run: package integrity, world-writable and unowned files |
 | `-m`, `--manage-logs`   | Interactive UI to list, preview, and delete saved report files     |
-| `-c`, `--install-cron`  | Set up a scheduled audit (cron wizard: daily, chosen days or a cron expression) |
+| `-c`, `--install-cron`  | Set up a scheduled audit (cron wizard: daily, chosen days or a cron expression); since v0.44.0 opens `--manage-cron` on a new one |
 | `--install-completion`  | Install bash completion and create sudo PATH symlink               |
 | `-p`, `--profile=NAME`  | Audit profile: `server` (default), `desktop`, `workstation`, `container` |
 | `--check=LIST`          | Run only these checks (comma-separated); `--check=list` shows every available name |
@@ -553,16 +555,17 @@ The report opens with a 62-char ASCII art header and contains: system informatio
 | `--fix-journal`         | Print the journal of `--fix --apply` and whether it was changed outside BOB, then exit (0 intact, 2 falsified, 4 not demonstrated) |
 | `--team [ACTION]`       | Team perimeters (0.43.0): show the declaration and your perimeter; `init`, `grant ACCOUNT ATTR`, `revoke ACCOUNT ATTR`, `remove ACCOUNT` (root). An action outside the declared perimeter is asked again (`-y` does not answer) and written to the team journal; nothing is prevented; without a declaration nothing changes |
 | `--team-journal`        | Print the team journal (actions outside a declared perimeter, unattributed actions, changes to the declaration), then exit (0 intact, 2 broken, 4 unreadable) |
-| `--journals [ACTION]`   | What BOB records, whoever acts (0.43.0): journals `team`, `cron` (scheduled audits, address book), `admin` (configuration, deleted reports, changes of what is recorded); `on`/`off CAT` (root) for `cron`, `carnet`, `config`, `rapports` — the team journal and these changes are always written; `show NAME` prints one (exit 0/2/4) |
+| `--journals [ACTION]`   | What BOB records, whoever acts (0.43.0): journals `team`, `cron` (scheduled audits, address book), `admin` (configuration, deleted reports, changes of what is recorded); `on`/`off CAT` (root) for `cron`, `carnet`, `config`, `rapports` — the team journal and these changes are always written; `show NAME` prints one (exit 0/2/4); `max-size SIZE` (root, 0.44.0): every journal's ceiling, 8M by default, 64K to 16M — past it archived (`<name>.0001`) and chained, never cut |
 | `--manage-team`         | The team on a full screen, like `--manage-logs` (0.43.0): the members and their attributes as boxes to tick, what is recorded — what `--team` and `--journals` do (the journals are read in `--manage-logs`), with the same checks, questions and traces; a numbered menu without a terminal |
-| `--log-max-size=SIZE`   | A ceiling on the reports' folder size (0.43.0): `50M`, `500K`, `2G`, bytes or `off` (default). After each new report the oldest go first; never the newest nor a report with notes; each deletion in the admin journal; setting it warns that a low ceiling limits the proof kept. Also `p` in `--manage-logs`'s folder list |
+| `--bob-tui`             | The menu of every wizard (0.44.0): `--manage-logs`, `--manage-cron`, `--manage-team`, `--explain`, by the arrows and Enter, a digit, or F2-F5. From a wizard's first page, F2-F5 open another, Ctrl+G this menu, and Esc comes back to it; `q` there leaves BOB. Opens without root |
+| `--log-max-size=SIZE`   | A retention threshold for the reports' folder (0.43.0; not a hard limit): `50M`, `500K`, `2G`, bytes or `off` (default). After each new report the oldest go first; never the newest nor a report with notes; each deletion in the admin journal; setting it warns that a low threshold limits the proof kept. Also `p` in `--manage-logs`'s folder list |
 | `--ignore=KEY`          | Add a finding key to the ignore list and exit                      |
 | `--unignore=KEY`        | Remove a finding key from the ignore list and exit                 |
 | `--show-ignored`        | Display suppressed findings in grey alongside normal output        |
 | `--reset-baseline`      | Delete the stored audit baseline and exit                          |
 | `--test-email`          | Send a real test message through the cron mail transport and exit  |
 | `--test-webhook`        | Send a test payload to the configured webhook and exit (no audit)  |
-| `-C`, `--manage-cron`   | Interactive UI to list, edit or delete installed cron jobs         |
+| `-C`, `--manage-cron`   | Interactive UI to list, create (`n`, v0.44.0), edit or delete installed cron jobs |
 | `--lang=CODE`           | Interface language: `en`, `fr` (default: detected from `$LANG`)    |
 | `--no-colour`           | Spelling alias of `--no-color`                                     |
 | `--french`              | Switch interface to French                                         |

@@ -1637,13 +1637,14 @@ def _explain_wizard(stdscr, t) -> None:
                 _version_picker(stdscr, distro_label, benches, t)
 
 
-def run_explain_interactive(t) -> None:
+def run_explain_interactive(t, config=None) -> None:
     """
     Launch the interactive --explain picker (curses TUI).
 
     Falls back to plain `--explain list` output when stdout is not a TTY
     or when curses is unavailable (e.g. inside a pipe or SSH without TERM).
     """
+    raw_t = t
     t = _host_texts(t)
     import curses
 
@@ -1657,7 +1658,10 @@ def run_explain_interactive(t) -> None:
     os.environ.setdefault("ESCDELAY", "25")
 
     try:
-        curses.wrapper(lambda scr: _explain_wizard(scr, t))
+        # v0.44.0 (B-051) — through the switcher (F2-F5, Ctrl+G); it applies
+        # the host's texts itself.
+        from bob.tui import switch
+        curses.wrapper(lambda scr: switch.run(scr, "explain", None, config, raw_t))
     except (curses.error, OSError):
         # curses unavailable or terminal too small — fallback
         run_explain("list", t)

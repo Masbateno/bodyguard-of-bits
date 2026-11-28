@@ -7,7 +7,7 @@
 # BOB — Bodyguard Of Bits
 
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Release](https://img.shields.io/badge/version-0.43.0-brightgreen)
+![Release](https://img.shields.io/badge/version-0.44.0-brightgreen)
 ![PyPI](https://img.shields.io/pypi/v/bodyguard-of-bits?label=pypi&color=blue)
 ![Downloads](https://img.shields.io/pypi/dm/bodyguard-of-bits?label=downloads&color=blue)
 ![CI](https://github.com/Masbateno/bodyguard-of-bits/actions/workflows/tests.yml/badge.svg)
@@ -130,8 +130,8 @@ BOB est un auditeur de durcissement Linux pour les admins système et power user
 
 - **Rapport détaillé** — fichier log horodaté avec en-tête ASCII art, informations système, constats et recommandations ; créé avec `-d` ; nom : `bob_YYYYMMDD_HHMMSS.log`. Chaque constat porte son explication, sa commande (`→` correctif, `?` vérification) et sa clé — sans condition, et aussi sous `-q`, car une archive ne se relance pas avec `-v`
 - **`--manage-logs`** — interface interactive pour lister, prévisualiser et supprimer les rapports ; prévisualisation scrollable avec bascule résumé/complet, et ←/→ vers le rapport plus ancien/récent sans la quitter (0.32.0). S'ouvre sur un sélecteur de dossiers (📁) listant chaque répertoire de logs suivi — l'actuel et les précédents, conservés jusqu'à ce que vous en oubliiez un explicitement, pour qu'un changement de répertoire ne perde jamais de vue les anciens rapports ; choisissez un dossier pour parcourir ses rapports. Depuis la 0.39.0, l'aperçu montre au-dessus du rapport, à part, ses notes (datées, auteur enregistré à travers sudo, modifications gardées, retirées ou purgées — un journal à root, écrit par `sudo bob`, dont les empreintes chaînées montrent une modification faite hors de BOB ; qui permet de détecter certaines altérations sans les empêcher), la comparaison avec le rapport précédent du même hôte (comme la dit `--diff`) et l'historique de cet hôte (comme le dessine `--history`), à partir d'un fichier d'état écrit à côté de chaque rapport `-d` ; `#` numérote les lignes. Depuis la 0.40.0, elle s'ouvre sur deux choix — les rapports d'audit, et le journal de `--fix --apply` (chaque commande lancée, son opérateur, son constat, la commande exacte et son résultat ; notes ajoutées, jamais modifiées ; chaîné, `chattr +a`, une ligne témoin dans le journal système relue — une falsification est montrée avec ce que le journal système a enregistré ; `bob --fix-journal` en texte, sortie 0/2/4 ; [FIX_JOURNAL_FR.md](FIX_JOURNAL_FR.md)) — et `b` montre le calcul du score d'un rapport comme `--breakdown` l'a affiché. Détails : [AUTOMATION_FR.md](AUTOMATION_FR.md#visualiseur-de-rapport)
-- **`--install-cron`** — wizard de planification : nom du cron, type de planning (quotidien / jours spécifiques / expression cron personnalisée), heure et email optionnel, puis fixation du profil, de la langue et des sondes sortantes de l'audit (v0.16.1 — un cron s'exécute en root : sans cela il lirait le profil enregistré de root et le `$LANG` nu de cron) ; détection automatique du MTA (Postfix, Exim, msmtp, ssmtp) — avertit si aucun `sendmail` trouvé ; aperçu en langage naturel ; ligne de commande résultante affichée avant écriture ; TUI curses avec repli texte ; crons nommés dans `/etc/cron.d/bob-{nom}`, ou — BusyBox crond, sans `/etc/cron.d` — un bloc repéré de `/etc/crontabs/root` (0.26.0)
-- **`--manage-cron`** — TUI en boucle : lister, modifier planning/email, supprimer des crons ; carnet d'adresses email accessible depuis le menu, même sans cron installé
+- **`--install-cron`** — ouvre la liste de `--manage-cron` sur un nouvel audit depuis la v0.44.0 (`n` y en crée un autre) — wizard de planification : nom du cron, type de planning (quotidien / jours spécifiques / expression cron personnalisée), heure et email optionnel, puis fixation du profil, de la langue et des sondes sortantes de l'audit (v0.16.1 — un cron s'exécute en root : sans cela il lirait le profil enregistré de root et le `$LANG` nu de cron) ; détection automatique du MTA (Postfix, Exim, msmtp, ssmtp) — avertit si aucun `sendmail` trouvé ; aperçu en langage naturel ; ligne de commande résultante affichée avant écriture ; TUI curses avec repli texte ; crons nommés dans `/etc/cron.d/bob-{nom}`, ou — BusyBox crond, sans `/etc/cron.d` — un bloc repéré de `/etc/crontabs/root` (0.26.0)
+- **`--manage-cron`** — TUI en boucle : lister, en créer un avec `n` (v0.44.0 : `--install-cron` y est fondu), modifier planning/email, supprimer des crons ; carnet d'adresses email accessible depuis le menu, même sans cron installé
 
 ---
 
@@ -383,7 +383,9 @@ Dans le sandbox enfant :
 - Pas d'`__import__` de modules arbitraires — uniquement une allowlist (bob.scoring, pathlib, json, etc.).
 - Pas d'I/O réseau.
 
-Si un plugin tente l'une des opérations ci-dessus, il raise dans le sandbox enfant, le parent enregistre un constat WARN sous l'une des douze clés `plugin.sandbox.*` (`error`, `rejected`, `crashed`, `timeout`, `syntax_error`, `unreadable`, `bad_payload`, `bad_return`, `no_result`, `missing_run_check`, `runner_error`, `serialize_failed`) — un `--ignore plugin.sandbox.error` en masque une, pas les échecs de plugin en général, et l'audit continue intact.
+Si un plugin tente l'une des opérations ci-dessus, il raise dans le sandbox enfant, le parent enregistre un constat WARN sous l'une des dix-huit clés `plugin.sandbox.*` (`error`, `rejected`, `crashed`, `timeout`, `syntax_error`, `unreadable`, `bad_payload`, `bad_return`, `no_result`, `missing_run_check`, `runner_error`, `serialize_failed`, `privilege_drop_failed`, `not_run_link`, `not_run_not_regular`, `not_run_replaced`, `not_run_outside_home`, `not_run_unopened`) — un `--ignore plugin.sandbox.error` en masque une, pas les échecs de plugin en général, et l'audit continue intact.
+
+**Depuis la v0.44.0, un greffon ne tourne pas en root.** Quand BOB tourne en root, l'enfant du bac à sable abandonne root avant de lire le greffon : il devient le compte derrière `sudo` ou `doas`, sinon le propriétaire du fichier du greffon (lu sur le descripteur même qui sert ensuite à lire la source). Un greffon de root, appartenant à root, garde root. Si le changement de compte échoue, le greffon n'est pas exécuté et `plugin.sandbox.privilege_drop_failed` dit pourquoi. Mesuré sur une machine de test : un greffon pris dans le dossier de l'utilisateur appelant rapportait son propre identifiant 0 en 0.43.0, et celui de cet utilisateur en 0.44.0. **Il n'est pas non plus ouvert à travers un lien :** root ne suit jamais un lien symbolique pour lire un greffon. Un greffon qui est un lien, ou qui aboutit hors du dossier personnel de l'utilisateur appelant (par un dossier lié), est écarté ; l'enfant l'ouvre sans suivre le dernier élément du chemin, n'accepte qu'un fichier ordinaire, que celui que le parent a résolu, et qu'à l'intérieur du dossier personnel de l'appelant — sinon le greffon n'est pas exécuté et `plugin.sandbox.not_run_*` dit pourquoi. Parent et enfant regardent le fichier avant de l'ouvrir : un descripteur `O_PATH` d'abord, les contrôles sur lui, puis le même fichier rouvert en lecture par `/proc/self/fd` — un greffon échangé après les contrôles pour un lien, une FIFO ou un périphérique n'est jamais ouvert par root. Installer un greffon comme un fichier, pas comme un lien.
 
 ---
 
@@ -402,7 +404,7 @@ Exemple (tronqué pour la lisibilité) :
 ║                                                                              ║
 ║                           — Bodyguard Of Bits —                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  BOB 0.43.0  │  Auditeur de durcissement Linux                              ║
+║  BOB 0.44.0  │  Auditeur de durcissement Linux                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  System        : Ubuntu 24.04 LTS                                            ║
 ║  Host          : my-machine                                                  ║
@@ -537,7 +539,7 @@ Le rapport s'ouvre avec un en-tête ASCII art sur 62 caractères et contient : i
 | `-o`, `--offline`       | Désactiver la résolution d'IP publique et l'appel webhook (aucun appel HTTP) |
 | `--exhaustive`          | Lance aussi les checks lents de couverture complète exclus du run par défaut : intégrité des paquets, fichiers modifiables par tous et sans propriétaire |
 | `-m`, `--manage-logs`   | Interface interactive pour lister, prévisualiser et supprimer les rapports |
-| `-c`, `--install-cron`  | Configurer un audit planifié (assistant cron : quotidien, jours choisis ou expression cron) |
+| `-c`, `--install-cron`  | Configurer un audit planifié (assistant cron : quotidien, jours choisis ou expression cron) ; depuis la v0.44.0 ouvre `--manage-cron` sur un nouvel audit |
 | `--install-completion`  | Installer l'autocomplétion bash et créer le lien symbolique sudo PATH |
 | `-p`, `--profile=NOM`   | Profil d'audit : `server` (défaut), `desktop`, `workstation`, `container` |
 | `--check=LISTE`         | N'exécuter que ces checks (séparés par des virgules) ; `--check=list` affiche tous les noms |
@@ -553,16 +555,17 @@ Le rapport s'ouvre avec un en-tête ASCII art sur 62 caractères et contient : i
 | `--fix-journal`         | Afficher le journal de `--fix --apply` et s'il a été modifié hors de BOB, puis sortir (0 intact, 2 falsifié, 4 non démontré) |
 | `--team [ACTION]`       | Périmètres d'équipe (0.43.0) : voir la déclaration et son périmètre ; `init`, `grant COMPTE ATTR`, `revoke COMPTE ATTR`, `remove COMPTE` (root). Une action hors du périmètre déclaré est redemandée (`-y` n'y répond pas) et inscrite au journal d'équipe ; rien n'est empêché ; sans déclaration, rien ne change |
 | `--team-journal`        | Afficher le journal d'équipe (actions hors d'un périmètre déclaré, actions non attribuées, changements de la déclaration), puis sortir (0 intact, 2 rompu, 4 illisible) |
-| `--journals [ACTION]`   | Ce que BOB enregistre, quel que soit l'auteur (0.43.0) : journaux `team`, `cron` (audits planifiés, carnet d'adresses), `admin` (configuration, rapports supprimés, changements de ce qui est enregistré) ; `on`/`off CAT` (root) pour `cron`, `carnet`, `config`, `rapports` — le journal d'équipe et ces changements sont toujours écrits ; `show NOM` en affiche un (code 0/2/4) |
+| `--journals [ACTION]`   | Ce que BOB enregistre, quel que soit l'auteur (0.43.0) : journaux `team`, `cron` (audits planifiés, carnet d'adresses), `admin` (configuration, rapports supprimés, changements de ce qui est enregistré) ; `on`/`off CAT` (root) pour `cron`, `carnet`, `config`, `rapports` — le journal d'équipe et ces changements sont toujours écrits ; `show NOM` en affiche un (code 0/2/4) ; `max-size TAILLE` (root, 0.44.0) : le plafond de chaque journal, 8M par défaut, de 64K à 16M — au-delà archivé (`<nom>.0001`) et enchaîné, jamais coupé |
 | `--manage-team`         | L'équipe sur un écran plein, comme `--manage-logs` (0.43.0) : les membres et leurs attributs en cases à cocher, ce qui est enregistré — ce que font `--team` et `--journals` (les journaux se lisent dans `--manage-logs`), avec les mêmes contrôles, questions et traces ; un menu numéroté sans terminal |
-| `--log-max-size=SIZE`   | Un plafond de taille du dossier des rapports (0.43.0) : `50M`, `500K`, `2G`, des octets ou `off` (défaut). Après chaque nouveau rapport, les plus anciens partent d'abord ; jamais le plus récent ni un rapport annoté ; chaque suppression au journal d'administration ; le réglage avertit qu'un plafond trop bas limite la preuve conservée. Aussi `p` dans la liste des dossiers de `--manage-logs` |
+| `--bob-tui`             | Le menu de tous les assistants (0.44.0) : `--manage-logs`, `--manage-cron`, `--manage-team`, `--explain`, par les flèches et Entrée, un chiffre, ou F2-F5. Depuis la première page d'un assistant, F2-F5 en ouvrent un autre, Ctrl+G ce menu, et Échap y revient ; `q` y quitte BOB. S'ouvre sans root |
+| `--log-max-size=SIZE`   | Un seuil de rétention du dossier des rapports (0.43.0 ; pas une limite stricte) : `50M`, `500K`, `2G`, des octets ou `off` (défaut). Après chaque nouveau rapport, les plus anciens partent d'abord ; jamais le plus récent ni un rapport annoté ; chaque suppression au journal d'administration ; le réglage avertit qu'un seuil trop bas limite la preuve conservée. Aussi `p` dans la liste des dossiers de `--manage-logs` |
 | `--ignore=CLÉ`          | Ajouter une clé de constat à la liste d'exclusion et sortir        |
 | `--unignore=CLÉ`        | Retirer une clé de constat de la liste d'exclusion et sortir       |
 | `--show-ignored`        | Afficher en gris les constats supprimés à côté de la sortie normale |
 | `--reset-baseline`      | Supprimer la baseline d'audit enregistrée et sortir                |
 | `--test-email`          | Envoyer un vrai message de test par le transport mail du cron et sortir |
 | `--test-webhook`        | Envoyer une charge de test au webhook configuré et sortir (sans audit) |
-| `-C`, `--manage-cron`   | Interface interactive pour lister, éditer ou supprimer les tâches cron installées |
+| `-C`, `--manage-cron`   | Interface interactive pour lister, créer (`n`, v0.44.0), éditer ou supprimer les tâches cron installées |
 | `--lang=CODE`           | Langue de l'interface : `en`, `fr` (défaut : détectée depuis `$LANG`) |
 | `--no-colour`           | Alias orthographique de `--no-color`                               |
 | `--french`              | Passer l'interface en français                                     |

@@ -67,6 +67,13 @@ plein) n'est pas lancée, et BOB dit pourquoi.
 Où le lire : `sudo bob --manage-logs`, second choix de l'écran d'accueil
 (*Journal des correctifs*), ou `bob --fix-journal` en texte.
 
+**Son plafond (0.44.0).** Comme les autres journaux : 8 Mio par défaut, réglable
+jusqu'à 16 Mio (`sudo bob --journals max-size TAILLE`). Au-delà, le journal est
+archivé — `fixes.journal.0001`, jamais renommé ensuite, ajout seul gardé — et le
+suivant s'enchaîne sur sa dernière ligne : une entrée commencée dans l'archive
+et terminée dans le nouveau journal se lit entière ; rien n'est coupé et BOB ne
+supprime aucune archive ([AUTOMATION_FR.md](AUTOMATION_FR.md#le-plafond--archivé-jamais-coupé-0440)).
+
 ## 3. Comment une falsification se voit — quatre mesures
 
 Aucune ne suffit seule ; chacune couvre ce que les autres ne peuvent pas.

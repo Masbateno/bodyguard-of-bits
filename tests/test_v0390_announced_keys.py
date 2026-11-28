@@ -215,7 +215,7 @@ class TestTheCronScreens:
         from bob.tui import cron
         monkeypatch.setattr(cron, "list_installed_crons", lambda: [_entry("a"), _entry("b")])
         actions = cron._manage_actions(1)
-        assert _keys.SELECT not in actions and _keys.BOOK not in actions and _keys.UNMARK in actions
+        assert _keys.EDIT not in actions and _keys.BOOK not in actions and _keys.UNMARK in actions
         _silent(lambda s: cron._run_manage_cron_curses(s, _CONFIG, _t), actions,
                 prefix=(ord(" "),), tail=(ord("q"),))
 
@@ -245,7 +245,8 @@ class TestTheReportPreview:
     @pytest.mark.parametrize("name, keys", [("_INPUT_KEYS", (_keys.SUBMIT, _keys.BACK)),
                                             ("_PATH_INPUT_KEYS", (_keys.SUBMIT, _keys.COMPLETE, _keys.BACK))])
     def test_a_text_field_announces_its_own_keys(self, name, keys):
-        """Enter, Esc — and Tab where it completes a path — over the field."""
+        """Enter, Esc — and Tab where it completes a path — over the field.
+        v0.44.0 (B-051): not the switch keys — landing screens only."""
         import bob.manage_logs as ml
         assert getattr(ml, name) == keys
         scr = _Screen(["\x1b"])               # a text field reads characters: Esc as one

@@ -12,6 +12,11 @@ Ce document explique comment configurer BOB pour s'exécuter automatiquement sel
 sudo bob --install-cron
 ```
 
+Depuis la v0.44.0, la création fait partie de `--manage-cron` : `--install-cron`
+ouvre sa liste d'audits programmés sur un nouvel audit, et `n` dans cette liste en
+commence un autre. Une fois la tâche écrite — ou abandonnée par Échap à sa première
+étape —, on revient à la liste.
+
 Le wizard vous guide en 7 étapes :
 
 1. **Nom** — un court libellé pour ce cron (ex : `nightly`, `weekly`). Appuyez sur Entrée pour utiliser le nom suggéré.
@@ -544,6 +549,7 @@ tenu même sans équipe :
 sudo bob --journals                       # ce qui est enregistré, la chaîne de chaque journal
 sudo bob --journals show cron             # un journal (code 0 intact, 2 rompu, 4 illisible)
 sudo bob --journals off rapports          # ne plus enregistrer les suppressions de rapports
+sudo bob --journals max-size 8M           # le plafond de chaque journal (0.44.0) : archivé au-delà, jamais coupé
 sudo bob --team-journal                   # = --journals show team
 ```
 
@@ -567,6 +573,28 @@ suivante ; la dernière, c'est le témoin du journal système qui en répond. Da
 active, rouge retire, désactive ou alerte, jaune le reste) et le compte en cyan
 ([CONVENTIONS_FR.md](CONVENTIONS_FR.md#2-couleur--écrans-curses)) ; les sorties texte ne portent aucun code de couleur.
 
+### Le plafond : archivé, jamais coupé (0.44.0)
+
+Chaque journal — ces trois-là et le journal de `--fix --apply` — a un plafond
+de taille : **8 Mio par défaut, réglable de 64 Kio à 16 Mio** (la taille jusqu'à
+laquelle BOB lit un fichier, pour qu'un journal reste toujours lisible), avec
+`sudo bob --journals max-size TAILLE` ou `p` sur l'écran des journaux de
+`--manage-logs`. Décidé avec l'user (27 novembre 2026) : **au-delà du plafond,
+rien n'est coupé**. Une dernière ligne dit que le journal est archivé ; le
+fichier devient `<nom>.0001` (puis `.0002`…, jamais renommé ensuite) et garde
+son attribut d'ajout seul ; la première ligne du nouveau journal s'enchaîne sur
+cette dernière ligne. Lus bout à bout, les archives et le journal forment une
+seule chaîne : une archive supprimée ou modifiée la rompt, et la rupture est
+dite dans son propre fichier (« ligne 812 (cron.journal.0002, ligne 3) »).
+**BOB ne supprime aucune archive** — la place qu'elles prennent continue de
+croître, et l'écran dit combien ; leur suppression, par le maître ou les comptes
+à qui il la délègue, viendra plus tard. Un lecteur relit les archives, les plus
+récentes d'abord, jusqu'à 32 Mio (on n'en demande pas plus à une petite
+machine) ; les plus anciennes non relues sont comptées et dites, et leurs lignes
+dans le journal système ne sont pas prises pour des lignes retirées. Régler le
+plafond est averti, confirmé, demandé hors du périmètre déclaré comme tout
+réglage d'équipe (`equipe`), et inscrit au journal d'administration.
+
 ### Ce que BOB ne voit pas
 
 BOB ne voit que ses propres actions : une modification de `sshd_config` à la
@@ -578,8 +606,9 @@ système rendent une réécriture visible, pas impossible.
 
 ## Gestion des rapports
 
-**Un plafond de taille pour les rapports** (depuis la v0.43.0). BOB ne
-supprime jamais un rapport de lui-même, sauf si un plafond est fixé — utile sur
+**Un seuil de rétention pour les rapports** (depuis la v0.43.0, appelé plafond
+jusqu'à la v0.44.0). BOB ne supprime jamais un rapport de lui-même, sauf si un
+seuil est fixé — utile sur
 une petite machine (la carte SD d'un Pi Zero) où un audit planifié ajoute un
 rapport chaque jour :
 
@@ -588,13 +617,14 @@ sudo bob --log-max-size=50M     # ou 500K, 2G ; off le retire (par défaut)
 ```
 
 Après chaque nouveau rapport, les plus anciens du dossier où s'écrivent les
-rapports sont supprimés jusqu'à repasser sous le plafond (les anciens dossiers
+rapports sont supprimés jusqu'à repasser sous le seuil (les anciens dossiers
 ne sont pas touchés) ; un rapport compte avec ses fichiers annexes (notes, état). Jamais supprimés : le rapport qu'on vient d'écrire, et un
 rapport qui porte des notes (ses notes partiraient avec lui) — quand il ne reste
-que ceux-là au-dessus du plafond, BOB le dit. Chaque suppression est inscrite au
-journal d'administration. Fixer un plafond avertit que, trop bas, il limite la
-preuve conservée, et demande confirmation. Dans `--manage-logs`, la liste des
-dossiers montre le plafond et l'espace occupé, et `p` le règle.
+que ceux-là au-dessus du seuil, BOB le dit : c'est un seuil de rétention, pas une
+limite stricte d'occupation du disque. Chaque suppression est inscrite au journal
+d'administration. Fixer un seuil avertit que, trop bas, il limite la preuve
+conservée, et demande confirmation. Dans `--manage-logs`, la liste des dossiers
+montre le seuil et l'espace occupé, et `p` le règle.
 
 Pour lister et supprimer les rapports générés :
 
@@ -640,15 +670,17 @@ la couleur de ce qu'elle dit, comme la sortie texte : une **invite** ou une
 question qui attend une réponse en **jaune** ; une action réussie en **vert**,
 `✔` ; une action refusée ou échouée — rien n'a été changé — en **rouge**, `✖` ;
 une information (une action que vous avez annulée) en **cyan**, `ℹ`. Pareil dans
-tous les assistants : `--manage-logs`, `--manage-cron`, `--install-cron`,
-`--explain`.
+tous les assistants : `--manage-logs`, `--manage-cron` (où s'ouvre `--install-cron`
+depuis la v0.44.0), `--manage-team`, `--explain`.
 
 | Touche | Action |
 |--------|--------|
 | `↑` / `↓` ou `j` / `k` | Déplacer le curseur |
 | `PgUp` / `PgDn` | Page |
 | `g` / `G` | Aller au début / à la fin |
-| `Entrée` | Choisir |
+| `Entrée` | Choisir (sur la liste de `--manage-cron` : modifier la tâche, annoncé « modifier », v0.44.0) |
+| `F2` / `F3` / `F4` / `F5` | Ouvrir `--manage-logs` / `--manage-cron` / `--manage-team` / `--explain`, depuis la première page d'un assistant seulement (v0.44.0) |
+| `Ctrl+G` | `bob --bob-tui`, le menu de ces quatre (v0.44.0) |
 
 **Les champs de saisie.** Quand un écran demande de taper quelque chose — un
 nom de tâche, une adresse e-mail, une heure — l'invite occupe la ligne réservée
@@ -660,7 +692,9 @@ français.
 **Les sorties.** `q` quitte, et seulement depuis la **première page** d'un
 assistant — plus profond, `Échap` recule d'un écran et rien ne sort d'un coup :
 une seule touche ne peut pas abandonner un cron à moitié saisi trois écrans
-plus haut.
+plus haut. Sur une première page, `Échap` ouvre `bob --bob-tui`, le menu de tous
+les assistants (v0.44.0) ; dans ce menu, `q` quitte BOB
+et `Échap` ne fait rien.
 
 **`l` bascule la langue de l'interface**, sur les premières pages uniquement.
 Cette touche existe parce que ces assistants tournent sous `sudo`, qui

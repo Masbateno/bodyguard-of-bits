@@ -446,7 +446,9 @@
     "geoip2_no_db": "GeoIP2 installé mais aucune base GeoLite2-Country trouvée — géolocalisation IP désactivée",
     "geoip2_no_db_cmd": "sudo mkdir -p /usr/share/GeoIP && sudo wget -O /usr/share/GeoIP/GeoLite2-Country.mmdb https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb",
     "local_dominance": "La source locale {ip} représente {count}/{total} blocages ({pct}%) — {protos} vers {ports} port(s) de destination distinct(s) ; BOB n'identifie pas ce trafic : vérifiez de quel appareil il s'agit",
-    "local_dominance_discovery": "La source locale {ip} représente {count}/{total} blocages ({pct}%) — uniquement vers les ports conventionnels de découverte ({ports} : SSDP, mDNS, LLMNR, NetBIOS…) — les ports, pas les paquets, que BOB ne lit pas"
+    "local_dominance_discovery": "La source locale {ip} représente {count}/{total} blocages ({pct}%) — uniquement vers les ports conventionnels de découverte ({ports} : SSDP, mDNS, LLMNR, NetBIOS…) — les ports, pas les paquets, que BOB ne lit pas",
+    "logfile_unreadable": "Fichier de log UFW présent mais illisible ({path}), et aucune ligne UFW lisible dans journald — la période n'est pas analysée : un balayage ou des tentatives répétées ne sont pas établis — le score est un plafond",
+    "logfile_unreadable_detail": "Le fichier existe mais ce compte n'a pas le droit de le lire (sur Debian et Ubuntu il est en 0640, propriétaire syslog, groupe adm), et le journal ne lui montre pas non plus les lignes UFW du noyau. Ce n'est pas « pas de journal ». Lancer BOB avec sudo, ou depuis un compte du groupe adm, pour le lire."
   },
   "ddns": {
     "none": "Aucun client DDNS détecté — pas d'exposition externe via DDNS identifiée",
@@ -659,15 +661,15 @@
     "home_journals": "Journaux de ce qui a été fait avec BOB — équipe, audits planifiés, administration ({count} événement(s))",
     "journals_title": "Journaux",
     "plain_journals": "Les journaux de ce qui a été fait avec BOB (équipe, audits planifiés, administration) : {cmd}",
-    "ceiling_prompt": "Plafond de taille des rapports (50M, 500K, 2G ou off)",
-    "ceiling_warning": "Un plafond de {limit} : au-delà, les rapports les plus anciens sont supprimés après chaque nouveau. Trop bas, il limite la preuve conservée (les rapports annotés ne sont jamais supprimés). Confirmer ?",
+    "ceiling_prompt": "Seuil de rétention des rapports (50M, 500K, 2G ou off)",
+    "ceiling_warning": "Un seuil de rétention de {limit} : au-delà, les rapports les plus anciens sont supprimés après chaque nouveau. Trop bas, il limite la preuve conservée (les rapports annotés ne sont jamais supprimés). Confirmer ?",
     "ceiling_invalid": "Ce n'est pas une taille : {value} — 50M, 500K, 2G ou off",
-    "ceiling_set": "Plafond de taille des rapports : {limit}, appliqué après chaque nouveau rapport",
-    "ceiling_off": "Aucun plafond de taille pour les rapports",
-    "ceiling_pruned": "{count} ancien(s) rapport(s) supprimé(s) pour rester sous le plafond ({limit}) — inscrit au journal d'administration",
-    "ceiling_unreachable": "Les rapports restent au-dessus du plafond ({limit}) : les autres portent des notes ou sont les plus récents, jamais supprimés",
-    "ceiling_none": "aucun plafond (dossier courant : {used} ; tous les dossiers : {total})",
-    "ceiling_is": "plafond {limit} sur le dossier courant ({used} ; tous les dossiers : {total})",
+    "ceiling_set": "Seuil de rétention des rapports : {limit}, appliqué après chaque nouveau rapport",
+    "ceiling_off": "Aucun seuil de rétention pour les rapports",
+    "ceiling_pruned": "{count} ancien(s) rapport(s) supprimé(s) pour repasser sous le seuil de rétention ({limit}) — inscrit au journal d'administration",
+    "ceiling_unreachable": "Les rapports restent au-dessus du seuil de rétention ({limit}) : les autres portent des notes ou sont les plus récents, jamais supprimés",
+    "ceiling_none": "aucun seuil de rétention (dossier courant : {used} ; tous les dossiers : {total})",
+    "ceiling_is": "seuil de rétention {limit} sur le dossier courant ({used} ; tous les dossiers : {total})",
     "size_unknown_short": "inconnu"
   },
   "cron_ui": {
@@ -694,7 +696,7 @@
     "hint_skip_email": "Appuyez sur  Entrée  pour passer (pas de notification).",
     "cannot_write": "Écriture impossible dans {path} : {error}",
     "edit_schedule": "Modifier la planification",
-    "install_cron": "Installer un cron",
+    "install_cron": "Nouvel audit programmé",
     "address_book": "Carnet d'adresses",
     "edit": "Modifier : {name}",
     "select_emails": "Adresses de notification"
@@ -718,6 +720,7 @@
       "page": "page",
       "edge": "début/fin",
       "select": "choisir",
+      "edit": "modifier",
       "back": "retour",
       "quit": "quitter",
       "toggle": "marquer",
@@ -747,13 +750,14 @@
       "removed": "lignes retirées",
       "breakdown": "calcul",
       "expand": "tout",
-      "ceiling": "plafond"
+      "ceiling": "seuil",
+      "screens": "écrans",
+      "home": "menu BOB"
     },
     "mode_notes": "[NOTES]"
   },
   "install_cron": {
     "title": "INSTALLATION CRON BOB",
-    "landing_prompt": "Créer un nouvel audit planifié",
     "quit_hint": "Entrez 'q' à n'importe quelle invite pour annuler.",
     "cancelled": "Assistant annulé.",
     "prompt_name": "Nom de ce cron (Entrée pour '{suggestion}')",
@@ -805,7 +809,8 @@
     "network_offline": "Inactives — aucun appel HTTP (--offline)",
     "invalid_network": "Choix non reconnu",
     "audit_command": "Commande programmée : {command}",
-    "bob_binary_missing": "Le script appelle {path}, qui n'existe pas sur cet hôte : chaque exécution programmée échouerait. Lancez d'abord sudo ~/.local/bin/bob --install-completion (il crée /usr/local/bin/bob), puis réinstallez la tâche."
+    "bob_binary_missing": "Le script appelle {path}, qui n'existe pas sur cet hôte : chaque exécution programmée échouerait. Lancez d'abord sudo ~/.local/bin/bob --install-completion (il crée /usr/local/bin/bob), puis réinstallez la tâche.",
+    "new_title": "Nouvel audit programmé"
   },
   "manage_cron": {
     "title": "GESTION DES CRONS BOB",
@@ -857,7 +862,8 @@
     "origin_date_only": "créé le {date} — auteur non enregistré",
     "origin_unknown": "création non enregistrée",
     "address_origin": "ajoutée le {date} à {time} par {who}",
-    "address_origin_unknown": "ajout non enregistré"
+    "address_origin_unknown": "ajout non enregistré",
+    "no_crons_new": "Aucun audit programmé pour l'instant — n en crée un"
   },
   "email_prompt": {
     "title": "Email(s) de notification :",
@@ -1325,8 +1331,8 @@
       "french": "Raccourci pour --lang=fr (prime sur la détection)",
       "english": "Raccourci pour --lang=en (prime sur la détection)",
       "reconfigure": "Supprime la configuration enregistrée puis sort",
-      "install_cron": "Installe une tâche cron d'audit (assistant de planification)",
-      "manage_cron": "Liste, modifie ou supprime les tâches cron",
+      "install_cron": "Crée un audit programmé (ouvre --manage-cron sur un nouveau)",
+      "manage_cron": "Audits programmés : liste, création (n), modification, suppression",
       "manage_logs": "Liste et supprime les journaux d'audit enregistrés",
       "breakdown": "Audit silencieux + détail complet du calcul du score",
       "reset_baseline": "Supprime la référence d'audit enregistrée puis sort",
@@ -1345,9 +1351,10 @@
       "fix_journal": "Journal de --fix --apply, falsification vérifiée (sortie 0, 2 ou 4)",
       "team": "Périmètres d'équipe : voir ; init, grant, revoke, remove (root)",
       "team_journal": "Journal d'équipe : actions hors périmètre déclaré (code 0, 2 ou 4)",
-      "journals": "Ce qui est enregistré : voir ; on|off CAT[,CAT] (root) ; show NOM",
+      "journals": "Journaux : voir ; on|off CAT ; show NOM ; max-size TAILLE (root)",
       "manage_team": "L'équipe pas à pas : tout ce que font --team et --journals",
-      "log_max_size": "Plafond des rapports : 50M, 500K, 2G ou off (plus anciens d'abord)"
+      "log_max_size": "Seuil de rétention des rapports : 50M, 500K, 2G ou off",
+      "bob_tui": "Le menu de tous les assistants : flèches et Entrée, ou F2-F5"
     },
     "example": {
       "standard": "Audit standard",
@@ -1658,7 +1665,9 @@
       "sshd": "sshd introuvable",
       "answer": "sshd n'a pas répondu",
       "root": "BOB lancé sans root"
-    }
+    },
+    "dir_unreadable": "Le ~/.ssh de {user} ({path}) n'a pas pu être lu — ses clés et ses droits ne sont pas vérifiés",
+    "dir_unreadable_detail": "Le dossier peut exister : ce compte n'a pas le droit de l'ouvrir, ou d'ouvrir le dossier au-dessus. Ce n'est pas « aucun ~/.ssh ». Lancer BOB avec sudo pour le savoir."
   },
   "file_perms": {
     "world_writable": "{path} accessible en écriture par tous ({mode}) — n'importe quel utilisateur peut modifier ce fichier critique",
@@ -1831,7 +1840,13 @@
       "crashed": "Le plugin {plugin} a planté : {error}",
       "serialize_failed": "Le plugin {plugin} a renvoyé un résultat non sérialisable : {error}",
       "unreadable": "Le plugin {plugin} n'a pas pu être lu : {error}",
-      "syntax_error": "Le plugin {plugin} contient une erreur de syntaxe : {error}"
+      "syntax_error": "Le plugin {plugin} contient une erreur de syntaxe : {error}",
+      "privilege_drop_failed": "Greffon {plugin} non exécuté : BOB n'a pas pu abandonner les droits de root avant de l'exécuter ({error})",
+      "not_run_link": "Greffon {plugin} non exécuté : un lien symbolique, que BOB ne suit pas",
+      "not_run_not_regular": "Greffon {plugin} non exécuté : pas un fichier ordinaire",
+      "not_run_replaced": "Greffon {plugin} non exécuté : ce n'est plus le fichier que BOB a vérifié (remplacé ou redirigé depuis)",
+      "not_run_outside_home": "Greffon {plugin} non exécuté : il aboutit hors du dossier personnel de l'appelant",
+      "not_run_unopened": "Greffon {plugin} non exécuté : il n'a pas pu être ouvert ({error})"
     }
   },
   "explain": {
@@ -4034,7 +4049,9 @@
     "no_logins_no_range": "Aucune connexion SSH réussie enregistrée dans le journal d'authentification disponible",
     "summary": "{count} connexion(s) SSH réussie(s) sur les {days} dernier(s) jour(s) — sources principales : {top}",
     "public_login": "{count} connexion(s) SSH réussie(s) depuis une IP publique : {ips}",
-    "brute_force": "{count} tentative(s) de connexion SSH échouée(s) sur {days} jour(s) — envisagez d’installer fail2ban"
+    "brute_force": "{count} tentative(s) de connexion SSH échouée(s) sur {days} jour(s) — envisagez d’installer fail2ban",
+    "journal_partial": "Journal d'authentification lu en partie : ce compte ne voit que ses propres messages, pas ceux du système ni des autres comptes — les connexions SSH ne sont pas établies",
+    "journal_partial_detail": "journalctl l'a dit lui-même : les messages des autres comptes et du système sont cachés à ce compte. Ce n'est pas « aucune connexion ». Lancer BOB avec sudo, ou depuis un compte du groupe adm ou systemd-journal (wheel sur Fedora), pour les voir."
   },
   "umask": {
     "sources_unreadable": "Umask effectif {umask} d'après {source}, mais {files} n'a pas pu être lu",
@@ -4142,7 +4159,9 @@
     "cfg_perms_ok": "La config GRUB {path} est réservée au propriétaire (mode {mode})",
     "no_password": "Aucun mot de passe superutilisateur GRUB défini — quiconque à la console peut éditer les entrées de boot",
     "no_password_detail": "Sans superutilisateur GRUB (password_pbkdf2), une personne à la console physique peut appuyer sur « e » pour éditer une entrée du menu et démarrer avec init=/bin/bash pour un shell root non authentifié, ou passer en mode single-user. C'est un contrôle d'accès physique/console ; c'est signalé pour information (aucune déduction de score), car le définir peut bloquer les reboots sans surveillance et son absence est courante. Pour en définir un : lancer grub-mkpasswd-pbkdf2, puis ajouter « set superusers » et « password_pbkdf2 » dans /etc/grub.d/40_custom et lancer update-grub.",
-    "password_set": "Un mot de passe superutilisateur GRUB est configuré"
+    "password_set": "Un mot de passe superutilisateur GRUB est configuré",
+    "password_unknown": "Mot de passe superutilisateur GRUB non vérifié : {path} n'a pas pu être lu",
+    "password_unknown_detail": "grub.cfg existe mais ce compte n'a pas le droit de le lire (il est d'ordinaire en 0600, à root — le bon réglage). On ne sait donc pas si un mot de passe superutilisateur est défini ; lancer BOB avec sudo pour le savoir."
   },
   "mount_hardening": {
     "unreadable": "/proc/self/mounts illisible — options de montage inconnues",
@@ -5081,7 +5100,8 @@
       "team_revoke": "le retrait d'attributs",
       "team_remove": "le retrait d'un membre de l'équipe",
       "journals": "le changement de ce qui est enregistré",
-      "log_max_size": "le réglage du plafond des rapports"
+      "log_max_size": "le réglage du seuil de rétention des rapports",
+      "journals_ceiling": "le changement du plafond des journaux"
     },
     "outside": "{action} : hors du périmètre déclaré pour {account} — il ne comprend pas « {attribute} ». Si elle est faite, elle est inscrite au journal d'équipe comme hors du périmètre déclaré (maître : {master}).",
     "confirm": "La faire quand même ? [y/N]",
@@ -5118,7 +5138,8 @@
       "unknown_attribute": "Attribut inconnu : {attribute}. Connus : {known}",
       "no_attribute": "Aucun attribut donné.",
       "journals_unknown": "Catégorie inconnue : {category}. Connues : {known}",
-      "journals_usage": "Usage : bob --journals | --journals on|off CAT[,CAT] | --journals show team|cron|admin"
+      "journals_usage": "Usage : bob --journals | --journals on|off CAT[,CAT] | --journals show team|cron|admin | --journals max-size TAILLE",
+      "journals_max_size": "Plafond des journaux non compris : {value} — entre {min} et {max} (512K, 8M, 16M), ou default."
     },
     "journal": {
       "attempt_confirmed": "hors du périmètre déclaré, confirmée — {action} ({attribute})",
@@ -5153,11 +5174,21 @@
       "config": "configuration : {op} {value}",
       "report_deleted": "rapport supprimé — {path}",
       "journals": "ce qui est enregistré : {categories} {state}",
-      "journals_altered": "ce qui est enregistré a été modifié hors de BOB"
+      "journals_altered": "ce qui est enregistré a été modifié hors de BOB",
+      "rotate": "archivé — {archive} (plafond {ceiling}) ; le journal continue, enchaîné dessus",
+      "journals_ceiling": "plafond des journaux réglé — {value}"
     },
-    "size": "{size} (lu jusqu'à {limit} ; au-delà, dit trop grand)",
+    "size": "{size} sur {ceiling} (au-delà, archivé — rien n'est coupé)",
     "size_absent": "pas encore créé",
-    "size_unknown": "taille inconnue (appartient à root)"
+    "size_unknown": "taille inconnue (appartient à root)",
+    "line_in_file": "{line} ({file}, ligne {local})",
+    "archives": " · {count} archive(s), {size}",
+    "ceiling_line": "Plafond de chaque journal : {ceiling} (défaut {default}, au plus {max}) — au-delà, le journal est archivé (<nom>.0001…) et le suivant s'enchaîne dessus ; BOB ne supprime aucune archive.",
+    "skipped": "{count} archive(s) plus ancienne(s) non relue(s) ici (au-delà de {budget}) — la chaîne est vérifiée depuis la première ligne lue.",
+    "max_size_warning": "Plafond de chaque journal : {ceiling}. Rien n'est coupé : au-delà, un journal est archivé et le suivant s'enchaîne dessus. BOB ne supprime aucune archive — la place qu'elles prennent continue de croître, et la preuve ne se perd que si une archive est supprimée (le trou se voit alors dans la chaîne). Le régler ?",
+    "max_size_set": "Plafond des journaux : {ceiling}.",
+    "max_size_prompt": "Plafond des journaux (512K à 16M, ou default pour 8M)",
+    "line_not_following": "{line} ({file}, ligne 1 : elle ne suit pas la ligne d'avant — une archive supprimée ou modifiée, ou cette ligne réécrite)"
   },
   "team_wizard": {
     "title": "BOB — gestion de l'équipe",
@@ -5218,5 +5249,15 @@
     "confirm_remove_many": "Retirer de l'équipe : {accounts} ?",
     "all_attributes": "tous les attributs",
     "all_categories": "toutes les catégories"
+  },
+  "switch": {
+    "title": "Les assistants de BOB",
+    "here": "dernier ouvert",
+    "logs": "Rapports et journaux (--manage-logs)",
+    "cron": "Audits programmés (--manage-cron)",
+    "team": "L'équipe (--manage-team)",
+    "explain": "Ce que disent les constats (--explain)",
+    "needs_root": "Cet écran demande root : l'ouvrir avec {cmd}",
+    "plain": "Les assistants de BOB demandent un terminal ; chacun s'ouvre par sa commande :"
   }
 }

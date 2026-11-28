@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from bob._fs import strict_is_dir
+
 from bob.checks._run import (
     _command_exists,
     _is_safe_user_path,
@@ -157,6 +159,12 @@ class SSHSnapshot:
 
     sudo_user:               str = ""
     user_home:               Path | None = None
+    #: v0.44.0 (B-055) — the account whose ~/.ssh is read: the one behind sudo,
+    #: else the one BOB runs as (root only when BOB runs as root).
+    ssh_user:                str = ""
+    #: v0.44.0 (B-055) — False when ~/.ssh could not be opened (a denial on it
+    #: or on a directory above): not the same as absent.
+    ssh_dir_readable:        bool = True
     ssh_dir_exists:          bool = False
     ssh_dir_perms:           int | None = None  # None if dir absent
 
@@ -308,10 +316,18 @@ class SSHSnapshot:
         if sudo_user:
             try:
                 snap.user_home = Path(pwd.getpwnam(sudo_user).pw_dir)
+                snap.ssh_user = sudo_user
             except KeyError:
                 pass
         if snap.user_home is None:
-            snap.user_home = Path("/root")
+            # v0.44.0 (B-055) — the account BOB runs as: root's home for root,
+            # one's own for an ordinary account (measured on a test host:
+            # without root, BOB looked at /root/.ssh and called it absent).
+            try:
+                _pw = pwd.getpwuid(os.geteuid())
+                snap.user_home, snap.ssh_user = Path(_pw.pw_dir), _pw.pw_name
+            except KeyError:
+                snap.user_home, snap.ssh_user = Path("/root"), "root"
 
         ssh_dir = snap.user_home / ".ssh"
 
@@ -323,7 +339,9 @@ class SSHSnapshot:
         # rather than aborting the audit or leaking the OSError into its output.
         # Mirrors ddns._config_present.
         try:
-            if ssh_dir.is_dir():
+            # strict_is_dir raises on a denial, on every Python (3.14's
+            # Path.is_dir() answers False to one, which reads as "absent").
+            if strict_is_dir(ssh_dir):
                 snap.ssh_dir_exists = True
                 try:
                     snap.ssh_dir_perms = stat.S_IMODE(ssh_dir.stat().st_mode)
@@ -356,7 +374,23 @@ class SSHSnapshot:
                 if kh_path.is_file() and _is_safe_user_path(kh_path, snap.user_home):
                     snap.known_hosts_exists = True
                     snap.known_hosts_entries = _parsers._parse_known_hosts(kh_path)
+        except PermissionError:
+            # v0.44.0 (B-055) — a denial is not an absence. What was read is
+            # dropped: a part of ~/.ssh is not a verdict on it.
+            fresh = cls()
+            for name in _USER_SIDE:
+                setattr(snap, name, getattr(fresh, name))
+            snap.ssh_dir_readable = False
         except OSError:
             pass
 
         return snap
+
+
+#: v0.44.0 (B-055) — what is read from ~/.ssh, reset together when it is denied.
+_USER_SIDE = (
+    "ssh_dir_exists", "ssh_dir_perms", "private_keys",
+    "authorized_keys_exists", "authorized_keys_perms", "authorized_keys_entries",
+    "client_config_exists", "client_config_entries",
+    "known_hosts_exists", "known_hosts_entries",
+)

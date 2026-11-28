@@ -123,7 +123,8 @@ def test_each_journal_says_its_size_in_one_column():
     rows = [text for text, _kind in J.state_rows(i18n.t)]
     assert len(rows) == len(J.CHANNELS) and len({r.index(" — ") for r in rows}) == 1
     assert any("not created yet" in r for r in rows)               # team and admin: no file yet
-    assert any("read up to 16.0 MB" in r for r in rows)            # cron: its size and the bound
+    # v0.44.0 (B-050): against its ceiling, 8 MiB by default — past it, archived
+    assert any("of 8.0 MB (past it, archived" in r for r in rows)  # cron: its size and the ceiling
     assert not any(". —" in r for r in rows)
 
 
@@ -133,11 +134,11 @@ def test_the_journal_of_fixes_says_its_size_too(monkeypatch):
     FJ.record(finding="ssh.root_login", message="m", command="true", how="shell",
               status="ok", rc=0, error=b"", seconds=0.1)
     lines, _overall = fixlog.text_report(i18n.t)
-    assert any("read up to 16.0 MB" in text for text, _kind in lines[:8])
+    assert any("of 8.0 MB (past it, archived" in text for text, _kind in lines[:8])
     import bob.manage_logs as ml
     monkeypatch.setattr(ml, "_declared_dirs", lambda uc: [])
     rows = ml._home_rows(type("U", (), {"get": lambda self, k: None})(), i18n.t)
-    assert "read up to 16.0 MB" in rows[1][0]
+    assert "of 8.0 MB (past it, archived" in rows[1][0]
 
 
 def test_a_fix_journal_row_follows_the_conventions():

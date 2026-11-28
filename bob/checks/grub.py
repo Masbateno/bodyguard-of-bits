@@ -175,19 +175,28 @@ def check_grub(snapshot: GrubSnapshot, t: TranslationFunc | None = None) -> Chec
 
     # --- Superuser password --------------------------------------------------
     # Only meaningful when the contents were actually read; an unreadable
-    # grub.cfg (0600 root-only) is the *good* permission case, so silence the
-    # password finding rather than assert "no password" from an unread file.
-    if snapshot.readable:
-        if snapshot.password_set:
-            result.ok(
-                message=_t("grub.password_set"),
-                key="grub.password_set",
-            )
-        else:
-            result.info(
-                message=_t("grub.no_password"),
-                detail=_t("grub.no_password_detail"),
-                key="grub.no_password",
-            )
+    # grub.cfg (0600 root-only) is the *good* permission case, so "no password"
+    # is never asserted from an unread file.
+    # v0.44.0 (B-055) — and the unread file is said, not silenced: measured on
+    # a test host, an ordinary account saw grub.cfg's 0600 mode and nothing
+    # else, and the password went unsaid. No point is at stake (no_password
+    # carries none): not a visibility limit, see NOT_A_VISIBILITY_LIMIT.
+    if not snapshot.readable:
+        result.info(
+            message=_t("grub.password_unknown", path=snapshot.cfg_path),
+            detail=_t("grub.password_unknown_detail"),
+            key="grub.password_unknown",
+        )
+    elif snapshot.password_set:
+        result.ok(
+            message=_t("grub.password_set"),
+            key="grub.password_set",
+        )
+    else:
+        result.info(
+            message=_t("grub.no_password"),
+            detail=_t("grub.no_password_detail"),
+            key="grub.no_password",
+        )
 
     return result

@@ -6,6 +6,272 @@ Toutes les modifications notables du projet sont documentées ici.
 
 ---
 
+## [0.44.0] — 28-11-2026
+
+**BREAKING pour les greffons et pour la certitude du score : les greffons ne
+tournent plus en root ; une lecture refusée n'est plus prise pour une absence ;
+navigation directe entre les assistants ; les journaux sont archivés au-delà
+d'un plafond de taille, jamais coupés.**
+
+Les deux changements BREAKING sont de nature différente. Le premier est un
+changement de comportement, mesuré sur trois distributions (section 1). Le
+second est une correction de sens : il n'agit que là où root lui-même se voit
+refuser une lecture, un cas que ses tests reproduisent mais qui n'a pas été
+mesuré en root (section 2).
+
+Ce qui change, selon l'hôte :
+
+- **Un hôte avec des greffons dans le `~/.config/bob/checks.d` de l'appelant,
+  audité sous `sudo` ou `doas`** : chaque greffon tourne désormais avec l'uid et
+  les groupes de ce compte (section 1). Un greffon qui lisait un fichier réservé
+  à root reçoit un refus, et ses constats — donc le score et le code de sortie —
+  peuvent changer. Un greffon qui est un lien symbolique, ou qui aboutit hors du
+  dossier personnel de l'appelant, est écarté.
+- **Un hôte où root lui-même se voit refuser une lecture** (un dossier personnel
+  sur NFS avec `root_squash`, certains montages FUSE) : le journal UFW ou le
+  `~/.ssh` de l'appelant est signalé non lu et rejoint les sections que BOB n'a
+  pas pu lire entières : le score est affiché comme un plafond — ou, s'il l'était
+  déjà pour une autre raison, sa fourchette peut s'élargir ; le nombre affiché
+  peut rester le même — là où la 0.43.0 le prenait pour une absence (section 2).
+- **Mesuré** : sur la Linux Mint 22.3 de test, en root, sans greffon,
+  `--exhaustive`, le score, le code de sortie et les constats sont inchangés par
+  rapport à la 0.43.0 (section 2). D'après le code, les changements des sections
+  1–2 n'agissent que lorsqu'un greffon tourne ou qu'une lecture est refusée.
+- **Pour tout hôte** : les écrans changent (section 3) ; un journal est archivé
+  quand sa ligne suivante ne tiendrait plus sous son plafond, 8 Mio par défaut
+  (section 4). Sorties texte qui changent :
+  `--install-cron`, à la fin, dit le transport mail et un webhook enregistré avec
+  `ℹ`, plus avec `✔` (section 3) ; `--journals` et `--fix-journal` donnent la
+  taille de chaque journal rapportée à son plafond (« 52 Ko sur 64 Ko (au-delà,
+  archivé — rien n'est coupé) », là où la 0.43.0 disait « lu jusqu'à 16,0 Mo »),
+  ses archives, et une ligne pour le plafond (section 4).
+
+Quatre clés de constat ajoutées (`logs.logfile_unreadable`,
+`ssh.dir_unreadable`, `grub.password_unknown`, `auth_log.journal_partial`),
+aucune retirée ni renommée ; aucun changement de schéma JSON ni de colonne CSV.
+Une option nouvelle, `--bob-tui` ; une action nouvelle de `--journals`,
+`max-size`. L'audit exige toujours root, comme en 0.43.0. Clés de traduction :
+3736 → 3775 par langue (40 ajoutées, 1 retirée).
+
+### 1. BREAKING — les greffons ne tournent plus en root
+
+Sous `sudo` (ou `doas`), BOB charge les greffons trouvés dans le
+`~/.config/bob/checks.d/` de l'appelant. Jusqu'à la 0.43.0, il les lançait dans
+un processus enfant qui gardait les droits de root — mesuré sur la Linux Mint
+22.3 de test le 26 novembre 2026 : un greffon pris dans ce dossier rapportait
+ses propres identifiants `Uid: 0 0 0 0`. Un compte qui pouvait écrire un
+greffon pouvait donc faire exécuter du code en root par quiconque lançait
+`sudo bob`.
+
+Désormais, l'enfant abandonne root avant de lire une ligne du greffon. Il prend
+l'uid, le gid et les groupes supplémentaires du compte derrière `sudo` ou
+`doas` ; rien d'autre ne change — un contexte SELinux, par exemple, reste celui
+de BOB. Le descripteur ouvert auparavant fixe l'objet fichier : un remplacement
+ultérieur du chemin ne peut pas changer la source lue. Sans un tel compte — BOB
+lancé depuis une connexion root, ou par un audit planifié — l'enfant prend
+l'identité du propriétaire du fichier ; un greffon appartenant à root, dans le
+dossier de root, tourne toujours en root. Si le changement d'identité échoue,
+le greffon n'est pas lancé, et BOB le dit (`plugin.sandbox.privilege_drop_failed`).
+Mesuré avec le code 0.44.0 : le même greffon rapportait l'uid de l'appelant sur
+Linux Mint 22.3 (`sudo`, uid 1001), Fedora 44 avec SELinux en mode enforcing
+(`sudo`, uid 1001) et Alpine 3.24 (`doas`, uid 1002).
+
+L'ouverture du fichier elle-même, qui se fait en root, est désormais contrôlée
+aussi — trouvé en répondant à la revue externe de ce changelog. BOB lisait
+chaque greffon par son nom en suivant les liens symboliques, dans le parent (le
+contrôle de syntaxe) comme dans l'enfant : un lien posé dans le `checks.d` de
+l'appelant vers un fichier réservé à root était ouvert et lu par root, comme
+dans le correctif de la 0.26.1. Désormais le parent écarte un greffon qui est un
+lien, ou qui aboutit hors du dossier personnel de l'appelant (un dossier lié) ;
+l'enfant ouvre sans suivre le dernier élément du chemin, n'accepte qu'un fichier
+ordinaire, que celui que le parent a résolu et, lancé pour un autre compte,
+qu'à l'intérieur du dossier personnel de ce compte — sinon le greffon n'est pas
+lancé, et la raison est dite (`plugin.sandbox.not_run_*`). L'un et l'autre
+regardent le fichier avant de l'ouvrir — trouvé en répondant à la troisième
+revue : le parent contrôlait puis rouvrait par le nom, et l'enfant ouvrait en
+root avant de contrôler, si bien qu'un greffon échangé après les contrôles (pour
+un lien, une FIFO, un périphérique) était tout de même ouvert par root.
+Désormais un descripteur `O_PATH` vient d'abord (rien n'est ouvert), les
+contrôles portent sur lui, et le même fichier est rouvert en lecture par
+`/proc/self/fd`, comme pour les configurations de conteneurs depuis la 0.38.0.
+Couvert par des tests et des mutations, sous un compte ordinaire ; pas mesuré à
+nouveau en root sur une vraie machine après ce changement.
+
+Ce que cela change : un greffon qui lisait un fichier réservé à root
+(`/etc/shadow`, une configuration en `0600`) reçoit maintenant un refus, comme il
+le recevrait pour le compte appelant ; un greffon installé sous forme de lien
+symbolique est écarté. Ce que cela ne change pas : le bac à sable n'est toujours
+pas, à lui seul, une frontière de sécurité (le code de BOB le dit) ; autoriser
+quelqu'un à lancer `sudo bob` revient toujours à lui donner root. Les deux
+points sont le sujet de B-055 dans le [backlog](../BACKLOG_FR.md) public.
+
+### 2. BREAKING (certitude du score) — une lecture refusée n'est plus une absence
+
+Quatre endroits prenaient une lecture refusée pour une absence. Ils ont été
+trouvés en lançant le même audit en root et sous des comptes ordinaires sur la
+Linux Mint 22.3 de test, puis sur Fedora 44 et Alpine 3.24 (26–27 novembre
+2026), pendant un travail sur un audit sans root ; ce travail a été abandonné —
+**l'audit exige toujours root** — parce que sans root l'audit était incomplet,
+et sur Fedora trompeur (deux domaines entiers non lus, le score monté de 8 à 9).
+Les quatre corrections ont été gardées : root aussi peut se voir refuser une
+lecture.
+
+| Endroit | 0.43.0 | 0.44.0 | Score |
+|---|---|---|---|
+| Journal UFW (`/var/log/ufw.log`) qui existe et ne peut pas être lu, sans aucune ligne UFW dans journald | « aucun fichier journal » | `logs.logfile_unreadable` : la période n'est pas analysée | le score devient un plafond |
+| `~/.ssh` de l'appelant qui ne peut pas être ouvert (refus sur lui ou sur un dossier au-dessus) | « aucun `~/.ssh` » | `ssh.dir_unreadable` : clés, droits et `authorized_keys` non vérifiés ; ce qui en avait été lu est abandonné | le score devient un plafond |
+| `grub.cfg` qui ne peut pas être lu | rien n'était dit du mot de passe GRUB | `grub.password_unknown` : non vérifié | aucun point (comme `grub.no_password`) |
+| journald qui ne répond qu'avec les messages du compte | « aucune connexion SSH » | `auth_log.journal_partial` : connexions non établies | aucun point |
+
+« Plafond » n'est pas nouveau : depuis la 0.16.0, un score est affiché comme une
+borne haute avec sa fourchette dès qu'une section qui porte des points n'a pas pu
+être lue entière. Ce qui est nouveau, c'est que ces deux refus comptent désormais
+parmi ces sections — le score devient un plafond, ou sa fourchette peut
+s'élargir s'il en était déjà un ; le nombre lui-même ne change que si la
+section, lue, aurait coûté des points. En root, ces cas ne se
+produisent que là où root lui-même se voit refuser la lecture (un dossier
+personnel exporté en NFS avec `root_squash`, certains montages FUSE) ; ce cas
+n'a pas été mesuré en root — les corrections sont mesurées sous un compte
+ordinaire, et leurs tests refusent la lecture directement. Sur la Mint de test,
+où root lit tout ce qu'il lit, le même audit `--exhaustive` en root sans greffon
+a donné le même résultat en 0.43.0 et en 0.44.0 (27 novembre 2026) : score 8
+(fourchette 7–8), code de sortie 2, les mêmes 138 constats (clés et niveaux) et
+les mêmes quatre déductions. Le score y était déjà un plafond dans les deux
+versions, pour deux choses que BOB ne peut pas établir depuis l'hôte — le
+verdict sur le trafic transféré (`firewall_iptables.forward_unknown`) et le
+filtrage IPv6 du routeur (`ipv6.router_filter_unverified`), mesuré sur la 0.44.0
+la même nuit — sans rapport avec les changements de cette version.
+
+### 3. Navigation directe entre les assistants : F2–F5, Ctrl+G, `bob --bob-tui`
+
+Demandé par l'utilisateur (23 et 27 novembre 2026). Sur l'écran d'accueil d'un
+assistant, F2 ouvre `--manage-logs`, F3 `--manage-cron`, F4 `--manage-team`, F5
+`--explain` ; basculer remplace l'assistant. Ctrl+G, et Échap sur l'écran
+d'accueil de n'importe quel assistant, ouvrent `bob --bob-tui` : le menu des
+quatre assistants (flèches et Entrée, un chiffre, ou F2–F5), l'assistant qu'on
+vient de quitter marqué et sélectionné. `q` sur un écran d'accueil et dans le
+menu quitte BOB ; Échap dans le menu ne fait rien. Sous un écran d'accueil, les
+touches de bascule ne font rien et Échap remonte d'une étape, comme avant.
+Échap qui ouvre le menu sur un écran d'accueil est une exception à la
+convention « Échap remonte d'une étape », écrite dans
+[CONVENTIONS_FR.md](CONVENTIONS_FR.md). Le menu s'ouvre sans root ;
+`--manage-logs` et `--manage-cron` l'exigent toujours, et un assistant qui ne
+peut pas s'ouvrir est dit sur un écran à part. Mesuré par l'utilisateur : les
+cinq touches arrivent jusqu'à l'écran dans un terminal local, en `ssh -t`, dans
+tmux, et dans tmux puis ssh. Sans terminal, `--bob-tui` liste les assistants et
+la commande qui ouvre chacun.
+
+`--install-cron` est fusionné dans `--manage-cron` : la liste des tâches est
+l'écran d'accueil, `n` y crée une tâche, Entrée (annoncée « modifier ») en
+change une, et `--install-cron` ouvre la liste sur une nouvelle tâche ; son
+ancien écran d'accueil a disparu. La colonne des noms de la liste est doublée
+(40 colonnes, qui cèdent jusqu'à 20 sous 80 colonnes pour que l'horaire en garde
+36) ; un nom plus long que sa colonne prend une ligne à lui au lieu de pousser
+l'horaire et les adresses hors de leurs colonnes, et une adresse n'est jamais
+coupée en deux. « Une valeur plus longue que sa colonne ne pousse jamais les
+colonnes suivantes » est désormais une convention écrite.
+
+Couleurs : le menu s'affichait en deux gris tant qu'aucun assistant n'avait
+réglé les couleurs, et basculer laissait des morceaux de l'écran précédent ;
+chaque écran part désormais des couleurs partagées et d'un écran entièrement
+redessiné. Les lignes qui ne font qu'informer prennent la couleur de la sortie
+texte pour leur sens — le message qui clôt un nouvel audit planifié, les
+protections du journal des correctifs (dans `--manage-logs` et dans
+`--fix-journal`), les commandes en violet. Le transport mail trouvé et un
+webhook enregistré sont dits avec `ℹ` (information), plus avec `✔` : un
+transport présent n'est pas une livraison prouvée, et un webhook enregistré
+n'est pas un POST reçu — les deux textes le disaient déjà ; le symbole est
+maintenant d'accord, à l'écran et dans le texte imprimé par `--install-cron`.
+
+### 4. Les journaux : archivés au-delà d'un plafond, jamais coupés
+
+Demandé par l'utilisateur (23 novembre 2026) ; décidé avec lui (27 novembre
+2026). Chaque journal — équipe, cron, admin, et journal de `--fix --apply` — a
+un plafond de taille : **8 Mio par défaut, réglable de 64 Kio à 16 Mio**, avec
+`sudo bob --journals max-size TAILLE` ou `p` sur l'écran des journaux de
+`--manage-logs` ; le réglage est averti, confirmé, demandé hors du périmètre
+déclaré comme tout réglage d'équipe, et inscrit au journal d'administration. Un
+journal est archivé **avant** l'écriture d'une ligne qui ne laisserait plus de
+place, sous le plafond, pour cette ligne et pour celle qui fermera l'archive :
+aucun fichier — journal ou archive — ne dépasse le plafond, et à 16 Mio, la
+taille jusqu'à laquelle BOB lit un fichier, chaque fichier reste lisible. La
+dernière ligne de l'archive dit qu'elle est archivée ; le fichier devient
+`<nom>.0001` (puis `.0002`…, jamais renommé ensuite) et garde son attribut
+d'ajout seul ; la première ligne du nouveau journal s'enchaîne sur cette
+dernière ligne. Rien n'est coupé. Si l'archive ne peut pas être faite (pas le
+droit de lier le fichier), la ligne est écrite au-delà du plafond plutôt que
+perdue ; au-delà de 16 Mio, ce journal est alors dit trop grand pour être lu,
+comme en 0.43.0.
+
+Les archives et le journal forment une seule chaîne ; un lecteur en vérifie la
+partie qu'il lit, jusqu'à 32 Mio, les plus récentes d'abord — les archives plus
+anciennes sont comptées, mais ni lues ni vérifiées. Dans la partie lue, une
+archive supprimée ou modifiée rompt la chaîne, et la rupture est dite dans son
+propre fichier (« ligne 812 (cron.journal.0002, ligne 3) »), ou, à la première ligne
+d'un fichier, comme une ligne qui ne suit pas celle d'avant. La chaîne montre
+une ligne manquante ou modifiée tant que les fichiers du journal et le témoin
+du journal système ne sont pas réécrits ensemble — un root qui le veut peut
+réécrire les deux ; il faut des journaux gardés sur un autre hôte contre cela
+([FIX_JOURNAL_FR.md](FIX_JOURNAL_FR.md)). Une entrée du journal des correctifs
+commencée dans une archive et terminée dans le nouveau journal se lit entière.
+**BOB ne supprime aucune archive** : la place qu'elles prennent continue de
+croître, et les écrans et `--journals` disent combien. Au-delà des 32 Mio relus, la chaîne est
+vérifiée depuis la première ligne lue, et les lignes des archives non relues ne
+sont pas prises, dans le journal système, pour des lignes retirées.
+
+Mesuré en root sur la Linux Mint 22.3 de test (un dossier jetable, un plafond de
+64 Kio, 400 événements cron et 120 commandes, le témoin du journal système
+envoyé sous une étiquette de banc) : les archives ont gardé l'attribut d'ajout
+seul et sont restées sous le plafond (65 438 octets pour l'archive cron, pour une borne de 65 536 ; avant le
+correctif trouvé en revue, 65 736), `rm` a été refusé tant que l'attribut
+n'était pas retiré, la chaîne a tenu d'un fichier à l'autre, les 120 entrées se
+sont lues entières, et le témoin a confirmé 241 lignes sur 241. Un premier essai
+avait montré que le témoin ne reconnaissait pas la dernière ligne de l'archive —
+une ligne sur 241 « non montrée », qui aurait laissé le journal des correctifs
+« non prouvé » après chaque rotation ; corrigé.
+
+Trois choses à savoir. Un journal déjà proche ou au-dessus de 8 Mio est archivé
+quand sa ligne suivante est écrite ; un journal déjà au-delà de 16 Mio — que la
+0.43.0 disait déjà trop grand pour être lu — reste illisible une fois archivé,
+et la chaîne avec lui. Et une BOB 0.43.0 qui lit un journal archivé par la
+0.44.0 ne lit que le fichier courant, dont la première ligne suit une ligne
+qu'elle ne voit pas : elle dit la chaîne rompue à la ligne 1.
+
+### 5. Vocabulaire et documentation
+
+- Le seuil des rapports de la 0.43.0 (`--log-max-size`) s'appelle « seuil de
+  rétention » dans l'aide, les écrans, la touche `p` et la documentation, comme
+  dans le changelog de la 0.43.0 : le rapport le plus récent et les rapports
+  annotés ne sont jamais supprimés, le dossier peut donc rester au-dessus.
+  Option et réglages inchangés.
+- README : le lien des périmètres d'équipe dit « qui est censé faire quoi », plus
+  « qui peut faire quoi » — les périmètres annoncent, redemandent et
+  consignent ; ils n'empêchent rien.
+- [CONVENTIONS_FR.md](CONVENTIONS_FR.md) : les touches de bascule, le menu et son
+  exception pour Échap, des colonnes qui tiennent, les lignes d'information en
+  couleur.
+- Le [backlog](../BACKLOG_FR.md) public (anglais et français, lié depuis les
+  README) et son annexe sur l'exécution en root (B-055) disent ce que la 0.44.0
+  a fait et ce qui est prévu.
+
+### 6. Tests et outillage
+
+**Tests** 24635 → **25223**, mutations 2418 → **2529**, toutes tuées. Dix nouveaux
+fichiers de test :
+`test_v0440_plugins_drop_root.py` (16), `test_v0440_plugin_links.py` (16),
+`test_v0440_unreadable_not_absent.py` (17), `test_v0440_audit_needs_root.py` (6),
+`test_v0440_switch_screens.py` (39), `test_v0440_cron_merged.py` (11),
+`test_v0440_cron_columns.py` (5), `test_v0440_info_colours.py` (13),
+`test_v0440_journal_ceiling.py` (25), `test_v0440_suite_hygiene.py` (3). Le dernier
+vérifie qu'aucune fixture automatique ne crée un dossier temporaire à chaque
+test (`tmp_path`, `mktemp`) : pytest liste le dossier parent à chaque création,
+ce qui a ralenti les passes de CI de la 0.43.0 jusqu'à les faire couper à 30
+minutes. Avant une poussée, le mainteneur lance aussi les tests d'écran et
+d'équipe avec un compte de connexion de plus sur l'hôte (la CI de la 0.43.0
+était rouge pour cela). Chaque test d'écran tourne sur un faux écran qui lève,
+quand ses touches sont épuisées, une exception que le code testé ne peut pas
+rattraper.
+
 ## [0.43.0] — 24-11-2026
 
 **Une version mineure : périmètres d'équipe et journaux d'opérations listées ;
